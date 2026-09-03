@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(*)",
+      "WebFetch(*)",
+      "Bash(curl -sL --max-time 60 https://arxiv.org/pdf/2003.13590 -o /tmp/suphx.pdf && ls -la /tmp/suphx.pdf && file /tmp/suphx.pdf)"
+    ]
+  }
+}

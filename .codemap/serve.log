@@ -1,0 +1,2 @@
+2026/09/02 20:47:47.735122 === serve started (pid=58908, root=/Users/shenzeqi/Desktop/szq/inspire, db=/Users/shenzeqi/Desktop/szq/inspire/.codemap/graph.db, WORKSPACE=/Users/shenzeqi/Desktop/szq/inspire) ===
+2026/09/02 20:47:47.751081 index not found at /Users/shenzeqi/Desktop/szq/inspire/.codemap/graph.db — run 'codemap build' in the project first
