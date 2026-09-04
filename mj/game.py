@@ -3,9 +3,12 @@
 面向自博弈/RL 的接口:Game(seed) 开始一局,legal_actions() 给当前行动者
 的合法动作,step(action) 推进;done 后 scores 为四家本局得分。
 
-规则要点(平台指南 v2,2026-09-02):
+规则要点(平台指南 v2,2026-09-02;有财必拷响为门户 v6+ config 项):
 - 胡牌是显式动作(不强制报胡):摸牌/杠后补牌成胡由玩家提交 HU,也可
   弃胡继续打牌(飘/杠链前提);碰/吃后未摸牌不可胡(刚摸牌门禁)。
+- 有财必拷响(you_cai_bi_kao,锦标赛 config.YouCaiBiKao):开启时手中
+  有财神则平胡被门禁——须爆头(摸前站立手听任意牌)或杠开(杠后
+  补牌成胡)才可胡;仅门禁合法性,不改番型计算。
 - 动作链:杠与飘每个动作番数 ×2,可连续可组合;飘 = 爆头状态打出
   财神(打出后站立手牌仍听任意牌);打出其他牌(含非爆头态打白板)
   断链清零;链内飘出的白板计入 4 白板番。
@@ -43,9 +46,11 @@ _KONG_KINDS = ("kong_closed", "kong_open", "kong_add")
 
 
 class Game:
-    def __init__(self, seed=None, dealer=0, base=1):
+    def __init__(self, seed=None, dealer=0, base=1, you_cai_bi_kao=False):
         self.dealer = dealer
         self.base = base
+        self.you_cai_bi_kao = you_cai_bi_kao
+        self._kong_draw = False  # 当前 drawn 是否为杠后补牌(有财必拷响用)
         self.rng = random.Random(seed)
         wall = FULL_DECK[:]
         self.rng.shuffle(wall)
@@ -78,6 +83,29 @@ class Game:
     def in_freeze(self, seat):
         return self.freeze > 0 and seat != self.freezer
 
+    def visible_counts(self, seat):
+        """seat 视角的可见牌(自己手牌+四家牌河+全部副露,杠计 4 张)。
+
+        即 ukeire(visible=...) 的口径:含手牌本身,进张按 4-vis 折算。
+        """
+        vis = [0] * 34
+        for t, n in enumerate(self.hands[seat]):
+            vis[t] += n
+        for d in self.discards:
+            for t in d:
+                vis[t] += 1
+        for ms in self.melds:
+            for kind, t in ms:
+                if kind == "chow":
+                    vis[t] += 1
+                    vis[t + 1] += 1
+                    vis[t + 2] += 1
+                elif kind.startswith("kong"):
+                    vis[t] += 4
+                else:
+                    vis[t] += 3
+        return vis
+
     def current_seat(self):
         return self.turn
 
@@ -98,11 +126,24 @@ class Game:
         return self._legal_reacts()
 
     def _can_hu(self, seat):
-        """刚摸牌门禁:碰/吃/杠后未摸牌不可胡;摸到的牌成胡即可提交。"""
-        return (
-            self.drawn[seat] is not None
-            and is_win(self.hands[seat], len(self.melds[seat]))
-        )
+        """刚摸牌门禁:碰/吃/杠后未摸牌不可胡;摸到的牌成胡即可提交。
+
+        有财必拷响开启时,手中有财神(白板)还须爆头(摸前站立手听
+        任意牌)或杠开(当前 drawn 为杠后补牌)才可胡——平胡/普通
+        七对被门禁。爆头/杠开胡的倍率由原番型公式自然给出。
+        """
+        if (
+            self.drawn[seat] is None
+            or not is_win(self.hands[seat], len(self.melds[seat]))
+        ):
+            return False
+        if self.you_cai_bi_kao and self.hands[seat][W] > 0:
+            if self._kong_draw:
+                return True
+            standing = list(self.hands[seat])
+            standing[self.drawn[seat]] -= 1
+            return is_baotou(standing, len(self.melds[seat]))
+        return True
 
     def _legal_discards(self):
         seat, h = self.turn, self.hands[self.turn]
@@ -208,7 +249,7 @@ class Game:
         self.hands[seat][t] -= 4
         self.melds[seat].append(("kong_closed", t))
         self.chain[seat] += 1
-        self._draw(seat)
+        self._draw(seat, kong=True)
 
     def _do_kong_add(self, seat, t):
         if self.drawn[seat] is None or self.hands[seat][t] != 1 or not self._has_open_pong(t):
@@ -221,7 +262,7 @@ class Game:
                 self.melds[seat][i] = ("kong_add", t)
                 break
         self.chain[seat] += 1
-        self._draw(seat)
+        self._draw(seat, kong=True)
 
     # ---------- 反应阶段 ----------
 
@@ -290,20 +331,21 @@ class Game:
         self.turn = seat
         self.phase = "discard"
         if replacement:
-            self._draw(seat)
+            self._draw(seat, kong=True)  # 明杠补牌 = 杠开判定依据
 
     def _next_draw(self, owner):
         self._draw((owner + 1) % 4)
 
     # ---------- 摸牌与终局 ----------
 
-    def _draw(self, seat):
+    def _draw(self, seat, kong=False):
         if len(self.wall) <= DEAD_WALL:
             self._end_draw()
             return
         t = self.wall.pop()
         self.drawn[seat] = t
         self.hands[seat][t] += 1
+        self._kong_draw = kong
         self.turn = seat
         self.phase = "discard"
 

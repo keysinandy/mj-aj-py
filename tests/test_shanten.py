@@ -89,6 +89,33 @@ class TestUkeire(unittest.TestCase):
         c = counts("123m456m789m56s9m2p")
         self.assertEqual(total, sum(4 - c[t] for t in acc))
 
+    def test_visible_no_double_subtraction(self):
+        # visible 含手牌:持有 2 张的进张(7m 待第三张)未见 = 2,
+        # 而非手牌被扣两次得 0(旧 bug 系统性贬低对子待刻结构)
+        hand = counts("123m56m77m123p456p")
+        s, acc, total = ukeire(hand, 0, hand)
+        self.assertEqual((s, acc), (0, [3, 6, 33]))  # 4m / 7m / 白
+        self.assertEqual(total, 4 + 2 + 4)
+
+    def test_visible_subtracts_seen(self):
+        hand = counts("123m56m77m123p456p")
+        vis = list(hand)
+        vis[3] += 1  # 4m 已见 1 张(牌河)
+        vis[33] += 3  # 白已见 3 张(他家打出/副露)
+        _, _, total = ukeire(hand, 0, vis)
+        self.assertEqual(total, 3 + 2 + 1)
+
+    def test_visible_prediscard_hand(self):
+        # choose_discard 场景:vis = 弃牌前完整手牌(含将打出的候选);
+        # 弃牌只是手→牌河,4-vis 即弃后的精确未见数
+        full = counts("123m456m789m123p55p")  # 14 张,摸 5p
+        c = list(full)
+        c[13] -= 1  # 拟弃 5p
+        s, acc, total = ukeire(c, 0, full)
+        self.assertEqual((s, acc), (0, [13, 33]))  # 5p / 白
+        # 真实未见 5p:4 - 手 1 - 牌河 1 = 2
+        self.assertEqual(total, 2 + 4)
+
 
 if __name__ == "__main__":
     unittest.main()

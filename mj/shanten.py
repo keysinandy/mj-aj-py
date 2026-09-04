@@ -176,17 +176,19 @@ def waits(counts, locked=0):
 def ukeire(counts, locked=0, visible=None):
     """返回 (向听数, 进张种类列表, 进张总张数)。
 
-    visible: 34 维各家可见牌计数(牌河+自己手牌+副露),用于扣除
-    已见张;None 时按仅自己手牌估计。
+    visible: 34 维已见牌计数(自己手牌+四家牌河+全部副露),进张张数
+    按 4 - visible[t] 折算。须含被评估手牌——弃牌候选场景传弃牌前的
+    完整手牌即可(弃牌只是手→牌河转移,可见总量不变);
+    None 时退化为仅按手牌折算(4 - 手牌张数)。
     """
     from .win import is_win
 
     s = shanten(counts, locked)
-    vis = visible if visible is not None else [0] * 34
+    vis = counts if visible is None else visible
     if s <= 0:
         if s == 0:
             acc = [t for t in range(34) if is_win(_add(counts, t), locked)]
-            return s, acc, sum(_left(counts, t, vis) for t in acc)
+            return s, acc, sum(_left(t, vis) for t in acc)
         return s, [], 0
     acc = []
     for t in range(34):
@@ -194,12 +196,12 @@ def ukeire(counts, locked=0, visible=None):
             continue
         if shanten(_add(counts, t), locked) < s:
             acc.append(t)
-    return s, acc, sum(_left(counts, t, vis) for t in acc)
+    return s, acc, sum(_left(t, vis) for t in acc)
 
 
-def _left(counts, t, vis):
-    """牌 t 的剩余张数(4 - 自己持有 - 可见)。"""
-    return max(0, 4 - counts[t] - vis[t])
+def _left(t, vis):
+    """牌 t 的未见张数(4 - 已见;vis 须含被评估手牌,避免持牌双扣)。"""
+    return max(0, 4 - vis[t])
 
 
 def _add(counts, t):

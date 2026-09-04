@@ -20,27 +20,6 @@ from .game import (
 )
 
 
-def visible_counts(g, seat):
-    """seat 视角的可见牌(自己手牌+牌河+所有副露)。"""
-    vis = [0] * 34
-    for t, n in enumerate(g.hands[seat]):
-        vis[t] += n
-    for d in g.discards:
-        for t in d:
-            vis[t] += 1
-    for ms in g.melds:
-        for kind, t in ms:
-            if kind == "chow":
-                vis[t] += 1
-                vis[t + 1] += 1
-                vis[t + 2] += 1
-            elif kind.startswith("kong"):
-                vis[t] += 4
-            else:
-                vis[t] += 3
-    return vis
-
-
 def choose_discard(g, seat, top_k=4):
     """返回弃牌 tile。先按向听数筛出最优候选,再对少数候选算进张。
 
@@ -48,7 +27,7 @@ def choose_discard(g, seat, top_k=4):
     """
     hand = g.hands[seat]
     locked = len(g.melds[seat])
-    vis = visible_counts(g, seat)
+    vis = g.visible_counts(seat)
     scored = []
     for t in range(34):
         if hand[t] == 0:
@@ -137,7 +116,6 @@ def _choose_react(g, seat, acts):
     owner, tile = g.pending
     hand = g.hands[seat]
     locked = len(g.melds[seat])
-    vis = visible_counts(g, seat)
     base_hand = list(hand)
     best_act, best_key = PASS, None
 

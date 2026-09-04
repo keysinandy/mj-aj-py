@@ -36,7 +36,7 @@ def tile_conservation(g):
     return c
 
 
-def setup(hands_spec, first_draws, dealer=0, seed=0):
+def setup(hands_spec, first_draws, dealer=0, seed=0, you_cai_bi_kao=False):
     """构造指定手牌与摸牌序列的对局。
 
     hands_spec: 4 家各 13 张手牌牌串;first_draws: 摸牌序列(首张先摸,
@@ -45,6 +45,8 @@ def setup(hands_spec, first_draws, dealer=0, seed=0):
     g = Game.__new__(Game)
     g.dealer = dealer
     g.base = 1
+    g.you_cai_bi_kao = you_cai_bi_kao
+    g._kong_draw = False
     g.rng = random.Random(seed)
     g.hands = [counts(s) for s in hands_spec]
     total = [sum(h[t] for h in g.hands) for t in range(34)]
@@ -456,6 +458,90 @@ class TestScenarios(unittest.TestCase):
                 self.assertEqual(g.scores, [0] * 4)
                 saw_draw = True
         self.assertTrue(saw_draw, "100 局内未出现流局")
+
+
+class TestYouCaiBiKao(unittest.TestCase):
+    """有财必拷响:手中有财神时,须爆头或杠开才可胡。"""
+
+    # 站立手 3 面子 + 11p 雀头候选 + 5s + 财神:非爆头
+    # (胡牌进张仅 1p/5s/3s/4s/6s/7s,非任意牌)
+    HAND_W = "123m456m789m11p5sw"
+    # 站立手 3 面子 + 11p + 双财神:爆头(任意 t + WW = 刻子)
+    HAND_BAOTOU = "123m456m789m11pww"
+
+    def test_plain_win_with_god_blocked(self):
+        """普通摸牌、手有财神、非爆头 → HU 被门禁,弃牌照常。"""
+        g = setup([self.HAND_W, FA, FB, FC], [24], you_cai_bi_kao=True)
+        # 5s + W(6s) + 7s = 567s 面子 → 成胡牌型,但非爆头
+        self.assertNotIn(HU, g.legal_actions())
+        self.assertIn(24, g.legal_actions())  # 摸的 7s 可打
+        self.assertIn(W, g.legal_actions())
+        g.step(24)  # 弃胡打 7s,对局继续
+        self.assertFalse(g.done)
+        while not g.done:
+            auto_hu_step(g, random.Random(0))
+
+    def test_baotou_win_with_god_allowed(self):
+        """爆头态(任意牌即胡)手有财神 → 可胡,且番含爆头 ×2。"""
+        g = setup([self.HAND_BAOTOU, FA, FB, FC], [8],
+                  you_cai_bi_kao=True)
+        self.assertIn(HU, g.legal_actions())
+        g.step(HU)
+        self.assertTrue(g.done)
+        self.assertIn("爆头", g.result[2])
+        self.assertEqual(g.result[1], 2)  # 平胡 × 爆头
+
+    def test_kong_draw_win_with_god_allowed(self):
+        """杠后补牌成胡(杠开):非爆头但手有财神 → 可胡。"""
+        # 1111m 可暗杠;补牌 7s → 5s W(6s) 7s 成面子 = 杠开胡
+        g = setup(["1111m456m789m11pw", FA, FB, FC], [22, 24],
+                  you_cai_bi_kao=True)
+        g.step(KONG_CLOSED_BASE)  # 暗杠 1m → 补牌 7s
+        self.assertIn(HU, g.legal_actions())
+        g.step(HU)
+        self.assertTrue(g.done)
+        self.assertIn("杠开", g.result[2])
+        self.assertEqual(g.result[1], 2)  # 平胡 × 杠开
+
+    def test_no_god_unaffected(self):
+        """手无财神 → 平胡不受门禁影响。"""
+        g = setup(["123m456m789m11p55s", FA, FB, FC], [9],
+                  you_cai_bi_kao=True)
+        self.assertIn(HU, g.legal_actions())
+        g.step(HU)
+        self.assertEqual(g.result[1], 1)
+
+    def test_off_by_default(self):
+        """开关关闭(默认):手有财神非爆头也可平胡(向后兼容)。"""
+        g = setup([self.HAND_W, FA, FB, FC], [24])
+        self.assertIn(HU, g.legal_actions())
+        g.step(HU)
+        self.assertEqual(g.result[1], 1)
+
+    def test_random_games_property(self):
+        """开关开启的随机对局:守恒/终局不变量保持,且每一个手有
+        财神的胡牌者必带爆头或杠/飘链番(门禁未被绕过)。"""
+        wins_with_god = 0
+        for seed in range(300):
+            g = Game(seed=seed, you_cai_bi_kao=True)
+            rng = random.Random(seed)
+            steps = 0
+            while not g.done:
+                acts = g.legal_actions()
+                self.assertTrue(acts, "无合法动作")
+                auto_hu_step(g, rng)
+                steps += 1
+                self.assertLess(steps, 1500, "对局未终止")
+                self.assertEqual(tile_conservation(g), [4] * 34)
+            if g.result:
+                seat, mult, parts = g.result
+                self.assertEqual(sum(g.scores), 0)
+                if g.hands[seat][W] > 0:
+                    wins_with_god += 1
+                    self.assertTrue(
+                        "爆头" in parts or g.chain[seat] > 0,
+                        f"手有财神的平胡未被门禁: {parts}")
+        self.assertGreaterEqual(wins_with_god, 1, "未覆盖手有财神胡牌场景")
 
 
 if __name__ == "__main__":
