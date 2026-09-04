@@ -1,0 +1,3724 @@
+<!DOCTYPE html>
+<!-- saved from url=(0036)https://10.240.169.190:18080/portal/ -->
+<html lang="zh-CN" data-immersive-translate-page-theme="light"><script src="chrome-extension://aeoilchhomapofiopejjlecddfldpeom/static/js/post-message.js"></script><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>杭州麻将对战平台</title>
+<style>
+:root {
+  --bg: #f4f5f7;
+  --card: #fff;
+  --border: #d8dce2;
+  --text: #1c2430;
+  --muted: #67707d;
+  --accent: #2f6fed;
+  --green: #1a9e5c;
+  --red: #d64545;
+  --orange: #d9822b;
+  --gray: #8a919c;
+}
+
+* { box-sizing: border-box; }
+
+/* display:flex 等布局规则不得覆盖 hidden 属性（UA 的 [hidden] 同特异性会被作者样式压过） */
+[hidden] { display: none !important; }
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+main { max-width: 72rem; margin: 0 auto; padding: 1rem 1rem 3rem; }
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.9rem 1.2rem;
+  background: #141b26;
+  color: #fff;
+}
+
+.topbar h1 { font-size: 1.15rem; margin: 0; }
+
+.actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+
+#whoami { color: #9fb2cc; font-size: 0.9rem; }
+
+button {
+  font: inherit;
+  padding: 0.4rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+button:hover { border-color: var(--accent); color: var(--accent); }
+button:disabled { opacity: 0.5; cursor: default; }
+
+a.btn-link, a.btn-primary {
+  font: inherit;
+  padding: 0.4rem 1rem;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  color: #fff;
+  background: var(--accent);
+  text-decoration: none;
+  display: inline-block;
+}
+
+a.btn-link:hover, a.btn-primary:hover { opacity: 0.9; }
+
+h2 { font-size: 1.05rem; margin: 1.4rem 0 0.6rem; }
+h3 { font-size: 0.95rem; margin: 1.2rem 0 0.4rem; color: var(--muted); }
+
+.error {
+  max-width: 72rem;
+  margin: 0.8rem auto 0;
+  padding: 0.6rem 1rem;
+  background: #fdecec;
+  border: 1px solid var(--red);
+  border-radius: 6px;
+  color: var(--red);
+  white-space: pre-wrap;
+}
+
+/* ---- 视图导航 ---- */
+.tabs { display: flex; gap: 0.5rem; margin: 1rem 0 0; border-bottom: 1px solid var(--border); }
+.tabs button {
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 6px 6px 0 0;
+  background: none;
+  color: var(--muted);
+  padding: 0.5rem 1rem;
+}
+.tabs button.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; margin: 1.2rem 0 0.4rem; flex-wrap: wrap; }
+.section-head h2 { margin: 0; }
+
+/* ---- 欢迎页 ---- */
+.hero {
+  max-width: 34rem;
+  margin: 3rem auto;
+  text-align: center;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 2rem 1.5rem;
+}
+.hero h2 { margin: 0 0 0.6rem; font-size: 1.3rem; }
+.hero p { color: var(--muted); margin: 0 0 1.4rem; }
+
+/* ---- 卡片 ---- */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  gap: 0.8rem;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.7rem 0.9rem;
+}
+
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.card-title { font-weight: 600; font-size: 0.92rem; word-break: break-all; }
+.card-body { margin-top: 0.4rem; font-size: 0.85rem; color: var(--muted); }
+.card-body b { color: var(--text); }
+
+.card-actions { display: flex; gap: 0.5rem; margin-top: 0.5rem; flex-wrap: wrap; align-items: center; }
+.card-actions button { padding: 0.3rem 0.8rem; font-size: 0.85rem; }
+
+.registered-mark { color: var(--green); font-weight: 600; }
+.muted { color: var(--muted); }
+.empty { color: var(--muted); font-size: 0.9rem; }
+
+.badge {
+  display: inline-block;
+  flex: none;
+  font-size: 0.72rem;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  color: #fff;
+}
+
+.s-registering { background: var(--accent); }
+.s-running { background: var(--green); }
+.s-finished { background: var(--gray); }
+.s-void { background: var(--red); }
+.s-closed { background: var(--orange); }
+.s-stage_open { background: var(--orange); }
+.s-stage_done { background: var(--gray); }
+
+/* ---- 多阶段阶段行（spec §7.3：阶段时间线简版/资格确认入口）---- */
+.stage-panel { margin-top: 0.5rem; padding: 0.3rem 0.55rem; border-left: 3px solid var(--border); font-size: 0.85rem; }
+.stage-panel .stage-head { display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; }
+.stage-name { font-weight: 600; color: var(--text); }
+.stage-panel .stage-qualify { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.3rem; flex-wrap: wrap; }
+.stage-panel .stage-note { color: var(--red); margin-top: 0.3rem; }
+.role-chip { font-size: 0.75rem; padding: 0.02rem 0.5rem; border-radius: 999px; border: 1px solid var(--border); }
+.role-finalist { color: var(--green); border-color: var(--green); }
+.role-backup { color: var(--orange); border-color: var(--orange); }
+.s-stg-open { background: var(--orange); }
+.s-stg-running { background: var(--green); }
+.s-stg-done { background: var(--gray); }
+.s-stg-crashed { background: var(--red); }
+
+.meter { height: 5px; background: #e6e9ee; border-radius: 3px; overflow: hidden; margin-top: 0.4rem; }
+.meter-fill { height: 100%; background: var(--green); border-radius: 3px; }
+
+/* ---- 信息网格 / 表格 ---- */
+.info-grid {
+  display: grid;
+  grid-template-columns: 6rem 1fr;
+  gap: 0.25rem 0.8rem;
+  padding: 0.7rem 0.9rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.88rem;
+}
+
+.info-grid span { color: var(--muted); }
+
+.table-wrap { overflow-x: auto; }
+
+table { width: 100%; border-collapse: collapse; background: var(--card); font-size: 0.88rem; }
+
+th, td { padding: 0.4rem 0.7rem; border-bottom: 1px solid var(--border); text-align: left; }
+th { color: var(--muted); font-weight: 600; }
+tr.me td { background: #eef4ff; }
+
+/* ---- 观战：座位与牌 ---- */
+.game-banner {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 0.8rem;
+  padding: 0.7rem 1rem;
+  background: #fff7e6;
+  border: 1px solid var(--orange);
+  border-radius: 8px;
+  color: var(--orange);
+  font-weight: 600;
+}
+
+.seat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  gap: 0.6rem;
+}
+
+.seat-box {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.6rem 0.9rem;
+}
+
+.seat-box.me { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+
+.seat-head { font-weight: 600; font-size: 0.9rem; color: var(--accent); display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
+
+.tag {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #fff;
+  background: var(--gray);
+  border-radius: 999px;
+  padding: 0 0.45rem;
+}
+.tag.turn { background: var(--green); }
+.tag.dealer { background: var(--orange); }
+.tag.self { background: var(--accent); }
+
+.seat-line { font-size: 0.85rem; margin-top: 0.25rem; color: var(--muted); }
+
+/* 复盘每家牌面视图 + 折叠事件流 */
+.review-seat { margin: 0.35rem 0 0.55rem; }
+.card-body details { margin-top: 0.4rem; }
+.card-body summary { cursor: pointer; color: var(--muted); font-size: 0.82rem; user-select: none; }
+.seat-line b { color: var(--text); font-weight: 600; }
+/* 胡家"手牌/摸牌"同行分隔：摸牌与手牌隔开，一眼看出是否爆头（2026-09-02） */
+.draw-sep { margin: 0 0.5rem; color: var(--muted); }
+.badge-baotou { margin-left: 0.4rem; font-size: 0.72rem; color: #b8860b;
+  border: 1px solid #b8860b; border-radius: 3px; padding: 0 0.3rem; vertical-align: middle; }
+
+/* ---- 回放播放器（2026-09-04）：每局独立；默认停终态（= 静态卡），▶ 从头播 ---- */
+.rp-ctl { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.45rem; }
+.rp-btn { border: 1px solid var(--border); background: #fff; color: var(--text);
+  border-radius: 6px; padding: 0.28rem 0.7rem; font-size: 0.85rem; cursor: pointer; }
+.rp-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.rp-btn:disabled { opacity: 0.4; cursor: default; }
+.rp-btn.play { background: var(--accent); border-color: var(--accent); color: #fff; }
+.rp-btn.play:hover:not(:disabled) { background: #2559c9; }
+.rp-ctl input[type=number] { width: 4.4rem; border: 1px solid var(--border);
+  border-radius: 6px; padding: 0.2rem 0.35rem; font-size: 0.85rem; }
+.rp-ctl label { font-size: 0.82rem; color: var(--muted); }
+.rp-slider { flex: 1; min-width: 7rem; }
+.rp-pos { font-size: 0.82rem; color: var(--muted); min-width: 4.2rem; text-align: right; }
+.rp-bar { display: flex; align-items: center; gap: 0.55rem; margin-top: 0.45rem; font-size: 0.88rem; }
+.rp-act { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 4px;
+  font-size: 0.78rem; font-weight: 700; color: #fff; background: #5a6270; }
+.rp-act.r-draw { background: var(--accent); }
+.rp-act.r-discard { background: #6b7280; }
+.rp-act.r-chi { background: var(--green); }
+.rp-act.r-peng { background: var(--orange); }
+.rp-act.r-gang { background: var(--red); }
+.rp-act.r-hu { background: #c9a227; }
+.rp-act.r-timeout { background: #9b59b6; }
+.rp-act.r-info { background: #5a6270; }
+.rp-wall { margin-left: auto; font-size: 0.82rem; color: var(--muted); }
+.rp-seats { margin-top: 0.2rem; }
+.review-seat.rp-act-seat { outline: 2px solid var(--accent); outline-offset: 2px;
+  border-radius: 6px; padding: 0 0.3rem 0.25rem; }
+.rp-gap { display: inline-block; width: 14px; border-left: 2px dashed var(--border);
+  margin: 0 6px; vertical-align: middle; height: 1.6em; }
+.rp-drawn .tile-svg { outline: 2px solid var(--accent); outline-offset: 1px; }
+.rp-result { margin-top: 0.45rem; font-size: 0.85rem; }
+
+.hand-panel {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.6rem 0.9rem;
+  font-size: 0.88rem;
+}
+
+/* ---- 麻将牌（2026-09-03 图片坐标切方案：span 背景取片；spec F4 起源） ---- */
+.tile-svg {
+  display: inline-block;
+  vertical-align: middle;
+  margin: 0 0.12em;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 2px #8a919c, 0 1px 2px rgba(0, 0, 0, 0.18); /* 灰边同财神金边样式；白板由 .god 覆盖金色 */
+  width: var(--tw, 32px);
+  height: var(--th, 44px);
+}
+.tile-svg.god { filter: drop-shadow(0 0 2px rgba(217, 166, 46, 0.55)); box-shadow: inset 0 0 0 2px #d9a62e, 0 1px 2px rgba(0, 0, 0, 0.18); } /* 财神金边 2px：32px 显示下 1px 细不可辨 */
+/* 超时自动打出的牌：红色描边 */
+.tile-svg.timeout { outline: 2px solid var(--red); outline-offset: 1px; }
+/* 事件时间线超时行：红色字体 */
+.event.ev-timeout { color: var(--red); }
+.event.ev-timeout .ev-seq, .event.ev-timeout .ev-seat, .event.ev-timeout .ev-type { color: inherit; }
+
+/* ---- 事件时间线 ---- */
+.events {
+  background: #0f141c;
+  border-radius: 8px;
+  padding: 0.6rem 0.9rem;
+  max-height: 24rem;
+  overflow-y: auto;
+  font-size: 0.82rem;
+}
+
+.event {
+  display: flex;
+  gap: 0.6rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+  padding: 0.18rem 0;
+  border-bottom: 1px solid #232a36;
+  color: #cdd4de;
+}
+
+.event code { color: #8fa3bf; font-size: 0.78rem; word-break: break-all; }
+.ev-seq { color: #5a6675; flex: none; }
+.ev-seat { color: #8fa3bf; flex: none; }
+.ev-type { flex: none; }
+.ev-tile { flex: none; }
+.ev-tile .tile-svg { --tw: 24px; --th: 33px; }
+
+/* ---- 令牌弹窗 ---- */
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 20, 28, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 10;
+}
+
+.modal-box {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.2rem 1.4rem;
+  max-width: 32rem;
+  width: 100%;
+}
+
+.modal-box h2 { margin: 0 0 0.8rem; }
+
+.token-box {
+  display: block;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.95rem;
+  word-break: break-all;
+  background: #f4f6f9;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.6rem 0.8rem;
+  user-select: all;
+}
+
+.modal-hint { color: var(--orange); font-size: 0.85rem; margin: 0.7rem 0 0; }
+
+/* 赛程说明（描述）展示：报名确认层与赛事详情共用；多行保留 */
+.desc-block {
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0.2rem 0 0;
+  padding: 0.7rem 0.9rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+#modal-body .desc-block { border: 0; background: transparent; padding: 0; margin: 0; }
+.modal-placeholder { color: var(--muted); font-size: 0.88rem; margin: 0; }
+
+.modal-actions { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1rem; }
+
+/* ---- 测试房间 ---- */
+/* 创建表单与 web/ 管理页 .grid-form 同范式：卡片容器 + label 上 input 下网格布局。
+   9 列一行（8 参数 + 按钮，桌面每列 ~113px 足够；输入框 fill 列宽 → 全等宽） */
+.err { color: var(--red); font-size: 0.85rem; margin-left: 0.6rem; }
+#room-create {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  gap: 0.7rem;
+  margin: 0.6rem 0;
+  padding: 1rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+#room-create label { display: flex; flex-direction: column; font-size: 0.85rem; color: var(--muted); }
+#room-create label.check { flex-direction: row; align-items: center; gap: 0.4rem; margin-top: 1.4rem; }
+#room-create input[type="number"] {
+  font: inherit;
+  width: 100%;
+  min-width: 0;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-top: 0.2rem;
+  color: var(--text);
+}
+#room-create input[type="number"]:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(47, 111, 237, 0.15); }
+#room-create button[type="submit"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  width: 100%;
+  margin-top: 1.4rem; /* 与 input 顶部对齐（label 行高 + 0.2rem margin） */
+}
+#room-create button[type="submit"]:hover { opacity: 0.9; color: #fff; }
+#room-create .err { grid-column: 1 / -1; margin-left: 0; }
+#room-create .err:empty { display: none; }
+#room-token-list { padding-left: 1.2rem; }
+
+@media (max-width: 72rem) {
+  #room-create { grid-template-columns: repeat(6, 1fr); }
+}
+@media (max-width: 48rem) {
+  #room-create { grid-template-columns: repeat(3, 1fr); }
+}
+#room-token-list li { display: flex; gap: 0.6rem; align-items: center; margin: 0.35rem 0; }
+#room-token-list .token-box { flex: 1; margin: 0; }
+#room-token-list .btn-group { display: inline-flex; gap: 0.4rem; flex: none; }
+#room-copy-all { margin: 0.5rem 0 0.25rem; }
+#room-copy-named { margin: 0.25rem 0 0; }
+#room-copy-all-hint { margin: 0 0 0.6rem; font-size: 0.85rem; }
+#room-players .card { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.9rem; }
+#room-players .card-head { margin: 0; flex: none; }
+#room-players .card-body { display: flex; gap: 0.5rem; flex: 1; }
+#room-players input { flex: 1; min-width: 8rem; }
+
+/* ---- 接入指南 ---- */
+.guide-subnav { display: flex; gap: 0.4rem; flex-wrap: wrap; margin: 0.8rem 0 0.2rem; }
+.guide-subnav a {
+  font-size: 0.85rem;
+  padding: 0.3rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--muted);
+  text-decoration: none;
+}
+.guide-subnav a:hover { border-color: var(--accent); color: var(--accent); }
+
+.guide-block {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.8rem 1.1rem;
+  margin-top: 0.8rem;
+}
+.guide-block h2 { margin: 0 0 0.5rem; }
+.guide-block h3 { color: var(--text); margin: 1rem 0 0.4rem; }
+.guide-block p, .guide-block li { font-size: 0.88rem; }
+.guide-block ul { margin: 0.3rem 0 0.6rem; padding-left: 1.3rem; }
+.guide-block li { margin: 0.2rem 0; }
+.guide-block code {
+  font-family: ui-monospace, Consolas, monospace;
+  background: #eef1f5;
+  border-radius: 4px;
+  padding: 0 0.3em;
+  font-size: 0.82em;
+}
+
+.guide-note {
+  background: #fff7e6;
+  border: 1px solid var(--orange);
+  border-radius: 6px;
+  padding: 0.5rem 0.8rem;
+  font-size: 0.85rem;
+  color: #7a5212;
+  margin: 0.6rem 0;
+}
+
+pre.guide-code {
+  background: #0f141c;
+  color: #cdd4de;
+  border-radius: 8px;
+  padding: 0.8rem 1rem;
+  overflow-x: auto;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+pre.guide-code code {
+  font-family: ui-monospace, Consolas, "Courier New", monospace;
+  background: none;
+  padding: 0;
+  font-size: inherit;
+}
+
+/* ---- 指南版本区块（guide-version，JS 从 /portal/api/guide/version 渲染）---- */
+.gv-head { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.4rem; }
+.gv-version {
+  font-weight: 700; font-size: 0.9rem;
+  background: var(--accent); color: #fff;
+  border-radius: 6px; padding: 0.15rem 0.6rem;
+}
+.gv-tip { font-size: 0.78rem; }
+.gv-tip code { background: #eef1f5; border-radius: 4px; padding: 0 0.3em; font-size: 0.92em; }
+.gv-changes { margin-top: 0.2rem; }
+.gv-item {
+  border-left: 3px solid var(--border);
+  padding: 0.3rem 0 0.3rem 0.7rem;
+  margin: 0.45rem 0;
+}
+.gv-item.breaking { border-left-color: #d94a4a; }
+.gv-item.added { border-left-color: #1a9e5c; }
+.gv-item.changed { border-left-color: var(--orange); }
+.gv-badge {
+  font-size: 0.66rem; font-weight: 700; letter-spacing: 0.03em;
+  border-radius: 4px; padding: 0.1rem 0.4rem;
+  color: #fff; margin-right: 0.45rem;
+}
+.gv-badge.breaking { background: #d94a4a; }
+.gv-badge.added { background: #1a9e5c; }
+.gv-badge.changed { background: var(--orange); }
+.gv-summary { font-weight: 600; font-size: 0.85rem; }
+.gv-date { color: var(--muted); font-size: 0.75rem; margin-left: 0.4rem; }
+.gv-detail { color: var(--muted); font-size: 0.8rem; margin-top: 0.15rem; line-height: 1.5; }
+.gv-more { margin-top: 0.5rem; }
+.gv-more button {
+  font-size: 0.8rem; color: var(--accent);
+  background: none; border: none; cursor: pointer; padding: 0;
+}
+.gv-more button:hover { text-decoration: underline; }
+
+/* ---- 赛事流程（view-flow）：正式锦标赛参赛说明（人读）；flow- 独立命名、版式与接入指南同语言 ---- */
+.flow-subnav { display: flex; gap: 0.4rem; flex-wrap: wrap; margin: 0.8rem 0 0.2rem; }
+.flow-subnav a {
+  font-size: 0.85rem;
+  padding: 0.3rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--muted);
+  text-decoration: none;
+}
+.flow-subnav a:hover { border-color: var(--accent); color: var(--accent); }
+
+.flow-block {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.8rem 1.1rem;
+  margin-top: 0.8rem;
+}
+.flow-block h2 { margin: 0 0 0.5rem; }
+.flow-block h3 { color: var(--text); margin: 1.1rem 0 0.4rem; }
+.flow-block p, .flow-block li { font-size: 0.9rem; }
+.flow-block ul { margin: 0.3rem 0 0.6rem; padding-left: 1.3rem; }
+.flow-block li { margin: 0.25rem 0; line-height: 1.55; }
+
+.flow-call, .flow-info, .flow-warn {
+  border-radius: 6px;
+  padding: 0.55rem 0.85rem;
+  font-size: 0.88rem;
+  line-height: 1.6;
+  margin: 0.7rem 0;
+}
+.flow-call { background: #fff7e6; border: 1px solid var(--orange); color: #7a5212; }
+.flow-info { background: #eef4fd; border: 1px solid #9db8dd; color: #2f4e75; }
+.flow-warn { background: #fdeeee; border: 1px solid #d98b8b; color: #8c2f2f; }
+
+.flow-chip {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 1.4rem; height: 1.4rem;
+  border-radius: 999px;
+  background: var(--accent); color: #fff;
+  font-size: 0.72rem; font-weight: 700;
+  margin-right: 0.35rem;
+}
+
+@media (max-width: 40rem) {
+  .info-grid { grid-template-columns: 4.5rem 1fr; }
+  .hero { margin: 1.5rem auto; }
+}
+
+/* ---- 番型计算工具（接入指南 1.5 节；fc- 前缀防与全局类冲突） ---- */
+.fc-card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 10px; padding: 14px 16px; margin: 12px 0 16px;
+}
+.fc-card-title { font-weight: 600; font-size: 0.9rem; margin-bottom: 10px; }
+.fc-tiles { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; }
+.fc-slot {
+  width: 44px; height: 58px; border-radius: 6px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px dashed var(--border); background: #fafbfc;
+  color: var(--muted); font-size: 20px; user-select: none;
+  transition: border-color .12s, transform .12s;
+}
+.fc-slot:hover { border-color: var(--accent); }
+.fc-slot.filled { border: none; background: none; padding: 0; }
+.fc-slot.filled:hover { transform: translateY(-2px); }
+.fc-draw-sep { width: 1px; align-self: stretch; background: var(--border); margin: 0 10px; min-height: 58px; }
+.fc-draw-cell { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.fc-draw-cell .fc-slot { border-color: var(--orange); }
+.fc-draw-cell .fc-slot.filled { border: 2px solid var(--orange); background: #fffdf2; }
+.fc-draw-tag {
+  font-size: 10px; color: #7a5a00; background: #fff3d1;
+  border: 1px solid var(--orange); border-radius: 999px; padding: 1px 8px;
+  font-weight: 700; line-height: 1.4;
+}
+.fc-row-label {
+  font-size: 12px; color: var(--muted); margin-bottom: 10px;
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+}
+.fc-row-label b { color: var(--text); font-weight: 600; }
+.fc-row-label .fc-hint { color: var(--muted); margin-left: auto; }
+.fc-ctl-row { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-end; }
+.fc-ctl { display: flex; flex-direction: column; gap: 6px; }
+.fc-ctl label { font-size: 12px; color: var(--muted); }
+.fc-chain-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.fc-chain-btns button {
+  font-size: 12px; padding: 5px 11px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--card); color: var(--text);
+  transition: all .12s;
+}
+.fc-chain-btns button:hover { border-color: var(--accent); color: var(--accent); }
+.fc-chain-btns button.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.fc-ctl input[type=number] {
+  width: 74px; padding: 5px 8px; border: 1px solid var(--border);
+  border-radius: 6px; font-size: 13px; color: var(--text);
+}
+.fc-ctl input[type=number]:focus { outline: 2px solid rgba(47, 111, 237, .2); border-color: var(--accent); }
+.fc-spacer { flex: 1; }
+.fc-btn-ghost {
+  font-size: 13px; padding: 6px 14px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--card); color: var(--text);
+}
+.fc-btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+.fc-btn-ghost.danger:hover { border-color: var(--red); color: var(--red); }
+.fc-result-status { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.fc-badge { font-size: 14px; font-weight: 700; padding: 5px 14px; border-radius: 999px; color: #fff; }
+.fc-badge.hu { background: var(--green); }
+.fc-badge.nohu { background: var(--red); }
+.fc-badge.baotou { background: var(--orange); }
+.fc-badge.pending { background: var(--gray); }
+.fc-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; }
+.fc-chip {
+  font-size: 12px; padding: 4px 10px; border-radius: 6px;
+  background: #eef3ff; color: #2b4fb5; border: 1px solid #d3defa;
+}
+.fc-chip.god { background: #fff3d1; color: #7a5a00; border-color: #efd79a; }
+.fc-fan-total { font-size: 19px; font-weight: 700; margin-bottom: 12px; }
+.fc-fan-total em { color: var(--red); font-style: normal; }
+.fc-scores { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.fc-score-card { border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; }
+.fc-score-card h3 { font-size: 13px; margin: 0 0 6px; color: var(--muted); font-weight: 600; }
+.fc-score-card .fc-big { font-size: 20px; font-weight: 700; color: var(--red); }
+.fc-score-card .fc-big span { font-size: 12px; color: var(--muted); font-weight: 400; margin-left: 4px; }
+.fc-score-card table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 12px; }
+.fc-score-card td { padding: 3px 0; color: var(--muted); }
+.fc-score-card td:last-child { text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
+.fc-hint-text { font-size: 13px; color: var(--muted); padding: 6px 0; }
+.fc-modal-mask {
+  position: fixed; inset: 0; background: rgba(20, 24, 32, .45);
+  display: none; align-items: center; justify-content: center; z-index: 100;
+}
+.fc-modal-mask.open { display: flex; }
+.fc-modal {
+  background: var(--card); border-radius: 12px; padding: 18px;
+  width: min(680px, calc(100vw - 32px)); max-height: 84vh; overflow: auto;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .2);
+}
+.fc-modal h3 { margin: 0 0 4px; font-size: 14px; }
+.fc-picker-sub { margin: 0 0 14px; font-size: 12px; color: var(--muted); }
+.fc-group { margin-bottom: 12px; }
+.fc-group-title { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.fc-group-tiles { display: flex; flex-wrap: wrap; gap: 4px; }
+.fc-pick {
+  position: relative; border: 1px solid transparent; border-radius: 6px;
+  cursor: pointer; padding: 2px; background: none; transition: all .1s;
+}
+.fc-pick:hover { border-color: var(--accent); background: #f0f5ff; }
+.fc-pick.disabled { opacity: .32; cursor: not-allowed; }
+.fc-pick .fc-stock {
+  position: absolute; right: -3px; bottom: -3px; min-width: 15px; height: 15px;
+  border-radius: 999px; background: #3a4150; color: #fff; font-size: 10px;
+  display: flex; align-items: center; justify-content: center; padding: 0 3px;
+}
+.fc-pick.disabled .fc-stock { background: #c4c9d2; }
+.fc-modal-foot { display: flex; justify-content: flex-end; margin-top: 10px; }
+@media (max-width: 40rem) { .fc-scores { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <h1>杭州麻将对战平台</h1>
+  <div class="actions">
+    <span id="whoami">沈泽棋</span>
+    <a id="loginBtn" class="btn-link" href="https://10.240.169.190:18080/portal/login" hidden="">网易账号登录</a>
+    <button id="logoutBtn" type="button">退出</button>
+  </div>
+</header>
+
+<div id="error" class="error" hidden=""></div>
+
+<main>
+  <nav id="tabs" class="tabs">
+    <button type="button" data-nav="lobby" class="">赛事大厅</button>
+    <button type="button" data-nav="mine">我的赛事</button>
+    <button type="button" data-nav="testrooms">测试房间</button>
+    <button type="button" data-nav="flow">赛事流程</button>
+    <button type="button" data-nav="guide" class="active">接入指南</button>
+  </nav>
+
+  <section id="view-welcome" hidden="">
+    <div class="hero">
+      <h2>欢迎使用杭州麻将对战平台</h2>
+      <p>用网易账号登录，报名锦标赛，把参赛令牌交给你的 AI 程序即可参赛。</p>
+      <a class="btn-primary" href="https://10.240.169.190:18080/portal/login">网易账号登录</a>
+    </div>
+  </section>
+
+  <section id="view-lobby" hidden="">
+    <div class="section-head">
+      <h2>赛事大厅</h2>
+      <div class="actions"><button id="btn-lobby-refresh" type="button">刷新</button></div>
+    </div>
+    <div id="lobby-cards" class="cards"><article class="card"><div class="card-head"><span class="card-title">9月4日杭麻竞技一测</span><span class="badge s-registering">报名中</span></div><div class="card-body"><div>开赛 2026/9/4 20:00:00</div><div><b>报名 205 人</b></div><div class="muted">报名已截止 2026/9/4 12:00:00</div><div class="card-actions"><span class="muted">报名已截止</span></div></div></article></div>
+  </section>
+
+  <section id="view-flow" hidden="">
+    <div class="section-head">
+      <h2>赛事流程</h2>
+      <div class="actions"><span class="muted">正式锦标赛赛制与参赛流程 · 2026-09-03 版</span></div>
+    </div>
+
+    <div class="flow-call">
+      <b>两句话读懂</b>：正式锦标赛<b>一赛到底、多阶段晋级</b>——一次报名、令牌全程有效，从海选一路打到决赛。
+      每一轮打完会有一小段等待期（由组委会公布下一轮开赛时间），<b>只有决赛打完，整场赛事才算结束</b>。
+    </div>
+
+    <nav class="flow-subnav">
+      <a href="https://10.240.169.190:18080/portal/#flow-stage">赛制一览</a>
+      <a href="https://10.240.169.190:18080/portal/#flow-timeline">参赛时间线</a>
+      <a href="https://10.240.169.190:18080/portal/#flow-advance">晋级与确认</a>
+      <a href="https://10.240.169.190:18080/portal/#flow-rounds">海选与节奏</a>
+      <a href="https://10.240.169.190:18080/portal/#flow-exceptions">异常处理</a>
+      <a href="https://10.240.169.190:18080/portal/#flow-words">名词速查</a>
+    </nav>
+
+    <div class="flow-block" id="flow-stage">
+      <h2>一、赛制一览（按开赛时「到位」人数自动形成）</h2>
+      <div class="flow-info"><b>报名 ≠ 到位</b>：系统按开赛时刻实际<b>到位（已确认出席）</b>的人数定档开赛——只报名、没到位的不计入。
+      报名截止后不再接受新人，后续阶段也<b>不补报</b>。</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>开赛时到位人数</th><th>阶段结构</th><th>怎么打</th></tr></thead>
+          <tbody>
+            <tr><td><b>17 人及以上</b></td><td>海选 → 16强 → 8强 → 决赛</td><td>海选取前 16；16强 4 组 × 4 人、每组前 2 晋级 8 人；8强 2 组 × 4 人、每组前 2 晋级 4 人进决赛</td></tr>
+            <tr><td><b>9 ～ 16 人</b></td><td>海选 → 8强 → 决赛</td><td>海选取前 8；8强 2 组 × 4 人、每组前 2 晋级 4 人进决赛</td></tr>
+            <tr><td><b>5 ～ 8 人</b></td><td>海选（资格轮）→ 决赛</td><td>海选取前 4 进决赛</td></tr>
+            <tr><td><b>4 人</b></td><td>决赛（无海选淘汰）</td><td>4 人直接进入决赛轮</td></tr>
+            <tr><td><b>不足 4 人</b></td><td>赛事取消</td><td>自动作废，不产生任何名次</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <ul>
+        <li><b>海选（阶段 1）</b>：全体到位的报名者参赛，逐批随机同桌，打出全员排名——这是后续一切轮次取人、候补、分组的<b>唯一排序依据</b>。</li>
+        <li><b>中间轮（16强 / 8强）</b>：4 人一组、组内循环对局，<b>组内</b>前 2 晋级（组与组之间分数不互相比较）。</li>
+        <li><b>决赛</b>：固定 4 人，打完直接产出 1-4 名；出现同分会自动加赛（见「晋级与确认」一节）。</li>
+        <li>阶段数量随人数自动生成；到位人数变化引起的<b>自动降档</b>是系统防御安排，正常组织不会触发（见「异常处理」）。</li>
+      </ul>
+    </div>
+
+    <div class="flow-block" id="flow-timeline">
+      <h2>二、参赛时间线（你会经历的六个环节）</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>环节</th><th>这段发生什么</th><th>你需要做什么</th></tr></thead>
+          <tbody>
+            <tr><td><span class="flow-chip">1</span>报名期</td><td>赛事页开放报名至报名截止，截止后不再接受任何人</td><td>赛事页报名、取得身份令牌；<b>让程序上线并「到位」</b>（确认出席）</td></tr>
+            <tr><td><span class="flow-chip">2</span>海选</td><td>到开赛时刻自动开赛：分批随机同桌、每桌 4 人；凑不成整桌的少数选手该批轮空（0 分）。全部打完后全员排名落定</td><td>程序持续在线打牌</td></tr>
+            <tr><td><span class="flow-chip">3</span>晋级公布</td><td>排名落定，产生下一轮晋级名单与候补池，比赛进入「等待下一阶段」</td><td>查看自己的排名与资格状态；<b>晋级者与候补会看到本轮资格提示</b></td></tr>
+            <tr><td><span class="flow-chip">4</span>确认期</td><td>组委会公布下一阶段开赛时间；到开赛时刻自动「冻结」——已确认者按名次取足名额</td><td><b>晋级者与候补重新确认到位</b>——确认不跨阶段继承，上一轮确认过也没用；未确认 = 自动让位</td></tr>
+            <tr><td><span class="flow-chip">5</span>阶段对局</td><td>到点自动开赛：按名次分组、组内循环；打完 → 组内前 2 晋级 → 回到环节 3，循环至决赛</td><td>程序持续在线打牌</td></tr>
+            <tr><td><span class="flow-chip">6</span>决赛与收尾</td><td>4 人决赛，同分自动加赛，直到 1-4 名分数两两不同 → 赛事结束、名次锁定</td><td>加赛场次会自动出现，程序照常打即可</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <ul>
+        <li><b>海选无需二次确认</b>——报名期内完成到位，到点自动开赛。</li>
+        <li><b>决赛打完即结束</b>，没有「决赛后的等待期」；反过来，晋级轮打完 ≠ 整赛结束。</li>
+        <li>被淘汰或整赛结束后，你的历史对局与各阶段成绩都能在平台上查到。</li>
+      </ul>
+    </div>
+
+    <div class="flow-block" id="flow-advance">
+      <h2>三、晋级、确认与成绩判定</h2>
+      <div class="flow-warn"><b>最容易忽略的一条</b>：进入新阶段前，<b>晋级者与候补都必须重新确认出席</b>——系统只认名次、不认谁先确认；忘了确认 = 名额自动让给已确认的候补。</div>
+
+      <h3>每轮开始前（确认期）的规则</h3>
+      <ul>
+        <li><b>谁能确认</b>：上一阶段第 1..G 名<b>晋级者</b>，以及紧随其后的<b>候补</b>（第 G+1..2G 名；上一阶段总人数不足时，未晋级者全部列入候补）。名单内的人才需要、也才允许确认。</li>
+        <li><b>确认不跨阶段继承</b>：每个新阶段都要重新确认；平台会提示你是否拥有本轮资格（晋级 / 候补）。</li>
+        <li><b>到点自动冻结</b>：开赛时刻按<b>已确认者的名次顺序</b>取足名额。谁确认得早没有用，只认名次；<b>晋级者未确认 = 自动让位</b>，由已确认的候补按名次递补上场。</li>
+        <li><b>结果开赛才揭晓</b>：实际入围名单到开赛那一刻才确定，平台<b>不公示实时确认人数</b>（公平起见）。请以你的资格状态、以及开赛后出现的新对局为准。</li>
+        <li><b>分组不用你操心</b>：按名次种子蛇形分组（16强→8强等轮次还会尽量让上一轮同组的选手不提前碰面）。</li>
+      </ul>
+
+      <h3>成绩怎么判（谁晋级、谁拿名次）</h3>
+      <p>每个阶段用三个<b>相互独立、永不相加</b>的键排序：</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>排序键</th><th>名称</th><th>含义</th></tr></thead>
+          <tbody>
+            <tr><td>键 1</td><td><b>总得分</b></td><td>本阶段每局局分累计（流局 0 分）。每阶段独立起算，不带入下一阶段</td></tr>
+            <tr><td>键 2</td><td><b>名次分</b></td><td>每桌打完按本场总得分排 1-4 位：+3 / +1 / −1 / −3；本场同分共享并列区间平均（如 1、2 名并列各 +2）。<b>不进总得分</b>，仅作同分裁决，只在晋级轮累计</td></tr>
+            <tr><td>键 3</td><td><b>白板获取数</b></td><td>本阶段每局配牌到手即有的 + 过程中摸到的白板总数（白板不能吃碰杠，不会重复计）。只在晋级轮累计</td></tr>
+            <tr><td>兜底</td><td>平台内部顺序</td><td>三键全部相同的极端并列，按平台确定顺序拆分（以平台展示为准）</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <ul>
+        <li><b>晋级轮</b>（海选 / 16强 / 8强）：按 键1 → 键2 → 键3 排序；<b>中间轮只比组内</b>——每组前 2 晋级，不跨组比分数。</li>
+        <li><b>轮空场次</b>：0 分，不计名次分、不计白板。</li>
+      </ul>
+      <div class="flow-call"><b>决赛规则不一样</b>：名次<b>完全看总得分</b>，名次分与白板一概不参与。四位选手<b>任何两人同分（冠亚、亚季、季殿都算）立即自动加赛</b>——4 人再打一场、得分并入总账重排，循环到 1-4 名分数两两不同为止，<b>无加赛场次上限</b>；加赛场的完整对局记录同样可查。</div>
+      <div class="flow-info">名次分与白板数的统计口径含配牌瞬间等平台内部时点，<b>参赛方无需也无法自行复算</b>——一切以平台公布的数值为准。</div>
+    </div>
+
+    <div class="flow-block" id="flow-rounds">
+      <h2>四、海选怎么打 &amp; 对局节奏</h2>
+      <h3>海选：分批随机同桌，余数轮空</h3>
+      <ul>
+        <li>海选按<b>批</b>推进：每批尽量让所有选手都上桌，每桌 4 人，<b>同桌组合随机</b>（不同批之间可能再次同桌）。</li>
+        <li>一批凑不成整桌的少数选手<b>该批轮空</b>：本批 0 分、不计名次分与白板，仅计「已参与」；不影响后续批次的抽签机会。</li>
+        <li>同一时点每位选手同时在打的场数（M）与每场局数由组委会配置；「我的赛事」详情会实时列出你的应打场次与进度。</li>
+      </ul>
+      <h3>对局节奏：掉线不会拖住比赛</h3>
+      <ul>
+        <li>平台默认：出牌思考约 3 秒，<b>超时由系统代打</b>（自动打出最右侧一张牌）；吃/碰响应窗口约 1 秒并固定走满。具体数值以本场赛程说明为准。</li>
+        <li>对局不因某一方掉线停滞；但长期离线会错过吃碰杠与胡牌时机，直接影响你的成绩——请保证程序在比赛期间持续在线。</li>
+        <li>摸牌后是否胡牌由你的程序决策，平台有超时兜底，不会因程序异常卡住对局。</li>
+      </ul>
+    </div>
+
+    <div class="flow-block" id="flow-exceptions">
+      <h2>五、异常与防御安排（正常情况不会遇到）</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>情形</th><th>平台行为</th></tr></thead>
+          <tbody>
+            <tr><td>开赛 / 某轮冻结时到位人数不足 4 人</td><td>本赛事<b>自动取消</b>（作废、无名次）。报名截止前请务必确认到位</td></tr>
+            <tr><td>某轮到位人数不足本轮名额，但 ≥ 4 人</td><td>自动<b>降档</b>：人数落 9-16 → 本轮按 8强 规模打；落 4-8 → <b>直接变为决赛轮</b>（取前 4，后续轮次取消）。组委会组织齐人时不发生</td></tr>
+            <tr><td>平台服务异常重启，某阶段进行中被打断</td><td>该阶段<b>重赛本轮</b>：中断前本阶段对局记录清空作废，组委会重新公布开赛时间，<b>名单不变但确认重做</b>，到点重打。中断状态平台会明确标注</td></tr>
+            <tr><td>组委会中途关闭赛事</td><td>停止推进与结算，不再产生晋级 / 决赛名次；<b>已打完场次的成绩照常可查</b></td></tr>
+            <tr><td>你在某轮开始前未确认到位</td><td>本轮名额自动让出（候补递补），无额外处罚；名次以你止步阶段的成绩为准</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="flow-block" id="flow-words">
+      <h2>六、名词速查</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>词</th><th>含义</th></tr></thead>
+          <tbody>
+            <tr><td><b>到位</b></td><td>向平台确认出席。海选 = 报名后程序上线确认；后续每轮 = 确认期内的阶段确认（每轮都要重新做）</td></tr>
+            <tr><td><b>海选</b></td><td>阶段 1：全体到位的报名者参赛，打出全场唯一排名</td></tr>
+            <tr><td><b>16强 / 8强</b></td><td>中间轮：4 人一组组内循环，组内前 2 晋级</td></tr>
+            <tr><td><b>决赛</b></td><td>末轮：4 人打到底，名次按总得分唯一排定（并列自动加赛）</td></tr>
+            <tr><td><b>总得分</b></td><td>本阶段局分累计，晋级与决赛名次的根本依据</td></tr>
+            <tr><td><b>名次分</b></td><td>每桌每场 ±3 / ±1 / −1 / −3 的奖励分；只作同分裁决、不进总分，仅晋级轮累计</td></tr>
+            <tr><td><b>白板</b></td><td>本赛制中的财神（百搭）牌；白板获取数作为第三裁决键，仅晋级轮累计</td></tr>
+            <tr><td><b>轮空</b></td><td>海选中某批未凑成桌的落单选手，该批 0 分</td></tr>
+            <tr><td><b>候补</b></td><td>每轮晋级名单后按名次预备的替补；晋级者未确认时按名次递补上场</td></tr>
+            <tr><td><b>确认期</b></td><td>每轮开赛前的出席确认窗口，到开赛时刻自动冻结</td></tr>
+            <tr><td><b>加赛</b></td><td>决赛出现同分时自动追加的对局（得分并账，可反复发生，无上限）</td></tr>
+            <tr><td><b>重赛本轮</b></td><td>平台服务中断后对被打断阶段的重打（同名单、确认重做、旧成绩清空）</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="muted" style="font-size: 0.85rem; margin-top: 0.6rem;">胡牌、番型与计分的具体规则见本页「接入指南 → 对战规则」，也可用其中的番型计算工具实时试算。</p>
+    </div>
+  </section>
+
+  <section id="view-mine" hidden="">
+    <div class="section-head">
+      <h2>我的赛事</h2>
+      <div class="actions"><button id="btn-mine-refresh" type="button">刷新</button></div>
+    </div>
+    <div id="mine-cards" class="cards"></div>
+  </section>
+
+  <section id="view-testrooms" hidden="">
+    <div class="section-head">
+      <h2>测试房间</h2>
+      <div class="actions"><button id="btn-rooms-refresh" type="button">刷新</button></div>
+    </div>
+    <form id="room-create">
+      <label>同时场数 M <input type="number" id="room-m" min="1" max="16" value="10" required=""></label>
+      <label>局数（每场）<input type="number" id="room-rounds" min="1" value="1" required=""></label>
+      <label>底分 <input type="number" id="room-base" min="1" value="1" required=""></label>
+      <label>碰窗口（秒）<input type="number" id="room-peng" min="1" step="1" value="1"></label>
+      <label>吃窗口（秒）<input type="number" id="room-chi" min="1" step="1" value="1"></label>
+      <label>出牌思考（秒）<input type="number" id="room-discard" min="1" step="1" value="3"></label>
+      <label>开赛超时（分钟）<input type="number" id="room-timeout" min="1" max="60" value="30" required=""></label>
+      <label class="check"><input type="checkbox" id="room-kao"> 有财必拷响</label>
+      <button type="submit">创建</button>
+      <span id="room-create-err" class="err"></span>
+    </form>
+    <div id="room-tokens" hidden="">
+      <h3>测试玩家令牌（仅显示一次，请立即复制）</h3>
+      <ol id="room-token-list"></ol>
+    </div>
+    <div class="room-list-toolbar">
+      <button id="btn-delete-rooms" type="button" disabled="">删除所选</button>
+      <span id="room-delete-err" class="err"></span>
+    </div>
+    <div id="room-list" class="cards"></div>
+  </section>
+
+  <section id="view-room" hidden="">
+    <div class="section-head">
+      <h2 id="room-title"></h2>
+      <div class="actions">
+        <button id="btn-room-refresh" type="button">刷新</button>
+        <button type="button" data-back="room">返回</button>
+      </div>
+    </div>
+    <h3>测试玩家（改名即时生效，观战/复盘按名字对号）</h3>
+    <div id="room-players" class="cards"></div>
+    <h3>比赛实况</h3>
+    <div id="room-games" class="cards"></div>
+    <h3>实时排名</h3>
+    <div class="table-wrap">
+      <table id="room-ranking">
+        <thead><tr><th>名次</th><th>用户</th><th>积分</th><th>名次分</th><th>白板</th><th>场数</th></tr></thead>
+        <tbody id="room-ranking-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="view-tournament" hidden="">
+    <div class="section-head">
+      <h2 id="tour-title"></h2>
+      <div class="actions">
+        <button id="btn-tour-refresh" type="button">刷新</button>
+        <button id="btn-ranking" type="button">实时排名</button>
+        <button type="button" data-back="tournament">返回</button>
+      </div>
+    </div>
+    <div id="tour-desc" class="desc-block" hidden=""></div>
+    <div id="tour-stage"></div>
+    <h3>我的比赛</h3>
+    <div id="tour-games"></div>
+    <h3>实时排名</h3>
+    <div class="table-wrap">
+      <table id="tour-ranking">
+        <thead><tr><th>名次</th><th>用户</th><th>积分</th><th>名次分</th><th>白板</th><th>场数</th></tr></thead>
+        <tbody id="tour-ranking-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="view-game" hidden="">
+    <div class="section-head">
+      <h2 id="game-title"></h2>
+      <div class="actions"><button type="button" data-back="game">返回</button></div>
+    </div>
+    <div id="game-banner" class="game-banner" hidden=""></div>
+    <div id="game-meta"></div>
+    <div id="game-seats" class="seat-grid"></div>
+    <h3>我的手牌</h3>
+    <div id="game-hand"></div>
+    <h3>事件时间线</h3>
+    <div id="game-events" class="events"></div>
+    <h3 id="game-review-title" hidden="">复盘</h3>
+    <div id="game-review" hidden=""></div>
+  </section>
+
+  <section id="view-ranking" hidden="">
+    <div class="section-head">
+      <h2 id="ranking-title"></h2>
+      <div class="actions"><button type="button" data-back="ranking">返回</button></div>
+    </div>
+    <div class="table-wrap">
+      <table id="ranking-table">
+        <thead><tr><th>名次</th><th>用户</th><th>积分</th><th>名次分</th><th>白板</th><th>场数</th></tr></thead>
+        <tbody id="ranking-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="view-guide">
+    <div class="section-head">
+      <h2>接入指南</h2>
+      <div class="actions"><span class="muted">规则 · API 参考 · 最小 Bot</span></div>
+    </div>
+
+    <nav class="guide-subnav">
+      <a href="https://10.240.169.190:18080/portal/#guide-rules">对战规则</a>
+      <a href="https://10.240.169.190:18080/portal/#guide-api">API 参考</a>
+      <a href="https://10.240.169.190:18080/portal/#guide-bot">最小 Bot</a>
+    </nav>
+
+    <div class="guide-block" id="guide-version">
+      <h2>指南版本与最近变更</h2>
+      <div id="guide-version-body"><div class="gv-head"><span class="gv-version">指南版本 v11</span><span class="gv-tip muted">bot 自检：<code>GET /portal/api/guide/version</code>（免认证，5/s）</span></div><div class="gv-changes"><div class="gv-item changed"><span class="gv-badge changed">修改</span><span class="gv-summary">state 轮询限速放宽 8/s → 16/s（每用户聚合）</span><span class="gv-date">09-03</span><div class="gv-detail">GET /api/games/{id}/state 频率上限由 8/s 放宽至 16/s（per-user 聚合，跨全部对局共享一桶；并发挂起 ≤32 不变）。放宽依据：服务端认证缓存（AuthLookup）落地后每 poll 零 DB 查询，2000 用户×500 桌 A/B 压测 24k poll/s 稳定（CPU ≤3.2/16 核、570 万 poll 仅 2000 次 DB 查询）。收益场景：M=10-11 桌事件驱动 bot（需求 ≈10×事件率 1.34/s ≈13.4/s）在旧 8/s 墙下会 429 断档、错过吃碰 1s 窗口；16/s 下全覆盖。旧 bot 按 8/s 自限无需改动（墙 &gt; 自限即安全）；16/s 是新上限。</div></div><div class="gv-item changed"><span class="gv-badge changed">修改</span><span class="gv-summary">/state 跨局边界轮询：seq 落后当前局立即返回全量快照（不再挂起至庄家出牌超时）</span><span class="gv-date">09-03</span><div class="gv-detail">GET /api/games/{id}/state?seq=N：每局结束（round_ended，含流局）服务端自动重发新局，但发牌不产生任何事件——round_ended 是上一局最后事件，庄家第 14 张为发牌直抽、无 tile_drawn，事件流在新局首个动作/超时前为空。旧行为：局终后客户端按协议 poll(seq=上一局 round_ended 的 seq) 因无新事件而挂起，事件流第一批新局信号 = 庄家 DiscardTimeout 后的超时自动出牌：先发 tile_discarded（含被代打的牌张），同批紧跟 timeout kind=discard（按事件类型过滤的 bot 勿漏先行的 tile_discarded）——客户端拿到新局手牌前牌已被服务端代打一张。新行为：poll 的 seq 落后当前局（seq &lt; 当前局首事件水位，即客户端还停在上一局）时立即返回全量快照（snapshot 含 round_no/phase/my_hand/seat，gap:true），round_ended 后照常 poll(seq=上次返回的 seq) 即可在出牌超时前拿到新局手牌；快照响应形态与既有 seq=0/gap 快照一致，事件驱动与快照轮客户端均无需改动。</div></div><div class="gv-item changed"><span class="gv-badge changed">修改</span><span class="gv-summary">测试房间数据 API（免认证）限速粒度由 per-IP 改为 per-房间</span><span class="gv-date">09-03</span><div class="gv-detail">GET /api/test-rooms/{id}/games 与 /games/{batch}/events：原 per-IP 桶（5/s）在 caddy 反代后所有请求同源 IP，等于全站共享一个桶——任一房间的并行流量（他人测试/多会话/取证突发）会 429 挤占所有其他房间。现改为双闸：主闸每房间独立 5/s（不同房间互不挤占，单房内轮询+取证连发充裕）+ 兜底每来源 1000/s（按全站容量设：500 房并行轮询稳态 ≈ 300/s，墙值须容纳正常规模，只拦盲扫与单源洪水）。放宽非破坏：单房频率上限不变，旧调用姿态不受影响，仅消除跨房误伤；429 响应结构与 RATE_LIMITED 码不变。</div></div><div class="gv-more"><button type="button" onclick="toggleGuideHistory()">查看完整变更历史（27 条）</button></div><div id="gv-full" hidden=""><div class="gv-item changed"><span class="gv-badge changed">修改</span><span class="gv-summary">state 轮询限速放宽 8/s → 16/s（每用户聚合）</span><span class="gv-date">09-03</span><div class="gv-detail">GET /api/games/{id}/state 频率上限由 8/s 放宽至 16/s（per-user 聚合，跨全部对局共享一桶；并发挂起 ≤32 不变）。放宽依据：服务端认证缓存（AuthLookup）落地后每 poll 零 DB 查询，2000 用户×500 桌 A/B 压测 24k poll/s 稳定（CPU ≤3.2/16 核、570 万 poll 仅 2000 次 DB 查询）。收益场景：M=10-11 桌事件驱动 bot（需求 ≈10×事件率 1.34/s ≈13.4/s）在旧 8/s 墙下会 429 断档、错过吃碰 1s 窗口；16/s 下全覆盖。旧 bot 按 8/s 自限无需改动（墙 &gt; 自限即安全）；16/s 是新上限。</div></div><div class="gv-item changed"><span class="gv-badge changed">修改</span><span class="gv-summary">/state 跨局边界轮询：seq 落后当前局立即返回全量快照（不再挂起至庄家出牌超时）</span><span class="gv-date">09-03</span><div class="gv-detail">GET /api/games/{id}/state?seq=N：每局结束（round_ended，含流局）服务端自动重发新局，但发牌不产生任何事件——round_ended 是上一局最后事件，庄家第 14 张为发牌直抽、无 tile_drawn，事件流在新局首个动作/超时前为空。旧行为：局终后客户端按协议 poll(seq=上一局 round_ended 的 seq) 因无新事件而挂起，事件流第一批新局信号 = 庄家 DiscardTimeout 后的超时自动出牌：先发 tile_discarded（含被代打的牌张），同批紧跟 timeout kind=discard（按事件类型过滤的 bot 勿漏先行的 tile_discarded）——客户端拿到新局手牌前牌已被服务端代打一张。新行为：poll 的 seq 落后当前局（seq &lt; 当前局首事件水位，即客户端还停在上一局）时立即返回全量快照（snapshot 含 round_no/phase/my_hand/seat，gap:true），round_ended 后照常 poll(seq=上次返回的 seq) 即可在出牌超时前拿到新局手牌；快照响应形态与既有 seq=0/gap 快照一致，事件驱动与快照轮客户端均无需改动。</div></div><div class="gv-item changed"><span class="gv-badge changed">修改</span><span class="gv-summary">测试房间数据 API（免认证）限速粒度由 per-IP 改为 per-房间</span><span class="gv-date">09-03</span><div class="gv-detail">GET /api/test-rooms/{id}/games 与 /games/{batch}/events：原 per-IP 桶（5/s）在 caddy 反代后所有请求同源 IP，等于全站共享一个桶——任一房间的并行流量（他人测试/多会话/取证突发）会 429 挤占所有其他房间。现改为双闸：主闸每房间独立 5/s（不同房间互不挤占，单房内轮询+取证连发充裕）+ 兜底每来源 1000/s（按全站容量设：500 房并行轮询稳态 ≈ 300/s，墙值须容纳正常规模，只拦盲扫与单源洪水）。放宽非破坏：单房频率上限不变，旧调用姿态不受影响，仅消除跨房误伤；429 响应结构与 RATE_LIMITED 码不变。</div></div><div class="gv-item added"><span class="gv-badge added">新增</span><span class="gv-summary">门户 API 新增 description（赛程说明）+ 锦标赛名称可编辑</span><span class="gv-date">09-03</span><div class="gv-detail">GET /portal/api/tournaments（大厅行）与 GET /portal/api/tournaments/{id}（参赛者详情）新增 description 字段：赛程规则等运营说明，可空、多行（报名确认层与赛事详情展示）。GET /api/tournaments/{id} 与 /api/tournaments/me/rules 的 config 对象内亦同步新增 Description 键（同值）。锦标赛名称与描述可由管理员在任意阶段修改（PATCH /admin/api/tournaments/{id}，管理端操作）；名称仍可空（空串回退 id 展示不变）。兼容新增——旧客户端按未知键忽略即可；报名令牌与对局契约不变。</div></div><div class="gv-item breaking"><span class="gv-badge breaking">BREAKING</span><span class="gv-summary">顶层 status 新值 stage_open/stage_done + 阶段间空转窗口</span><span class="gv-date">09-02</span><div class="gv-detail">GET /api/tournaments/{id} 与 /me/rules 的 status 新增 stage_open（阶段 2+ 确认期：晋级名单已生成、ready 确认中、等开赛时刻；只接受名单内确认）与 stage_done（当前阶段场次全部打完并结算——晋级轮等管理员推进下一阶段；running 中断收敛也落 stage_done，叠加 stage_crashed=true 表示「中断待重赛」，bot 须区分「正常 done」与「中断」）。stage_open/stage_done 间隙期 /api/me 的 active_games 为空（my_games 为历史累计、非空，新场追加；阶段 2+ 的 ready_users 恒 0，防泄底）——空转窗口 ≠ 结束/异常，bot 必须继续轮询锦标赛 status 直至 finished/closed/void。</div></div><div class="gv-item breaking"><span class="gv-badge breaking">BREAKING</span><span class="gv-summary">ready 跨阶段语义：stage_open 的 ready = 阶段出席确认（新增 NOT_QUALIFIED 错误码）</span><span class="gv-date">09-02</span><div class="gv-detail">POST /api/tournaments/{id}/ready 与 /me/ready 在 stage_open 阶段 2+ 为阶段确认：名单内（晋级者/候补）幂等成功 200 {"ready":true}；名单外（海选已淘汰仍 registered、或未报名者）409 NOT_QUALIFIED（新码）。阶段确认不跨阶段继承——每阶段晋级者与候补都要在确认期内重新确认（漏确认不冻结；到点按已确认者全序取前 G，候补顶替）。非确认期（running/stage_done/finished/void）→ 409 TOURNAMENT_STARTED；closed → 409 TOURNAMENT_CLOSED；阶段 1 registering 未报名 → 409 NOT_REGISTERED（不变）。</div></div><div class="gv-item breaking"><span class="gv-badge breaking">BREAKING</span><span class="gv-summary">ranking games_played 改为当阶段累计（每阶段归零）</span><span class="gv-date">09-02</span><div class="gv-detail">GET /api/tournaments/{id} ranking 条目的 games_played 语义从「整赛累计」改为「当前阶段累计」：每阶段开赛清零、只计该玩家本阶段已打完场次（含轮空；决赛加赛场次同账续接）。旧 bot 若用 games_played 与规划总局数比对判断进度/终局将失效——进度判断改用 status/stage 字段组。口径补注（字段名沿旧、历史留痕）：games_played 实际按局（round）累计——每局结束本桌每名参与者 +1（含流局），轮空一场 +1；每场 N 局则打满一场计 N，勿当「场次数」用。</div></div><div class="gv-item added"><span class="gv-badge added">新增</span><span class="gv-summary">ranking 新增 place_points/god_count 三键字段</span><span class="gv-date">09-02</span><div class="gv-detail">GET /api/tournaments/{id} ranking 条目新增 place_points（名次分）与 god_count（白板获取数），与 total_score/games_played/rank(1..n) 并列——兼容新增，旧 bot 按未知键忽略即可。</div></div><div class="gv-item added"><span class="gv-badge added">新增</span><span class="gv-summary">GET /api/tournaments/{id} 新增阶段字段组（stage/qualified/qualify_role）</span><span class="gv-date">09-02</span><div class="gv-detail">开赛后响应新增：stage{no,role,total,name}（当前阶段号/角色 qualify|final/当前推断阶段总数/显示名：原名｜原名-第N轮｜原名-决赛）、stage_status（open|running|done）、stage_crashed（true=中断待重赛）、qualified/qualify_role（请求者本阶段资格：finalist 晋级 / backup 候补；阶段 1 无名单 → false/空，唯阶段 1 崩溃重赛的确认期例外——报名全量 qualified=true、role 空）。registering（未开赛）整组省略，旧字段逐字节不变。stage.total 随降档/翻转动态收缩——bot 不可按创建时规划轮次，一律以当前 status/stage 为准。</div></div><div class="gv-item breaking"><span class="gv-badge breaking">BREAKING</span><span class="gv-summary">普通锦标赛按报名人数多阶段化（小规模赛制变化）+ 决赛加赛新 game_id 自动出现</span><span class="gv-date">09-02</span><div class="gv-detail">普通锦标赛（kind 为空；创建参数不变）按报名人数 m 自动走多阶段晋级：m≥17 海选→16强(4组×4人)→8强(2组×4人)→决赛(4人)；9≤m≤16 海选→8强→决赛；5≤m≤8 海选(资格)→决赛；m=4 直接决赛（无淘汰）；m&lt;4 到点作废 no_players。每阶段组内循环 M 场（M/N 跨阶段一致），非决赛轮打完 stage_done（admin 推进下一阶段），决赛打完才 finished——旧 bot 假设「running 后即 finished」必须改为多阶段循环。决赛轮常规场次打完若 1-4 名总得分并列 → running 态自动加赛并账循环（无上限）：加赛新场 game_id 自动出现（{tourID}_s{k}_b{b}_t{t}，批号全局续编）不另行通知——bot 在 running 态持续轮询 /api/me active_games 或 GET /api/tournaments/{id} my_games（历史累计、新 ID 追加）发现新场照常参赛。my_games_by_batch 键 = 全局场序、每键恰 1 场（跨阶段单调续编），非「批号分组」——bot 勿按批号索引取组。测试房间（kind=test）单阶段路径不变。</div></div><div class="gv-item added"><span class="gv-badge added">新增</span><span class="gv-summary">晋级轮判定链与决赛规则（名次分/白板获取数）</span><span class="gv-date">09-02</span><div class="gv-detail">晋级轮（海选/中间轮）排名键序：total_score → place_points → god_count → user_id（字典序兜底），三键独立永不相加；名次分每场 1 位 +3 / 2 位 +1 / 3 位 −1 / 4 位 −3、本场同分共享并列区间平均，不进总得分；白板获取数口径 = 配牌扫全手（庄家含第 14 张直抽首摸）+ 每次墙摸摸到白板（含杠上摸），不可经事件流复算，轮空积 0；决赛轮名次纯由 total_score 决定（键 2/3/4 不参与），任何名次同分即加赛并账至 1-4 名两两不同，加赛场不产生键 2/3。权威细则（含并列区间平均表）见 docs/胡牌规则与番数计算.md §7。</div></div><div class="gv-item changed"><span class="gv-badge changed">修改</span><span class="gv-summary">fan-calc 番型计算修复与放宽：4 白板计入链内飘出 + chain.count 上限 0-3 → 0-6</span><span class="gv-date">09-02</span><div class="gv-detail">POST /portal/api/tools/fan-calc（试算工具，口径与对局结算同源）：① 修复——4 白板判定白板总数 = 手留 + 链内飘出白板（此前仅手留，链飘场景漏 ×2：三豪华七对+三财飘+爆头由 256 修正为 512）；② chain.count 校验 0-3 → 0-6（引擎杠×3+飘×3 可达 6，此前工具无法复现平胡分支 ×256 最大牌型）；③ 新增 400：手留白板 + chain.piao &gt; 4（白板共 4 张物理约束，此前 200 静默少乘）。旧响应不变场景数值不变；对拍工具输出与对局 round_ended fan/detail 的 bot 应在修复后一致。</div></div><div class="gv-item added"><span class="gv-badge added">新增</span><span class="gv-summary">测试房间跨轮复用：finished 已报名令牌 register 幂等放行（进场协议兼容）</span><span class="gv-date">09-02</span><div class="gv-detail">修复 v4 跨轮复用与「register→ready」进场协议的衔接：已报名用户对 finished 测试房 POST /register 现返回成功（幂等，不再 TOURNAMENT_STARTED）——按 register→ready 协议进场的 bot 第 2 轮不再误判「已开赛」跳过 ready，ready×4 即可开启下一轮。running 中 register 仍 TOURNAMENT_STARTED（已开赛重连语义不变）；未报名用户对 finished 房 register 仍拒绝（新用户不能中途加入后续轮）；正式锦标赛行为不变。旧 bot 无需改动（本次为放行型修正，无破坏）。</div></div><div class="gv-item added"><span class="gv-badge added">新增</span><span class="gv-summary">测试房间跨轮复用：finished 后 4 令牌 ready×4 开启新一轮 + 空闲自动关闭</span><span class="gv-date">09-02</span><div class="gv-detail">测试房间跨轮复用（房间 id/令牌不变，round_no 递增，列表与详情响应透出 round_no/timeout_min）：① finished 后 4 个令牌再次各 ready 一次即开启下一轮（ready 幂等累积）；running 尾窗（末局结束前）到达的 ready 返回 409 TOURNAMENT_STARTED —— 非终态瞬时错误，轮询房间状态至 finished 后重试 ready 即可；② finished 不再等价「终局可删除」——状态可能回退 registering（ready_users 每轮重置归零）、空闲 {timeout_min} 分钟（默认 30，创建时配置）无人 ready 自动 close（正常生命周期，非故障）；③ 观赛快照仅覆盖服务进程内存中的场次（重开/重启后历史轮场次不再可快照），历史轮复盘走 GET /portal/api/games/{id}/events（DB 持久，不受重开影响）。</div></div><div class="gv-item changed"><span class="gv-badge changed">修改</span><span class="gv-summary">规则修订：七对允许财飘（全局最大番型 ×512）</span><span class="gv-date">09-02</span><div class="gv-detail">撤销「七对不能财飘」：七对形爆头听牌（如 3 组四张 + 1 白）可弃胡打白飘，飘/杠链因子与七对分支连乘。全局最大牌型 = 三豪华七对 + 三财飘 + 4 白板 + 爆头 = ×16 × 8 × 2 × 2 = ×512（原文档标称 ×256 实为平胡分支上限）。对局结算行为本已按此计（引擎无改动），追求最大番的离线策略模型与文档预期须更新。</div></div><div class="gv-item breaking"><span class="gv-badge breaking">BREAKING</span><span class="gv-summary">快照移除 allowed_actions（客户端自研动作判定）</span><span class="gv-date">09-02</span><div class="gv-detail">GET /api/games/{id}/state 快照不再含 allowed_actions——客户端须依 seat/phase/turn/responding_seats/drawn_tile/god.catch_play 自研判定可执行动作（phase ∈ deal|draw|response_peng|response_chi|settled|finished）；窗口「已响应」状态须客户端本地跟踪（重复提交 pass/动作返回 409 INVALID_ACTION）。旧 bot 按 allowed_actions 行动的逻辑全部失效，必须重写判定。</div></div><div class="gv-item added"><span class="gv-badge added">新增</span><span class="gv-summary">chi 支持 tiles 指定吃组合</span><span class="gv-date">09-02</span><div class="gv-detail">POST /api/games/{id}/action 吃可附加 "tiles":["1w","2w"] 指定用哪两张手牌吃（多组合场景如 2w3w4w5w6w 吃 4w 可选 3 组；乱序容忍、等价匹配）；缺省回退第一组可行顺子（向后兼容）。</div></div><div class="gv-item added"><span class="gv-badge added">新增</span><span class="gv-summary">快照补充 seat 字段</span><span class="gv-date">09-02</span><div class="gv-detail">快照新增 seat（本人座位号 0-3；观赛视角 -1），配合 phase/turn 自研判定——allowed_actions 移除后客户端自主决策的必要信息。</div></div><div class="gv-item breaking"><span class="gv-badge breaking">BREAKING</span><span class="gv-summary">碰后禁止胡牌</span><span class="gv-date">09-02</span><div class="gv-detail">胡牌新增「刚摸牌」门禁：碰/吃/杠动作后、摸牌前提交 {"action":"hu"} 返回 409 INVALID_ACTION。旧 bot 若依赖「碰后即胡」需改为先等摸牌事件再胡。</div></div><div class="gv-item changed"><span class="gv-badge changed">修改</span><span class="gv-summary">state 轮询限速放宽 5/s → 8/s</span><span class="gv-date">09-01</span><div class="gv-detail">GET /api/games/{id}/state 频率上限放宽（单 AI 同时 M=16 桌轮询需求 ≈6.4/s）。旧 bot 无需改动，但 8/s 是新上限。</div></div><div class="gv-item breaking"><span class="gv-badge breaking">BREAKING</span><span class="gv-summary">番数计算按用户裁决体系重构</span><span class="gv-date">09-01</span><div class="gv-detail">总番=1 → 分支（平胡/七对）→ 动作链（飘/杠每动作 ×2）→ 4 白板 ×2 → 爆头 ×2 最后统一加；七对×2×2^豪华组数。旧 bot 的得分预期模型（如庄家 ×8 递增）不再适用，须按新公式重算。</div></div><div class="gv-item added"><span class="gv-badge added">新增</span><span class="gv-summary">番型计算工具 fan-calc（免认证）</span><span class="gv-date">09-01</span><div class="gv-detail">新增 POST /portal/api/tools/fan-calc：13 张手牌 + 1 张摸牌实时计算胡牌判定/爆头/番型/庄闲得分，免登录、每 IP 10/s。AI 可作离线试算与结算校验。</div></div><div class="gv-item added"><span class="gv-badge added">新增</span><span class="gv-summary">报名令牌作用域直达端点</span><span class="gv-date">09-01</span><div class="gv-detail">新增 GET /api/tournaments/me/rules 与 POST /api/tournaments/me/ready：报名令牌免带锦标赛 id 直达规则与到位；全局令牌调用返回 400 TOKEN_NOT_SCOPED。</div></div><div class="gv-item added"><span class="gv-badge added">新增</span><span class="gv-summary">测试房间赛后数据 API（免认证）</span><span class="gv-date">09-01</span><div class="gv-detail">新增 GET /api/test-rooms/{id}/games 与 /api/test-rooms/{id}/games/{batch}/events：房间 id 即凭证，拉取完整对战事件流（含四家手牌）供离线复盘与算法优化；running 场次 403 GAME_NOT_FINISHED。</div></div><div class="gv-item changed"><span class="gv-badge changed">修改</span><span class="gv-summary">观战快照与复盘座位→玩家名映射</span><span class="gv-date">09-01</span><div class="gv-detail">GET /portal/api/games/{id}/snapshot 与事件流响应新增 seats 字段（座位→玩家名映射），与实时排名玩家名可对应。</div></div><div class="gv-item changed"><span class="gv-badge changed">修改</span><span class="gv-summary">对局七对胡牌判定修复</span><span class="gv-date">09-01</span><div class="gv-detail">对局胡牌判定（含七对）与 fan-calc 工具口径对齐；旧 bot 若发现七对判定与预期不符，以本版本为准。</div></div><div class="gv-item changed"><span class="gv-badge changed">修改</span><span class="gv-summary">4 白板判定描述更正</span><span class="gv-date">09-01</span><div class="gv-detail">4 白板倍率条件明确为「手留 + 链内飘出的白板 = 4 张」（白板共 4 张不可能超过），普通打出/杠出的不算。</div></div></div></div></div>
+    </div>
+
+    <div class="guide-block" id="guide-rules">
+      <h2>一、对战规则</h2>
+
+      <h3>1.1 平台固有规则（所有锦标赛一致）</h3>
+      <ul>
+        <li><b>牌具</b>：136 张（万/筒/条 1-9 各 4 张 + 东南西北中发白各 4 张），无花牌；<b>白板 = 财神（百搭）</b>，可替代任意牌。</li>
+        <li><b>财神限制</b>：财神本身不能被吃、碰、杠、胡，可主动打出；<b>打出财神那一圈（抓打圈）</b>：其余玩家不能吃、碰、明杠（仅暗杠与自摸胡），出牌只能打刚摸到的牌。</li>
+        <li><b>胡牌</b>：只能自摸，不允许点炮；禁止抢杠胡。</li>
+        <li><b>连庄</b>：直上三连庄——首局即按 ×8 计（不从平庄 ×2、二连庄 ×4 递增）；流局庄家连庄。</li>
+        <li><b>牌墙</b>：最后 10 墩（20 张）保留不摸；最后 10 墩之内禁止杠牌；摸完无人胡则流局。</li>
+        <li><b>吃碰</b>：吃最多 2 摊；碰、杠不限次数；碰（含明杠）窗口先于吃窗口。</li>
+      </ul>
+
+      <h3>1.2 胡牌判定</h3>
+      <ul>
+        <li><b>普通胡</b>：4 组面子 + 1 对将（面子 = 顺子 / 刻子 / 杠）；吃碰杠折算（吃最多 2 摊）。</li>
+        <li><b>七对子</b>：7 个对子，<b>禁止吃碰明杠暗杠</b>；财神可补对；<b>可财飘</b>（2026-09-02 修订：七对与飘/杠链叠加计番；杠因副露与七对互斥）。</li>
+        <li><b>爆头</b>：听牌态摸<b>任意 1 张牌</b>上来即胡（财神数不限，支持副露；<b>正好 4 张白板不视为爆头</b>）。</li>
+        <li><b>弃胡</b>：摸牌后不强制自动胡——客户端自行判胡（快照无 allowed_actions），可提交 <code>hu</code>，<b>也可弃胡打牌</b>（飘/杠链前提）；可胡但超时未响应 → 服务端自动胡兜底。</li>
+      </ul>
+
+      <h3>1.3 番型倍率（在自摸基础上连乘）</h3>
+      <p>总番 = 1 × 分支因子 × 2^动作链次数 ×（4 白板 ×2）×（爆头 ×2）；计算顺序：<b>分支 → 动作链 → 4 白板 → 爆头（最后统一加）</b>。</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>番型</th><th>说明</th><th>倍率</th></tr></thead>
+          <tbody>
+            <tr><td>平胡</td><td>普通自摸胡，无财神特殊状态</td><td>×1</td></tr>
+            <tr><td>七对子</td><td>7 对胡牌</td><td>×2</td></tr>
+            <tr><td>豪华七对</td><td>七对含 1 组四张（4 张真白板也算 1 组）</td><td>×4</td></tr>
+            <tr><td>双豪华七对</td><td>七对含 2 组四张</td><td>×8</td></tr>
+            <tr><td>三豪华七对</td><td>七对含 3 组四张</td><td>×16</td></tr>
+            <tr><td>杠开</td><td>杠后补的那张牌直接自摸胡（杠上花）= 链 1 动作</td><td>×2</td></tr>
+            <tr><td>杠爆</td><td>爆头状态下杠，杠补牌胡 = 爆头 × 杠开</td><td>×4</td></tr>
+            <tr><td>财飘</td><td>爆头状态打出财神继续听任意牌胡 = 爆头 × 飘 1 动作</td><td>×4</td></tr>
+            <tr><td>双财飘</td><td>连续两次打出财神再爆头胡</td><td>×8</td></tr>
+            <tr><td>三财飘</td><td>连续三次打出财神再爆头胡</td><td>×16</td></tr>
+            <tr><td>4 个白板</td><td>胡牌时手牌留存 + 链内飘出的白板 = 4（正好 4 张；普通打出的、杠出的不算）</td><td>×2</td></tr>
+            <tr><td>爆头</td><td>见 1.2 判定（最后统一加；正好 4 白板除外）</td><td>×2</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <ul>
+        <li><b>动作链</b>：飘与杠可连续、可组合，<b>每个飘/杠动作 ×2</b>（杠飘组合叠加计算）；打出非飘非杠的牌（含非爆头态打白板）→ 链断重新计数。</li>
+        <li>爆头摸到白板：可提交 <code>hu</code>（爆头 ×2）或弃胡打白飘（博财飘 ×4 起）——策略权衡由 AI 决定。</li>
+        <li>七对也可以爆头（七客 / 豪华七客）：如 6 对 + 1 财神单吊 = 七对 ×2 × 爆头 ×2 = ×4。</li>
+        <li>平胡分支最大牌型：3 连杠 + 三财飘 + 爆头 + 4 白板 = 2⁶ × 2 × 2 = ×256。</li>
+        <li><b>全局最大（2026-09-02 修订）</b>：三豪华七对 + 三财飘 + 4 白板 + 爆头 = ×16 × 2³ × 2 × 2 = <b>×512</b>——七对形爆头听牌（3 组四张 + 1 白）弃胡飘可达。</li>
+      </ul>
+
+      <h3>1.4 计分公式</h3>
+      <p><b>得分 = 底分 × 胡牌番型倍率 ×（庄家 ×8 / 闲家 ×1）</b>，三家分别结算：</p>
+      <ul>
+        <li>庄家胡：三家闲家各付 底分 × 倍率 × 8</li>
+        <li>闲家胡：庄家付 底分 × 倍率 × 8；另外两个闲家各付 底分 × 倍率 × 1</li>
+      </ul>
+
+      <h3>1.5 番型计算工具（实时试算）</h3>
+      <p>输入 13 张手牌 + 1 张摸牌，实时计算胡牌判定、爆头、番型倍率与庄/闲得分（计算口径与对局一致：普通胡 4 面子+将 或 七对）。</p>
+
+      <div class="fc-card">
+        <div class="fc-row-label">
+          手牌 <b id="fcHandCount">13</b>/13 · 摸牌 <b id="fcDrawCount">1</b>/1
+          <span class="fc-hint">点牌或 ＋ 选牌 · 自动理牌 · 实时计算</span>
+        </div>
+        <div class="fc-tiles">
+          <div id="fcHandSlots" style="display:flex;flex-wrap:wrap;gap:6px"><div class="fc-slot filled"><span class="tile-svg" aria-label="1w" style="background-image: url(&quot;images/majiangpai.jpg&quot;); background-size: calc(var(--tw,32px)*9.846153846153847) calc(var(--th,44px)*5.413043478260869); background-position: calc(var(--tw,32px)*-0) calc(var(--th,44px)*-1.108695652173913);"></span></div><div class="fc-slot filled"><span class="tile-svg" aria-label="2w" style="background-image: url(&quot;images/majiangpai.jpg&quot;); background-size: calc(var(--tw,32px)*9.846153846153847) calc(var(--th,44px)*5.374100719424461); background-position: calc(var(--tw,32px)*-1.0961538461538463) calc(var(--th,44px)*-1.1007194244604317);"></span></div><div class="fc-slot filled"><span class="tile-svg" aria-label="3w" style="background-image: url(&quot;images/majiangpai.jpg&quot;); background-size: calc(var(--tw,32px)*9.941747572815533) calc(var(--th,44px)*5.26056338028169); background-position: calc(var(--tw,32px)*-2.233009708737864) calc(var(--th,44px)*-1.0774647887323943);"></span></div><div class="fc-slot filled"><span class="tile-svg" aria-label="4w" style="background-image: url(&quot;images/majiangpai.jpg&quot;); background-size: calc(var(--tw,32px)*9.941747572815533) calc(var(--th,44px)*5.223776223776224); background-position: calc(var(--tw,32px)*-3.349514563106796) calc(var(--th,44px)*-1.06993006993007);"></span></div><div class="fc-slot filled"><span class="tile-svg" aria-label="5w" style="background-image: url(&quot;images/majiangpai.jpg&quot;); background-size: calc(var(--tw,32px)*9.660377358490566) calc(var(--th,44px)*5.413043478260869); background-position: calc(var(--tw,32px)*-4.311320754716981) calc(var(--th,44px)*-1.108695652173913);"></span></div><div class="fc-slot filled"><span class="tile-svg" aria-label="6w" style="background-image: url(&quot;images/majiangpai.jpg&quot;); background-size: calc(var(--tw,32px)*9.846153846153847) calc(var(--th,44px)*5.374100719424461); background-position: calc(var(--tw,32px)*-5.528846153846154) calc(var(--th,44px)*-1.1007194244604317);"></span></div><div class="fc-slot filled"><span class="tile-svg" aria-label="7w" style="background-image: url(&quot;images/majiangpai.jpg&quot;); background-size: calc(var(--tw,32px)*9.660377358490566) calc(var(--th,44px)*5.413043478260869); background-position: calc(var(--tw,32px)*-6.490566037735849) calc(var(--th,44px)*-1.108695652173913);"></span></div><div class="fc-slot filled"><span class="tile-svg" aria-label="8w" style="background-image: url(&quot;images/majiangpai.jpg&quot;); background-size: calc(var(--tw,32px)*9.752380952380953) calc(var(--th,44px)*5.297872340425532); background-position: calc(var(--tw,32px)*-7.6761904761904765) calc(var(--th,44px)*-1.0851063829787233);"></span></div><div class="fc-slot filled"><span class="tile-svg" aria-label="9w" style="background-image: url(&quot;images/majiangpai.jpg&quot;); background-size: calc(var(--tw,32px)*9.941747572815533) calc(var(--th,44px)*5.413043478260869); background-position: calc(var(--tw,32px)*-8.941747572815533) calc(var(--th,44px)*-1.108695652173913);"></span></div><div class="fc-slot filled"><span class="tile-svg" aria-label="1b" style="background-image: url(&quot;images/majiangpai.jpg&quot;); background-size: calc(var(--tw,32px)*9.941747572815533) calc(var(--th,44px)*5.413043478260869); background-position: calc(var(--tw,32px)*-0) calc(var(--th,44px)*-0);"></span></div><div class="fc-slot filled"><span class="tile-svg" aria-label="2b" style="background-image: url(&quot;images/majiangpai.jpg&quot;); background-size: calc(var(--tw,32px)*9.941747572815533) calc(var(--th,44px)*5.335714285714285); background-position: calc(var(--tw,32px)*-1.116504854368932) calc(var(--th,44px)*-0);"></span></div><div class="fc-slot filled"><span class="tile-svg" aria-label="3b" style="background-image: url(&quot;images/majiangpai.jpg&quot;); background-size: calc(var(--tw,32px)*9.941747572815533) calc(var(--th,44px)*5.413043478260869); background-position: calc(var(--tw,32px)*-2.233009708737864) calc(var(--th,44px)*-0);"></span></div><div class="fc-slot filled"><span class="tile-svg god" aria-label="白" style="background-image: url(&quot;images/majiangpai.jpg&quot;); background-size: calc(var(--tw,32px)*9.941747572815533) calc(var(--th,44px)*5.413043478260869); background-position: calc(var(--tw,32px)*-2.233009708737864) calc(var(--th,44px)*-4.413043478260869);"></span></div></div>
+          <div class="fc-draw-sep"></div>
+          <div class="fc-draw-cell">
+            <div id="fcDrawSlot"><div class="fc-slot filled"><span class="tile-svg" aria-label="1w" style="background-image: url(&quot;images/majiangpai.jpg&quot;); background-size: calc(var(--tw,32px)*9.846153846153847) calc(var(--th,44px)*5.413043478260869); background-position: calc(var(--tw,32px)*-0) calc(var(--th,44px)*-1.108695652173913);"></span></div></div>
+            <span class="fc-draw-tag">摸</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="fc-card">
+        <div class="fc-ctl-row">
+          <div class="fc-ctl">
+            <label>动作链（每个动作 ×2）</label>
+            <div class="fc-chain-btns" id="fcChainBtns"><button class="active">无动作链</button><button class="">杠开</button><button class="">财飘</button><button class="">双财飘</button><button class="">三财飘</button><button class="">连杠×2</button><button class="">连杠×3</button></div>
+          </div>
+          <div class="fc-ctl">
+            <label>底分</label>
+            <input type="number" id="fcBase" value="1" min="1" max="10000" step="1">
+          </div>
+          <div class="fc-spacer"></div>
+          <button class="fc-btn-ghost" id="fcResetBtn">重置默认牌型</button>
+          <button class="fc-btn-ghost danger" id="fcClearBtn">清空</button>
+        </div>
+      </div>
+
+      <div class="fc-card">
+        <div class="fc-card-title">计算结果</div>
+        <div id="fcResult"><div class="fc-result-status"><span class="fc-badge hu">✓ 胡牌</span><span class="fc-badge baotou">爆头 ×2</span></div><div class="fc-chips"><span class="fc-chip">平胡</span><span class="fc-chip god">爆头</span></div><div class="fc-fan-total">总番 <em>×2</em></div><div class="fc-scores"><div class="fc-score-card"><h3>庄家胡（三家闲家各付 ×8）</h3><div class="fc-big">+48<span>分</span></div><table><tr><td>胡家（庄家）</td><td>+48</td></tr><tr><td>闲家甲 付</td><td>−16</td></tr><tr><td>闲家乙 付</td><td>−16</td></tr><tr><td>闲家丙 付</td><td>−16</td></tr></table></div><div class="fc-score-card"><h3>闲家胡（庄付 ×8 / 闲 ×1）</h3><div class="fc-big">+20<span>分</span></div><table><tr><td>胡家（闲家甲）</td><td>+20</td></tr><tr><td>庄家 付</td><td>−16</td></tr><tr><td>闲家乙 付</td><td>−2</td></tr><tr><td>闲家丙 付</td><td>−2</td></tr></table></div></div></div>
+      </div>
+
+      <div class="fc-modal-mask" id="fcMask">
+        <div class="fc-modal">
+          <h3 id="fcPickerTitle">选择牌</h3>
+          <p class="fc-picker-sub" id="fcPickerSub"></p>
+          <div id="fcPickerGroups"></div>
+          <div class="fc-modal-foot"><button class="fc-btn-ghost" id="fcPickerCancel">取消</button></div>
+        </div>
+      </div>
+
+      <div class="guide-note">
+        <b>AI 程序化调用（免认证）</b>：同一工具的后端端点为
+        <code>POST /portal/api/tools/fan-calc</code> —— 免登录、每 IP 限速 10/s、纯计算无状态变更，
+        胡牌判定/爆头/番型口径与对局一致（普通胡 4 面子+将 或 无副露七对；4 白板 = 手留 + 链内飘出）。
+        可作 AI 离线试算与结算校验。
+      </div>
+      <pre class="guide-code"><code>POST /portal/api/tools/fan-calc
+{
+  "hand": ["1w","1w","1w","2w","3w","4w","5w","6w","7w","8w","9w","东","东"],  // 恰 13 张
+  "draw": "东",                    // 恰 1 张
+  "chain": { "count": 0, "piao": 0 },  // 动作链：count 0-6（每动作 ×2），piao ≤ count；手留白 + piao ≤ 4
+  "base": 1                        // 底分 1-10000（缺省 1）
+}</code></pre>
+      <pre class="guide-code"><code>{
+  "hu": true, "baotou": false, "fan": 1,
+  "detail": ["平胡"],
+  "scores": {
+    "dealer_hu":    { "win": 24, "lose": [8, 8, 8] },   // 庄家胡：三家各付 底分×番×8
+    "nondealer_hu": { "win": 10, "lose": [8, 1, 1] }    // 闲家胡：庄家 ×8，闲家 ×1
+  }
+}</code></pre>
+      <p class="guide-note">牌码与对局 API 一致：<code>1w-9w / 1b-9b / 1t-9t / 东南西北中发白</code>（白板 = 财神）。
+      请求字段校验失败返回 <code>400 INVALID_INPUT</code>（附中文原因）；超限返回 <code>429 RATE_LIMITED</code>。</p>
+
+      <h3>1.6 锦标赛可变参数（以 API 返回为准，不可写死）</h3>
+      <div class="guide-note">
+        <b>注意</b>：底分、局数、同时场数 M、有财必拷响、碰/吃/出牌窗口等由创建者配置，<b>每场锦标赛可能不同</b>——机器人必须以 <code>GET /api/tournaments/me/rules</code>（或 <code>GET /api/tournaments/{id}</code>）返回的 config 为准。
+      </div>
+      <p>参赛令牌（报名令牌）作用域直达，无需知道锦标赛 id：</p>
+      <pre class="guide-code"><code>GET /api/tournaments/me/rules
+Authorization: Bearer &lt;参赛令牌&gt;</code></pre>
+      <p>响应示例：</p>
+      <pre class="guide-code"><code>{
+  "tournament_id": "t_xxx_b0",
+  "name": "测试房间 #1",
+  "status": "registering",
+  "config": {
+    "M": 10, "Rounds": 1, "BaseScore": 1,
+    "YouCaiBiKao": false,
+    "PengTimeoutSec": 1, "ChiTimeoutSec": 1, "DiscardTimeoutSec": 3,
+    "StartAt": 1756656000, "RegisterDeadlineAt": 0
+  }
+}</code></pre>
+      <p>config 字段含义：</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>字段</th><th>含义</th></tr></thead>
+          <tbody>
+            <tr><td><code>M</code></td><td>每人同时参赛场数上限（该锦标赛内）</td></tr>
+            <tr><td><code>Rounds</code></td><td>每场比赛的局数</td></tr>
+            <tr><td><code>BaseScore</code></td><td>底分（计分公式的底分）</td></tr>
+            <tr><td><code>YouCaiBiKao</code></td><td>有财必拷响（手上有财神时不允许平胡，必须爆头/杠开才能胡）</td></tr>
+            <tr><td><code>PengTimeoutSec</code></td><td>碰窗口（默认 1s，固定走满防时间侧信道）</td></tr>
+            <tr><td><code>ChiTimeoutSec</code></td><td>吃窗口（默认 1s，固定走满）</td></tr>
+            <tr><td><code>DiscardTimeoutSec</code></td><td>出牌思考（默认 3s；可胡时超时自动胡，否则超时自动打出最右一张牌）</td></tr>
+            <tr><td><code>StartAt</code></td><td>开赛时间（unix 秒）</td></tr>
+            <tr><td><code>RegisterDeadlineAt</code></td><td>报名截止（unix 秒；0 = 无截止）</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="guide-block" id="guide-api">
+      <h2>二、API 参考（玩家 API）</h2>
+      <p>认证：所有玩家 API 均需请求头 <code>Authorization: Bearer &lt;参赛令牌&gt;</code>。令牌来源：门户「报名」或「测试房间」派发（仅显示一次，请立即复制）；服务端只存令牌的 SHA-256，丢失只能重新生成。<b>例外</b>：§2.5 的测试房间数据 API 免认证（房间 id 即凭证，每房间独立限速 5/s + 每来源总量兜底 1000/s）。</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>端点</th><th>方法</th><th>用途</th></tr></thead>
+          <tbody>
+            <tr><td><code>/api/users</code></td><td>POST</td><td>注册：创建用户，返回 user_id + 全局 token（每 IP 10 次/小时）。全局 token 未绑定锦标赛，须自带锦标赛 id 参赛</td></tr>
+            <tr><td><code>/api/me</code></td><td>GET</td><td>我的信息：user_id + 令牌绑定的 tournament_id（报名令牌；全局令牌为空串）+ 进行中比赛列表 active_games</td></tr>
+            <tr><td><code>/api/tournaments/me/rules</code></td><td>GET</td><td>当前令牌绑定锦标赛的规则 config（报名令牌直达，无需锦标赛 id；全局令牌返回 400 TOKEN_NOT_SCOPED）</td></tr>
+            <tr><td><code>/api/tournaments/me/ready</code></td><td>POST</td><td>到位（报名令牌直达；全局令牌返回 400 TOKEN_NOT_SCOPED）</td></tr>
+            <tr><td><code>/api/tournaments/{id}/register</code></td><td>POST</td><td>报名（开赛前；幂等；校验同时 16 场上限）</td></tr>
+            <tr><td><code>/api/tournaments/{id}/ready</code></td><td>POST</td><td>到位（开赛前；幂等；须先报名）</td></tr>
+            <tr><td><code>/api/tournaments/{id}</code></td><td>GET</td><td>锦标赛状态：status / config / 报名与 ready 人数 / 我的比赛 my_games / ranking 排名 / voided 原因（仅参赛者可查）。多阶段锦标赛另含阶段字段组（stage / stage_status / stage_crashed / qualified / qualify_role）——见 <a href="https://10.240.169.190:18080/portal/#guide-multistage">§2.6</a></td></tr>
+            <tr><td><code>/api/games/{id}/state?seq=N</code></td><td>GET</td><td>长轮询状态与事件流：seq=0 返回全量快照（含你的手牌、座位 seat、窗口成员 responding_seats 等自主决策字段）；seq=N 返回 N 之后的新事件；无新事件时挂起最多 30s 后返回 {"pending":true}；seq 落后当前局（round_ended 后新局已发牌、不产生事件）→ 立即返回全量快照（gap:true）</td></tr>
+            <tr><td><code>/api/games/{id}/action</code></td><td>POST</td><td>提交动作：{"action":"discard|chi|peng|gang|hu|pass","tile":"1w"}——服务端纯验证：合法即执行、不合法 409（动作合法性客户端自研判定，快照无 allowed_actions）；吃可附加 <code>"tiles":["1w","2w"]</code> 指定用哪两张手牌吃（多组合时可选择），缺省服务端取第一组可行顺子</td></tr>
+            <tr><td><code>/api/test-rooms/{id}/games</code></td><td>GET</td><td>测试房间局列表（<b>免认证</b>）：[{batch, game_id, status}]，batch 升序——每局结束即可按需拉取（跨轮房间含全部轮次历史）</td></tr>
+            <tr><td><code>/api/test-rooms/{id}/games/{batch}/events</code></td><td>GET</td><td>该局完整对战事件流（<b>免认证</b>）：blocks 分块（含四家手牌）+ rounds 局结果——赛后拉取用于算法优化；running 场次 403，房间删除后 404</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>2.1 协议要点（AI 接入必读）</h3>
+      <ul>
+        <li><b>快照规范</b>：seq=S 的响应已包含全部 ≤S 的事件，快照是规范真相；客户端局面 = 快照 + 后续增量事件（事件带自身 seq，校验连续性）；跨局落后返回的快照同样规范（含新局 round_no/phase/my_hand）。</li>
+        <li><b>失步恢复</b>：发现缺口（响应含 gap:true）或动作 409 后，用 seq=0 重建全量快照。</li>
+        <li><b>跨局边界（v10 起）</b>：每局结束（round_ended）后新局自动发牌<b>不产生任何事件</b>——事件流在新局首个动作前为空，庄家第 14 张为发牌直抽、无摸牌事件。此时继续用上一局末的 seq 轮询会<b>立即收到新局全量快照</b>（gap:true，含你的新局手牌 my_hand/round_no/phase），不会挂起至庄家出牌超时自动出牌；新局手牌一律以快照为准。</li>
+        <li><b>私有信息</b>：事件流只含自己的摸牌；他人手牌绝不出现。</li>
+        <li><b>超时兜底</b>：出牌思考超时——可胡时服务端自动胡（弃胡兜底，不丢番），否则自动打出最右一张牌；碰/吃窗口固定走满（防时间侧信道）——AI 无响应比赛不会卡死，但积分损失不可避免。</li>
+        <li><b>自研动作判定</b>（v2 起，快照无 <code>allowed_actions</code>）：客户端依快照字段自判可执行动作——<code>seat</code>（本人座位，观赛 -1）、<code>phase</code>（<code>deal|draw|response_peng|response_chi|settled|finished</code>）、<code>turn</code>（当前行动座位）、<code>responding_seats</code>（响应窗口成员）、<code>drawn_tile</code>（仅本人刚摸的牌）、<code>god.catch_play</code>（抓打圈）。<code>draw</code> 且 <code>turn==seat</code> 可出牌/胡/杠；窗口阶段仅 <code>responding_seats</code> 成员可碰/吃/明杠/pass。<b>窗口「已响应」状态须客户端本地跟踪</b>——重复提交 pass/动作返回 409 INVALID_ACTION。</li>
+        <li><b>弃胡机制</b>：摸牌后不强制自动胡——客户端自行判胡（快照无 allowed_actions）后可提交 <code>{"action":"hu"}</code> 胡牌，也可继续打牌（飘/杠链前提：爆头态摸白板弃胡打出 = 财飘）。</li>
+        <li><b>快照 god 字段</b>（本人视角）：<code>baotou</code>（爆头状态）、<code>chain_count</code>（本人动作链次数：飘/杠累计，断链清零）、<code>catch_play</code>（抓打圈）。</li>
+        <li><b>多阶段锦标赛（v7 起）</b>：普通锦标赛打完一个阶段 ≠ 结束——status 会停在 <code>stage_done</code>（等管理员推进）或进入 <code>stage_open</code>（下一阶段资格确认）；决赛轮并列还会自动加赛（新 game_id 出现）。阶段协议见 <a href="https://10.240.169.190:18080/portal/#guide-multistage">§2.6</a>，排名判定链见 <code>docs/胡牌规则与番数计算.md</code> §7。</li>
+      </ul>
+
+      <h3>2.2 版本自检（推荐）</h3>
+      <p>系统迭代快，接口可能变更。bot 启动时拉 <code>GET /portal/api/guide/version</code>（免认证，5/s）
+      获取服务器接入指南版本号与变更日志，与本 bot 开发时已知版本比对——发现 <b>BREAKING</b> 变更即提示
+      人工核对（版本为递增整数，直接数值比较；返回结构见下方示例）。</p>
+      <pre class="guide-code"><code># 版本自检示例（纯标准库，随最小 Bot 同款姿势）
+import json, ssl, urllib.request
+
+KNOWN = 1  # 本 bot 开发时对应的接入指南版本（写在代码里）
+ctx = ssl._create_unverified_context()  # 部署实例为自签证书，跳过校验
+req = urllib.request.Request("https://&lt;SERVER&gt;/portal/api/guide/version")
+with urllib.request.urlopen(req, timeout=10, context=ctx) as r:
+    meta = json.load(r)
+if meta["version"] &gt; KNOWN:
+    breaking = [c["summary"] for c in meta["changes"]
+                if c["type"] == "breaking" and c["version"] &gt; KNOWN]
+    print(f"服务器指南 v{meta['version']} &gt; 本 bot 已知 v{KNOWN}；BREAKING 变更：")
+    for s in breaking:
+        print("  -", s)</code></pre>
+      <p class="guide-note">响应结构：<code>{"version": 7, "updated_at": "2026-09-02", "changes": [{"version", "date", "type": "breaking|added|changed", "summary", "detail"}]}</code>
+      ——changes 版本降序、首条最新；<code>type=breaking</code> 表示旧行为不再兼容（如 v2「快照移除 allowed_actions」；v7「普通锦标赛多阶段化」「status 新值 stage_open/stage_done」），
+      <code>added</code> 为新增端点/能力，<code>changed</code> 为行为调整。</p>
+
+      <h3>2.3 身份与限制</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>限制</th><th>数值</th></tr></thead>
+          <tbody>
+            <tr><td>每用户同时参赛场数（含挂起）</td><td>≤ 16</td></tr>
+            <tr><td>state 轮询频率</td><td>16 次/秒（2026-09-03 从 8/s 放宽：认证缓存落地后 A/B 实测达标；旧 bot 按 8/s 自限无需改动）</td></tr>
+            <tr><td>每用户并发挂起轮询</td><td>≤ 32</td></tr>
+            <tr><td>注册频率</td><td>10 次/小时/IP</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>2.4 常见错误码</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>状态码</th><th>错误码</th><th>含义</th></tr></thead>
+          <tbody>
+            <tr><td>400</td><td>TOKEN_NOT_SCOPED</td><td>全局令牌调用 /me/rules、/me/ready（需报名令牌）</td></tr>
+            <tr><td>401</td><td>UNAUTHORIZED</td><td>token 无效或已吊销</td></tr>
+            <tr><td>403</td><td>FORBIDDEN</td><td>非该场参赛者 / 非参赛者查询他人锦标赛</td></tr>
+            <tr><td>403</td><td>GAME_NOT_FINISHED</td><td>数据 API 拉取进行中场次（对局内禁实时数据，防作弊）</td></tr>
+            <tr><td>404</td><td>TOURNAMENT_NOT_FOUND / GAME_NOT_FOUND</td><td>锦标赛 / 房间不存在</td></tr>
+            <tr><td>409</td><td>INVALID_ACTION</td><td>动作不合法（阶段/座位/手牌自检失败）——提交前自行核算动作（快照提供 seat/phase/responding_seats/drawn_tile 等全部判定所需信息）</td></tr>
+            <tr><td>409</td><td>TOURNAMENT_CLOSED</td><td>赛事已关闭（closed）——报名/ready 均拒绝</td></tr>
+            <tr><td>409</td><td>TOURNAMENT_STARTED</td><td>开赛后报名；非确认期（running / stage_done / finished / void）提交 ready</td></tr>
+            <tr><td>409</td><td>NOT_REGISTERED</td><td>阶段 1（报名期）未报名就提交 ready</td></tr>
+            <tr><td>409</td><td>NOT_QUALIFIED</td><td>阶段 2+ 确认期（stage_open）名单外提交 ready——海选已淘汰或未报名者无本阶段资格（多阶段，v7 起）</td></tr>
+            <tr><td>409</td><td>MATCH_LIMIT_REACHED</td><td>已达同时 16 场上限</td></tr>
+            <tr><td>429</td><td>RATE_LIMITED</td><td>轮询超频 / 并发挂起超限 / 注册限速</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>2.5 赛后数据（事件流 API，免认证）</h3>
+      <ul>
+        <li>测试房间<b>任一局结束后</b>（该局场次 finished；房间状态 finished/void/closed 均可），用<b>房间 id</b> 即可拉取该局完整对战事件流（含四家开局手牌与逐事件摸/打/吃碰杠），供离线复盘与<b>算法优化</b>。</li>
+        <li>流程：先 <code>GET /api/test-rooms/{id}/games</code> 拿局列表（batch 序）→ 按 batch 逐个 <code>GET /api/test-rooms/{id}/games/{batch}/events</code> 拉取。</li>
+        <li>房间 id 即凭证——请勿公开分享；限速为<b>每房间独立 5 次/秒</b>（另每来源总量兜底 1000 次/秒；2026-09-03 起按房间分桶，不同房间并行互不挤占，支持大规模并行房间评测）；响应 <code>Cache-Control: no-store</code> 勿缓存。</li>
+        <li>进行中场次（running）返回 403 GAME_NOT_FINISHED；房间或 batch 不存在 404；房间删除后数据级联清除（404）。</li>
+        <li><b>跨轮复用（2026-09-02 起）</b>：测试房间 finished 后 4 令牌再次各 ready 一次即开启下一轮——局列表随时间累积含<b>全部轮次</b>（每轮批次从 0 重号）；跨轮按局拉完整事件日志建议用 <code>GET /portal/api/games/{id}/events</code>（按 game_id 无批次歧义，owner 登录态可拉；复盘按钮同源）。</li>
+      </ul>
+
+      <h3 id="guide-multistage">2.6 多阶段锦标赛协议（2026-09-02 起，v7）</h3>
+      <p>普通锦标赛（kind 为空，创建参数不变）已按报名人数 <code>m</code> 自动多阶段化：<code>m≥17</code> 海选→16强(4组×4人)→8强(2组×4人)→决赛(4人)；<code>9≤m≤16</code> 海选→8强→决赛；<code>5≤m≤8</code> 海选(资格)→决赛；<code>m=4</code> 直接决赛（无淘汰）；<code>m&lt;4</code> 到点作废。每阶段组内循环 M 场（M/N 创建时全局配置、跨阶段一致）。测试房间（kind=test）单阶段不变。</p>
+      <ul>
+        <li><b>打完阶段 ≠ 结束</b>：status 在 <code>registering → running → stage_done → stage_open → running → …（决赛轮）→ finished</code> 间流转（任时可 closed / void）；非决赛轮打完停在 <code>stage_done</code>（等管理员推进下一阶段），<b>只有决赛轮打完才 finished</b>。晋级轮阶段打完、新阶段确认期、决赛加赛间隙，<code>/api/me</code> 的 active_games 为空——空转 ≠ 结束，以 <code>GET /api/tournaments/{id}</code> 的 status 为唯一进度真相，直至 finished/closed/void。</li>
+        <li><b>阶段字段组</b>（开赛后出现；registering 未开赛整组省略，旧字段不变）：<code>stage{no,role,total,name}</code>（阶段号 / qualify|final / 当前推断阶段总数 / 显示名：原名｜原名-第N轮｜原名-决赛）、<code>stage_status</code>（open|running|done）、<code>stage_crashed</code>（true=中断待重赛——bot 须区分「正常 done」与「中断」）、<code>qualified / qualify_role</code>（你在本阶段资格：finalist 晋级 / backup 候补；阶段 1 无名单 → false/空，唯阶段 1 崩溃重赛的确认期例外——报名全量 qualified=true、role 空）。<code>stage.total</code> 随降档/翻转动态收缩，<b>不可按创建时规划轮次</b>。</li>
+        <li><b>阶段确认</b>：<code>stage_open</code> 时名单内（晋级者/候补）提交 <code>POST /api/tournaments/{id}/ready</code> 或 <code>/me/ready</code> = 出席确认（幂等 200；门户玩家也可用「资格确认」按钮，同语义）。名单外（海选已淘汰仍 registered、未报名者）→ 409 <code>NOT_QUALIFIED</code>。确认不跨阶段继承——每阶段都要重新确认（漏确认不冻结，到点按已确认者取前 G、候补顶替）；非确认期提交 → 409 <code>TOURNAMENT_STARTED</code>。阶段 2+ 响应中 <code>ready_users</code> 恒 0（防泄底），确认人数不对玩家暴露。</li>
+        <li><b>排名语义</b>：ranking 条目 = <code>user_id/total_score/place_points/god_count/games_played/rank(1..n)</code>；<code>running</code> 期是当阶段实时账，<code>stage_open/stage_done</code> 间隙回落上一阶段结算榜；<b><code>games_played</code> 每阶段归零</b>（当阶段按局累计——字段名沿旧：每局结束参与者 +1、轮空一场 +1），不可跨阶段累加推进度。</li>
+        <li><b>决赛加赛</b>：决赛轮常规场次打完若 1-4 名总得分有并列 → running 态自动加赛并账循环（无上限）。新加赛场的 <code>game_id</code> 自动出现（含 <code>_s{k}</code> 阶段段标识）——持续轮询 <code>/api/me</code> 的 active_games（或 tournament 详情 my_games，历史累计新 ID 追加）发现并照常参赛。</li>
+        <li><b>判定链（晋级轮排名）</b>：键序 total_score → place_points → god_count → user_id（字典序兜底），三键独立永不相加；名次分每场 1 位 +3 / 2 位 +1 / 3 位 −1 / 4 位 −3、本场同分共享并列区间平均、不进总得分；白板获取数口径 = 配牌扫全手（庄家含第 14 张直抽）+ 每次墙摸到白板（含杠上摸），<b>不可经事件流复算</b>，轮空积 0；决赛轮纯总得分、任何同分加赛至 1-4 名两两不同，加赛场不产生名次分/白板数。权威细则见 <code>docs/胡牌规则与番数计算.md</code> §7。</li>
+      </ul>
+    </div>
+
+    <div class="guide-block" id="guide-bot">
+      <h2>三、最小 Bot（复制即用，无策略）</h2>
+      <p>以下脚本只演示协议循环，不含任何牌技：令牌 → 发现锦标赛 → 报名/到位 → 按 <b>status 多阶段循环</b>——running 打活跃场（决赛加赛新 game_id 自动出现照常打）、stage_open 确认出席、stage_done 等推进，<b>finished/closed/void 才退出</b>。测试房间（单阶段）与正式锦标赛（多阶段）同一套循环。示例策略：出牌打第一张、碰/吃/杠窗口一律过；快照无 allowed_actions，判胡需自行实现胡牌算法——示例从简，可胡不胡由服务端超时自动胡兜底。保存为 <code>my_bot.py</code>，在「测试房间」或正式锦标赛拿到参赛令牌后直接运行：</p>
+      <pre class="guide-code"><code>python my_bot.py &lt;参赛令牌&gt;</code></pre>
+      <p>自测用全局令牌（<code>POST /api/users</code> 注册所得）时需显式带锦标赛 id：<code>python my_bot.py &lt;token&gt; &lt;锦标赛id&gt;</code>。替换其中的决策分支（"提交:" 前的 if/else）即可接入你自己的牌技。</p>
+      <pre class="guide-code"><code>#!/usr/bin/env python3
+"""最小示例 Bot —— 杭州麻将对战平台 AI 接入模板（纯标准库，零依赖，无策略）。
+
+只演示协议循环（v7 多阶段）：令牌 -&gt; 发现锦标赛 -&gt; 报名/到位 -&gt; 按 status 循环：
+running 收割活跃场（决赛加赛新场自动出现）-&gt; stage_open 确认出席
+-&gt; stage_done 等推进 -&gt; finished/closed/void 才退出。自研动作判定见 play()。
+"""
+import json
+import ssl
+import sys
+import time
+import urllib.request
+
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # Windows 控制台兜底
+
+SERVER = "https://10.240.169.190:18080"  # 部署实例（自签证书）；本地调试改 http://localhost:8080
+TOKEN = sys.argv[1] if len(sys.argv) &gt; 1 else "PASTE_TOKEN_HERE"
+
+
+class ApiError(Exception):
+    def __init__(self, status, body):
+        self.status, self.body = status, body
+
+
+def api(method, path, body=None):
+    """带 Bearer 认证的 JSON 请求；429 退避重试，其余 HTTP 错误抛 ApiError。"""
+    req = urllib.request.Request(
+        SERVER.rstrip("/") + path,
+        data=json.dumps(body).encode() if body is not None else None,
+        method=method)
+    req.add_header("Content-Type", "application/json")
+    req.add_header("Authorization", "Bearer " + TOKEN)
+    ctx = ssl._create_unverified_context()  # 部署实例为 caddy 自签证书，跳过校验
+    try:
+        with urllib.request.urlopen(req, timeout=35, context=ctx) as r:
+            return json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        if e.code == 429:
+            time.sleep(2)
+            return api(method, path, body)
+        raise ApiError(e.code, e.read().decode(errors="replace"))
+
+
+# 1) 令牌发现锦标赛（报名令牌作用域直达；全局令牌用 argv[2] 显式指定）
+me = api("GET", "/api/me")
+tid = me["tournament_id"] or (sys.argv[2] if len(sys.argv) &gt; 2 else "")
+scoped = bool(me["tournament_id"])  # 报名令牌：/api/me 已限定本锦标赛
+if not tid:
+    raise SystemExit("令牌未绑定锦标赛：请用门户「报名」或「测试房间」派发的参赛令牌（自测可用 python my_bot.py &lt;token&gt; &lt;锦标赛id&gt;）")
+print("锦标赛:", tid)
+
+# 2) 进场：先幂等报名 + 到位（顺序必要——锦标赛详情对非参赛者 403，全局令牌
+#    自测路径必须先注册才能查状态；报名/到位 409（已开赛/已关闭等）吞掉，
+#    主循环按最新 status 兜底）
+try:
+    api("POST", "/api/tournaments/%s/register" % tid)
+    api("POST", "/api/tournaments/%s/ready" % tid)
+except ApiError as e:
+    print("进场被拒:", e.body)
+
+
+def play(gid):
+    """单场主循环：长轮询 -&gt; 快照 -&gt; 自研动作判定（快照无 allowed_actions，
+    2026-09-02 协议：客户端全自主、服务端纯验证）。"""
+    seq = 0
+    while True:
+        res = api("GET", "/api/games/%s/state?seq=%d" % (gid, seq))
+        if res.get("finished"):
+            print("本场结束，积分:", (res.get("snapshot") or {}).get("scores"))
+            return
+        if res.get("pending"):      # 30s 内无新事件：继续挂起
+            # 局边界例外（v10）：round_ended 后新局不发事件——seq 落后当前局时
+            # poll 立即回新局全量快照（gap:true），直接以快照为准，不会挂起
+            continue
+        snap = res.get("snapshot")
+        if snap is None:            # 增量事件：推进 seq 后重拉权威快照
+            for ev in res.get("events") or []:
+                seq = ev.get("seq", seq)
+            snap = api("GET", "/api/games/%s/state?seq=0" % gid).get("snapshot")
+        else:
+            seq = res.get("seq", seq)
+        seat = snap.get("seat", -1)
+        if seat &lt; 0:                # 观赛视角无动作权
+            continue
+        phase, turn = snap.get("phase"), snap.get("turn")
+        if phase == "draw" and turn == seat:
+            if snap.get("god", {}).get("catch_play") and snap.get("drawn_tile"):
+                act = {"action": "discard", "tile": snap["drawn_tile"]}  # 抓打圈只出刚摸的
+            elif snap.get("my_hand"):
+                act = {"action": "discard", "tile": snap["my_hand"][0]}  # 出牌打第一张
+            else:
+                continue
+        elif phase in ("response_peng", "response_chi"):
+            if seat not in (snap.get("responding_seats") or []):
+                continue            # 窗口无响应权
+            act = {"action": "pass", "tile": ""}  # 示例策略：碰/吃一律过
+        else:
+            continue                # 非本人回合/窗口
+        print("提交:", act)
+        try:
+            api("POST", "/api/games/%s/action" % gid, act)
+        except ApiError as e:
+            if e.status != 409:     # 409 = 动作已失效（竞态）：重建快照后重试
+                raise
+        seq = 0                     # 动作后重建快照，避免状态漂移
+
+
+def my_active(t):
+    """本锦标赛的活跃场列表：报名令牌 /api/me 已限定；全局令牌按 my_games 交集过滤
+    （my_games 历史累计、含各阶段全部场次——新加的决赛加赛场也会出现在里面）。"""
+    act = [g["game_id"] for g in api("GET", "/api/me")["active_games"]]
+    if scoped:
+        return act
+    mine = set(t.get("my_games") or [])
+    return [g for g in act if g in mine]
+
+
+# 3) 多阶段主循环（v7）：status 是唯一进度真相 —— 打完一个阶段 != 结束，
+#    晋级轮打完 stage_done（等管理员推进）、新阶段 stage_open 需重新确认出席、
+#    决赛并列自动加赛（running 内新 game_id 出现）；finished/closed/void 才退出。
+while True:
+    t = api("GET", "/api/tournaments/%s" % tid)
+    status = t["status"]
+    stname = (t.get("stage") or {}).get("name", "")
+    print("status:", status, stname)
+    if status in ("finished", "closed", "void"):
+        break                       # 终态：才退出
+    if status == "registering":
+        # 阶段 1 报名期：报名（幂等）+ 到位（幂等）；409 竞态（恰逢开赛）回主循环
+        try:
+            api("POST", "/api/tournaments/%s/register" % tid)
+            api("POST", "/api/tournaments/%s/ready" % tid)
+        except ApiError:
+            pass
+    elif status == "stage_open":
+        # 阶段 2+ 确认期：晋级者/候补确认出席（幂等，每阶段都要重新确认）。
+        # 名单外 409 NOT_QUALIFIED = 已淘汰（海选未晋级/未报名者）。
+        if t.get("qualified"):
+            try:
+                api("POST", "/api/tournaments/%s/ready" % tid)
+                print("已确认出席:", stname)
+            except ApiError as e:
+                print("确认被拒:", e.body)  # 竞态（如恰逢开赛）：回主循环按最新状态处理
+        else:
+            print("未获得本阶段资格（已淘汰），退出")
+            break
+    elif status == "stage_done":
+        pass                        # 晋级轮打完：等管理员推进（空转窗口 != 结束）
+    else:                           # running：收割本阶段活跃场
+        act = my_active(t)
+        for gid in act:
+            play(gid)
+        if act:
+            continue                # 立刻复查：同批余场/决赛加赛新场可能刚出现
+    time.sleep(1)
+print("锦标赛结束")</code></pre>
+
+    </div>
+  </section>
+</main>
+
+<div id="modal" class="modal" hidden="">
+  <div class="modal-box" role="dialog" aria-modal="true">
+    <h2 id="modal-title"></h2>
+    <div id="modal-body"></div>
+    <div class="modal-actions">
+      <button id="modal-cancel" type="button" hidden="">取消</button>
+      <button id="modal-confirm" type="button" hidden="">确认报名</button>
+      <button id="modal-copy" type="button">复制令牌</button>
+      <button id="modal-close" type="button">关闭</button>
+    </div>
+  </div>
+</div>
+
+<script src="./杭州麻将对战平台_files/replay.js"></script>
+<script>
+"use strict";
+
+// 门户单页（spec §7）：大厅/我的赛事/观战/排名。XSS 防护：所有动态内容一律
+// 经 textContent 插入（createElement 构建 DOM，无 innerHTML 拼接）。
+// 令牌只在报名/重新生成响应时展示（弹窗 + navigator.clipboard.writeText），
+// 不落 localStorage；任何 fetch 401 → 跳 /portal/login（初始探测除外）。
+
+const $ = (s) => document.querySelector(s);
+
+const state = {
+  view: "welcome",
+  loggedIn: false,
+  tid: null,       // 当前锦标赛
+  gid: null,       // 当前观战房间
+  seat: -1,        // 我在房间中的座位（-1 = 旁观者，测试房间 owner 实况）
+  watchRoom: null, // 观战来源测试房间 id（null = 正式锦标赛观战）
+  myRank: null,    // 我的实时排名（来自 /me，供排名页高亮）
+  rankFrom: null,  // 排名页返回目标："mine" | "tournament"
+  poll: null,      // 观战轮询定时器
+  review: false,   // 复盘模式（静态单发：不轮询、不弹场终 banner）
+};
+
+const STATUS_LABEL = {
+  registering: "报名中", running: "比赛中", finished: "已结束",
+  void: "已作废", closed: "已关闭",
+  stage_open: "阶段确认中", stage_done: "阶段完成", // 多阶段（与 admin 同文案；stage_done 中断态见 stage_crashed）
+};
+// STAGE_STATUS_LABEL 阶段内状态词表（stage_status：open|running|done，spec §7.1）；
+// crashed 叠加「中断待重赛」（区分正常 done/中断待重赛）。
+const STAGE_STATUS_LABEL = { open: "确认中", running: "进行中", done: "已打完" };
+const QUALIFY_ERR_LABEL = {
+  NOT_QUALIFIED: "未获得本阶段资格（仅晋级者与候补可确认）",
+  TOURNAMENT_STARTED: "当前不在资格确认期",
+  TOURNAMENT_CLOSED: "赛事已关闭",
+  NOT_REGISTERED: "尚未报名该赛事",
+};
+const PHASE_LABEL = {
+  deal: "发牌", draw: "出牌", response_peng: "碰响应", response_chi: "吃响应",
+  settled: "结算", finished: "结束",
+};
+const EVENT_LABEL = {
+  tile_drawn: "摸牌", tile_discarded: "出牌", pass: "过", chi: "吃",
+  peng: "碰", gang: "杠", round_ended: "局结束", game_ended: "场结束",
+  timeout: "超时", hu: "胡",
+};
+const MELD_LABEL = {
+  chi: "吃", peng: "碰", gang_ming: "明杠", gang_an: "暗杠", gang_bu: "补杠",
+};
+const REGISTER_ERR_LABEL = {
+  TOURNAMENT_STARTED: "比赛已开始，无法报名",
+  TOURNAMENT_REGISTRATION_CLOSED: "报名已截止",
+  TOURNAMENT_CLOSED: "赛事已关闭",
+  MATCH_LIMIT_REACHED: "已达同时 16 场参赛上限",
+};
+const SEAT_NAMES = ["东", "南", "西", "北"];
+
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined && text !== null) n.textContent = text;
+  return n;
+}
+
+function fmtTime(unix) {
+  return new Date(unix * 1000).toLocaleString("zh-CN", { hour12: false });
+}
+
+// 赛事名回退：name 为空串显示 id（spec §5.2 存量数据兼容）
+function dispName(name, id) {
+  return name ? name : id;
+}
+
+function badge(status) {
+  return el("span", "badge s-" + status, STATUS_LABEL[status] || status);
+}
+
+function seatName(i) {
+  return i >= 0 && i < 4 ? SEAT_NAMES[i] : "—";
+}
+
+// seatLabel 座位显示名（2026-09-01：观战"座位 N"与实时排名玩家名可对应）。
+// seats 为快照/复盘的座位→玩家映射（{user_id,name} 数组，座位索引对齐）；
+// name 空回退 user_id、再回退方位。
+function seatLabel(i, seats) {
+  const p = seats && seats[i];
+  const nm = p ? (p.name || p.user_id || "") : "";
+  return nm ? "座位 " + i + "（" + nm + "）" : "座位 " + i + "（" + seatName(i) + "）";
+}
+
+// 手牌排序（观战展示用）：万→筒→条→风→箭，同花色按点数
+function tileKey(t) {
+  if (t === "白") return "e3";
+  if (t === "发") return "e2";
+  if (t === "中") return "e1";
+  if (t === "东") return "d1";
+  if (t === "南") return "d2";
+  if (t === "西") return "d3";
+  if (t === "北") return "d4";
+  const suit = { w: "a", b: "b", t: "c" }[t.slice(-1)];
+  return (suit || "z") + t.slice(0, -1);
+}
+
+// ---- 真麻将牌 SVG（移植自管理页 web/app.js，spec F4） ----
+// 门户安全约定「动态内容一律 textContent、无 innerHTML 拼接」→ 用
+// createElementNS 构建 SVG DOM（牌面文本全走 textContent），视觉与
+// app.js 的 tileHTML 完全一致：万/筒/条点阵 + 风箭单字 + 白板金边财神。
+const TILE_COLOR = { w: "#c0392b", b: "#2f6fed", t: "#1a9e5c" };
+const RANK_CN = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
+// 筒/条点阵布局（标准牌面位置，与 app.js DOT_LAYOUT 同源）
+const DOT_LAYOUT = {
+  1: [[13, 15]], 2: [[8, 10], [18, 20]], 3: [[8, 10], [13, 15], [18, 20]],
+  4: [[8, 9], [18, 9], [8, 21], [18, 21]], 5: [[8, 9], [18, 9], [13, 15], [8, 21], [18, 21]],
+  6: [[8, 9], [18, 9], [8, 15], [18, 15], [8, 21], [18, 21]],
+  7: [[8, 8], [18, 8], [8, 15], [13, 15], [18, 15], [8, 22], [18, 22]],
+  8: [[8, 8], [18, 8], [8, 13], [18, 13], [8, 18], [18, 18], [8, 23], [18, 23]],
+  9: [[8, 8], [18, 8], [8, 15], [18, 15], [8, 22], [18, 22], [13, 8], [13, 15], [13, 22]],
+};
+function svgEl(tag, attrs) {
+  const n = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const [k, v] of Object.entries(attrs || {})) n.setAttribute(k, v);
+  return n;
+}
+// 图片牌（2026-09-03 图片坐标切方案）：web/images/majiangpai.jpg，9 列×5 行网格；
+// 行0=筒 行1=万 行2=条 行3=花牌（杭州麻将不用，整行排除） 行4=中發白東南西北；
+// 白板=财神（瓷面+金边）。列/行左边界为投影实测值（1024×747）。保比例：缩放=
+// 显示宽32/源格宽114，源格高145 → 显示约 40.7px，容器 44px 内上下留细边。
+// 牌框矩形（dark-bbox 实测，1024×747 底图）：行0=筒 行1=万 行2=条 行4=中发白东南西北
+//（简体编码，rules 权威）；行3=花牌整行排除。每格各自 [x0,y0,x1,y1]，显示按框精确取片，
+// 无网格白边、无邻牌夹带；版权数字带已从底图修补洗掉。
+const TILE_IMG = "images/majiangpai.jpg";
+const TILE_RECT = {
+  "1b": [0, 0, 102, 137],
+  "1w": [0, 153, 103, 290],
+  "1t": [0, 305, 102, 443],
+  "2b": [115, 0, 217, 139],
+  "2w": [114, 153, 217, 291],
+  "2t": [114, 305, 217, 442],
+  "3b": [230, 0, 332, 137],
+  "3w": [230, 153, 332, 294],
+  "3t": [230, 304, 332, 442],
+  "4b": [345, 0, 447, 137],
+  "4w": [345, 153, 447, 295],
+  "4t": [344, 305, 447, 442],
+  "5b": [458, 0, 562, 137],
+  "5w": [457, 153, 562, 290],
+  "5t": [457, 305, 562, 442],
+  "6b": [575, 0, 677, 137],
+  "6w": [575, 153, 678, 291],
+  "6t": [575, 305, 677, 444],
+  "7b": [690, 0, 793, 137],
+  "7w": [688, 153, 793, 290],
+  "7t": [689, 305, 793, 442],
+  "8b": [801, 0, 908, 137],
+  "8w": [806, 153, 910, 293],
+  "8t": [806, 305, 909, 442],
+  "9b": [921, 0, 1023, 137],
+  "9w": [921, 153, 1023, 290],
+  "9t": [921, 305, 1023, 445],
+  "中": [0, 608, 102, 746],
+  "发": [115, 609, 217, 746],
+  "白": [230, 609, 332, 746],
+  "东": [345, 609, 447, 746],
+  "南": [457, 609, 562, 746],
+  "西": [575, 609, 677, 746],
+  "北": [689, 608, 793, 746],
+};
+// 调片：bg-size/position 用 CSS 变量表示（--tw/--th 由 .tile-svg 控制，24×33 与 32×44
+// 两档任意容器比例自动适配）；div 显示 = 框矩形精确满幅。
+function tileStyle(t) {
+  const [x0, y0, x1, y1] = TILE_RECT[t] || [];
+  if (x0 === undefined) return null; // 未知牌 → 回退
+  const w = x1 - x0 + 1, h = y1 - y0 + 1;
+  return `background-image:url(${TILE_IMG});background-size:calc(var(--tw,32px)*${1024 / w}) calc(var(--th,44px)*${747 / h});background-position:calc(var(--tw,32px)*-${x0 / w}) calc(var(--th,44px)*-${y0 / h})`;
+}
+function tileSpanSVG(t, timeout) {
+  const isGod = t === "白"; // 白板=财神：空白瓷面 + 金边高亮
+  const cls = "tile-svg" + (isGod ? " god" : "") + (timeout ? " timeout" : "");
+  const svg = svgEl("svg", {
+    class: cls,
+    viewBox: "0 0 26 36", width: "32", height: "44", "aria-label": t,
+  });
+  if (isGod) {
+    svg.setAttribute("stroke", "#d9a62e");
+    svg.setAttribute("stroke-width", "1.6");
+  }
+  svg.appendChild(svgEl("rect", { x: "1", y: "1", width: "24", height: "34", rx: "4", fill: "#fdfdf6" }));
+  const m = /^([1-9])([wtb])$/.exec(t);
+  if (m) {
+    const rank = +m[1], suit = m[2], color = TILE_COLOR[suit];
+    if (suit === "w") {
+      const n1 = svgEl("text", { x: "13", y: "14", "font-size": "11", "text-anchor": "middle", fill: color });
+      n1.textContent = RANK_CN[rank];
+      const n2 = svgEl("text", { x: "13", y: "26", "font-size": "7", "text-anchor": "middle", fill: color });
+      n2.textContent = "萬";
+      svg.appendChild(n1);
+      svg.appendChild(n2);
+    } else {
+      for (const [x, y] of DOT_LAYOUT[rank] || []) {
+        svg.appendChild(suit === "b"
+          ? svgEl("circle", { cx: x, cy: y, r: "2.2", fill: color })
+          : svgEl("rect", { x: x - 1.1, y: y - 2.2, width: "2.2", height: "4.4", rx: "1.3", fill: color }));
+      }
+    }
+  } else if (!isGod) {
+    // 风/箭单字（中发白三箭 + 东南西北）；未知牌原样渲染防空
+    const c = { "东": "#1c2430", "南": "#1c2430", "西": "#1c2430", "北": "#1c2430",
+      "中": "#c0392b", "发": "#1a9e5c" }[t] || "#1c2430";
+    const n = svgEl("text", { x: "13", y: "22", "font-size": "15", "text-anchor": "middle", fill: c });
+    n.textContent = t;
+    svg.appendChild(n);
+  }
+  return svg;
+}
+function tileSpan(t, timeout) {
+  const isGod = t === "白"; // 白板=财神：瓷面 + 金边高亮
+  const st = tileStyle(t);
+  if (st === null) return tileSpanSVG(t, timeout); // 未知牌防空：原 SVG 路径
+  const n = document.createElement("span");
+  n.className = "tile-svg" + (isGod ? " god" : "") + (timeout ? " timeout" : "");
+  n.setAttribute("aria-label", t);
+  n.style.cssText = st;
+  return n;
+}
+
+function showError(msg) {
+  const e = $("#error");
+  e.textContent = msg;
+  e.hidden = false;
+}
+
+function hideError() {
+  $("#error").hidden = true;
+}
+
+// api 包装：401 → 已登录则跳登录页（session 过期）；非 2xx 抛 {status, code, message}
+async function api(path, opts) {
+  let r;
+  try {
+    r = await fetch(path, opts);
+  } catch (_) {
+    throw { status: 0, code: "NETWORK", message: "网络错误，请稍后重试" };
+  }
+  if (r.status === 401) {
+    if (state.loggedIn) location.href = "/portal/login";
+    throw { status: 401, code: "UNAUTHORIZED", message: "unauthorized" };
+  }
+  let body = null;
+  try { body = await r.json(); } catch (_) { /* 非 JSON 体 */ }
+  if (!r.ok) {
+    throw {
+      status: r.status,
+      code: body && body.code ? body.code : "",
+      message: body && body.message ? body.message : r.status + " " + r.statusText,
+    };
+  }
+  return body;
+}
+
+// ---- 视图切换 ----
+
+const VIEWS = ["welcome", "lobby", "mine", "testrooms", "flow", "guide", "room", "tournament", "game", "ranking"];
+
+function showView(v) {
+  stopPoll();
+  state.view = v;
+  VIEWS.forEach((id) => { $("#view-" + id).hidden = id !== v; });
+  document.querySelectorAll("#tabs button").forEach((b) => {
+    b.classList.toggle("active", b.dataset.nav === v);
+  });
+  // 轮询随视图进出启停：测试房间列表（testrooms）与房间实况（room）各管各的
+  if (v === "testrooms") startRoomPoll();
+  else if (v === "room") startRoomDetailPoll();
+  else { stopRoomPoll(); stopRoomDetailPoll(); }
+  window.scrollTo(0, 0);
+}
+
+// ---- 登录态 ----
+
+function showWelcome() {
+  state.loggedIn = false;
+  $("#tabs").hidden = true;
+  $("#loginBtn").hidden = false;
+  $("#logoutBtn").hidden = true;
+  $("#whoami").textContent = "";
+  showView("welcome");
+}
+
+function enterApp(displayName) {
+  $("#tabs").hidden = false;
+  $("#loginBtn").hidden = true;
+  $("#logoutBtn").hidden = false;
+  $("#whoami").textContent = displayName || "已登录"; // me.name（fullname→nickname 落库值）
+  showLobby();
+}
+
+// ---- 赛事大厅 ----
+
+async function showLobby() {
+  showView("lobby");
+  try {
+    const d = await api("/portal/api/tournaments");
+    renderLobby(d.tournaments || []);
+    hideError();
+  } catch (err) {
+    showError(err.message);
+  }
+}
+
+function renderLobby(rows) {
+  const box = $("#lobby-cards");
+  box.replaceChildren();
+  if (!rows.length) {
+    box.appendChild(el("p", "empty", "暂无赛事 — 管理员创建后出现在这里"));
+    return;
+  }
+  for (const t of rows) {
+    const card = el("article", "card");
+    const head = el("div", "card-head");
+    head.appendChild(el("span", "card-title", dispName(t.name, t.id)));
+    head.appendChild(badge(t.status));
+    card.appendChild(head);
+
+    const body = el("div", "card-body");
+    body.appendChild(el("div", null, "开赛 " + fmtTime(t.start_at)));
+    const cnt = el("div", null, "");
+    cnt.appendChild(el("b", null, "报名 " + t.registered + " 人"));
+    body.appendChild(cnt);
+    // 报名截止展示：无 deadline（旧数据/测试房间）不显示；截止前后文案区分
+    if (t.register_deadline) {
+      const passed = t.register_deadline * 1000 < Date.now();
+      body.appendChild(el("div", "muted",
+        (passed ? "报名已截止 " : "报名截止 ") + fmtTime(t.register_deadline)));
+    }
+    // 多阶段：当前阶段行（大厅只展示，确认入口在「我的赛事」/赛事详情）
+    appendStageArea(body, t, false);
+
+    const acts = el("div", "card-actions");
+    const deadlinePassed = t.register_deadline && t.register_deadline * 1000 < Date.now();
+    if (t.my_registered) {
+      acts.appendChild(el("span", "registered-mark", "已报名 ✓"));
+    } else if (t.status === "registering" && !deadlinePassed) {
+      const btn = el("button", "", "报名");
+      btn.type = "button";
+      btn.addEventListener("click", () => registerTournament(t, btn));
+      acts.appendChild(btn);
+    } else {
+      acts.appendChild(el("span", "muted", "报名已截止"));
+    }
+    body.appendChild(acts);
+    card.appendChild(body);
+    box.appendChild(card);
+  }
+}
+
+// 报名入口：先弹确认层展示名称 + 赛程说明（描述），确认后才发注册请求
+function registerTournament(t, btn) {
+  showRegisterConfirm(t, () => {
+    btn.disabled = true;
+    doRegister(t.id, btn);
+  });
+}
+
+async function doRegister(tid, btn) {
+  try {
+    const d = await api("/portal/api/tournaments/" + tid + "/register", { method: "POST" });
+    hideError();
+    if (d.token) {
+      // 令牌明文仅此一次展示（spec §5.3）；弹窗提示交给 AI 程序
+      showToken("报名成功", d.token, "此令牌交给你的 AI 程序用于参赛。令牌仅本次展示，请立即复制保存。");
+    }
+    showLobby(); // 刷新报名状态（已报名 ✓）
+  } catch (err) {
+    btn.disabled = false;
+    showError(REGISTER_ERR_LABEL[err.code] || err.message);
+  }
+}
+
+// ---- 我的赛事 ----
+
+async function showMine() {
+  showView("mine");
+  try {
+    const d = await api("/portal/api/me");
+    const rows = d.tournaments || [];
+    // 每赛并行取详情，拿我的实时积分（/me 行不含积分，N 小可接受）
+    const details = await Promise.all(rows.map(async (t) => {
+      try { return await api("/portal/api/tournaments/" + t.id); } catch (_) { return null; }
+    }));
+    renderMine(rows, details);
+    hideError();
+  } catch (err) {
+    showError(err.message);
+  }
+}
+
+function renderMine(rows, details) {
+  const box = $("#mine-cards");
+  box.replaceChildren();
+  if (!rows.length) {
+    box.appendChild(el("p", "empty", "还没报名任何赛事 — 去大厅看看吧"));
+    return;
+  }
+  rows.forEach((t, i) => {
+    const det = details[i];
+    const rank = t.my_rank > 0 ? t.my_rank : null;
+    let score = null;
+    if (det && rank) {
+      const e = (det.ranking || [])[rank - 1];
+      if (e) score = e.total_score;
+    }
+
+    const card = el("article", "card");
+    const head = el("div", "card-head");
+    head.appendChild(el("span", "card-title", dispName(t.name, t.id)));
+    head.appendChild(badge(t.status));
+    card.appendChild(head);
+
+    const body = el("div", "card-body");
+    body.appendChild(el("div", null, "开赛 " + fmtTime(t.start_at)));
+    body.appendChild(el("div", null,
+      "我的排名 " + (rank ? "第 " + rank + " 名" : "—") + " · 积分 " + (score !== null ? score : "—")));
+    // 多阶段：阶段行 + 资格确认/候补入口（spec §7.3「我的比赛」）
+    appendStageArea(body, t, true);
+
+    const acts = el("div", "card-actions");
+    const watch = el("button", "", "进入观战");
+    watch.type = "button";
+    watch.addEventListener("click", () => openTournament(t.id, rank));
+    const rankBtn = el("button", "", "排名");
+    rankBtn.type = "button";
+    rankBtn.addEventListener("click", () => openRanking(t.id, rank, "mine"));
+    const regen = el("button", "", "重新生成令牌");
+    regen.type = "button";
+    regen.addEventListener("click", () => regenerateToken(t.id));
+    acts.appendChild(watch);
+    acts.appendChild(rankBtn);
+    acts.appendChild(regen);
+    body.appendChild(acts);
+    card.appendChild(body);
+    box.appendChild(card);
+  });
+}
+
+async function regenerateToken(tid) {
+  if (!confirm("重新生成参赛令牌？旧令牌将立即失效，请把新令牌重新交给你的 AI 程序。")) return;
+  try {
+    const d = await api("/portal/api/tournaments/" + tid + "/token", { method: "POST" });
+    hideError();
+    showToken("令牌已重新生成", d.token,
+      "旧令牌已失效，此令牌交给你的 AI 程序用于参赛。若有其他页面同时操作，以最后一次为准（spec §5.3）。");
+  } catch (err) {
+    showError(err.message);
+  }
+}
+
+// ---- 锦标赛详情（我的比赛 + 排名）----
+
+async function openTournament(tid, myRank) {
+  state.tid = tid;
+  state.myRank = myRank || null;
+  state.watchRoom = null; // 正式锦标赛观战：返回目标 = 锦标赛详情
+  showView("tournament");
+  try {
+    const d = await api("/portal/api/tournaments/" + tid);
+    renderTournament(d);
+    hideError();
+  } catch (err) {
+    showError(err.message);
+  }
+}
+
+function renderTournament(d) {
+  const title = $("#tour-title");
+  title.replaceChildren();
+  title.appendChild(document.createTextNode(dispName(d.name, d.tournament_id) + " "));
+  title.appendChild(badge(d.status));
+  $("#btn-ranking").onclick = () => openRanking(d.tournament_id, state.myRank, "tournament");
+
+  // 赛程说明（描述）：参赛者随时回看（管理员改名/改说明后此处随详情刷新即时生效）
+  const desc = $("#tour-desc");
+  if (d.description) {
+    desc.textContent = d.description;
+    desc.hidden = false;
+  } else {
+    desc.hidden = true;
+  }
+
+  // 多阶段：阶段时间线简版 + 资格确认（spec §7.3）
+  const stageBox = $("#tour-stage");
+  stageBox.replaceChildren();
+  appendStageArea(stageBox, d, true);
+
+  const games = d.my_games || [];
+  const box = $("#tour-games");
+  box.replaceChildren();
+  if (!games.length) {
+    box.appendChild(el("p", "empty", "开赛编排后出现比赛房间"));
+  } else {
+    const list = el("div", "cards");
+    for (const g of games) {
+      const card = el("article", "card");
+      const head = el("div", "card-head");
+      head.appendChild(el("span", "card-title", g.game_id));
+      head.appendChild(badge(g.status));
+      card.appendChild(head);
+
+      const body = el("div", "card-body");
+      body.appendChild(el("div", null,
+        "批次 " + g.batch + " · 座位 " + (g.seat >= 0 ? g.seat + "（" + seatName(g.seat) + "）" : "—")));
+
+      const acts = el("div", "card-actions");
+      if (g.status === "running" && g.seat >= 0) {
+        const b = el("button", "", "观战");
+        b.type = "button";
+        b.addEventListener("click", () => openGame(g.game_id, g.seat));
+        acts.appendChild(b);
+      } else if (g.status === "finished" || g.status === "abandoned") {
+        const b = el("button", "", "复盘");
+        b.type = "button";
+        b.addEventListener("click", () => openReview(g.game_id)); // 赛后查看（spec 复盘 §4.2；abandoned 与测试房间视图同款，审查 #35）
+        acts.appendChild(b);
+      } else {
+        acts.appendChild(el("span", "muted", "未开始"));
+      }
+      body.appendChild(acts);
+      card.appendChild(body);
+      list.appendChild(card);
+    }
+    box.appendChild(list);
+  }
+  renderRankTable($("#tour-ranking-tbody"), d.ranking || [], state.myRank);
+}
+
+// ---- 排名页 ----
+
+async function openRanking(tid, myRank, from) {
+  state.tid = tid;
+  state.myRank = myRank || null;
+  state.rankFrom = from;
+  showView("ranking");
+  try {
+    const d = await api("/portal/api/tournaments/" + tid + "/ranking");
+    $("#ranking-title").textContent = "实时排名";
+    renderRankTable($("#ranking-tbody"), d.ranking || [], state.myRank);
+    hideError();
+  } catch (err) {
+    showError(err.message);
+  }
+}
+
+function renderRankTable(tbody, rows, myRank) {
+  tbody.replaceChildren();
+  if (!rows.length) {
+    const tr = el("tr");
+    const td = el("td", "empty", "暂无排名 — 开赛产生积分后出现");
+    td.colSpan = 6;
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+    return;
+  }
+  rows.forEach((r, i) => {
+    const tr = el("tr");
+    if (myRank && i + 1 === myRank) tr.classList.add("me");
+    tr.appendChild(el("td", null, String(r.rank || i + 1)));
+    tr.appendChild(el("td", null, r.name || r.user_id)); // 姓名空回退 user_id（spec §7）
+    tr.appendChild(el("td", null, String(r.total_score)));
+    // 三键列：名次分/白板仅晋级轮累计，决赛轮恒 0（spec §5.1/§5.2）；旧行缺键显示 —
+    tr.appendChild(el("td", null, r.place_points === undefined ? "—" : String(r.place_points)));
+    tr.appendChild(el("td", null, r.god_count === undefined ? "—" : String(r.god_count)));
+    tr.appendChild(el("td", null, String(r.games_played)));
+    tbody.appendChild(tr);
+  });
+}
+
+// ---- 多阶段资格确认（spec §7.3/§7.1）----
+
+// stageBadge 阶段内状态徽章（stage_status 词表 open|running|done）；crashed 覆盖
+// 为「中断待重赛」红标 —— bot/用户可区分正常 done 与中断待重赛。
+function stageBadge(t) {
+  if (t.stage_crashed) return el("span", "badge s-stg-crashed", "中断待重赛");
+  const s = t.stage_status;
+  return el("span", "badge s-stg-" + s, STAGE_STATUS_LABEL[s] || s);
+}
+
+// stageRoleChip 资格角色（仅 qualified 显示）：finalist 晋级资格 / backup 候补资格。
+function stageRoleChip(t) {
+  if (!t.qualified) return null;
+  const r = t.qualify_role;
+  if (r === "finalist") return el("span", "role-chip role-finalist", "晋级资格");
+  if (r === "backup") return el("span", "role-chip role-backup", "候补资格");
+  return null;
+}
+
+// qualifyNow POST 资格确认（幂等；spec §7.3）：成功把按钮原位替换为「已确认 ✓」。
+async function qualifyNow(tid, btn) {
+  btn.disabled = true;
+  try {
+    await api("/portal/api/tournaments/" + tid + "/qualify", { method: "POST" });
+    hideError();
+    btn.replaceWith(el("span", "registered-mark", "已确认 ✓"));
+  } catch (err) {
+    btn.disabled = false;
+    showError(QUALIFY_ERR_LABEL[err.code] || err.message);
+  }
+}
+
+// appendStageArea 阶段时间线简版（spec §7.3）：当前阶段显示名/第 N/M 阶段/状态
+// 徽章；qualified 时附资格角色与说明；「资格确认」按钮 —— qualified 且当前处于
+// 阶段确认窗口（stage_status=open，与 tournament status=stage_open 同窗口）才显示。
+// t：行数据（需含 stage{no,role,total,name}/stage_status/stage_crashed/
+// qualified/qualify_role 与 id 或 tournament_id）；无当前阶段（报名期/测试房间）
+// 整组省略 → 不渲染。withButton=false（大厅行）只展示阶段与角色，确认入口在
+// 「我的赛事」与赛事详情页。
+function appendStageArea(box, t, withButton) {
+  if (!t.stage) return;
+  const st = t.stage;
+  const panel = el("div", "stage-panel");
+  const head = el("div", "stage-head");
+  head.appendChild(el("span", "stage-name", st.name));
+  head.appendChild(document.createTextNode("第 " + st.no + " / " + st.total + " 阶段"));
+  head.appendChild(stageBadge(t));
+  panel.appendChild(head);
+  const tid = t.id || t.tournament_id;
+  const role = stageRoleChip(t);
+  if (t.qualified) {
+    const line = el("div", "stage-qualify");
+    if (role) line.appendChild(role);
+    if (t.qualify_role === "backup") {
+      line.appendChild(el("span", "muted", "晋级者未确认时按名次递补，请保持令牌可用"));
+    }
+    // 资格确认窗口 = 当前阶段 open（确认期，spec §4.3 步 3）：名单内确认（幂等）
+    if (withButton && t.stage_status === "open") {
+      const btn = el("button", "", t.qualify_role === "backup" ? "确认候补" : "资格确认");
+      btn.type = "button";
+      btn.addEventListener("click", () => qualifyNow(tid, btn));
+      line.appendChild(btn);
+    }
+    panel.appendChild(line);
+  } else if (withButton && t.stage_status === "open") {
+    // 参赛者（详情/我的赛事视图按构造恒为参赛者）但不在本阶段资格名单
+    // （海选落选/未入候补池）：确认期已结束自己的赛事
+    panel.appendChild(el("div", "stage-note", "本阶段未获得晋级资格"));
+  }
+  box.appendChild(panel);
+}
+
+// ---- 观战（1.5s 轮询 snapshot）----
+
+async function openGame(gid, seat) {
+  state.gid = gid;
+  state.seat = seat;
+  state.review = false; // 离开复盘模式（openReview 置 true；观战恢复事件面板）
+  showView("game");
+  $("#game-title").textContent = "房间 " + gid;
+  $("#game-banner").hidden = true;
+  $("#game-banner").replaceChildren();
+  $("#game-meta").replaceChildren();
+  $("#game-seats").replaceChildren();
+  $("#game-hand").replaceChildren();
+  $("#game-events").replaceChildren();
+  $("#game-events").style.display = ""; // 复盘模式下隐藏，观战恢复显示
+  $("#game-review-title").hidden = true;
+  $("#game-review").hidden = true;
+  $("#game-review").replaceChildren();
+  startPoll();
+}
+
+// ---- 复盘（spec 复盘 §4.2/D9）：静态单发，不进 startPoll 轮询 ----
+
+async function openReview(gid) {
+  state.gid = gid;
+  state.seat = -1;
+  state.review = true; // 复盘模式：不弹「本场已结束」banner、不轮询
+  showView("game");
+  $("#game-title").textContent = "房间 " + gid;
+  $("#game-banner").hidden = true;
+  $("#game-banner").replaceChildren();
+  $("#game-meta").replaceChildren();
+  $("#game-seats").replaceChildren();
+  $("#game-hand").replaceChildren();
+  $("#game-events").replaceChildren();
+  $("#game-events").style.display = "none"; // 复盘模式隐藏尾部事件面板（避免双份显示）
+  $("#game-review-title").hidden = false;
+  $("#game-review").hidden = false;
+  $("#game-review").replaceChildren();
+  stopPoll();
+  // 终局桌面：一次快照（重启后 hub 空 → 404 忽略，仅复盘区）
+  try {
+    const d = await api("/portal/api/games/" + gid + "/snapshot");
+    if (state.gid !== gid || !state.review) return; // 已切走/离开复盘模式，丢弃过期响应
+    renderGame(d); // 复用观战渲染（快照响应整包 {snapshot, events}，与 pollTick 同形）
+  } catch (_) { /* 重启降级：无终局桌面，仅复盘区 */ }
+  // 复盘数据：一次拉取
+  try {
+    const d = await api("/portal/api/games/" + gid + "/events");
+    if (state.gid !== gid || !state.review) return; // 同上：过期响应丢弃
+    renderReview(d);
+    hideError();
+  } catch (err) {
+    if (state.gid !== gid || !state.review) return; // 过期请求的报错不显示
+    showError("复盘：" + err.message);
+  }
+}
+
+function startPoll() {
+  stopPoll();
+  pollTick();
+  state.poll = setInterval(pollTick, 1500);
+}
+
+function stopPoll() {
+  if (state.poll) {
+    clearInterval(state.poll);
+    state.poll = null;
+  }
+  pollBusy = false;
+}
+
+let pollBusy = false;
+
+async function pollTick() {
+  if (pollBusy) return; // 上一帧未返回则跳过本轮（防慢网络堆积）
+  pollBusy = true;
+  const gid = state.gid;
+  try {
+    const d = await api("/portal/api/games/" + gid + "/snapshot");
+    if (state.view !== "game" || state.gid !== gid) return; // 已切走/换场，丢弃过期帧
+    renderGame(d);
+    if (d.finished) {
+      stopPoll();
+      showGameEnded();
+    }
+  } catch (err) {
+    if (state.view !== "game" || state.gid !== gid) return;
+    if (err.code === "GAME_FINISHED") {
+      // 场终后服务端不再提供观赛快照（spec §6.2）→ 改显最终排名入口
+      stopPoll();
+      showGameEnded();
+      return;
+    }
+    if (err.status === 403 || err.status === 404) {
+      stopPoll();
+      showError("观战不可用：" + err.message);
+      return;
+    }
+    // 网络瞬时错误 / 429：不打断轮询，下帧重试
+  } finally {
+    pollBusy = false;
+  }
+}
+
+function showGameEnded() {
+  const b = $("#game-banner");
+  b.replaceChildren();
+  b.appendChild(el("span", null, "本场已结束"));
+  // 回放此局（2026-09-04）：终局后从头逐步回放（每局独立播放器）
+  const btnReplay = el("button", "", "回放此局");
+  btnReplay.type = "button";
+  btnReplay.addEventListener("click", () => openReview(state.gid));
+  b.appendChild(btnReplay);
+  // 测试房间旁观场终 → 回房间实况（排名在房间详情）；正式锦标赛 → 最终排名
+  const btn = el("button", "", state.watchRoom ? "返回房间" : "查看最终排名");
+  btn.type = "button";
+  btn.addEventListener("click", () => {
+    if (state.watchRoom) openRoom(state.watchRoom);
+    else openRanking(state.tid, state.myRank, "tournament");
+  });
+  b.appendChild(btn);
+  b.hidden = false;
+}
+
+function renderGame(d) {
+  const sn = d.snapshot || {};
+  const seats = d.seats || null; // 座位→玩家映射（PortalSnap.Seats，2026-09-01）
+  renderGameMeta(sn, seats);
+  renderGameSeats(sn, seats);
+  renderGameHand(sn);
+  renderGameEvents(d.events || []);
+}
+
+function renderGameMeta(sn, seats) {
+  const grid = $("#game-meta");
+  grid.replaceChildren();
+  const items = [
+    ["阶段", PHASE_LABEL[sn.phase] || sn.phase || "—"],
+    ["局数", "第 " + (sn.round_no || 0) + " 局"],
+    ["庄家", seatLabel(sn.dealer, seats)],
+    ["当前", seatLabel(sn.turn, seats)],
+    ["牌墙剩余", sn.wall_remaining !== undefined ? String(sn.wall_remaining) : "—"],
+    ["我的积分", sn.scores && state.seat >= 0 ? String(sn.scores[state.seat]) : "—"],
+    ["最近出牌", sn.last_discard || "—"],
+    ["刚摸", sn.drawn_tile || "—"],
+  ];
+  const god = sn.god || {};
+  if (state.seat >= 0) { // 旁观者（seat=-1）无每座爆头/飘私有信息
+    const godParts = [];
+    godParts.push("爆头 " + (god.baotou ? "●" : "○"));
+    godParts.push("飘 " + (god.chain_count || 0));
+    if (god.catch_play) godParts.push("抓打圈");
+    items.push(["我的状态", godParts.join(" · ")]);
+  }
+  for (const [k, v] of items) {
+    grid.appendChild(el("span", null, k));
+    grid.appendChild(el("b", null, v));
+  }
+}
+
+function renderGameSeats(sn, seats) {
+  const grid = $("#game-seats");
+  grid.replaceChildren();
+  const tflags = timeoutRiverFlags(sn.events); // 超时打出河牌 → 红框标注
+  for (let i = 0; i < 4; i++) {
+    const box = el("div", "seat-box" + (i === state.seat ? " me" : ""));
+    const head = el("div", "seat-head");
+    head.appendChild(el("span", null, seatLabel(i, seats)));
+    if (i === state.seat) head.appendChild(el("span", "tag self", "我"));
+    if (i === sn.dealer) head.appendChild(el("span", "tag dealer", "庄"));
+    if (i === sn.turn) head.appendChild(el("span", "tag turn", "当前"));
+    box.appendChild(head);
+
+    // 河牌（公开）
+    const river = el("div", "seat-line");
+    river.appendChild(el("b", null, "河牌 "));
+    const discards = sn.discards ? sn.discards[i] || [] : [];
+    if (discards.length) discards.forEach((t, k) => river.appendChild(tileSpan(t, tflags[i] && tflags[i][k])));
+    else river.appendChild(document.createTextNode("—"));
+    box.appendChild(river);
+
+    // 副露（公开）
+    const melds = sn.melds ? sn.melds[i] || [] : [];
+    if (melds.length) {
+      const ml = el("div", "seat-line");
+      ml.appendChild(el("b", null, "副露 "));
+      melds.forEach((m, j) => {
+        if (j) ml.appendChild(document.createTextNode(" · "));
+        ml.appendChild(document.createTextNode(MELD_LABEL[m.kind] || m.kind));
+        (m.tiles || []).forEach((t) => ml.appendChild(tileSpan(t)));
+      });
+      box.appendChild(ml);
+    }
+
+    // 他家手牌张数（公开信息；自己的手牌在下方独立面板）
+    if (i !== state.seat && sn.hand_counts) {
+      box.appendChild(el("div", "seat-line", "手牌 " + sn.hand_counts[i] + " 张"));
+    }
+    grid.appendChild(box);
+  }
+}
+
+function renderGameHand(sn) {
+  const panel = $("#game-hand");
+  panel.replaceChildren();
+  if (state.seat < 0) return; // 旁观者（测试房间 owner 实况）无手牌视角
+  panel.className = "hand-panel";
+  const hand = (sn.my_hand || []).slice().sort((a, b) => tileKey(a) < tileKey(b) ? -1 : 1);
+  panel.appendChild(el("b", null, "我的手牌（" + hand.length + " 张）"));
+  const row = el("div", null, "");
+  row.style.marginTop = "0.3rem";
+  hand.forEach((t) => row.appendChild(tileSpan(t)));
+  if (!hand.length) row.appendChild(document.createTextNode("—"));
+  panel.appendChild(row);
+}
+
+// eventRow 事件行渲染（观战 + 复盘共用，spec 复盘 f6；保持既有 .event 样式与
+// EVENT_LABEL/tileSpan/data 渲染，观战 UI 不变）
+function eventRow(e) {
+  const row = el("div", "event");
+  // 超时区分 kind：kind:"discard" = 出牌超时自动出牌（真超时，红色）；
+  // kind:"response" = 碰/吃窗口固定走满（设计性硬等待防时间侧信道，
+  // 非玩家超时）→ 不标红、文案「窗口走满」
+  const isDiscardTimeout = e.type === "timeout" && e.data && e.data.kind === "discard";
+  if (isDiscardTimeout) row.classList.add("ev-timeout"); // 超时事件行红色字体
+  // game.Event 有 json tag → 序列化键为小写（seq/type/seat/tile/data/ts），
+  // 与 admin 前端 app.js 一致；用 Go 字段名大写键读取会渲染 undefined
+  row.appendChild(el("span", "ev-seq", "#" + e.seq));
+  row.appendChild(el("span", "ev-seat", "座位 " + (e.seat < 0 ? "—" : e.seat)));
+  const label = e.type === "timeout" && e.data && e.data.kind === "response"
+    ? "窗口走满" : (EVENT_LABEL[e.type] || e.type);
+  row.appendChild(el("span", "ev-type", label));
+  if (e.tile) {
+    const t = el("span", "ev-tile");
+    t.appendChild(tileSpan(e.tile));
+    row.appendChild(t);
+  }
+  if (e.data) row.appendChild(el("code", null, JSON.stringify(e.data)));
+  return row;
+}
+
+function renderGameEvents(events) {
+  const box = $("#game-events");
+  box.replaceChildren();
+  const evs = [...events].reverse(); // 新的在前
+  if (!evs.length) {
+    box.appendChild(el("p", "empty", "暂无事件"));
+    return;
+  }
+  for (const e of evs) box.appendChild(eventRow(e));
+}
+
+// timeoutRiverFlags 超时出牌标记：`tile_discarded` 后紧跟 `timeout(kind:"discard")`
+// 的事件（actor 超时自动出最右牌路径，actor.go handleTimer）→ 该河牌为超时
+// 打出。返回 [seat][i] 布尔数组，与对应 seat 的 discards 索引对齐；响应窗口
+// 超时（kind:"response"）不涉及打出牌，不影响。观战快照事件为滚动窗口，
+// 旧段超时对可能滚出 → 部分历史河牌无法标注（可接受）。
+function timeoutRiverFlags(events) {
+  const flags = [[], [], [], []];
+  const last = [-1, -1, -1, -1];
+  for (const e of events || []) {
+    const s = e.seat;
+    if (s < 0 || s > 3) continue;
+    if (e.type === "tile_discarded") {
+      flags[s].push(false);
+      last[s] = flags[s].length - 1;
+    } else if (e.type === "timeout" && e.data && e.data.kind === "discard" && last[s] >= 0) {
+      flags[s][last[s]] = true;
+    }
+  }
+  return flags;
+}
+
+// buildRoundView 复盘牌面重建（纯函数）：局首块 start_hands + 该局事件序列
+// → 四家 { hands 局末手牌, melds 副露顺序, discards 打出顺序, timeoutFlags 超时标记,
+//   lastDraws 每家最后一次摸牌 }。
+// 手牌扣除口径：吃从 data.tiles 去被吃牌（e.tile，来自河不在手牌）后扣 2；
+// 碰扣 2（第 3 张是被碰牌）；明杠扣 3（手牌出 3、1 张来自河）；暗杠扣 4；
+// 补杠扣 1（另 3 张早已随先前的碰副露出露）。杠后补摸仍按 tile_drawn 计；
+// 缺失块区间重建可能失准——由缺失警告兜底。
+function buildRoundView(b0, events) {
+  const hands = (b0.start_hands || []).map((h) => h.slice());
+  const melds = [[], [], [], []];
+  const discards = [[], [], [], []];
+  const timeoutFlags = [[], [], [], []];
+  const lastDraws = [null, null, null, null]; // 每家最后一次摸牌（胡家 = 胡牌牌）
+  const lastDiscard = [-1, -1, -1, -1];
+  const removeTile = (hand, t) => {
+    const i = hand.indexOf(t);
+    if (i >= 0) hand.splice(i, 1);
+  };
+  for (const e of events) {
+    const s = e.seat;
+    if (s < 0 || s > 3) continue;
+    if (e.type === "tile_drawn") {
+      hands[s].push(e.tile);
+      lastDraws[s] = e.tile; // 含杠补（gang_replenish）——杠开胡牌牌同样来自最后一次摸牌
+    } else if (e.type === "tile_discarded") {
+      discards[s].push(e.tile);
+      timeoutFlags[s].push(false);
+      lastDiscard[s] = timeoutFlags[s].length - 1;
+      removeTile(hands[s], e.tile);
+    } else if (e.type === "timeout" && e.data && e.data.kind === "discard" && lastDiscard[s] >= 0) {
+      timeoutFlags[s][lastDiscard[s]] = true; // 超时自动出牌：紧跟的 tile_discarded
+    } else if (e.type === "chi" || e.type === "peng" || e.type === "gang") {
+      let label, shown, removed;
+      if (e.type === "chi") {
+        label = MELD_LABEL.chi;
+        shown = (e.data && e.data.tiles) || [e.tile, e.tile, e.tile]; // 3 张含被吃牌
+        removed = shown.filter((t) => t !== e.tile); // 被吃牌来自河，不扣手牌
+      } else if (e.type === "gang") {
+        const kind = (e.data && e.data.kind) || "ming";
+        label = MELD_LABEL["gang_" + kind] || MELD_LABEL.gang_ming;
+        removed = Array(kind === "an" ? 4 : kind === "bu" ? 1 : 3).fill(e.tile);
+        shown = Array(4).fill(e.tile); // 明杠含 1 张被杠牌，统一显示 4 张
+      } else {
+        label = MELD_LABEL.peng;
+        removed = [e.tile, e.tile]; // 手牌出 2，第 3 张是被碰牌
+        shown = [e.tile, e.tile, e.tile];
+      }
+      removed.forEach((t) => removeTile(hands[s], t));
+      melds[s].push({ label, tiles: shown });
+    }
+  }
+  return { hands, melds, discards, timeoutFlags, lastDraws };
+}
+
+// roundWinInfo 该局胡家信息（胡家"手牌/摸牌"同行分隔，2026-09-02）：从局事件
+// 找 round_ended（draw=false）→ { seat 胡家, draw 胡牌牌, baotou 是否爆头 }。
+// 规则保证只有自摸能胡（action.go Hu 要求刚摸牌），胡牌牌恒为胡家最后一次
+// tile_drawn（lastDraws，含杠开补牌）；爆头由番型 detail 含「爆头」判定（fan.go）。
+// 流局/无胡牌牌（缺失块重建兜底）→ null，调用方维持原样展示。
+function roundWinInfo(evs, winner, lastDraws) {
+  const end = evs.find((e) => e.type === "round_ended" && e.data && e.data.draw === false);
+  if (!end || winner < 0 || winner > 3) return null;
+  const draw = (lastDraws && lastDraws[winner]) || null;
+  if (!draw) return null;
+  const baotou = Array.isArray(end.data.detail) && end.data.detail.includes("爆头");
+  return { seat: winner, draw, baotou };
+}
+
+// ---- 回放播放器（2026-09-04）：每局独立；默认停在终态（与静态牌面一致）。
+// 状态推进引擎为 web/portal/replay.js 的 ReplayEngine（node 单测同一文件）。----
+const RP_ACT = {
+  tile_drawn: ["摸", "r-draw"], tile_discarded: ["打", "r-discard"],
+  chi: ["吃", "r-chi"], peng: ["碰", "r-peng"], gang: ["杠", "r-gang"],
+  round_ended: ["结", "r-info"], timeout: ["超时", "r-timeout"],
+  game_ended: ["终", "r-info"], pass: ["过", "r-info"],
+};
+let rpActive = null; // 当前接管 ←/→/空格 键盘的播放器（点击卡片即接管）
+
+function rpSort(arr) {
+  return [...arr].sort((a, b) => (tileKey(a) < tileKey(b) ? -1 : 1));
+}
+
+// rpHandLine 该座手牌行：刚摸的牌（pendingDraw）与主手牌以空槽隔开（麻将桌惯例）
+function rpHandLine(st, s) {
+  const line = el("div", "seat-line");
+  line.appendChild(el("span", "muted", "手牌 "));
+  const arr = st.hands[s] || [];
+  if (st.pendingDraw[s] && arr.length) {
+    rpSort(arr.slice(0, -1)).forEach((t) => line.appendChild(tileSpan(t)));
+    line.appendChild(el("span", "rp-gap"));
+    line.appendChild(el("span", "rp-drawn")).appendChild(tileSpan(arr[arr.length - 1]));
+  } else {
+    rpSort(arr).forEach((t) => line.appendChild(tileSpan(t)));
+  }
+  return line;
+}
+
+function rpMeldLine(st, s) {
+  const line = el("div", "seat-line");
+  line.appendChild(el("span", "muted", "副露 "));
+  const ms = st.melds[s] || [];
+  if (!ms.length) {
+    line.appendChild(document.createTextNode("—"));
+    return line;
+  }
+  ms.forEach((m, j) => {
+    if (j) line.appendChild(document.createTextNode(" · "));
+    line.appendChild(el("span", "muted", MELD_LABEL[m.label] || m.label));
+    m.tiles.forEach((t) => line.appendChild(tileSpan(t)));
+  });
+  return line;
+}
+
+function rpRiverLine(st, s) {
+  const line = el("div", "seat-line");
+  line.appendChild(el("span", "muted", "打出 "));
+  const rs = st.rivers[s] || [];
+  if (!rs.length) {
+    line.appendChild(document.createTextNode("—"));
+    return line;
+  }
+  rs.forEach((t, k) => line.appendChild(tileSpan(t, st.discardFlags[s] && st.discardFlags[s][k])));
+  return line;
+}
+
+// mountReplayPlayer 挂载播放器：控制条 + 动作栏 + 四家牌面 + 结果行
+function mountReplayPlayer(card, body, steps, seats, r, evs) {
+  const lastIdx = steps.length - 1;
+  const ctl = el("div", "rp-ctl");
+  const btnPlay = el("button", "rp-btn play", "▶ 自动");
+  const btnPrev = el("button", "rp-btn", "⏮ 上一步");
+  const btnNext = el("button", "rp-btn", "⏭ 下一步");
+  const btnEnd = el("button", "rp-btn", "⏩ 终态");
+  const lbl = el("label", null, "间隔");
+  const inp = document.createElement("input");
+  inp.type = "number"; inp.min = "0.5"; inp.max = "10"; inp.step = "0.1"; inp.value = "2";
+  const slider = document.createElement("input");
+  slider.type = "range"; slider.className = "rp-slider";
+  slider.min = "0"; slider.max = String(lastIdx); slider.value = String(lastIdx);
+  const pos = el("span", "rp-pos", "");
+  ctl.append(btnPlay, btnPrev, btnNext, btnEnd, lbl, inp, slider, pos);
+  body.appendChild(ctl);
+
+  const bar = el("div", "rp-bar");
+  const act = el("span", "rp-act r-info", "");
+  const actText = el("span", null, "");
+  const wall = el("span", "rp-wall", "");
+  bar.append(act, actText, wall);
+  body.appendChild(bar);
+
+  const seatsBox = el("div", "rp-seats");
+  const seatEls = [0, 1, 2, 3].map((s) => {
+    const box = el("div", "review-seat");
+    box.appendChild(el("b", null, seatLabel(s, seats)));
+    seatsBox.appendChild(box);
+    return box;
+  });
+  body.appendChild(seatsBox);
+
+  const result = el("div", "rp-result");
+  body.appendChild(result);
+
+  let idx = lastIdx;
+  let timer = null;
+
+  const render = () => {
+    const st = steps[idx];
+    const ev = st.ev;
+    seatEls.forEach((e) => e.classList.remove("rp-act-seat"));
+    for (let s = 0; s < 4; s++) {
+      const e = seatEls[s];
+      e.replaceChildren(el("b", null, seatLabel(s, seats)));
+      e.appendChild(rpHandLine(st, s));
+      e.appendChild(rpMeldLine(st, s));
+      e.appendChild(rpRiverLine(st, s));
+    }
+    // 当前动作人：批注步（pass/响应超时/流局）不换人——实测缺陷：响应窗口高亮乱跳
+    const actSeat = ev ? (ReplayEngine.isRealActor(ev) ? ev.seat : ReplayEngine.rpActorSeat(steps, idx)) : -1;
+    if (actSeat >= 0) seatEls[actSeat].classList.add("rp-act-seat");
+    // 动作栏（座位号与门户其余视图一致：座位 0..3）
+    if (ev && ev.type === "round_ended" && ev.data && ev.data.draw) {
+      act.className = "rp-act r-info";
+      act.textContent = "流局";
+      actText.textContent = st.note;
+    } else if (ev && ReplayEngine.isRealActor(ev)) {
+      const rp = RP_ACT[ev.type] || ["", "r-info"];
+      act.className = "rp-act " + (ev.type === "round_ended" ? "r-hu" : rp[1]);
+      act.textContent = "座位" + ev.seat + (ev.type === "round_ended" ? "胡" : rp[0]);
+      actText.textContent = st.note +
+        (ev.tile && (ev.type === "tile_drawn" || ev.type === "tile_discarded")
+          && ev.tile ? " " + ReplayEngine.tileChar(ev.tile) : "");
+    } else if (ev && RP_ACT[ev.type]) {
+      act.className = "rp-act " + RP_ACT[ev.type][1];
+      act.textContent = RP_ACT[ev.type][0];
+      actText.textContent = st.note + (ev.type === "timeout" ? "（响应窗口，不换座）" : "");
+    } else {
+      act.className = "rp-act r-info";
+      act.textContent = "开局";
+      actText.textContent = st.note;
+    }
+    wall.textContent = "牌墙剩余 " + ReplayEngine.wallRemaining(st) + " 张";
+    pos.textContent = idx + " / " + lastIdx;
+    slider.value = String(idx);
+    btnPrev.disabled = idx <= 0;
+    btnNext.disabled = idx >= lastIdx;
+    btnPlay.textContent = timer ? "⏸ 暂停" : "▶ 自动";
+    // 结果行
+    const win = roundWinInfo(evs, r.winner, st.pendingDraw);
+    if (ev && ev.type === "round_ended") {
+      result.textContent = ev.data && ev.data.draw
+        ? "流局：各家 0 分，庄家连庄"
+        : "胡：" + seatLabel(win && win.seat >= 0 ? win.seat : r.winner, seats) + " · " +
+          ((ev.data.detail || []).join(" × ") + (ev.data.detail && ev.data.detail.length ? " ×" : "") + ev.data.fan) +
+          " · 得分 " + ((ev.data.scores || []).join(" / "));
+      if (win && win.baotou && !ev.data.draw) result.appendChild(el("span", "badge-baotou", "爆头"));
+    } else if (idx === lastIdx) {
+      result.textContent = r.is_draw ? "终态（流局）" : "终态（" + seatLabel(r.winner, seats) + " 胡；点 ▶ 从头回放）";
+    } else {
+      result.textContent = "";
+    }
+  };
+
+  const stepTo = (i) => {
+    idx = Math.max(0, Math.min(lastIdx, i));
+    render();
+    if (idx >= lastIdx) stop(); // 到终态即停（自动播放自然收敛）
+  };
+  const stop = () => {
+    if (timer) { clearInterval(timer); timer = null; }
+  };
+  const play = () => {
+    if (timer) { stop(); render(); return; }
+    if (idx >= lastIdx) idx = 0; // 终态点播放 → 从头
+    const sec = Math.min(10, Math.max(0.5, parseFloat(inp.value) || 2));
+    timer = setInterval(() => {
+      // 自动播放快进批注步（pass/响应超时等），只停留于真实桌面动作
+      let nxt = idx + 1;
+      while (nxt < lastIdx && !ReplayEngine.isRealActor(steps[nxt].ev)) nxt++;
+      stepTo(nxt);
+    }, sec * 1000);
+    render();
+  };
+  btnPlay.onclick = play;
+  btnPrev.onclick = () => stepTo(idx - 1);
+  btnNext.onclick = () => stepTo(idx + 1);
+  btnEnd.onclick = () => stepTo(lastIdx);
+  inp.addEventListener("input", () => { if (timer) { stop(); play(); } });
+  slider.addEventListener("input", () => stepTo(parseInt(slider.value, 10)));
+
+  const api = {
+    step(d) { stepTo(idx + d); },
+    toggle() { play(); },
+  };
+  rpActive = api;
+  card.addEventListener("click", () => { rpActive = api; });
+  render();
+  return api;
+}
+
+// 回放键盘：←/→ 单步、空格 播放/暂停（接管于最后点击/挂载的播放器）
+document.addEventListener("keydown", (e) => {
+  if (!rpActive || (e.target && e.target.tagName === "INPUT")) return;
+  if (e.key === "ArrowLeft") { e.preventDefault(); rpActive.step(-1); }
+  else if (e.key === "ArrowRight") { e.preventDefault(); rpActive.step(1); }
+  else if (e.key === " ") { e.preventDefault(); rpActive.toggle(); }
+});
+
+// renderReview 复盘区（spec 复盘 §5.5）：每局一张卡片 = 四家牌面视图
+// （局末手牌按牌型排序 + 副露/打出按时间顺序，buildRoundView 重建）+ 折叠
+// 事件流 + 局末分数（rounds 数据源）；缺失检测：块 seq 连续性 + 末块含
+// game_ended；truncated 块显示「日志不完整」。
+function renderReview(d) {
+  const box = $("#game-review");
+  box.replaceChildren();
+  const blocks = d.blocks || [];
+  const rounds = d.rounds || [];
+  const seats = d.seats || null; // 座位→玩家映射（2026-09-01：复盘"座 N"可对应玩家名）
+  if (!blocks.length) {
+    box.appendChild(el("p", "muted", "无复盘日志"));
+    return;
+  }
+  // 缺失检测：块 seq 连续 + 末块含 game_ended + 无 truncated 块
+  let missing = false;
+  let missingAt = 0;
+  let lastEnd = 0;
+  let lastHasEnd = false;
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i];
+    if (b.seq_start !== lastEnd + 1) { missing = true; missingAt = i; }
+    lastEnd = b.seq_end;
+    if ((b.events || []).some((e) => e.type === "game_ended")) lastHasEnd = true;
+    if (b.truncated) { missing = true; missingAt = i; }
+  }
+  if (missing || !lastHasEnd) {
+    box.appendChild(el("p", "warn", "日志不完整（尾部缺失/截断），复盘可能缺局部"));
+  }
+  // 按局分组（blocks 按 seq_start 升序；round_no 分组）
+  const byRound = {};
+  for (const b of blocks) {
+    (byRound[b.round_no] = byRound[b.round_no] || []).push(b);
+  }
+  if (!rounds.length) {
+    box.appendChild(el("p", "warn", "局记录缺失（rounds 为空）"));
+    return;
+  }
+  for (const r of rounds) {
+    const card = el("article", "card");
+    const head = el("div", "card-head");
+    head.appendChild(el("span", "card-title", `第 ${r.round_no} 局`));
+    head.appendChild(el("span", "muted", r.is_draw ? "流局" : (r.winner >= 0 ? `胡：${seatLabel(r.winner, seats)}` : "")));
+    card.appendChild(head);
+    const body = el("div", "card-body");
+    const b0 = (byRound[r.round_no] || [])[0];
+    // 该局全部事件（跨块按 seq 升序）
+    const evs = [];
+    for (const b of byRound[r.round_no] || []) for (const e of b.events || []) evs.push(e);
+    if (b0 && b0.start_hands) {
+      if (window.ReplayEngine) {
+        // 回放播放器（2026-09-04）：默认停在终态 = 原静态牌面（胡家摸牌分隔等不变），
+        // ▶ 从头自动播放；引擎异常时兜底走 buildRoundView 静态重建。
+        mountReplayPlayer(card, body, ReplayEngine.buildSteps(b0.start_hands, evs), seats, r, evs);
+      } else {
+        // legacy 静态重建（引擎不可用时兜底，行为不变）
+        // 牌面视图：每家 手牌（局末，牌型顺序）/ 副露（时间顺序）/ 打出（时间顺序）；
+        // 胡家"手牌/摸牌"同行分隔（2026-09-02）：最后摸的牌从手牌中分出、隔开显示，
+        // 一眼看出是否爆头
+        const view = buildRoundView(b0, evs);
+        const win = roundWinInfo(evs, r.winner, view.lastDraws);
+        for (let s = 0; s < 4; s++) {
+          const box = el("div", "review-seat");
+          box.appendChild(el("b", null, seatLabel(s, seats)));
+          const hl = el("div", "seat-line");
+          hl.appendChild(el("span", "muted", "手牌 "));
+          const tiles = view.hands[s].slice();
+          if (win && win.seat === s) {
+            const k = tiles.indexOf(win.draw);
+            if (k >= 0) tiles.splice(k, 1); // 手牌去掉最后摸的牌（同牌多张仅去胡牌那张）
+          }
+          tiles.sort((a, b) => (tileKey(a) < tileKey(b) ? -1 : 1))
+            .forEach((t) => hl.appendChild(tileSpan(t)));
+          if (win && win.seat === s) {
+            hl.appendChild(el("span", "draw-sep", "│")); // 摸牌与手牌隔开
+            hl.appendChild(tileSpan(win.draw));
+            if (win.baotou) hl.appendChild(el("span", "badge-baotou", "爆头"));
+          }
+          box.appendChild(hl);
+          if (view.melds[s].length) {
+            const ml = el("div", "seat-line");
+            ml.appendChild(el("span", "muted", "副露 "));
+            view.melds[s].forEach((m, j) => {
+              if (j) ml.appendChild(document.createTextNode(" · "));
+              ml.appendChild(el("span", "muted", m.label));
+              m.tiles.forEach((t) => ml.appendChild(tileSpan(t)));
+            });
+            box.appendChild(ml);
+          }
+          const dl = el("div", "seat-line");
+          dl.appendChild(el("span", "muted", "打出 "));
+          if (view.discards[s].length) {
+            view.discards[s].forEach((t, k) => dl.appendChild(tileSpan(t, view.timeoutFlags[s] && view.timeoutFlags[s][k])));
+          } else dl.appendChild(document.createTextNode("—"));
+          box.appendChild(dl);
+          body.appendChild(box);
+        }
+      }
+    }
+    // 事件列表（折叠，默认收起；需要原始细节时展开）
+    if (evs.length) {
+      const det = el("details", null, "");
+      det.appendChild(el("summary", null, `事件流（${evs.length} 条）`));
+      const box = el("div", "events", null);
+      for (const e of evs) box.appendChild(eventRow(e));
+      det.appendChild(box);
+      body.appendChild(det);
+    }
+    // 局末分数（rounds 表，D11）
+    const sc = el("div", "muted", "分数：" + (r.scores || []).join(" / "));
+    body.appendChild(sc);
+    card.appendChild(body);
+    box.appendChild(card);
+  }
+}
+
+// ---- 令牌弹窗 ----
+
+function showToken(title, token, hint) {
+  $("#modal").hidden = false;
+  $("#modal-title").textContent = title;
+  const body = $("#modal-body");
+  body.replaceChildren();
+  body.appendChild(el("code", "token-box", token));
+  body.appendChild(el("p", "modal-hint", hint));
+  // 令牌弹层专用按钮组（报名确认层复用 #modal，互相切换时显隐互斥）
+  $("#modal-copy").hidden = false;
+  $("#modal-close").hidden = false;
+  $("#modal-confirm").hidden = true;
+  $("#modal-cancel").hidden = true;
+  $("#modal-copy").textContent = "复制令牌";
+  $("#modal-copy").onclick = () => copyToken(token);
+}
+
+// ---- 报名确认层（需求落点：点「报名」先看到名称与赛程说明/描述，确认后才注册）----
+let registerConfirmCb = null; // 确认回调（confirm/cancel/Escape 一次性消费）
+
+function showRegisterConfirm(t, onConfirm) {
+  $("#modal").hidden = false;
+  $("#modal-title").textContent = "报名「" + dispName(t.name, t.id) + "」";
+  const body = $("#modal-body");
+  body.replaceChildren();
+  const rules = (t.description || "").trim();
+  body.appendChild(el("p", rules ? "desc-block" : "modal-placeholder",
+    rules || "该赛事暂无赛程说明，直接确认报名即可。"));
+  $("#modal-copy").hidden = true;
+  $("#modal-close").hidden = true;
+  $("#modal-confirm").hidden = false;
+  $("#modal-cancel").hidden = false;
+  registerConfirmCb = onConfirm;
+}
+
+function closeModal() {
+  $("#modal").hidden = true;
+}
+
+async function copyToken(token) {
+  const btn = $("#modal-copy");
+  const done = () => {
+    btn.textContent = "已复制 ✓";
+    setTimeout(() => { btn.textContent = "复制令牌"; }, 1500);
+  };
+  try {
+    await navigator.clipboard.writeText(token); // 需安全上下文（HTTPS/localhost）
+    done();
+  } catch (_) {
+    // 非安全上下文回退：临时 textarea 选中 + execCommand（不落 localStorage）
+    const ta = document.createElement("textarea");
+    ta.value = token;
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand("copy");
+      done();
+    } catch (_) {
+      alert("自动复制失败，请手动复制：\n" + token);
+    }
+    document.body.removeChild(ta);
+  }
+}
+
+// ---- 启动 ----
+
+async function init() {
+  try {
+    const d = await api("/portal/api/me"); // 无会话 401 → 欢迎页（不自动跳转登录）
+    state.loggedIn = true;
+    enterApp(d.name || "");
+  } catch (_) {
+    showWelcome();
+  }
+}
+
+// ---- 事件绑定 ----
+
+document.querySelectorAll("#tabs button").forEach((b) => {
+  b.addEventListener("click", () => {
+    if (b.dataset.nav === "lobby") showLobby();
+    else if (b.dataset.nav === "mine") showMine();
+    else if (b.dataset.nav === "testrooms") showTestRooms();
+    else if (b.dataset.nav === "flow") showView("flow"); // 静态说明页，无需数据加载
+    else if (b.dataset.nav === "guide") showGuide();
+  });
+});
+$("#logoutBtn").addEventListener("click", () => { location.href = "/portal/logout"; });
+$("#btn-lobby-refresh").addEventListener("click", showLobby);
+$("#btn-mine-refresh").addEventListener("click", showMine);
+$("#btn-tour-refresh").addEventListener("click", () => {
+  if (state.tid) openTournament(state.tid, state.myRank);
+});
+$("#modal-close").addEventListener("click", closeModal);
+$("#modal-confirm").addEventListener("click", () => {
+  const cb = registerConfirmCb;
+  registerConfirmCb = null;
+  closeModal();
+  if (cb) cb(); // 确认报名：回调里禁用按钮并发注册请求
+});
+$("#modal-cancel").addEventListener("click", () => { registerConfirmCb = null; closeModal(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { registerConfirmCb = null; closeModal(); }
+});
+
+document.addEventListener("click", (e) => {
+  const back = e.target.closest("[data-back]");
+  if (!back) return;
+  if (back.dataset.back === "tournament") showMine();
+  else if (back.dataset.back === "room") showTestRooms();
+  else if (back.dataset.back === "game") {
+    if (state.watchRoom) openRoom(state.watchRoom);
+    else if (state.tid) openTournament(state.tid, state.myRank);
+    else showMine();
+  } else if (back.dataset.back === "ranking") {
+    if (state.rankFrom === "tournament" && state.tid) openTournament(state.tid, state.myRank);
+    else showMine();
+  }
+});
+
+// ---- 测试房间（独立 Tab，data-nav="testrooms"）----
+// 视图由 showView 驱动：进入 testrooms 时 startRoomPoll、离开时 stopRoomPoll；
+// 列表 1.5s 轮询，与观战节奏一致。所有请求走 api()（401 会话失效同模式跳登录）。
+
+let roomPoll = null;
+let roomPollBusy = false;
+
+function startRoomPoll() {
+  stopRoomPoll();
+  refreshRooms();
+  roomPoll = setInterval(refreshRooms, 1500);
+}
+
+function stopRoomPoll() {
+  if (roomPoll) { clearInterval(roomPoll); roomPoll = null; }
+}
+
+function showTestRooms() {
+  state.watchRoom = null; // 离开房间实况上下文（返回导航目标跟随当前 tab）
+  showView("testrooms");
+}
+
+// ---- 接入指南（data-nav="guide"）：正文纯静态；版本区块动态拉取 ----
+
+function showGuide() {
+  showView("guide");
+  loadGuideVersion();
+}
+
+// 指南版本区块：GET /portal/api/guide/version（免认证）渲染版本号 + 变更日志。
+// 失败静默降级（占位提示），不影响页面其余功能；guideVersionLoaded 防重复请求
+// （静态内容页每次进入都拉没有必要，加载一次缓存结果）。
+let guideVersionLoaded = false;
+
+async function loadGuideVersion() {
+  const box = $("#guide-version-body");
+  if (!box || guideVersionLoaded) return;
+  guideVersionLoaded = true;
+  try {
+    const r = await fetch("/portal/api/guide/version");
+    if (!r.ok) throw new Error("bad status");
+    renderGuideVersion(box, await r.json());
+  } catch (_) {
+    box.innerHTML = '<p class="muted">版本信息暂不可用；bot 可拉 <code>GET /portal/api/guide/version</code> 自检</p>';
+  }
+}
+
+function renderGuideVersion(box, d) {
+  const changes = d.changes || [];
+  const esc = (s) => String(s).replace(/[&<>"']/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const TYPE_LABEL = { breaking: "BREAKING", added: "新增", changed: "修改" };
+  const item = (c) => {
+    const cls = TYPE_LABEL[c.type] ? c.type : "changed";
+    return '<div class="gv-item ' + esc(cls) + '">' +
+      '<span class="gv-badge ' + esc(cls) + '">' + esc(TYPE_LABEL[c.type] || "修改") + '</span>' +
+      '<span class="gv-summary">' + esc(c.summary) + '</span>' +
+      '<span class="gv-date">' + esc((c.date || "").slice(5)) + '</span>' +
+      (c.detail ? '<div class="gv-detail">' + esc(c.detail) + '</div>' : "") +
+      "</div>";
+  };
+  const head =
+    '<div class="gv-head">' +
+    '<span class="gv-version">指南版本 v' + esc(d.version) + "</span>" +
+    '<span class="gv-tip muted">bot 自检：<code>GET /portal/api/guide/version</code>（免认证，5/s）</span>' +
+    "</div>";
+  const first = changes.slice(0, 3).map(item).join("");
+  let rest = "";
+  if (changes.length > 3) {
+    rest = '<div class="gv-more"><button type="button" onclick="toggleGuideHistory()">' +
+      "查看完整变更历史（" + changes.length + " 条）</button></div>" +
+      '<div id="gv-full" hidden>' + changes.map(item).join("") + "</div>";
+  }
+  box.innerHTML = head + '<div class="gv-changes">' + first + rest + "</div>";
+}
+
+function toggleGuideHistory() {
+  const full = $("#gv-full");
+  if (!full) return;
+  full.hidden = !full.hidden;
+  const btn = document.querySelector("#guide-version .gv-more button");
+  if (btn) btn.textContent = full.hidden ? "查看完整变更历史" : "收起变更历史";
+}
+
+// ---- 房间实况（view-room）：比赛列表 + 实时排名，1.5s 轮询随视图启停 ----
+
+let roomDetail = null;      // 当前实况房间 id
+let roomDetailPoll = null;
+let roomDetailBusy = false;
+
+function startRoomDetailPoll() {
+  stopRoomDetailPoll();
+  refreshRoomDetail();
+  roomDetailPoll = setInterval(refreshRoomDetail, 1500);
+}
+
+function stopRoomDetailPoll() {
+  if (roomDetailPoll) { clearInterval(roomDetailPoll); roomDetailPoll = null; }
+}
+
+async function openRoom(roomId) {
+  state.watchRoom = roomId;
+  roomDetail = roomId;
+  showView("room");
+  try {
+    await refreshRoomDetail();
+    hideError();
+  } catch (err) {
+    showError(err.message);
+  }
+}
+
+async function refreshRoomDetail() {
+  if (roomDetailBusy) return; // 防慢网络堆积（同观战模式）
+  roomDetailBusy = true;
+  try {
+    const d = await api("/portal/api/test-rooms/" + roomDetail);
+    renderRoomDetail(d);
+  } catch (_) {
+    // 瞬时错误/会话过期（api() 已处理 401 跳登录）：静默跳过本帧
+  } finally {
+    roomDetailBusy = false;
+  }
+}
+
+function renderRoomDetail(d) {
+  const title = $("#room-title");
+  title.replaceChildren();
+  title.appendChild(document.createTextNode("房间 " + d.room_id + " "));
+  title.appendChild(badge(d.status));
+
+  // 测试玩家：创建序（四神兽序）展示名字 + 改名（房间终结后仍可改——复盘对号用）。
+  // 编辑保护：详情 1.5s 轮询会重渲染整区块 —— 输入框聚焦中或值已被修改时
+  // 跳过重渲染（否则打字中的文本被重置为服务器名、按钮在 mousedown 间被替换）
+  const pbox = $("#room-players");
+  const players = d.players || [];
+  const editing = Array.from(pbox.querySelectorAll("input")).some((inp) => {
+    const pl = players[+inp.dataset.idx];
+    const server = (pl && (pl.name || pl.user_id)) || "";
+    return inp === document.activeElement || inp.value !== server;
+  });
+  if (!editing) {
+    pbox.replaceChildren();
+    players.forEach((pl, i) => {
+      const card = el("article", "card");
+      const head = el("div", "card-head");
+      head.appendChild(el("span", "card-title", pl.name || pl.user_id));
+      card.appendChild(head);
+      const body = el("div", "card-body");
+      const input = el("input");
+      input.type = "text";
+      input.maxLength = 20;
+      input.dataset.idx = i;
+      input.value = pl.name || "";
+      input.placeholder = "新名字（≤20 字）";
+      const btn = el("button", "", "保存");
+      btn.type = "button";
+      btn.addEventListener("click", async () => {
+        const nm = input.value.trim();
+        if (!nm) {
+          showError("名字不能为空");
+          return;
+        }
+        btn.disabled = true;
+        try {
+          await api("/portal/api/test-rooms/" + d.room_id + "/rename", {
+            method: "POST",
+            body: JSON.stringify({ player: i, name: nm }),
+          });
+          hideError();
+          refreshRoomDetail();
+        } catch (err) {
+          btn.disabled = false;
+          showError("改名失败：" + err.message);
+        }
+      });
+      body.appendChild(input);
+      body.appendChild(btn);
+      card.appendChild(body);
+      pbox.appendChild(card);
+    });
+    if (!players.length) {
+      pbox.appendChild(el("p", "empty", "暂无玩家数据"));
+    }
+  }
+
+  const box = $("#room-games");
+  box.replaceChildren();
+  // 实时数据不可得分支（finished 本轮已完 / void / closed 终结态）：仅历史可查。
+  // finished 非终局（spec v2 §3.4）——4 令牌再 ready 即开下一轮，文案不宣称「已结束」
+  // registering + 有历史局（2026-09-04：跨轮复用重开窗口）——上一轮成绩与对局仍存档可查
+  if (d.status === "finished" || d.status === "void" || d.status === "closed") {
+    const tip = d.status === "finished"
+      ? "本轮已结束，实时数据不可得；4 令牌再次 ready 可开启下一轮——以下为已完成轮次的存档历史（每局可点「复盘」查看完整事件日志）"
+      : "房间已" + (d.status === "void" ? "作废" : "关闭") + "，实时数据不可得，以下为存档历史（每局可点「复盘」查看完整事件日志）";
+    box.appendChild(el("p", "muted", tip));
+  } else if (d.status === "registering" && (d.games || []).length > 0) {
+    box.appendChild(el("p", "muted",
+      "注册窗口（4 令牌再次 ready 开启第 " + ((Number(d.round_no) || 0) + 1) +
+      " 轮）——以下为已完成轮次的存档历史，成绩与每局「复盘」仍可查看"));
+  }
+  const games = d.games || [];
+  if (!games.length) {
+    box.appendChild(el("p", "empty", "暂无比赛 — 4 名测试玩家 ready 后开赛"));
+  } else {
+    for (const g of games) {
+      const card = el("article", "card");
+      const head = el("div", "card-head");
+      head.appendChild(el("span", "card-title", g.game_id));
+      head.appendChild(badge(g.status));
+      card.appendChild(head);
+      const body = el("div", "card-body");
+      // 跨轮复用房间 games 含全部轮次（详情响应逐场带 round）：按轮标注防批次重号混淆
+      body.appendChild(el("div", null,
+        (g.round > 0 ? "第 " + g.round + " 轮 · " : "") + "批次 " + g.batch));
+      const acts = el("div", "card-actions");
+      if (g.status === "running") {
+        const b = el("button", "", "观战");
+        b.type = "button";
+        b.addEventListener("click", () => openGame(g.game_id, -1)); // seat=-1 旁观者视角
+        acts.appendChild(b);
+      } else if (g.status === "finished" || g.status === "abandoned") {
+        const b = el("button", "", "复盘");
+        b.type = "button";
+        b.addEventListener("click", () => openReview(g.game_id)); // 赛后查看（spec 复盘 §4.2）
+        acts.appendChild(b);
+      } else {
+        acts.appendChild(el("span", "muted", "未开始"));
+      }
+      body.appendChild(acts);
+      card.appendChild(body);
+      box.appendChild(card);
+    }
+  }
+  renderRankTable($("#room-ranking-tbody"), d.ranking || [], null);
+}
+
+async function createRoom(ev) {
+  ev.preventDefault();
+  const body = {
+    m: parseInt(document.getElementById("room-m").value, 10),
+    rounds: parseInt(document.getElementById("room-rounds").value, 10),
+    base_score: parseInt(document.getElementById("room-base").value, 10),
+    you_cai_bi_kao: document.getElementById("room-kao").checked,
+    peng_timeout_sec: parseInt(document.getElementById("room-peng").value, 10),
+    chi_timeout_sec: parseInt(document.getElementById("room-chi").value, 10),
+    discard_timeout_sec: parseInt(document.getElementById("room-discard").value, 10),
+    timeout_min: parseInt(document.getElementById("room-timeout").value, 10),
+  };
+  const btn = document.querySelector("#room-create button[type=submit]");
+  btn.disabled = true;
+  try {
+    const d = await api("/portal/api/test-rooms", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    document.getElementById("room-create-err").textContent = "";
+    showTokens(d.players || d.tokens || []);
+    refreshRooms();
+  } catch (err) {
+    document.getElementById("room-create-err").textContent = err.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function refreshRooms() {
+  if (roomPollBusy) return; // 上一帧未返回则跳过（防慢网络堆积）
+  roomPollBusy = true;
+  try {
+    const d = await api("/portal/api/test-rooms");
+    renderRooms(d.rooms || []);
+  } catch (_) {
+    // 网络瞬时错误 / 会话过期（api() 已按既有模式处理 401 跳登录）：静默跳过本帧
+  } finally {
+    roomPollBusy = false;
+  }
+}
+
+// 可删除状态：已结束/已作废/已关闭（registering/running 不可删——后端预校验同样拒绝）
+function canDeleteRoom(status) {
+  return status === "finished" || status === "void" || status === "closed";
+}
+
+// 多选删除选中集（跨刷新保留；刷新时清理已删除/状态变化的项）
+const selectedRooms = new Set();
+
+function updateDeleteBtn() {
+  const btn = document.getElementById("btn-delete-rooms");
+  if (btn) btn.disabled = selectedRooms.size === 0;
+}
+
+function renderRooms(rows) {
+  const wrap = document.getElementById("room-list");
+  wrap.replaceChildren();
+  if (!rows.length) {
+    wrap.appendChild(el("p", "empty", "暂无测试房间 — 创建后出现在这里"));
+    // 无房间：清空选中 + 删除按钮禁用
+    selectedRooms.clear();
+    updateDeleteBtn();
+    return;
+  }
+  // 清理已删除/状态变化的选中项（仅终结态可勾选）
+  for (const id of [...selectedRooms]) {
+    if (!rows.some((r) => r.room_id === id && canDeleteRoom(r.status))) selectedRooms.delete(id);
+  }
+  updateDeleteBtn();
+  for (const room of rows) {
+    const card = el("article", "card");
+    const head = el("div", "card-head");
+    // 多选删除：仅终结态卡片可勾选
+    if (canDeleteRoom(room.status)) {
+      const lab = el("label", "room-select");
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = selectedRooms.has(room.room_id);
+      cb.addEventListener("change", () => {
+        if (cb.checked) selectedRooms.add(room.room_id);
+        else selectedRooms.delete(room.room_id);
+        updateDeleteBtn();
+      });
+      lab.appendChild(cb);
+      head.appendChild(lab);
+    }
+    head.appendChild(el("span", "card-title", room.room_id));
+    head.appendChild(badge(room.status));
+    card.appendChild(head);
+
+    const body = el("div", "card-body");
+    const params = "M=" + room.m + " · 局数=" + room.rounds + " · 底分=" + room.base_score +
+      (room.you_cai_bi_kao ? " · 有财必拷响" : "");
+    body.appendChild(el("div", null, params));
+    body.appendChild(el("div", null,
+      "出牌 " + room.discard_timeout_sec + "s · 碰 " + room.peng_timeout_sec +
+      "s · 吃 " + room.chi_timeout_sec + "s"));
+    // 跨轮复用（spec v2 §3.4）：finished 非终局——4 令牌再次 ready 即开启下一轮，
+    // 空闲超时后自动 close。round_no/timeout_min 由列表响应提供；字段缺失（旧数据）
+    // 时优雅降级：不显示已完成轮次。空闲自动关闭文案仅对会被 idle 扫描的行成立
+    //（expires_at>0，final fix M2）；旧数据行 expires_at≤0 永不回收，不承诺自动关闭
+    if (room.status === "finished") {
+      const rn = Number(room.round_no) || 0;
+      let copy = (rn > 0 ? "已完成第 " + rn + " 轮 · " : "") +
+        "4 令牌 ready 开启第 " + (rn + 1) + " 轮";
+      if (Number(room.expires_at) > 0) {
+        const idle = Number(room.timeout_min) || 30;
+        copy += " · 空闲 " + idle + " 分钟自动关闭";
+      }
+      body.appendChild(el("div", null, copy));
+    }
+    // 开赛超时：仅 registering（未开赛）显示失效时刻——开赛后不超时（用户裁定）；
+    // finished 的 expires_at = 空闲自动关闭时刻；closed/void 时间戳已过期，无现实意义不显示。
+    // 跨轮复用重开窗口（2026-09-04）：registering + round_no>0 = 有历史轮的复活窗口——
+    // 提示上一轮成绩/对局已存档可查看（round_no=0 全新房不显示）
+    if (room.status === "registering") {
+      const rn = Number(room.round_no) || 0;
+      if (rn > 0) {
+        body.appendChild(el("div", null,
+          "已完成第 " + rn + " 轮 · 成绩与对局已存档 · 4 令牌 ready 开启第 " + (rn + 1) + " 轮"));
+      }
+      body.appendChild(el("div", null, "开赛超时 " + fmtTime(room.start_at)));
+    }
+    if (room.expires_at > 0 && (room.status === "registering" || room.status === "finished")) {
+      body.appendChild(el("div", null, "到期 " + fmtTime(room.expires_at)));
+    }
+    body.appendChild(el("div", null, room.token_issued ? "令牌已签发 ✓" : "令牌未签发"));
+
+    const acts = el("div", "card-actions");
+    if (room.status === "running") {
+      const watch = el("button", "", "查看实况");
+      watch.type = "button";
+      watch.addEventListener("click", () => openRoom(room.room_id));
+      acts.appendChild(watch);
+    } else if (room.status === "registering" && (Number(room.round_no) || 0) > 0) {
+      // 重开窗口：上一轮成绩与对局已存档，owner 可进详情查看（复盘按 game 可达）
+      const watch = el("button", "", "查看");
+      watch.type = "button";
+      watch.addEventListener("click", () => openRoom(room.room_id));
+      acts.appendChild(watch);
+    } else if (canDeleteRoom(room.status)) {
+      // 已结束/已作废/已关闭：仍可进入查看历史对局（详情 games 恒为 DB 全量含各轮次）
+      const watch = el("button", "", "查看");
+      watch.type = "button";
+      watch.addEventListener("click", () => openRoom(room.room_id));
+      acts.appendChild(watch);
+    }
+    if (room.status === "registering" || room.status === "running") {
+      const regen = el("button", "", "重新生成令牌");
+      regen.type = "button";
+      regen.addEventListener("click", () => regenTokens(room.room_id));
+      const close = el("button", "", "关闭房间");
+      close.type = "button";
+      close.addEventListener("click", () => closeRoom(room.room_id));
+      acts.appendChild(regen);
+      acts.appendChild(close);
+    }
+    body.appendChild(acts);
+    card.appendChild(body);
+    wrap.appendChild(card);
+  }
+}
+
+// deleteSelectedRooms 批量删除选中房间（仅终结态；确认后调用 delete 端点）。
+async function deleteSelectedRooms() {
+  const ids = [...selectedRooms];
+  if (!ids.length) return;
+  if (!confirm("删除后房间及全部对局数据（含事件日志）不可恢复，确定删除 " + ids.length + " 个房间？")) return;
+  try {
+    const d = await api("/portal/api/test-rooms/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    });
+    hideError();
+    document.getElementById("room-delete-err").textContent = "";
+    selectedRooms.clear();
+    refreshRooms();
+  } catch (err) {
+    document.getElementById("room-delete-err").textContent = err.message;
+  }
+}
+
+async function regenTokens(roomId) {
+  try {
+    const d = await api("/portal/api/test-rooms/" + roomId + "/tokens", { method: "POST" });
+    hideError();
+    showTokens(d.tokens || []);
+  } catch (err) {
+    showError(err.message);
+  }
+}
+
+async function closeRoom(roomId) {
+  if (!confirm("关闭后房间立即终止，进行中比赛停止，确定？")) return;
+  try {
+    await api("/portal/api/test-rooms/" + roomId + "/close", { method: "POST" });
+    hideError();
+    refreshRooms();
+  } catch (err) {
+    showError(err.message);
+  }
+}
+
+// showTokens 令牌面板：每行「名字 + 令牌 + 复制令牌 / 复制名字+令牌」两按钮；
+// 一键复制两按钮（全部令牌单行 / 名字+令牌 4 行）。入参 players=[{name,token}]
+// （创建响应新字段）；兼容旧 tokens 字符串数组（无名字时退化为纯令牌行）。
+function showTokens(players) {
+  const box = document.getElementById("room-tokens");
+  const list = document.getElementById("room-token-list");
+  list.replaceChildren();
+  // 一键复制区：重复创建房间时先移除旧按钮/提示（box 跨次创建复用）
+  const oldBtn = document.getElementById("room-copy-all");
+  if (oldBtn) oldBtn.remove();
+  const oldBtn2 = document.getElementById("room-copy-named");
+  if (oldBtn2) oldBtn2.remove();
+  const oldHint = document.getElementById("room-copy-all-hint");
+  if (oldHint) oldHint.remove();
+  const rows = (players || []).map((p) => {
+    const tok = typeof p === "string" ? p : p.token;
+    const nm = typeof p === "string" ? "" : (p.name || "");
+    return { tok, nm };
+  });
+  rows.forEach((r) => {
+    const li = el("li");
+    li.appendChild(el("code", "token-box", r.nm ? r.nm + "　" + r.tok : r.tok)); // 等宽可选中
+    const g = el("span", "btn-group");
+    const bTok = el("button", "", "复制令牌");
+    bTok.type = "button";
+    bTok.addEventListener("click", () => copyText(bTok, r.tok));
+    g.appendChild(bTok);
+    const bNamed = el("button", "", "复制名字+令牌");
+    bNamed.type = "button";
+    bNamed.addEventListener("click", () => copyText(bNamed, r.nm ? r.nm + " " + r.tok : r.tok));
+    g.appendChild(bNamed);
+    li.appendChild(g);
+    list.appendChild(li);
+  });
+  // 一键复制①：4 令牌空格拼接为单行 —— 可直接粘贴为 demos/start_bots.bat 的
+  // 4 个令牌参数，一条命令启动 4 个 bot 参赛
+  const all = rows.map((r) => r.tok).join(" ");
+  const btnAll = el("button", "", "一键复制全部令牌（空格分隔）");
+  btnAll.type = "button";
+  btnAll.id = "room-copy-all";
+  btnAll.addEventListener("click", () => copyText(btnAll, all));
+  // 一键复制②：4 行「名字 令牌」—— 复盘时按名字对号
+  const named = rows.map((r) => (r.nm ? r.nm + " " + r.tok : r.tok)).join("\n");
+  const btnNamed = el("button", "", "一键复制名字+令牌（4 行）");
+  btnNamed.type = "button";
+  btnNamed.id = "room-copy-named";
+  btnNamed.addEventListener("click", () => copyText(btnNamed, named));
+  const hint = el("p", "muted",
+    "全部令牌可直接作为 demos/start_bots.bat 的 4 个令牌参数启动 4 个 bot；" +
+    "名字+令牌 4 行用于记录谁是谁。名字可在房间详情页修改（观战/复盘即时生效）。");
+  hint.id = "room-copy-all-hint";
+  box.insertBefore(btnAll, list);
+  box.insertBefore(btnNamed, list);
+  box.insertBefore(hint, list);
+  box.hidden = false;
+}
+
+// 行内复制：与 copyToken 同回退策略（非安全上下文 textarea+execCommand），
+// 按钮文字反馈（成功后 1.5s 恢复原文字——按钮文案多变，不能硬编码）
+async function copyText(btn, text) {
+  const orig = btn.textContent;
+  const done = () => {
+    btn.textContent = "已复制 ✓";
+    setTimeout(() => { btn.textContent = orig; }, 1500);
+  };
+  try {
+    await navigator.clipboard.writeText(text);
+    done();
+  } catch (_) {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand("copy");
+      done();
+    } catch (_) {
+      alert("自动复制失败，请手动复制：\n" + text);
+    }
+    document.body.removeChild(ta);
+  }
+}
+
+$("#room-create").addEventListener("submit", createRoom);
+$("#btn-rooms-refresh").addEventListener("click", refreshRooms);
+$("#btn-room-refresh").addEventListener("click", refreshRoomDetail);
+$("#btn-delete-rooms").addEventListener("click", deleteSelectedRooms);
+
+// ---- 番型计算工具（接入指南 1.5 节）：13 张手牌 + 1 张摸牌实时试算 ----
+// 计算调 POST /portal/api/tools/fan-calc（免认证；口径与对局 IsHuFor 一致）
+const FC_CHAINS = [
+  { label: "无动作链", count: 0, piao: 0 },
+  { label: "杠开", count: 1, piao: 0 },
+  { label: "财飘", count: 1, piao: 1 },
+  { label: "双财飘", count: 2, piao: 2 },
+  { label: "三财飘", count: 3, piao: 3 },
+  { label: "连杠×2", count: 2, piao: 0 },
+  { label: "连杠×3", count: 3, piao: 0 },
+];
+// 默认牌型：三副顺子 + 一副顺子 + 财神（白板），摸任意即胡 = 平胡 × 爆头 = ×2
+const FC_DEFAULT_HAND = ["1w", "2w", "3w", "4w", "5w", "6w", "7w", "8w", "9w", "1b", "2b", "3b", "白"];
+const FC_DEFAULT_DRAW = "1w";
+const FC_FENG = ["东", "南", "西", "北"];
+const FC_JIAN = ["中", "发", "白"];
+const FC_ALL_TILES = [];
+(() => {
+  for (const s of ["w", "b", "t"]) for (let r = 1; r <= 9; r++) FC_ALL_TILES.push(r + s);
+  for (const f of FC_FENG) FC_ALL_TILES.push(f);
+  for (const j of FC_JIAN) FC_ALL_TILES.push(j);
+})();
+function fcIdx(t) {
+  const m = /^([1-9])([wtb])$/.exec(t);
+  if (m) return ((m[2] === "w" ? 0 : m[2] === "b" ? 9 : 18) + +m[1] - 1);
+  const f = FC_FENG.indexOf(t), j = FC_JIAN.indexOf(t);
+  return f >= 0 ? 27 + f : 31 + j;
+}
+
+const fcState = { hand: Array(13).fill(null), draw: null, chain: 0 };
+let fcPickerTarget = null; // 手牌槽 index / "draw"
+let fcRecalcTimer = null;
+
+function fcSortHand() {
+  // 自动理牌：按牌值排序（null=空槽排最后），用户无需管理顺序
+  fcState.hand.sort((a, b) => {
+    if (a === null) return 1;
+    if (b === null) return -1;
+    return fcIdx(a) - fcIdx(b);
+  });
+}
+function fcAllPicked() {
+  const arr = fcState.hand.filter(Boolean).concat(fcState.draw ? [fcState.draw] : []);
+  const c = Array(34).fill(0);
+  for (const t of arr) c[fcIdx(t)]++;
+  return c;
+}
+function fcRenderSlots() {
+  const hs = $("#fcHandSlots");
+  hs.textContent = "";
+  fcState.hand.forEach((t, i) => {
+    const slot = document.createElement("div");
+    slot.className = "fc-slot" + (t ? " filled" : "");
+    if (t) slot.appendChild(tileSpan(t));
+    else { slot.textContent = "+"; slot.title = "点此选牌"; }
+    slot.onclick = () => fcOpenPicker(i);
+    hs.appendChild(slot);
+  });
+  $("#fcHandCount").textContent = fcState.hand.filter(Boolean).length;
+
+  const ds = $("#fcDrawSlot");
+  ds.textContent = "";
+  const d = document.createElement("div");
+  d.className = "fc-slot" + (fcState.draw ? " filled" : "");
+  if (fcState.draw) d.appendChild(tileSpan(fcState.draw));
+  else { d.textContent = "+"; d.title = "点此选摸牌"; }
+  d.onclick = () => fcOpenPicker("draw");
+  ds.appendChild(d);
+  $("#fcDrawCount").textContent = fcState.draw ? 1 : 0;
+}
+function fcRenderChainBtns() {
+  const box = $("#fcChainBtns");
+  box.textContent = "";
+  FC_CHAINS.forEach((ch, i) => {
+    const b = document.createElement("button");
+    b.textContent = ch.label;
+    b.className = i === fcState.chain ? "active" : "";
+    b.onclick = () => { fcState.chain = i; fcRenderChainBtns(); fcScheduleRecalc(); };
+    box.appendChild(b);
+  });
+}
+function fcOpenPicker(target) {
+  fcPickerTarget = target;
+  const isDraw = target === "draw";
+  $("#fcPickerTitle").textContent = isDraw ? "选择摸牌" : "选择手牌（自动理牌排序）";
+  $("#fcPickerSub").textContent = "每种牌共 4 张（白板 = 财神），角标为剩余张数";
+  const used = fcAllPicked();
+  const groups = [
+    { title: "万子", tiles: FC_ALL_TILES.slice(0, 9) },
+    { title: "筒子", tiles: FC_ALL_TILES.slice(9, 18) },
+    { title: "条子", tiles: FC_ALL_TILES.slice(18, 27) },
+    { title: "风牌", tiles: FC_ALL_TILES.slice(27, 31) },
+    { title: "箭牌", tiles: FC_ALL_TILES.slice(31, 34) },
+  ];
+  const g = $("#fcPickerGroups");
+  g.textContent = "";
+  for (const grp of groups) {
+    const d = document.createElement("div");
+    d.className = "fc-group";
+    const title = document.createElement("div");
+    title.className = "fc-group-title";
+    title.textContent = grp.title;
+    d.appendChild(title);
+    const row = document.createElement("div");
+    row.className = "fc-group-tiles";
+    for (const t of grp.tiles) {
+      const stock = 4 - used[fcIdx(t)];
+      const btn = document.createElement("button");
+      btn.className = "fc-pick" + (stock <= 0 ? " disabled" : "");
+      btn.appendChild(tileSpan(t));
+      const st = document.createElement("span");
+      st.className = "fc-stock";
+      st.textContent = stock;
+      btn.appendChild(st);
+      if (stock > 0) btn.onclick = () => {
+        if (isDraw) fcState.draw = t;
+        else { fcState.hand[target] = t; fcSortHand(); }
+        fcClosePicker();
+        fcRenderSlots();
+        fcScheduleRecalc();
+      };
+      row.appendChild(btn);
+    }
+    d.appendChild(row);
+    g.appendChild(d);
+  }
+  $("#fcMask").classList.add("open");
+}
+function fcClosePicker() { $("#fcMask").classList.remove("open"); }
+
+function fcScheduleRecalc() {
+  clearTimeout(fcRecalcTimer);
+  fcRecalcTimer = setTimeout(fcRecalc, 300);
+}
+
+// 工具 API：免认证端点，401 不跳登录页（区别于 api()）
+async function toolFetch(path, opts) {
+  let r;
+  try {
+    r = await fetch(path, opts);
+  } catch (_) {
+    throw { status: 0, message: "网络错误，请稍后重试" };
+  }
+  let body = null;
+  try { body = await r.json(); } catch (_) { /* 非 JSON 体 */ }
+  if (!r.ok) {
+    throw { status: r.status, message: body && body.message ? body.message : "请求失败 " + r.status };
+  }
+  return body;
+}
+
+async function fcRecalc() {
+  const box = $("#fcResult");
+  const filled = fcState.hand.filter(Boolean).length;
+  if (filled !== 13 || !fcState.draw) {
+    box.textContent = "";
+    const hint = document.createElement("div");
+    hint.className = "fc-hint-text";
+    hint.textContent = "还差手牌 " + (13 - filled) + " 张" + (fcState.draw ? "" : "、摸牌 1 张") +
+      " — 点击槽位选牌后自动计算。";
+    box.appendChild(hint);
+    return;
+  }
+  const chain = FC_CHAINS[fcState.chain];
+  const base = Math.max(1, Math.floor(+$("#fcBase").value) || 1);
+  try {
+    const d = await toolFetch("/portal/api/tools/fan-calc", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        hand: fcState.hand, draw: fcState.draw,
+        chain: { count: chain.count, piao: chain.piao }, base,
+      }),
+    });
+    fcRenderResult(d, box, chain);
+  } catch (e) {
+    box.textContent = "";
+    const hint = document.createElement("div");
+    hint.className = "fc-hint-text";
+    hint.textContent = "计算失败：" + (e.message || "未知错误");
+    box.appendChild(hint);
+  }
+}
+
+function fcRenderResult(d, box, chain) {
+  box.textContent = "";
+  const status = document.createElement("div");
+  status.className = "fc-result-status";
+  const huBadge = document.createElement("span");
+  huBadge.className = "fc-badge " + (d.hu ? "hu" : "nohu");
+  huBadge.textContent = d.hu ? "✓ 胡牌" : "✗ 不能胡";
+  status.appendChild(huBadge);
+  const btBadge = document.createElement("span");
+  btBadge.className = "fc-badge " + (d.baotou ? "baotou" : "pending");
+  btBadge.textContent = d.baotou ? "爆头 ×2" : (d.hu ? "非爆头" : "非听牌爆头");
+  status.appendChild(btBadge);
+  box.appendChild(status);
+
+  if (!d.hu) {
+    const hint = document.createElement("div");
+    hint.className = "fc-hint-text";
+    hint.textContent = "当前 14 张不能组成胡牌牌型（4 面子 + 1 将，或七对）。试试调整手牌，或点「重置默认牌型」查看爆头示例。";
+    box.appendChild(hint);
+    return;
+  }
+
+  const chips = document.createElement("div");
+  chips.className = "fc-chips";
+  for (const x of d.detail || []) {
+    const c = document.createElement("span");
+    c.className = "fc-chip" + (x === "爆头" || x === "4个白板" ? " god" : "");
+    c.textContent = x;
+    chips.appendChild(c);
+  }
+  box.appendChild(chips);
+
+  const total = document.createElement("div");
+  total.className = "fc-fan-total";
+  total.innerHTML = "总番 <em>×" + d.fan + "</em>" + (chain.count > 0 ? "（含动作链 " + chain.label + "）" : "");
+  box.appendChild(total);
+
+  const scores = document.createElement("div");
+  scores.className = "fc-scores";
+  const mk = (title, huJia, sc, payers) => {
+    const card = document.createElement("div");
+    card.className = "fc-score-card";
+    const h3 = document.createElement("h3");
+    h3.textContent = title;
+    card.appendChild(h3);
+    const big = document.createElement("div");
+    big.className = "fc-big";
+    big.innerHTML = "+" + sc.win + "<span>分</span>";
+    card.appendChild(big);
+    const tb = document.createElement("table");
+    const rows = [["胡家（" + huJia + "）", "+" + sc.win]];
+    payers.forEach((name, i) => rows.push([name + " 付", "−" + sc.lose[i]]));
+    for (const [k, v] of rows) {
+      const tr = document.createElement("tr");
+      const td1 = document.createElement("td");
+      td1.textContent = k;
+      const td2 = document.createElement("td");
+      td2.textContent = v;
+      tr.appendChild(td1);
+      tr.appendChild(td2);
+      tb.appendChild(tr);
+    }
+    card.appendChild(tb);
+    return card;
+  };
+  // 庄家胡：胡家=庄家，三家闲家各付 ×8；闲家胡：胡家=闲家甲，庄付 ×8、另两家闲 ×1
+  scores.appendChild(mk("庄家胡（三家闲家各付 ×8）", "庄家", d.scores.dealer_hu, ["闲家甲", "闲家乙", "闲家丙"]));
+  scores.appendChild(mk("闲家胡（庄付 ×8 / 闲 ×1）", "闲家甲", d.scores.nondealer_hu, ["庄家", "闲家乙", "闲家丙"]));
+  box.appendChild(scores);
+}
+
+function fcResetDefault() {
+  FC_DEFAULT_HAND.forEach((t, i) => fcState.hand[i] = t);
+  fcState.draw = FC_DEFAULT_DRAW;
+  fcRenderSlots();
+  fcRecalc();
+}
+function fcClearAll() {
+  fcState.hand = Array(13).fill(null);
+  fcState.draw = null;
+  fcSortHand();
+  fcRenderSlots();
+  fcRecalc();
+}
+$("#fcMask").addEventListener("click", (e) => { if (e.target === $("#fcMask")) fcClosePicker(); });
+$("#fcPickerCancel").addEventListener("click", fcClosePicker);
+$("#fcResetBtn").addEventListener("click", fcResetDefault);
+$("#fcClearBtn").addEventListener("click", fcClearAll);
+$("#fcBase").addEventListener("input", () => fcScheduleRecalc());
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") fcClosePicker(); });
+fcRenderChainBtns();
+fcRenderSlots();
+fcResetDefault();
+
+init();
+</script>
+
+
+</body><div id="immersive-translate-popup" style="all: initial"><template shadowrootmode="open"><div id="mount" style="display: block;"><div class="imt-fb-container right imt-notranslate  " data-theme="light" style="z-index: 2147483637; pointer-events: none; right: 0px; top: 499px; display: flex;"><div class="btn-animate" style="transform: translateX(-5px); opacity: 0; pointer-events: none; filter: blur(1px); transition: opacity 110ms cubic-bezier(0.4, 0, 1, 1), filter 110ms cubic-bezier(0.4, 0, 1, 1); will-change: opacity, filter;"><div class="imt-fb-btn imt-fb-more-button imt-fb-side" style="pointer-events: none;"><div class=" btn-animate" style="position: relative; pointer-events: none; display: inline-block;"><div><svg class="imt-fb-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M9.65332 13.3477C10.4097 13.4245 11 14.0632 11 14.8398V18.8398L10.9922 18.9932C10.9205 19.6992 10.3593 20.2604 9.65332 20.332L9.5 20.3398H5.5C4.72334 20.3398 4.08461 19.7496 4.00781 18.9932L4 18.8398V14.8398C4 14.0114 4.67157 13.3398 5.5 13.3398H9.5L9.65332 13.3477ZM18.6533 13.3477C19.4097 13.4245 20 14.0632 20 14.8398V18.8398L19.9922 18.9932C19.9205 19.6992 19.3593 20.2604 18.6533 20.332L18.5 20.3398H14.5C13.7233 20.3398 13.0846 19.7496 13.0078 18.9932L13 18.8398V14.8398C13 14.0114 13.6716 13.3398 14.5 13.3398H18.5L18.6533 13.3477ZM5.5 14.3398C5.22386 14.3398 5 14.5637 5 14.8398V18.8398C5 19.116 5.22386 19.3398 5.5 19.3398H9.5C9.77614 19.3398 10 19.116 10 18.8398V14.8398C10 14.5637 9.77614 14.3398 9.5 14.3398H5.5ZM14.5 14.3398C14.2239 14.3398 14 14.5637 14 14.8398V18.8398C14 19.116 14.2239 19.3398 14.5 19.3398H18.5C18.7761 19.3398 19 19.116 19 18.8398V14.8398C19 14.5637 18.7761 14.3398 18.5 14.3398H14.5ZM9.65332 4.34766C10.4097 4.42445 11 5.06318 11 5.83984V9.83984L10.9922 9.99316C10.9205 10.6992 10.3593 11.2604 9.65332 11.332L9.5 11.3398H5.5C4.72334 11.3398 4.08461 10.7496 4.00781 9.99316L4 9.83984V5.83984C4 5.01142 4.67157 4.33984 5.5 4.33984H9.5L9.65332 4.34766ZM16.1484 3.18848C16.2521 2.83834 16.7479 2.83834 16.8516 3.18848L17.3281 4.79785C17.5079 5.40507 17.9648 5.89104 18.5596 6.1084L20.0576 6.65625C20.3786 6.77361 20.3785 7.22732 20.0576 7.34473L18.5596 7.89258C17.9648 8.10991 17.5079 8.59598 17.3281 9.20312L16.8516 10.8125C16.7479 11.1626 16.2521 11.1626 16.1484 10.8125L15.6719 9.20312C15.4921 8.59598 15.0352 8.10991 14.4404 7.89258L12.9424 7.34473C12.6215 7.22732 12.6214 6.77361 12.9424 6.65625L14.4404 6.1084C15.0352 5.89104 15.4921 5.40507 15.6719 4.79785L16.1484 3.18848ZM5.5 5.33984C5.22386 5.33984 5 5.5637 5 5.83984V9.83984C5 10.116 5.22386 10.3398 5.5 10.3398H9.5C9.77614 10.3398 10 10.116 10 9.83984V5.83984C10 5.5637 9.77614 5.33984 9.5 5.33984H5.5Z" fill="#ED6D8F"></path></svg></div></div></div></div><div hidden="" class="imt-no-events " id="manga-button" style="position: relative;"><div class=" " style="position: relative; pointer-events: all; display: inline-block;"><div><div class="imt-manga-button btn-animate" style="opacity: 0.7; transform: translateX(2px);"><div style="position: relative;"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none" style="vertical-align: middle;"><path d="M14.8853 4.92364C14.8853 4.92364 16.3905 10.4362 22.6668 4C22.6668 4 20.3381 10.8907 25.3364 10.0843C25.3364 10.0843 22.0563 15.6994 29 18.0599C29 18.0599 22.9934 19.306 21.1617 28C21.1617 28 17.7679 24.54 14.8853 27.3549C14.8853 27.3549 13.3233 23.5724 7.33097 26.27C7.33097 26.27 10.1141 20.6549 4.83179 21.0507C4.83179 21.0507 7.16057 18.8955 3 15.9047C3 15.9047 7.50137 16.1833 6.33697 11.7117C6.33697 11.7117 10.0005 12.3421 8.66576 6.82957C8.65156 6.81491 12.4855 9.80574 14.8853 4.92364Z" fill="#ED6D8F"></path><path d="M20.8599 13.7022C20.885 13.1361 20.9543 12.5713 20.9959 12.0052C21.0337 11.568 20.8107 11.2794 20.3876 11.18C20.0759 11.1013 19.7508 11.0867 19.433 11.137C19.1951 11.1945 18.9542 11.2396 18.7113 11.2721C18.2403 11.3028 17.9973 11.5275 17.9796 11.988C17.977 12.0833 17.9596 12.1777 17.928 12.268C17.3034 13.9102 16.6774 15.5499 16.0503 17.1873C16.0301 17.2401 16.0062 17.2904 15.9671 17.3776C15.7291 16.8975 15.4281 16.4898 15.2745 15.9986C14.8073 14.5152 14.3186 13.033 13.8312 11.5594C13.6826 11.1112 13.3489 10.9344 12.8754 11.0216C12.7889 11.0365 12.7008 11.0398 12.6134 11.0314C12.2241 10.9938 11.8311 11.0404 11.4623 11.1677C11.0946 11.2991 10.9498 11.557 11.0152 11.9254C11.0428 12.0371 11.0643 12.1503 11.0795 12.2643C11.1223 13.1902 11.1777 14.1087 11.2054 15.0321C11.257 16.7992 11.2117 18.5651 11.0858 20.3284C11.0644 20.6354 11.0304 20.9424 11.0228 21.2494C11.0115 21.6092 11.1613 21.7811 11.5266 21.8143C11.9976 21.8573 12.4711 21.8708 12.9421 21.9088C13.0309 21.9201 13.121 21.9003 13.1962 21.8528C13.2714 21.8053 13.3268 21.7334 13.3527 21.6497C13.3996 21.5394 13.4252 21.4216 13.4282 21.3022C13.4295 20.8258 13.4207 20.3493 13.4081 19.8741C13.393 19.3264 13.3917 18.7763 13.3438 18.231C13.2857 17.5839 13.266 16.934 13.2847 16.2847C13.2847 16.2466 13.291 16.2073 13.2985 16.1312C13.3338 16.2024 13.3514 16.2356 13.3665 16.2712C13.9017 17.5228 14.3617 18.8037 14.7443 20.1074C14.7928 20.2421 14.7928 20.3889 14.7443 20.5237C14.6322 20.8196 14.7141 21.037 14.9659 21.1377C15.4445 21.3268 15.9331 21.4926 16.4155 21.6731C16.4865 21.7033 16.566 21.7091 16.6408 21.6895C16.7157 21.6698 16.7815 21.6259 16.8273 21.565C16.9085 21.4643 16.9743 21.3526 17.0225 21.2335C17.0537 21.1374 17.0798 21.0399 17.1006 20.9412C17.3185 20.2425 17.5653 19.5499 17.7517 18.8438C17.9785 17.9723 18.2624 17.1158 18.6018 16.2798C18.6201 16.2439 18.6411 16.2094 18.6647 16.1766C18.6761 16.2319 18.6761 16.254 18.6761 16.2761C18.6345 17.59 18.5955 18.8978 18.5501 20.2056C18.5363 20.5949 18.491 20.9829 18.4809 21.3722C18.4721 21.705 18.6207 21.8708 18.9557 21.9002C19.4355 21.9432 19.9191 21.9592 20.4002 21.9973C20.4888 22.0079 20.5784 21.9875 20.653 21.9399C20.7277 21.8922 20.7827 21.8203 20.8082 21.7369C20.8531 21.6305 20.8766 21.5167 20.8775 21.4017C20.88 20.7668 20.8674 20.132 20.8674 19.4971C20.8662 19.2846 20.8687 19.0722 20.8523 18.8622C20.8158 18.3968 20.7264 17.9314 20.7339 17.4685C20.7515 16.2122 20.8044 14.9572 20.8599 13.7022Z" fill="white"></path></svg></div></div></div></div></div><div style="display: flex; align-items: center; flex-direction: row; gap: 8px;"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14" fill="none" style="display: block; opacity: 0;"><g clip-path="url(#clip0_38845_9816)"><path d="M7 14C5.14348 14 3.36301 13.2625 2.05025 11.9497C0.737498 10.637 0 8.85652 0 7C0 5.14348 0.737498 3.36301 2.05025 2.05025C3.36301 0.737498 5.14348 0 7 0C8.85652 0 10.637 0.737498 11.9497 2.05025C13.2625 3.36301 14 5.14348 14 7C14 8.85652 13.2625 10.637 11.9497 11.9497C10.637 13.2625 8.85652 14 7 14Z" fill="#B1B1B1" fill-opacity="0.4"></path><path d="M6.11754 7.00052L4.18254 5.06452C4.06786 4.94725 4.00406 4.78948 4.00498 4.62546C4.00589 4.46144 4.07145 4.3044 4.18744 4.18841C4.30342 4.07243 4.46046 4.00687 4.62448 4.00595C4.7885 4.00503 4.94627 4.06884 5.06354 4.18352L6.99954 6.11852L8.93554 4.18352C8.99315 4.1246 9.06188 4.07771 9.13774 4.04554C9.2136 4.01337 9.29508 3.99656 9.37748 3.9961C9.45988 3.99564 9.54155 4.01153 9.61777 4.04285C9.69398 4.07417 9.76323 4.1203 9.82149 4.17857C9.87976 4.23683 9.92589 4.30608 9.95721 4.38229C9.98853 4.45851 10.0044 4.54018 10.004 4.62258C10.0035 4.70497 9.98669 4.78646 9.95452 4.86232C9.92235 4.93818 9.87545 5.00691 9.81654 5.06452L7.88154 7.00052L9.81654 8.93652C9.93122 9.05379 9.99502 9.21155 9.99411 9.37557C9.99319 9.5396 9.92763 9.69664 9.81164 9.81262C9.69566 9.9286 9.53862 9.99417 9.3746 9.99508C9.21058 9.996 9.05281 9.9322 8.93554 9.81752L6.99954 7.88252L5.06354 9.81752C5.00593 9.87643 4.93721 9.92333 4.86135 9.9555C4.78549 9.98767 4.704 10.0045 4.6216 10.0049C4.5392 10.0054 4.45753 9.9895 4.38131 9.95818C4.3051 9.92686 4.23585 9.88073 4.17759 9.82247C4.11932 9.7642 4.0732 9.69496 4.04188 9.61874C4.01056 9.54253 3.99467 9.46086 3.99513 9.37846C3.99559 9.29606 4.01239 9.21457 4.04456 9.13871C4.07673 9.06285 4.12363 8.99413 4.18254 8.93652L6.11754 7.00052Z" fill="white"></path></g><defs><clippath id="clip0_38845_9816"><rect width="14" height="14" fill="white"></rect></clippath></defs></svg><div style="position: relative;"><div class="imt-fb-btn right btn-animate  " dir="ltr" style="opacity: 0.7;"><div class=" " style="position: relative; pointer-events: all; display: inline-block;"><div><div class="imt-fb-btn-content"><svg class="imt-fb-logo-img imt-fb-logo-img-big-bg" width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M0 14C0 6.26801 6.26801 0 14 0C21.732 0 28 6.26801 28 14C28 21.732 21.732 28 14 28C6.26801 28 0 21.732 0 14Z" fill="#ED6D8F"></path><path d="M7.30921 15.6381C7.53044 15.6381 7.70979 15.8175 7.70979 16.0387V19.0088C7.70979 19.934 8.45993 20.684 9.38526 20.684H11.7557C11.9769 20.684 12.1562 20.8634 12.1562 21.0846V22.152C12.1562 22.3732 11.9769 22.5526 11.7557 22.5526H9.38526C7.42782 22.5526 5.84099 20.966 5.84099 19.0088V16.0387C5.84099 15.8175 6.02034 15.6381 6.24157 15.6381H7.30921ZM18.9876 12.6944C19.1515 12.6944 19.2989 12.7943 19.3597 12.9466L22.9711 22.0036C23.076 22.2667 22.8822 22.5526 22.599 22.5526H21.4672C21.3016 22.5526 21.153 22.4506 21.0934 22.2961L20.2724 20.1673C20.2128 20.0128 20.0643 19.9108 19.8986 19.9108H16.7508C16.5852 19.9108 16.4366 20.0128 16.377 20.1673L15.556 22.2961C15.4964 22.4506 15.3478 22.5526 15.1822 22.5526H14.0504C13.7672 22.5526 13.5734 22.2667 13.6783 22.0036L17.2897 12.9466C17.3505 12.7943 17.4979 12.6944 17.6618 12.6944H18.9876ZM18.5116 15.6017C18.4456 15.4308 18.2038 15.4308 18.1378 15.6017L17.3016 17.7699C17.251 17.9011 17.3478 18.0423 17.4885 18.0423H19.1609C19.3016 18.0423 19.3984 17.9012 19.3478 17.7699L18.5116 15.6017ZM9.69589 5.30028C9.79943 4.8999 10.368 4.89991 10.4715 5.30028L11.1086 7.76368C11.3244 8.59845 11.9396 9.27221 12.7513 9.56299L14.9019 10.3334C15.2559 10.4602 15.2559 10.9608 14.9019 11.0876L12.7513 11.8581C11.9396 12.1489 11.3244 12.8226 11.1086 13.6574L10.4715 16.1208C10.368 16.5212 9.79943 16.5212 9.69589 16.1208L9.05884 13.6574C8.84297 12.8226 8.22786 12.1489 7.41615 11.8581L5.26548 11.0876C4.91151 10.9608 4.91151 10.4602 5.26548 10.3334L7.41615 9.56299C8.22786 9.27221 8.84297 8.59844 9.05884 7.76368L9.69589 5.30028ZM18.0064 6.20485C19.9639 6.20485 21.5507 7.79145 21.5507 9.74861V11.281C21.5507 11.5022 21.3713 11.6816 21.1501 11.6816H20.0825C19.8612 11.6816 19.6819 11.5022 19.6819 11.281V9.74861C19.6819 8.82341 18.9318 8.07338 18.0064 8.07338H14.4343C14.2131 8.07338 14.0337 7.89403 14.0337 7.6728V6.60543C14.0337 6.3842 14.2131 6.20486 14.4343 6.20485H18.0064Z" fill="white"></path></svg></div></div></div></div><div title="关闭悬浮球" class="imt-fb-close-button btn-animate" style="opacity: 0; pointer-events: none; filter: blur(1px); transition: opacity 110ms cubic-bezier(0.4, 0, 1, 1), filter 110ms cubic-bezier(0.4, 0, 1, 1); will-change: opacity, filter;"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14" fill="none"><g clip-path="url(#clip0_38845_9816)"><path d="M7 14C5.14348 14 3.36301 13.2625 2.05025 11.9497C0.737498 10.637 0 8.85652 0 7C0 5.14348 0.737498 3.36301 2.05025 2.05025C3.36301 0.737498 5.14348 0 7 0C8.85652 0 10.637 0.737498 11.9497 2.05025C13.2625 3.36301 14 5.14348 14 7C14 8.85652 13.2625 10.637 11.9497 11.9497C10.637 13.2625 8.85652 14 7 14Z" fill="#B1B1B1" fill-opacity="0.4"></path><path d="M6.11754 7.00052L4.18254 5.06452C4.06786 4.94725 4.00406 4.78948 4.00498 4.62546C4.00589 4.46144 4.07145 4.3044 4.18744 4.18841C4.30342 4.07243 4.46046 4.00687 4.62448 4.00595C4.7885 4.00503 4.94627 4.06884 5.06354 4.18352L6.99954 6.11852L8.93554 4.18352C8.99315 4.1246 9.06188 4.07771 9.13774 4.04554C9.2136 4.01337 9.29508 3.99656 9.37748 3.9961C9.45988 3.99564 9.54155 4.01153 9.61777 4.04285C9.69398 4.07417 9.76323 4.1203 9.82149 4.17857C9.87976 4.23683 9.92589 4.30608 9.95721 4.38229C9.98853 4.45851 10.0044 4.54018 10.004 4.62258C10.0035 4.70497 9.98669 4.78646 9.95452 4.86232C9.92235 4.93818 9.87545 5.00691 9.81654 5.06452L7.88154 7.00052L9.81654 8.93652C9.93122 9.05379 9.99502 9.21155 9.99411 9.37557C9.99319 9.5396 9.92763 9.69664 9.81164 9.81262C9.69566 9.9286 9.53862 9.99417 9.3746 9.99508C9.21058 9.996 9.05281 9.9322 8.93554 9.81752L6.99954 7.88252L5.06354 9.81752C5.00593 9.87643 4.93721 9.92333 4.86135 9.9555C4.78549 9.98767 4.704 10.0045 4.6216 10.0049C4.5392 10.0054 4.45753 9.9895 4.38131 9.95818C4.3051 9.92686 4.23585 9.88073 4.17759 9.82247C4.11932 9.7642 4.0732 9.69496 4.04188 9.61874C4.01056 9.54253 3.99467 9.46086 3.99513 9.37846C3.99559 9.29606 4.01239 9.21457 4.04456 9.13871C4.07673 9.06285 4.12363 8.99413 4.18254 8.93652L6.11754 7.00052Z" fill="white"></path></g><defs><clippath id="clip0_38845_9816"><rect width="14" height="14" fill="white"></rect></clippath></defs></svg></div></div><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14" fill="none" style="display: none; opacity: 0;"><g clip-path="url(#clip0_38845_9816)"><path d="M7 14C5.14348 14 3.36301 13.2625 2.05025 11.9497C0.737498 10.637 0 8.85652 0 7C0 5.14348 0.737498 3.36301 2.05025 2.05025C3.36301 0.737498 5.14348 0 7 0C8.85652 0 10.637 0.737498 11.9497 2.05025C13.2625 3.36301 14 5.14348 14 7C14 8.85652 13.2625 10.637 11.9497 11.9497C10.637 13.2625 8.85652 14 7 14Z" fill="#B1B1B1" fill-opacity="0.4"></path><path d="M6.11754 7.00052L4.18254 5.06452C4.06786 4.94725 4.00406 4.78948 4.00498 4.62546C4.00589 4.46144 4.07145 4.3044 4.18744 4.18841C4.30342 4.07243 4.46046 4.00687 4.62448 4.00595C4.7885 4.00503 4.94627 4.06884 5.06354 4.18352L6.99954 6.11852L8.93554 4.18352C8.99315 4.1246 9.06188 4.07771 9.13774 4.04554C9.2136 4.01337 9.29508 3.99656 9.37748 3.9961C9.45988 3.99564 9.54155 4.01153 9.61777 4.04285C9.69398 4.07417 9.76323 4.1203 9.82149 4.17857C9.87976 4.23683 9.92589 4.30608 9.95721 4.38229C9.98853 4.45851 10.0044 4.54018 10.004 4.62258C10.0035 4.70497 9.98669 4.78646 9.95452 4.86232C9.92235 4.93818 9.87545 5.00691 9.81654 5.06452L7.88154 7.00052L9.81654 8.93652C9.93122 9.05379 9.99502 9.21155 9.99411 9.37557C9.99319 9.5396 9.92763 9.69664 9.81164 9.81262C9.69566 9.9286 9.53862 9.99417 9.3746 9.99508C9.21058 9.996 9.05281 9.9322 8.93554 9.81752L6.99954 7.88252L5.06354 9.81752C5.00593 9.87643 4.93721 9.92333 4.86135 9.9555C4.78549 9.98767 4.704 10.0045 4.6216 10.0049C4.5392 10.0054 4.45753 9.9895 4.38131 9.95818C4.3051 9.92686 4.23585 9.88073 4.17759 9.82247C4.11932 9.7642 4.0732 9.69496 4.04188 9.61874C4.01056 9.54253 3.99467 9.46086 3.99513 9.37846C3.99559 9.29606 4.01239 9.21457 4.04456 9.13871C4.07673 9.06285 4.12363 8.99413 4.18254 8.93652L6.11754 7.00052Z" fill="white"></path></g><defs><clippath id="clip0_38845_9816"><rect width="14" height="14" fill="white"></rect></clippath></defs></svg></div><div class="btn-animate" style="margin-top: 10px; transform: translateX(-5px); opacity: 0; pointer-events: none; filter: blur(1px); transition: opacity 110ms cubic-bezier(0.4, 0, 1, 1), filter 110ms cubic-bezier(0.4, 0, 1, 1); will-change: opacity, filter;"><div class=" btn-animate" style="position: relative; pointer-events: none; display: inline-block;"><div><div class="imt-fb-round-button"><svg class="imt-fb-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" style="width: 24px; height: 24px;"><path d="M17 8.66797H11.375" stroke="#ED6D8F" stroke-linecap="round" stroke-linejoin="round"></path><path d="M12.625 15.332L7 15.332" stroke="#ED6D8F" stroke-linecap="round" stroke-linejoin="round"></path><path d="M15.125 17C16.1605 17 17 16.1605 17 15.125C17 14.0895 16.1605 13.25 15.125 13.25C14.0895 13.25 13.25 14.0895 13.25 15.125C13.25 16.1605 14.0895 17 15.125 17Z" stroke="#ED6D8F" stroke-linecap="round" stroke-linejoin="round"></path><path d="M8.875 10.75C9.91053 10.75 10.75 9.91053 10.75 8.875C10.75 7.83947 9.91053 7 8.875 7C7.83947 7 7 7.83947 7 8.875C7 9.91053 7.83947 10.75 8.875 10.75Z" stroke="#ED6D8F" stroke-linecap="round" stroke-linejoin="round"></path><rect x="3" y="4" width="18" height="16" rx="1.66667" stroke="#ED6D8F"></rect></svg></div></div></div></div><div class="btn-animate" style="margin-top: 10px; transform: translateX(-5px); opacity: 0; pointer-events: none; filter: blur(1px); transition: opacity 110ms cubic-bezier(0.4, 0, 1, 1), filter 110ms cubic-bezier(0.4, 0, 1, 1); will-change: opacity, filter;"><div class=" btn-animate" style="position: relative; pointer-events: none; display: inline-block;"><div><div class="imt-fb-round-button"><svg class="imt-fb-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none"><mask id="mask0_43829_2633" maskUnits="userSpaceOnUse" x="0" y="0" width="20" height="20" style="mask-type: alpha;"><rect width="20" height="20" fill="#D9D9D9"></rect></mask><g mask="url(#mask0_43829_2633)"><path d="M9.99546 12.2609C10.1639 12.2609 10.305 12.2055 10.4188 12.0946C10.5327 11.9838 10.5896 11.8441 10.5896 11.6755C10.5896 11.507 10.5342 11.3659 10.4234 11.2521C10.3124 11.1384 10.1727 11.0815 10.0042 11.0815C9.83574 11.0815 9.69463 11.1369 9.58088 11.2478C9.46699 11.3586 9.41005 11.4982 9.41005 11.6667C9.41005 11.8353 9.46546 11.9765 9.5763 12.0903C9.68727 12.204 9.82699 12.2609 9.99546 12.2609ZM9.99546 10.1936C10.148 10.1936 10.2771 10.1418 10.3828 10.0382C10.4886 9.93443 10.5415 9.80568 10.5415 9.65193V5.20318C10.5415 5.04943 10.49 4.92075 10.3871 4.81713C10.2844 4.71338 10.1567 4.66151 10.0042 4.66151C9.85171 4.66151 9.72261 4.71338 9.61692 4.81713C9.51109 4.92075 9.45817 5.04943 9.45817 5.20318V9.65193C9.45817 9.80568 9.50963 9.93443 9.61255 10.0382C9.71532 10.1418 9.84296 10.1936 9.99546 10.1936ZM5.03192 14.5846L3.55359 16.063C3.34262 16.2739 3.10032 16.3221 2.82671 16.2076C2.55324 16.093 2.4165 15.8864 2.4165 15.5878V3.75776C2.4165 3.38262 2.54602 3.06554 2.80505 2.80651C3.06407 2.54748 3.38116 2.41797 3.7563 2.41797H16.2434C16.6185 2.41797 16.9356 2.54748 17.1946 2.80651C17.4537 3.06554 17.5832 3.38262 17.5832 3.75776V13.2448C17.5832 13.62 17.4537 13.9371 17.1946 14.1961C16.9356 14.4551 16.6185 14.5846 16.2434 14.5846H5.03192ZM4.58317 13.5013H16.2434C16.3075 13.5013 16.3663 13.4746 16.4196 13.4211C16.4731 13.3678 16.4998 13.309 16.4998 13.2448V3.75776C16.4998 3.69359 16.4731 3.63484 16.4196 3.58151C16.3663 3.52804 16.3075 3.5013 16.2434 3.5013H3.7563C3.69213 3.5013 3.63338 3.52804 3.58005 3.58151C3.52657 3.63484 3.49984 3.69359 3.49984 3.75776V14.5928L4.58317 13.5013Z" fill="#ED6D8F"></path></g></svg></div></div></div></div><div hidden="" id="immersive-translate-popup-overlay" class="immersive-translate-popup-overlay"><div class="immersive-translate-popup-wrapper" style="position: fixed; bottom: 30px; right: 65px;"></div></div></div></div></template></div></html>
