@@ -16,13 +16,18 @@
 """
 
 import argparse
+import copy
 import os
 import time
+from typing import Optional
 
+import gymnasium as gym
 import numpy as np
 import torch
+import torch.nn.functional as F
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
+from stable_baselines3.common.utils import explained_variance
 from sb3_contrib import MaskablePPO
 
 from .features import N_PLANES, N_PLANES_ORACLE, N_SCALARS
@@ -63,6 +68,165 @@ class NetExtractor(BaseFeaturesExtractor):
         p = torch.relu(self.net.p_conv(x)).flatten(1)
         v = torch.relu(self.net.v_conv(x)).flatten(1)
         return torch.cat([p, v], dim=1)
+
+
+class BCPriorPPO(MaskablePPO):
+    """PPO + BC 先验 KL 正则:policy loss 追加 λ·KL(π_new ‖ π_BC)。
+
+    背景(ppo2/ppo3 教训):单步 target_kl 只约束每次更新,累积漂移
+    依然毁掉 BC 先验(500k 步从 22.9% 崩到 6%)。本类把"距 BC 的
+    KL"直接放进损失,梯度持续把策略拉回 BC 邻域——PPO 负责"在邻域
+    内往高回报方向挪",λ 控制邻域半径。
+
+    π_BC = BC 移植完成后的初始策略冻结副本(set_bc_reference 深拷贝,
+    恒 eval、requires_grad False;主干 BN running stats 与 FreezeBN
+    口径一致,两者永用同一套 BC 统计,比较稳定)。
+
+    train() 复制自 sb3-contrib 2.4.0(仅插入正则项与日志),升级依赖
+    时需同步。同一 minibatch、同一动作掩码下计算 KL:掩码位两分布
+    概率同为 0,log-prob 差为常数,乘积恰 0,无数值病态。
+    """
+
+    def __init__(self, *args, bc_reg: float = 0.0, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.bc_reg = float(bc_reg)
+        self._policy_ref = None
+
+    def set_bc_reference(self):
+        """BC 移植(load_bc_init)之后调用,冻结初始策略为参考。"""
+        assert self.bc_reg > 0, "bc_reg=0 时无需参考策略"
+        self._policy_ref = copy.deepcopy(self.policy)
+        self._policy_ref.eval()
+        for p in self._policy_ref.parameters():
+            p.requires_grad_(False)
+
+    def _bc_kl(self, obs, action_masks):
+        """KL(π_new ‖ π_BC),对 batch 求均值;new 侧带梯度。"""
+        dist_new = self.policy.get_distribution(obs, action_masks=action_masks)
+        with torch.no_grad():
+            dist_bc = self._policy_ref.get_distribution(
+                obs, action_masks=action_masks)
+        log_pn = F.log_softmax(dist_new.distribution.logits, dim=-1)
+        log_pb = F.log_softmax(dist_bc.distribution.logits, dim=-1)
+        return (log_pn.exp() * (log_pn - log_pb)).sum(-1).mean()
+
+    def train(self) -> None:
+        # 以下为 sb3-contrib 2.4.0 MaskablePPO.train() 全文,
+        # 标注 [BC] 处为插入的先验正则
+        self.policy.set_training_mode(True)
+        # [BC] set_training_mode(True) 会把 BN 切回 train 模式,
+        # 而 on_training_start/on_rollout_start 回调只在 rollout 前触发——
+        # ppo1/2/3 的更新阶段实际用的是 minibatch 批统计(与文档意图
+        # 不符)。此处显式冻结:更新与采样同用 running stats,
+        # 且保证 _bc_kl 的 live/ref 口径一致(初始 KL=0)。
+        for m in self.policy.modules():
+            if isinstance(m, torch.nn.BatchNorm1d):
+                m.eval()
+        self._update_learning_rate(self.policy.optimizer)
+        clip_range = self.clip_range(self._current_progress_remaining)  # type: ignore[operator]
+        if self.clip_range_vf is not None:
+            clip_range_vf = self.clip_range_vf(self._current_progress_remaining)  # type: ignore[operator]
+
+        entropy_losses = []
+        pg_losses, value_losses, bc_kls = [], [], []
+        clip_fractions = []
+
+        continue_training = True
+
+        for epoch in range(self.n_epochs):
+            approx_kl_divs = []
+            for rollout_data in self.rollout_buffer.get(self.batch_size):
+                actions = rollout_data.actions
+                if isinstance(self.action_space, gym.spaces.Discrete):
+                    actions = rollout_data.actions.long().flatten()
+
+                values, log_prob, entropy = self.policy.evaluate_actions(
+                    rollout_data.observations,
+                    actions,
+                    action_masks=rollout_data.action_masks,
+                )
+
+                values = values.flatten()
+                advantages = rollout_data.advantages
+                if self.normalize_advantage:
+                    advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+
+                ratio = torch.exp(log_prob - rollout_data.old_log_prob)
+
+                policy_loss_1 = advantages * ratio
+                policy_loss_2 = advantages * torch.clamp(ratio, 1 - clip_range, 1 + clip_range)
+                policy_loss = -torch.min(policy_loss_1, policy_loss_2).mean()
+
+                pg_losses.append(policy_loss.item())
+                clip_fraction = torch.mean((torch.abs(ratio - 1) > clip_range).float()).item()
+                clip_fractions.append(clip_fraction)
+
+                if self.clip_range_vf is None:
+                    values_pred = values
+                else:
+                    values_pred = rollout_data.old_values + torch.clamp(
+                        values - rollout_data.old_values, -clip_range_vf, clip_range_vf
+                    )
+                value_loss = F.mse_loss(rollout_data.returns, values_pred)
+                value_losses.append(value_loss.item())
+
+                if entropy is None:
+                    entropy_loss = -torch.mean(-log_prob)
+                else:
+                    entropy_loss = -torch.mean(entropy)
+
+                entropy_losses.append(entropy_loss.item())
+
+                # [BC] 先验正则:λ·KL(π_new ‖ π_BC)
+                bc_kl = self._bc_kl(rollout_data.observations,
+                                    rollout_data.action_masks) \
+                    if self._policy_ref is not None else None
+                if bc_kl is not None:
+                    bc_kls.append(bc_kl.item())
+
+                loss = (policy_loss + self.ent_coef * entropy_loss
+                        + self.vf_coef * value_loss)
+                if bc_kl is not None:
+                    loss = loss + self.bc_reg * bc_kl
+
+                with torch.no_grad():
+                    log_ratio = log_prob - rollout_data.old_log_prob
+                    approx_kl_div = torch.mean(
+                        (torch.exp(log_ratio) - 1) - log_ratio).cpu().numpy()
+                    approx_kl_divs.append(approx_kl_div)
+
+                if self.target_kl is not None and approx_kl_div > 1.5 * self.target_kl:
+                    continue_training = False
+                    if self.verbose >= 1:
+                        print(f"Early stopping at step {epoch} due to reaching max kl: {approx_kl_div:.2f}")
+                    break
+
+                self.policy.optimizer.zero_grad()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
+                self.policy.optimizer.step()
+
+            if not continue_training:
+                break
+
+        self._n_updates += self.n_epochs
+        explained_var = explained_variance(
+            self.rollout_buffer.values.flatten(),
+            self.rollout_buffer.returns.flatten())
+
+        self.logger.record("train/entropy_loss", np.mean(entropy_losses))
+        self.logger.record("train/policy_gradient_loss", np.mean(pg_losses))
+        self.logger.record("train/value_loss", np.mean(value_losses))
+        if bc_kls:
+            self.logger.record("train/bc_kl", np.mean(bc_kls))
+        self.logger.record("train/approx_kl", np.mean(approx_kl_divs))
+        self.logger.record("train/clip_fraction", np.mean(clip_fractions))
+        self.logger.record("train/loss", loss.item())
+        self.logger.record("train/explained_variance", explained_var)
+        self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
+        self.logger.record("train/clip_range", clip_range)
+        if self.clip_range_vf is not None:
+            self.logger.record("train/clip_range_vf", clip_range_vf)
 
 
 class FreezeBNCallback(BaseCallback):
@@ -192,6 +356,8 @@ def main():
     ap.add_argument("--you-cai-bi-kao", action="store_true",
                     help="有财必拷响(手有财神须爆头/杠开才可胡)")
     ap.add_argument("--ent-coef", type=float, default=0.001)
+    ap.add_argument("--bc-reg", type=float, default=0.0,
+                    help="BC 先验 KL 正则系数 λ(0=关);>0 时需 --init")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--init", default=None, help="BC checkpoint 初始化")
     ap.add_argument("--out", default="runs/ppo0")
@@ -228,9 +394,10 @@ def main():
         p_done = 1.0 - progress_remaining
         return args.lr if p_done < args.oracle_anneal else args.lr / 10.0
 
-    model = MaskablePPO(
+    model = BCPriorPPO(
         "MlpPolicy",
         venv,
+        bc_reg=args.bc_reg,
         policy_kwargs=dict(
             features_extractor_class=NetExtractor,
             features_extractor_kwargs=dict(blocks=args.blocks, width=args.width),
@@ -254,6 +421,9 @@ def main():
         assert (ck["blocks"], ck["width"]) == (args.blocks, args.width), \
             f"BC 检查点 blocks/width {ck['blocks']}/{ck['width']} 与训练参数不符"
         load_bc_init(model, args.init)
+        if args.bc_reg > 0:
+            model.set_bc_reference()
+            print(f"BC 先验正则开启:λ={args.bc_reg}")
 
     t0 = time.time()
     model.learn(total_timesteps=args.steps, progress_bar=False,
