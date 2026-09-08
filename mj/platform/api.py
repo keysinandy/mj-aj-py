@@ -119,6 +119,25 @@ class Api:
     def game_action(self, gid, payload):
         return self.post(f"/api/games/{gid}/action", payload)
 
+    def open_notify(self, gid, timeout=45.0):
+        """打开 /api/games/{gid}/notify SSE 通知流(v12),返回可逐行读的
+        响应对象(调用方负责 close)。
+
+        帧只含 seq(包含式水位,与 /state 同源)——不可直接当轮询游标,
+        只作"状态已变"信号;30s keepalive 注释行;流终止推
+        {"seq":N,"closed":true}。每用户 32 并发连接(超限 429),不占
+        /state 16/s 额度。429/网络错误抛出由调用方退避;403/404 =
+        场次不可访问。
+        """
+        req = urllib.request.Request(
+            self._url(f"/api/games/{gid}/notify"), method="GET")
+        req.add_header("Authorization", "Bearer " + self.token)
+        req.add_header("Accept", "text/event-stream")
+        try:
+            return urllib.request.urlopen(req, timeout=timeout, context=_CTX)
+        except urllib.error.HTTPError as e:
+            raise ApiError(e.code, e.read().decode(errors="replace")) from None
+
 
 def room_games(server: str, room_id: str) -> list:
     """免认证:测试房局列表 [{batch, game_id, status}](batch 升序)。"""

@@ -13,7 +13,7 @@
 # Python 3.11;依赖:torch、numpy、stable-baselines3 + sb3-contrib(RL 用)、pytest
 pip install torch numpy stable-baselines3 sb3-contrib pytest
 
-# 离线全量测试(161 个,无需内网)
+# 离线全量测试(165 个,无需内网)
 python3 -m pytest tests/ -q
 ```
 
@@ -115,6 +115,7 @@ python3 -m mj.bc_train --data "data/bc_match/shard_*.npz" \
 ### 3. 注意事项(实测口径)
 
 - **退出粒度**:`--games N` 打满 N 场即止,但总会打完当前房(一房 10 场);想多攒数据把 N 给大点
+- **事件驱动(SSE)**:对弈默认走 `/notify` SSE 通知流(v12)——服务器状态变更即推信号,客户端立即拉 `/state` 增量,事件感知延迟从轮询的 ~0.5s+(p90 1.5s、429 退避尾部可达数十秒)压到帧级,显著降低吃/碰/弃牌窗超时 409;断流自动重连,重连期间自动退回轮询节奏(无需配置)
 - **错误自愈**:409 MATCH_BUSY/MATCH_LIMIT_REACHED 自动退避重试(10s);房间 finished ~60s 宽限关停后 404 属正常,自动开下一房;崩溃重启后重调 `/api/match` 幂等返回原房(v24)
 - **永久错误**:403 PORTAL_BINDING_REQUIRED = 令牌非门户绑定,须去门户领绑定令牌,重试无意义
 - **排行榜曝光**:auto 房整场完整打完会计入门户排行榜(积分榜/胡大牌榜/单场得分榜)

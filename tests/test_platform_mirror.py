@@ -109,6 +109,17 @@ class TestMirrorProperties(unittest.TestCase):
                     ev = dict(ev, tile=tname((tidx(ev["tile"]) + 1) % 34))
                 mir.apply_event(ev)
 
+    def test_react_on_own_pending_rejected(self):
+        """自家打出的牌没有自家反应窗:build_game 拒绝(防陈旧窗口
+        构建出"吃自己弃牌"的假合法集——2026-09-08 实弹 409 根因)。"""
+        res = synth_game(2)
+        mir = Mirror(my_seat=0, dealer=res["game"].dealer)
+        mir.apply_snapshot(_initial_snapshot(res, 0))
+        mir.pending = (0, 3)  # 强行把 pending 设成自家弃牌
+        for phase in ("response_peng", "response_chi"):
+            with self.assertRaises(MirrorInconsistent):
+                mir.build_game(phase)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -8,6 +8,7 @@ tournament 404 分支模拟房间关停。覆盖 run_match 挂机循环、整房
 
 import json
 import os
+import queue
 import tempfile
 import unittest
 
@@ -80,11 +81,72 @@ class FakeMatchApi:
         return self.game.game_action(gid, payload)
 
 
+class FakeSseStream:
+    """按队列推送行的假 SSE 响应(FakeApi 每次发事件后 push 一帧)。"""
+
+    def __init__(self):
+        self.q = queue.Queue()
+
+    def push(self, seq, closed=False):
+        payload = {"seq": seq}
+        if closed:
+            payload["closed"] = True
+        self.q.put(json.dumps(payload).encode())
+
+    def close(self):
+        self.q.put(None)
+
+    def __iter__(self):
+        while True:
+            item = self.q.get()
+            if item is None:
+                return
+            yield b"data: " + item + b"\n"
+
+
+class FakeSseMatchApi(FakeMatchApi):
+    """/notify 可用的 FakeMatchApi:game_state 返回事件后推 SSE 帧;
+    close_every=N 模拟服务端周期断流(监听须自动重连)。"""
+
+    def __init__(self, *a, sse_error=None, close_every=None, **kw):
+        super().__init__(*a, **kw)
+        self.sse_error = sse_error
+        self.close_every = close_every
+        self.sse = FakeSseStream()
+        self.notify_opens = 0
+        self._served = 0
+
+    def match(self):
+        res = super().match()
+        self.sse = FakeSseStream()  # 新房新流
+        return res
+
+    def open_notify(self, gid):
+        if self.sse_error is not None:
+            raise self.sse_error
+        self.notify_opens += 1
+        self.sse = FakeSseStream()  # 每次连接 = 新流(重连场景换流)
+        return self.sse
+
+    def game_state(self, gid, seq):
+        res = self.game.game_state(gid, seq)
+        self.sse.push(res.get("seq", seq), closed=bool(res.get("finished")))
+        self._served += 1
+        if self.close_every and self._served % self.close_every == 0:
+            self.sse.close()  # 模拟断流:迭代器返回 → 监听重连
+        return res
+
+
 def _drive_match(n_rooms, seat=0, seed0=0, max_games=None, recorder=None,
-                 **api_kwargs):
-    """打 n_rooms 个 auto 房(每房 1 场),返回 (api, stats)。"""
+                 api_cls=FakeMatchApi, use_notify=False, **api_kwargs):
+    """打 n_rooms 个 auto 房(每房 1 场),返回 (api, stats)。
+
+    api_kwargs 透传 FakeMatchApi(busy_before/room_gone/refuse_403…);
+    use_notify=True 时用 FakeSseMatchApi(SSE 帧驱动)。
+    """
     results = [synth_game(seed0 + k) for k in range(n_rooms)]
-    api = FakeMatchApi(results, seat, **api_kwargs)
+    cls = FakeSseMatchApi if use_notify else api_cls
+    api = cls(results, seat, **api_kwargs)
 
     def decide(g, s):
         act = next(api._it)
@@ -93,7 +155,8 @@ def _drive_match(n_rooms, seat=0, seed0=0, max_games=None, recorder=None,
 
     bot = BotClient(api, "bot0", decide, log=lambda m: None,
                     window_wait=0, idle_sleep=0, recorder=recorder,
-                    mode="match", match_retry_wait=0)
+                    mode="match", match_retry_wait=0, use_notify=use_notify,
+                    notify_fallback_wait=0.05, notify_retry_wait=0.01)
     stats = bot.run_match(max_games=max_games if max_games is not None
                           else n_rooms, room_close_wait=0)
     return api, stats
@@ -177,6 +240,28 @@ class TestMatchRecording(unittest.TestCase):
         self.assertEqual(len(skip_t), 1)
         out_a, _ = collect([m_path, t_path])
         self.assertEqual(len(out_a), 2)
+
+
+class TestSseNotify(unittest.TestCase):
+    def test_sse_frames_drive_game(self):
+        """SSE 帧驱动对弈:多房循环决策序列与非 SSE 路径一致。"""
+        api, stats = _drive_match(2, use_notify=True)
+        self.assertEqual(stats["games"], 2)
+        self.assertEqual(stats["rooms"], 2)
+        self.assertEqual(stats["err409"], 0)
+        self.assertEqual(stats["mirror_resets"], 0)
+
+    def test_sse_unavailable_falls_back(self):
+        """SSE 不可用(404)→ 监听退出,自动退回轮询节奏,对弈照常完成。"""
+        err = ApiError(404, json.dumps({"message": "game gone"}))
+        api, stats = _drive_match(1, use_notify=True, sse_error=err)
+        self.assertEqual(stats["games"], 1)
+
+    def test_sse_stream_reconnects(self):
+        """断流(流被服务端关闭)后监听自动重连,对弈不中断。"""
+        api, stats = _drive_match(1, use_notify=True, close_every=4)
+        self.assertEqual(stats["games"], 1)
+        self.assertGreaterEqual(api.notify_opens, 2)
 
 
 if __name__ == "__main__":

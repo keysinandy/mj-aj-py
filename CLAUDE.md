@@ -96,7 +96,7 @@ platform/ (P4 平台对接:api/proto/actions/mirror/bot_client/recorder/runner/s
      对账+训练样本重建)/ mj/log2data.py (日志→BC npz,严格过滤)
 ```
 
-平台对接层要点(实测口径,详见 PROGRESS.md P4 节):事件流只含自家摸牌,他家暗手不可见——`mirror.py` 事件源重建公共状态,决策点用 `Game.__new__` 模式构建引擎;快照含四家牌河/副露/wall_remaining,`apply_snapshot` 全量自愈;测试房 M=10 → 10 场并发,每场次独立工作线程;窗口固定走满 1s,吃窗提交须等碰窗结束(~1.05s);无独立 hu 事件(结算在 round_ended.data)。
+平台对接层要点(实测口径,详见 PROGRESS.md P4 节):事件流只含自家摸牌,他家暗手不可见——`mirror.py` 事件源重建公共状态,决策点用 `Game.__new__` 模式构建引擎;快照含四家牌河/副露/wall_remaining,`apply_snapshot` 全量自愈;测试房 M=10 → 10 场并发,每场次独立工作线程;窗口固定走满 1s,吃窗提交须等碰窗结束(~1.05s);无独立 hu 事件(结算在 round_ended.data);自由对战(match_runner)默认挂 `/notify` SSE(v12)事件驱动——帧只作唤醒信号不当游标,断流重连期间退回轮询。
 
 关键设计约束(改动前必读,均有 PROGRESS.md 或测试背书):
 

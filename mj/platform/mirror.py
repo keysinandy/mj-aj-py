@@ -355,6 +355,12 @@ class Mirror:
         elif phase in ("response_peng", "response_chi"):
             if self.pending is None:
                 raise MirrorInconsistent(f"{phase} 无 pending")
+            if self.pending[0] == self.me:
+                # 自家打出的牌没有自家反应窗(引擎 _begin_react 只让他家
+                # 进 react;镜像 build 捷径会绕过该保证——防陈旧窗口
+                # 状态构建出"吃自己弃牌"的假合法集)
+                raise MirrorInconsistent(
+                    f"{phase} pending 属于自家(陈旧/失效窗口)")
             g.phase = "react"
             g.pending = self.pending
             g.react_seq = [self.me]

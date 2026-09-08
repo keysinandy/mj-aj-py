@@ -434,10 +434,24 @@ extract 含 oracle ~1.6ms/决策点。
     改从 /api/match 响应 config 取;无 register/ready(直连 auto 房
     409 AUTO_MATCH_ONLY);新 CLI `python3 -m mj.platform.match_runner`
     (--strategy policy|bot|random,--ckpt 默认 runs/ppo4/ckpt_350000.pt)
+  - **SSE /notify 事件驱动对弈(v12 端点,2026-09-08 实现接入 match
+    客户端)**:`BotClient(use_notify=True)` 时 play_game 每场挂一个
+    SSE 监听线程(GET /api/games/{gid}/notify,每用户 32 连接、不占
+    /state 16/s 额度)——帧只作「状态已变」唤醒信号(**游标纪律:帧
+    seq 是包含式水位,绝不当轮询游标**,一律 GET /state?seq=本地游标
+    拉增量),无触发批次等帧而不是盲轮询;断流(closed/网络/keepalive
+    45s 超时)指数退避自动重连,重连期间自动退回 idle_sleep 轮询节奏
+    (优雅降级);403/404 监听退出,主循环靠 /state 收尾。实测帧格式
+    `data: {"seq":N}` / 终止 `data: {"seq":N,"closed":true}`;动机
+    与效果见下「409 根因」——轮询接收延迟(p50 0.5s/24% 请求 429
+    重试)是 409 迟到提交的根因,SSE 把事件感知延迟压到帧级
   - **挂机循环**:match 入席 → 打完整房(finished/closed/void 或
     房间 404 = 本房收官)→ 等 ~65s 宽限关停释放并发额度(v15:每房
     占 10/16 格)→ re-match,直至 --games 打满。**整房为退出粒度**
-    (不中途弃房——弃房后剩余场次被服务端代打,污染他人对局)
+    (不中途弃房——弃房后剩余场次被服务端代打,污染他人对局);
+    _play_room 收官 join 宽限 45s(≥ 一个长轮询周期——5s 会把仍在
+    收尾计数的工作线程丢下,误判未达标多开新房,实测踩坑:--games 10
+    打了三房)
   - **错误分诊**:403 PORTAL_BINDING_REQUIRED/401/scoped 400 =
     永久抛出(令牌须门户「我的 AI 身份」绑定签发);409 MATCH_BUSY/
     MATCH_LIMIT_REACHED/网络抖动 = 10s 退避重试(≥ /api/match
@@ -452,12 +466,39 @@ extract 含 oracle ~1.6ms/决策点。
   - 测试:FakeMatchApi(auto 房序列:入席→打完→re-match 循环、
     404 关停、MATCH_BUSY 退避、403 永久、整房退出粒度、mode 落盘
     与 log2data 过滤)+ bc_train --init 函数保持性 + log_replay 轮边界
-    跳过降级——161 个单测全过
+    跳过降级——165 个单测全过
   - **实弹结果(ppo4/ckpt_350000.pt,1 房 10 场 × 8 局)**:全 10 场
     正常收官(854 动作、16 自摸胡、0 镜像失步、18 次 409 自愈——真实
     对手 bot 抢窗比测试房激进,409 高于测试房基线但无害);日志 10/10
     局干净、log_replay 合法集断言 0 非法、log2data 产出 854 样本
     动作合法率 100%
+  - **409 根因(2026-09-08 排查,免认证房流逐事件对拍 + 计时分析)**:
+    全部 20 次 409 都是**迟到提交**(决策/提交本身仅毫秒级),两类:
+    ①chi(14 次)——吃窗时序为弃牌+1s 碰窗 →[1s,2s] 吃窗,事件接收
+    延迟把"等碰窗齐再提交"的策略推出 2s 关闭点;②draw(4 次)——
+    弃牌超时 3s,自家摸牌事件迟到 >3s 时服务端已代打。接收延迟
+    分布(17045 事件):p50 0.5s / p90 1.5s / 17.4%>1s / 4.2%>3s /
+    尾部数十秒——主因是 10 场并发轮询 ~15/s 贴着 /state 16/s/用户
+    限速墙(**24% 请求带重试**,429 指数退避 0.5→10s)+ 长轮询不在航
+    间隙(处理/合批 0.35s/decide 锁跨场串行)。客户端逻辑无 bug,
+    409 后自愈继续;**治本已实现(2026-09-08):SSE /notify 事件驱动**
+    (见上 SSE 条目),实弹复测 10 场 409 从 18-20 次 → **3 次**
+    (0.31% 动作率),事件接收延迟 p90 1.47s→0.85s / p99 18.5s→1.8s,
+    /state 请求量降 ~4 倍
+  - **"吃自己弃牌"陈旧吃窗 bug(2026-09-08 SSE 复测发现并修复)**:
+    剩余 3 次 409 里 2 次是同因——①同批 pass 未入账:触发弃牌与
+    他家 pass 同批到达时,chi_pending 在批后才创建,pass 丢失 →
+    "碰窗响应齐"永远凑不齐;②chi_pending 跨自家摸牌/自家弃牌/
+    自家吃窗超时不清理,被后续无关 pass 误触发;③mirror.build_game
+    react 相位不校验 pending 归属,对自家弃牌构建出"吃自己"假合法集
+    (引擎 _begin_react 只让他家进 react,真实流程不可达,镜像捷径
+    绕过)。修复:事件状态机三处清理(自家摸牌/吃碰后/任何新弃牌/
+    自家吃窗 timeout window=chi)+ 同批 pass 喂入 chi_pending["seen"]
+    + 同批认领使窗口触发失效(顺带消除"碰窗构建失败 无 pending"
+    噪音)+ mirror react 相位 pending==自家 → MirrorInconsistent
+    (最后防线,有回归测试)。剩余 1 次 409 为 429 重试链尾部
+    (单次 /state attempts=4/3.6s,摸牌事件到达时 3s 弃牌窗已
+    关——偶发,自愈)
   - **协议新发现(轮边界事件固有丢失,2026-09-08 实弹 + 免认证房流
     对拍确认)**:/state 轮翻转后返回新局全量快照,游标跳到响应水位
     res.seq——旧局尾部事件(窗口 pass/timeout + **round_ended**)不再

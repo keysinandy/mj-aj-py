@@ -11,6 +11,8 @@
 控制在 ~1.5/s/场——无触发批次后 sleep,动作后立即轮询。
 """
 
+import json
+import queue
 import threading
 import time
 
@@ -33,7 +35,8 @@ class BotClient:
 
     def __init__(self, api, name, decide, log=None, window_wait=WINDOW_SEC,
                  idle_sleep=0.35, recorder=None, mode=None,
-                 match_retry_wait=10.0):
+                 match_retry_wait=10.0, use_notify=False,
+                 notify_fallback_wait=15.0, notify_retry_wait=0.5):
         self.api = api
         self.name = name
         self.decide = decide
@@ -43,6 +46,9 @@ class BotClient:
         self.recorder = recorder
         self.mode = mode        # 对局来源标记(run_match 设 "match")
         self.match_retry_wait = match_retry_wait  # match 瞬态错误退避(测试注入 0)
+        self.use_notify = use_notify          # play_game 挂 /notify SSE(v12)
+        self.notify_fallback_wait = notify_fallback_wait  # SSE 在航时兜底轮询间隔
+        self.notify_retry_wait = notify_retry_wait  # SSE 断流重连初始退避(测试注入)
         self._tid = None
         self.you_cai_bi_kao = False
         self.base = 1
@@ -230,8 +236,10 @@ class BotClient:
                     self._log(f"auto 房 {tid} 等待满员(status={status})…")
                     idle = 0.0
             time.sleep(0.5)
+        # join 宽限须 ≥ 一个长轮询周期(35s 超时):太短会把仍在收尾的
+        # 工作线程丢下,场次计数滞后 → run_match 误判未达标多开新房
         for th in workers.values():
-            th.join(timeout=5)
+            th.join(timeout=45)
 
     @staticmethod
     def _sleep_stop(sec, stop):
@@ -243,6 +251,67 @@ class BotClient:
                 return False
             time.sleep(min(remain, 0.5))
         return True
+
+    def _wait_wake(self, wake, sse):
+        """无触发批次时的等待:SSE 在航等帧(长兜底超时),断连期间退回
+        idle_sleep 轮询节奏——帧只作唤醒,不当游标(游标纪律见 v12)。"""
+        if wake is None:
+            time.sleep(self.idle_sleep)
+            return
+        try:
+            wake.get(timeout=self.notify_fallback_wait if sse["alive"]
+                     else self.idle_sleep)
+        except queue.Empty:
+            pass
+
+    def _listen_notify(self, gid, wake, stop, sse):
+        """SSE 监听线程(GET /api/games/{gid}/notify,v12)。
+
+        服务器主动推「状态已变」帧(只含 seq 包含式水位)替代高频轮询:
+        收帧 → wake 唤醒主循环以本地游标拉 /state 增量。断流
+        (closed/网络错误/keepalive 超时)指数退避自动重连;403/404 =
+        场次不可访问,监听退出(主循环靠 /state 收尾);重连期间
+        sse["alive"]=False,主循环自动退回轮询节奏。
+        """
+        delay = self.notify_retry_wait
+        while not stop.is_set():
+            try:
+                resp = self.api.open_notify(gid)
+            except ApiError as e:
+                if e.status in (401, 403, 404):
+                    sse["alive"] = False
+                    return
+            except OSError:
+                pass
+            else:
+                try:
+                    sse["alive"] = True
+                    delay = self.notify_retry_wait
+                    for raw in resp:
+                        if stop.is_set():
+                            break
+                        line = raw.decode(errors="replace").strip() \
+                            if isinstance(raw, bytes) else str(raw).strip()
+                        if not line.startswith("data:"):
+                            continue  # keepalive 注释(: ...)与事件行
+                        try:
+                            j = json.loads(line[len("data:"):].strip())
+                        except ValueError:
+                            continue
+                        wake.put((j.get("seq"), bool(j.get("closed"))))
+                        if j.get("closed"):
+                            break
+                except (OSError, TimeoutError):
+                    pass  # 断流(keepalive 超时/对端关闭):退避重连
+                finally:
+                    try:
+                        resp.close()
+                    except OSError:
+                        pass
+            sse["alive"] = False
+            if self._sleep_stop(delay, stop):
+                return
+            delay = min(delay * 2, 10.0)
 
     def _play_game_safe(self, gid):
         try:
@@ -285,6 +354,26 @@ class BotClient:
         if rec is not None:
             rec.meta(gid, self.name, self._tid,
                      self.you_cai_bi_kao, self.base, mode=self.mode)
+        # SSE 通知流(v12):帧 = 状态已变信号,唤醒主循环立即拉 /state
+        wake = sse = stop_l = listener = None
+        if self.use_notify:
+            wake = queue.Queue()
+            sse = {"alive": False}
+            stop_l = threading.Event()
+            listener = threading.Thread(
+                target=self._listen_notify, args=(gid, wake, stop_l, sse),
+                name=f"{self.name}:{gid}:sse", daemon=True)
+            listener.start()
+        try:
+            self._play_loop(gid, wake, sse)
+        finally:
+            if stop_l is not None:
+                stop_l.set()
+            if listener is not None:
+                listener.join(timeout=2)
+
+    def _play_loop(self, gid, wake, sse):
+        rec = self.recorder
         seq = 0
         mirror = None
         chi_pending = None  # 碰窗响应计数态(吃窗提交前保持)
@@ -339,6 +428,7 @@ class BotClient:
             if rec is not None and batch:
                 rec.events(gid, res.get("seq"), batch)
             trigger = None
+            batch_seen = set()  # 同批内触发弃牌之后的其他家窗口响应
             for ev in batch:
                 e_seq = ev.get("seq")
                 if e_seq is not None:
@@ -356,21 +446,40 @@ class BotClient:
                         rec.reset(gid, str(ex))
                     seq, mirror, trigger = 0, None, None
                     chi_pending = None
+                    batch_seen = set()
                     break
                 t = e["type"]
                 if t == "tile_drawn" and e["seat"] == mirror.me:
                     trigger = ("draw", None)
+                    chi_pending = None  # 我方回合推进:旧窗作废
+                    batch_seen = set()
                 elif t in ("chi", "peng") and e["seat"] == mirror.me:
                     trigger = ("draw", None)  # 吃碰后进入自家弃牌
-                elif t == "tile_discarded" and e["seat"] != mirror.me:
-                    trigger = ("window", e)
-                    chi_pending = None  # 新弃牌:旧窗作废
+                    chi_pending = None
+                    batch_seen = set()
+                elif t == "tile_discarded":
+                    if e["seat"] != mirror.me:
+                        trigger = ("window", e)
+                        batch_seen = set()
+                    chi_pending = None  # 任何新弃牌:旧窗作废
                 elif t in ("chi", "peng", "gang"):
                     chi_pending = None  # 有人吃/碰/杠:窗口被认领
-                elif t in ("pass", "timeout") and chi_pending is not None:
+                    if trigger is not None and trigger[0] == "window":
+                        trigger = None  # 同批内认领:窗口已失效
+                    batch_seen = set()
+                elif t in ("pass", "timeout"):
                     # 碰窗响应(pass 或 response 超时;discard 超时不算)
                     if t == "pass" or e.get("kind") == "response":
-                        chi_pending["seen"].add(e["seat"])
+                        if (t == "timeout" and e["seat"] == mirror.me
+                                and e["data"].get("window") == "chi"):
+                            # 我方吃窗被服务端代过:彻底作废
+                            # (碰窗显式过/超时后吃窗仍可开,不能清)
+                            chi_pending = None
+                        else:
+                            if chi_pending is not None:
+                                chi_pending["seen"].add(e["seat"])
+                            if trigger is not None and trigger[0] == "window":
+                                batch_seen.add(e["seat"])
             if chi_pending is not None and trigger is None:
                 needed = chi_pending["needed"]
                 if needed and chi_pending["seen"] >= needed:
@@ -378,12 +487,16 @@ class BotClient:
                     self._act_chi(mirror, chi_pending["t0"], gid)
                     chi_pending = None
             if trigger is None:
-                time.sleep(self.idle_sleep)  # 无关批次:合批,控轮询预算
+                self._wait_wake(wake, sse)  # SSE 帧/兜底超时驱动下一轮
                 continue
             if trigger[0] == "draw":
                 self._act_draw(mirror, gid)
             elif trigger[0] == "window":
                 chi_pending = self._act_window(mirror, trigger[1], gid)
+                if chi_pending is not None:
+                    # 同批内已到的他家窗口响应直接入账(否则要等下批,
+                    # 吃窗提交被无谓推迟)
+                    chi_pending["seen"] |= batch_seen
 
     # ---------- 决策 ----------
 

@@ -51,7 +51,7 @@ def main(argv=None):
     recorder = Recorder()
     bot = BotClient(api, name, decide,
                     log=lambda m: (print(f"[{name}] {m}", flush=True)),
-                    recorder=recorder, mode="match")
+                    recorder=recorder, mode="match", use_notify=True)
     stop = threading.Event()
     try:
         stats = bot.run_match(max_games=args.games, stop=stop)
