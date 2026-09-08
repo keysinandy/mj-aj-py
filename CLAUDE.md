@@ -44,13 +44,16 @@ python3 -m pytest tests/fancalc_parity.py -q
 python3 -m mj.platform.runner --strategy policy --ckpt runs/bc0/best.pt --games 10
 # (对局日志默认落 local/games/<日期>/<令牌>_<gid>.jsonl;--no-recorder 关闭)
 
+# 自由对战(单全局令牌自动匹配,meta.mode=match 区分来源)
+python3 -m mj.platform.match_runner --games 20   # 默认 ppo4 策略,整房退出粒度
+
 # 对局日志时间线复盘(按 gid 查 local/games/)
 python3 -m mj.logview <gid> --types decision,action
 
 # 自记日志对账:重放断言合法集 + 自家胡结算 + 积分累计
 python3 -m mj.log_replay <gid>
 
-# 自记日志 → BC npz 分片(严格过滤:干净局 + 提交成功的动作)
+# 自记日志 → BC npz 分片(严格过滤:干净局 + 提交成功的动作;--mode match/test 按来源)
 python3 -m mj.log2data --root local/games --out data/bc_platform
 
 # 赛后对账:平台事件流 → 引擎重放,合法集断言 + 结算对账(需内网)

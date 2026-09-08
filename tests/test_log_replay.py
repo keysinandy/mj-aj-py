@@ -108,6 +108,74 @@ class TestLogReplay(unittest.TestCase):
             [s["action_flat"] for s in rep["samples"]], expected[1:])
 
 
+class TestRoundBoundarySkip(unittest.TestCase):
+    """轮边界快照跳过(协议固有):req 记录推断跳过段,累计对账降级。"""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+
+    def test_skipped_ranges_merge(self):
+        from mj.log_replay import _skipped_ranges
+        recs = [
+            {"type": "req", "seq": 10, "res": {"snapshot": True, "seq": 14}},
+            {"type": "req", "seq": 14, "res": {"snapshot": True, "seq": 14}},
+            {"type": "req", "seq": 14, "res": {"events": True, "seq": 20}},
+            {"type": "req", "seq": 20, "res": {"snapshot": True, "seq": 23}},
+            {"type": "req", "seq": 40, "res": {"finished": True, "seq": 42}},
+        ]
+        self.assertEqual(_skipped_ranges(recs), [(11, 14), (21, 23), (41, 42)])
+
+    def _drop_round_ended(self, recs, with_skip_marker):
+        """删掉唯一 round_ended(模拟轮翻转快照跳过),可选拦 req 标记。"""
+        for r in recs:
+            if r["type"] != "events":
+                continue
+            for i, ev in enumerate(r["events"]):
+                if ev.get("type") == "round_ended":
+                    del r["events"][i]
+                    if with_skip_marker:
+                        recs.append({
+                            "type": "req", "seq": ev["seq"] - 1,
+                            "res": {"snapshot": True, "gap": True,
+                                    "seq": ev["seq"], "n_events": 0}})
+                    return True
+        return False
+
+    def test_skip_marker_downgrades_to_clean(self):
+        """round_ended 被跳过且有 req 标记 → 不非法(协议固有)。"""
+        path, _, _ = _record_game(self._tmp.name)
+        recs = _load(path)
+        self.assertTrue(self._drop_round_ended(recs, with_skip_marker=True))
+        rep = replay_game(recs)
+        self.assertEqual(rep["n_rounds"], 0)
+        self.assertNotIn("终局积分不符",
+                         [i["msg"] for i in rep["illegal"]])
+        self.assertTrue(rep["clean"])
+
+    def test_missing_round_without_marker_flagged(self):
+        """round_ended 缺失且无快照跳过段解释 → 非法。"""
+        path, _, _ = _record_game(self._tmp.name)
+        recs = _load(path)
+        self.assertTrue(self._drop_round_ended(recs, with_skip_marker=False))
+        rep = replay_game(recs)
+        self.assertFalse(rep["clean"])
+        self.assertTrue(any("无快照跳过段解释" in i["msg"]
+                            for i in rep["illegal"]))
+
+    def test_no_skip_still_strict(self):
+        """无跳过时累计对账保持严格:end 篡改 → 非法。"""
+        path, _, _ = _record_game(self._tmp.name)
+        recs = _load(path)
+        for r in recs:
+            if r["type"] == "end":
+                r["scores"] = [s + 1 for s in r["scores"]]
+        rep = replay_game(recs)
+        self.assertFalse(rep["clean"])
+        self.assertTrue(any("终局积分不符" in i["msg"]
+                            for i in rep["illegal"]))
+
+
 class TestLog2Data(unittest.TestCase):
     def test_shard_written(self):
         with tempfile.TemporaryDirectory() as root:

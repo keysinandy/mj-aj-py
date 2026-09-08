@@ -32,7 +32,8 @@ class BotClient:
     """一个令牌一个实例;工作线程并发打 M 场(decide 调用串行加锁)。"""
 
     def __init__(self, api, name, decide, log=None, window_wait=WINDOW_SEC,
-                 idle_sleep=0.35, recorder=None):
+                 idle_sleep=0.35, recorder=None, mode=None,
+                 match_retry_wait=10.0):
         self.api = api
         self.name = name
         self.decide = decide
@@ -40,6 +41,8 @@ class BotClient:
         self.window_wait = window_wait
         self.idle_sleep = idle_sleep
         self.recorder = recorder
+        self.mode = mode        # 对局来源标记(run_match 设 "match")
+        self.match_retry_wait = match_retry_wait  # match 瞬态错误退避(测试注入 0)
         self._tid = None
         self.you_cai_bi_kao = False
         self.base = 1
@@ -49,6 +52,7 @@ class BotClient:
         self.stats = {
             "games": 0, "actions": 0, "hu": 0, "err409": 0, "gaps": 0,
             "auto_played": 0, "mirror_resets": 0, "scores": [],
+            "rooms": 0,
         }
 
     # ---------- 生命周期(监督线程) ----------
@@ -116,6 +120,130 @@ class BotClient:
             self.recorder.close_all()
         return dict(self.stats)
 
+    # ---------- 自由对战(自动匹配房,run_match) ----------
+
+    def run_match(self, max_games=None, stop=None, room_close_wait=65.0):
+        """自由对战挂机循环:/api/match 入席 → 打完整房 → 等关停 → 再战。
+
+        max_games 以整房为退出粒度:跨过 N 后仍打完当前房再退(不中途
+        弃房——房内剩余场次会因离线被服务端代打,污染他人对局)。auto
+        房 finished 后 ~60s 宽限才关停释放并发额度(v15:每房自
+        registering 占 10/16 格),故等 room_close_wait 再 re-match;
+        在途重调 /api/match 幂等返原房,崩溃重启天然续房(v24)。
+        """
+        while not (stop is not None and stop.is_set()):
+            with self._stats_lock:
+                games = self.stats["games"]
+            if max_games is not None and games >= max_games:
+                break
+            tid, cfg = self._match_seat(stop)
+            if tid is None:
+                break
+            self._tid = tid
+            self.you_cai_bi_kao = bool(cfg.get("YouCaiBiKao"))
+            self.base = cfg.get("BaseScore", 1)
+            with self._stats_lock:
+                self.stats["rooms"] += 1
+            self._done_games.clear()  # 新房新场次(旧房 gids 不会再活跃)
+            self._log(f"入席 auto 房 {tid}: YCBK={self.you_cai_bi_kao} "
+                      f"base={self.base}")
+            self._play_room(tid, stop)
+            if self._sleep_stop(room_close_wait, stop):
+                break
+        if self.recorder is not None:
+            self.recorder.close_all()
+        return dict(self.stats)
+
+    def _match_seat(self, stop):
+        """调 /api/match 直到入席;返回 (room_id, config) 或 (None, None)。
+
+        403 PORTAL_BINDING_REQUIRED(令牌非门户绑定)/ 401 / scoped
+        令牌 400 TOKEN_NOT_SCOPED 为永久错误直接抛出;MATCH_BUSY/
+        MATCH_LIMIT_REACHED/网络抖动按 10s 退避重试(≥ /api/match
+        10/min 限速节奏)。
+        """
+        while not (stop is not None and stop.is_set()):
+            try:
+                res = self.api.match()
+            except ApiError as e:
+                permanent = (e.status in (401, 403)
+                             or (e.status == 400
+                                 and e.code == "TOKEN_NOT_SCOPED"))
+                if permanent:
+                    raise
+                self._log(f"match 未入席(HTTP {e.status} {e.code}),"
+                          f"10s 后重试")
+                if self._sleep_stop(self.match_retry_wait, stop):
+                    return None, None
+                continue
+            except OSError:
+                self._log("match 网络异常,10s 后重试")
+                if self._sleep_stop(self.match_retry_wait, stop):
+                    return None, None
+                continue
+            tid = res.get("room_id")
+            if not tid:
+                self._log(f"match 响应缺 room_id: {res}")
+                if self._sleep_stop(self.match_retry_wait, stop):
+                    return None, None
+                continue
+            return tid, res.get("config") or {}
+        return None, None
+
+    def _play_room(self, tid, stop):
+        """单 auto 房监督:等满员 → 为新活跃场派工作线程 → 终态收官。
+
+        与 run() 的锦标赛监督分离:auto 房无 register/ready(直连 409
+        AUTO_MATCH_ONLY),registering = 等其他人入席满 4;finished/
+        closed/void 或房间 404(关停)= 本房结束,循环回去 re-match。
+        """
+        workers = {}
+        idle = 0.0
+        while not (stop is not None and stop.is_set()):
+            try:
+                t = self.api.tournament(tid)
+            except ApiError as e:
+                if e.status == 404:
+                    self._log(f"auto 房 {tid} 已关停(正常生命周期)")
+                else:
+                    self._log(f"tournament 查询失败: {e}")
+                break
+            status = t.get("status")
+            if status in TERMINAL:
+                break
+            if status == "running":
+                for gid in self._my_active(t):
+                    if gid in self._done_games:
+                        continue
+                    th = workers.get(gid)
+                    if th is None or not th.is_alive():
+                        th = threading.Thread(
+                            target=self._play_game_safe, args=(gid,),
+                            name=f"{self.name}:{gid}", daemon=True)
+                        workers[gid] = th
+                        th.start()
+                idle = 0.0
+            else:
+                # registering:等其他人入席满 4(空转期无 SSE 可挂,轮询)
+                idle += 0.5
+                if idle >= 30:
+                    self._log(f"auto 房 {tid} 等待满员(status={status})…")
+                    idle = 0.0
+            time.sleep(0.5)
+        for th in workers.values():
+            th.join(timeout=5)
+
+    @staticmethod
+    def _sleep_stop(sec, stop):
+        """可中断 sleep(0.5s 粒度);返回 True 表示 stop 已置位。"""
+        end = time.monotonic() + sec
+        while not (stop is not None and stop.is_set()):
+            remain = end - time.monotonic()
+            if remain <= 0:
+                return False
+            time.sleep(min(remain, 0.5))
+        return True
+
     def _play_game_safe(self, gid):
         try:
             self.play_game(gid)
@@ -156,7 +284,7 @@ class BotClient:
         rec = self.recorder
         if rec is not None:
             rec.meta(gid, self.name, self._tid,
-                     self.you_cai_bi_kao, self.base)
+                     self.you_cai_bi_kao, self.base, mode=self.mode)
         seq = 0
         mirror = None
         chi_pending = None  # 碰窗响应计数态(吃窗提交前保持)

@@ -129,5 +129,53 @@ class TestModel(unittest.TestCase):
             for p in net.parameters() if p.requires_grad))
 
 
+class TestInitFromCkpt(unittest.TestCase):
+    """bc_train --init:BC 老 75 平面补零迁移 + PPO action_net 头切片。"""
+
+    def test_bc_75_plane_zero_pad_preserves_function(self):
+        import torch
+
+        from mj.bc_train import load_init_weights
+        from mj.features import N_PLANES, N_PLANES_ORACLE
+        from mj.model import Net
+
+        torch.manual_seed(0)
+        old = Net(blocks=2, width=32, n_planes=N_PLANES)
+        new = Net(blocks=2, width=32, n_planes=N_PLANES_ORACLE)
+        load_init_weights(new, {"state_dict": old.state_dict(),
+                                "blocks": 2, "width": 32})
+        planes = torch.rand(3, N_PLANES, 34)
+        padded = torch.zeros(3, N_PLANES_ORACLE, 34)
+        padded[:, :N_PLANES] = planes
+        scalars = torch.rand(3, 8)
+        with torch.no_grad():
+            lo, vo = old(planes, scalars)
+            ln, vn = new(padded, scalars)
+        self.assertTrue(torch.allclose(lo, ln, atol=1e-5))
+        self.assertTrue(torch.allclose(vo, vn, atol=1e-5))
+
+    def test_ppo_head_slice(self):
+        import torch
+
+        from mj.bc_train import load_init_weights
+        from mj.features import N_PLANES_ORACLE
+        from mj.model import Net
+
+        torch.manual_seed(0)
+        ref = Net(blocks=2, width=32, n_planes=N_PLANES_ORACLE)
+        action_net = torch.nn.Linear(2 * 34 + 34, 109)
+        new = Net(blocks=2, width=32, n_planes=N_PLANES_ORACLE)
+        approx = load_init_weights(new, {"net": ref.state_dict(),
+                                         "action_net": action_net.state_dict(),
+                                         "blocks": 2, "width": 32})
+        self.assertTrue(approx)
+        self.assertTrue(torch.equal(new.p_fc.weight,
+                                    action_net.weight[:, : 2 * 34]))
+        self.assertTrue(torch.equal(new.p_fc.bias, action_net.bias))
+        # 主干/value 头与源一致
+        self.assertTrue(torch.equal(new.stem[0].weight, ref.stem[0].weight))
+        self.assertTrue(torch.equal(new.v_fc[0].weight, ref.v_fc[0].weight))
+
+
 if __name__ == "__main__":
     unittest.main()

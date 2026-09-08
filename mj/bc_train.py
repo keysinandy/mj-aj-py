@@ -100,6 +100,48 @@ def evaluate(model, d, device, bs=1024):
     return tot / n, correct / n
 
 
+def init_from_ckpt(path, device="cpu"):
+    """读 checkpoint 架构与权重(微调口,--init)。
+
+    BC 格式 {"state_dict", "blocks", "width"} 全量载入;PPO 格式
+    {"net", "action_net", ...} 载主干+value 头,policy 头取
+    action_net 前 68 列(p_conv 特征段;后 34 列是 v_conv 特征贡献,
+    BC 头不含该输入,丢弃作暖启动)。返回 (blocks, width, 部分头?)。
+    """
+    ck = torch.load(path, map_location=device, weights_only=True)
+    blocks = ck.get("blocks")
+    width = ck.get("width")
+    return ck, blocks, width
+
+
+def load_init_weights(model, ck, device="cpu"):
+    from .features import N_PLANES, N_SCALARS
+
+    bc_format = "state_dict" in ck
+    sd = ck["state_dict"] if bc_format else ck["net"]
+    w = sd.get("stem.0.weight")
+    if w is not None and w.shape[1] < model.stem[0].weight.shape[1]:
+        # 老 75 平面 BC checkpoint → 91:stem 输入布局 [planes|scalars],
+        # oracle 段插在 planes 与 scalars 之间——planes 权重原位保留、
+        # oracle 段补零(输入恒零)、scalars 权重后移到新 planes 段之后
+        n_p = w.shape[1] - N_SCALARS
+        new_n = model.stem[0].weight.shape[1] - N_SCALARS
+        pad = torch.zeros_like(model.stem[0].weight)
+        pad[:, :n_p] = w[:, :n_p]
+        pad[:, new_n:new_n + N_SCALARS] = w[:, n_p:]
+        sd = dict(sd)
+        sd["stem.0.weight"] = pad
+    model.load_state_dict(sd)
+    if bc_format:
+        return False
+    # PPO 格式:policy 头取 action_net 前 68 列近似暖启动
+    w2 = ck["action_net"]["weight"]  # [109, 102] = p_conv(68)|v_conv(34)
+    with torch.no_grad():
+        model.p_fc.weight.copy_(w2[:, : model.p_fc.in_features])
+        model.p_fc.bias.copy_(ck["action_net"]["bias"])
+    return True  # policy 头为近似(暖启动)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default="data/bc/shard_*.npz")
@@ -110,6 +152,9 @@ def main():
     ap.add_argument("--width", type=int, default=128)
     ap.add_argument("--value-w", type=float, default=0.5)
     ap.add_argument("--out", default="runs/bc0")
+    ap.add_argument("--init", default=None,
+                    help="从 checkpoint 初始化再训(微调口;BC/PPO 格式"
+                         "均可,架构参数随 checkpoint)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--threads", type=int, default=0,
@@ -128,8 +173,23 @@ def main():
     print(f"训练 {n} 样本 / 验证 {len(val['action'])} 样本 "
           f"({len(glob.glob(args.data))} 分片)")
 
-    model = Net(blocks=args.blocks, width=args.width,
+    blocks, width = args.blocks, args.width
+    init_ck = None
+    if args.init:
+        init_ck, ck_blocks, ck_width = init_from_ckpt(args.init, device)
+        if ck_blocks and (ck_blocks, ck_width) != (blocks, width):
+            blocks, width = ck_blocks, ck_width
+            print(f"--init 采用 checkpoint 架构 blocks={blocks} width={width}")
+        assert (blocks, width) == (ck_blocks, ck_width), \
+            f"checkpoint 架构 {ck_blocks}/{ck_width} 与参数 {args.blocks}/" \
+            f"{args.width} 不符,微调须同构(--init 时省略 --blocks/--width 即随 ck)"
+
+    model = Net(blocks=blocks, width=width,
                 n_planes=N_PLANES_ORACLE).to(device)
+    if init_ck is not None:
+        approx = load_init_weights(model, init_ck, device)
+        print(f"--init 已载入 {args.init}"
+              f"{'(policy 头为近似暖启动)' if approx else ''}")
     opt = torch.optim.Adam(model.parameters(), lr=args.lr)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=args.epochs)
     vt = value_target(train["score"], train["seat"])

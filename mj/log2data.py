@@ -24,8 +24,12 @@ from .log_replay import replay_game
 from .logview import load_records
 
 
-def collect(paths):
-    """重放日志 → 干净样本列表 [(samples, end_scores, my_seat)]。"""
+def collect(paths, mode=None):
+    """重放日志 → 干净样本列表 [(samples, end_scores, my_seat)]。
+
+    mode 过滤对局来源(meta.mode):"match"=仅自由对战,"test"=仅非
+    自由对战(测试房/正式赛,含无 mode 字段的存量日志),None=全部。
+    """
     out, skipped = [], []
     for p in paths:
         try:
@@ -33,6 +37,12 @@ def collect(paths):
         except (OSError, ValueError) as e:
             skipped.append((p, f"读取失败: {e}"))
             continue
+        if mode is not None:
+            meta = next((r for r in recs if r.get("type") == "meta"), None)
+            m = (meta or {}).get("mode")
+            if (mode == "match") != (m == "match"):
+                skipped.append((p, f"mode 不符: {m or '无标记'}"))
+                continue
         rep = replay_game(recs)
         if not rep["clean"]:
             skipped.append((p, f"不干净: illegal={len(rep['illegal'])} "
@@ -81,13 +91,17 @@ def main(argv=None):
     ap.add_argument("--root", default="local/games", help="日志根目录")
     ap.add_argument("--out", default="data/bc_platform")
     ap.add_argument("--per-shard", type=int, default=200)
+    ap.add_argument("--mode", default="all",
+                    choices=("all", "match", "test"),
+                    help="对局来源过滤:match=自由对战,test=其他(含存量)")
     args = ap.parse_args(argv)
     paths = sorted(glob.glob(os.path.join(args.root, "**", "*.jsonl"),
                              recursive=True))
     if not paths:
         print(f"{args.root} 下无日志", file=sys.stderr)
         return 1
-    collected, skipped = collect(paths)
+    collected, skipped = collect(paths,
+                                 mode=None if args.mode == "all" else args.mode)
     total = 0
     for path, n in write_shards(collected, args.out, args.per_shard):
         total += n

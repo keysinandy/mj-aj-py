@@ -43,7 +43,6 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5):
     while True:
         attempts += 1
         _TLS.attempts = attempts
-    while True:
         req = urllib.request.Request(url, data=data, method=method)
         req.add_header("Content-Type", "application/json")
         if token:
@@ -104,6 +103,15 @@ class Api:
 
     def ready(self, tid):
         return self.post(f"/api/tournaments/{tid}/ready")
+
+    def match(self):
+        """自由对战自动匹配入席(全局令牌唯一入口)。
+
+        不带 body = 服务默认配置(v15:M=10/Rounds=8;显式低上限会
+        永久 404)。在途 auto 房重调幂等返原房(崩溃重启可恢复);
+        非门户绑定令牌 403 PORTAL_BINDING_REQUIRED(永久,勿重试)。
+        """
+        return self.post("/api/match")
 
     def game_state(self, gid, seq):
         return self.get(f"/api/games/{gid}/state", {"seq": seq})

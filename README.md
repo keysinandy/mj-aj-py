@@ -13,7 +13,7 @@
 # Python 3.11;依赖:torch、numpy、stable-baselines3 + sb3-contrib(RL 用)、pytest
 pip install torch numpy stable-baselines3 sb3-contrib pytest
 
-# 离线全量测试(138 个,无需内网)
+# 离线全量测试(161 个,无需内网)
 python3 -m pytest tests/ -q
 ```
 
@@ -26,6 +26,7 @@ python3 -m pytest tests/ -q
 ```json
 {
   "server": "https://10.240.169.190:18080",
+  "match_token": "<门户『我的 AI 身份』签发的绑定全局令牌>",
   "tokens": {
     "青龙": "<令牌1>",
     "白虎": "<令牌2>",
@@ -34,6 +35,8 @@ python3 -m pytest tests/ -q
   }
 }
 ```
+
+`match_token` 供自由对战用(门户测试房间 Tab 顶部「我的 AI 身份」区块领取,明文仅显示一次,可轮换);v24 后旧匿名全局令牌调 `/api/match` 会被永久 403,测试房的 4 个 scoped 令牌也不行(400 TOKEN_NOT_SCOPED)。
 
 ### 2. 一键脚本(推荐)
 
@@ -69,6 +72,53 @@ python3 -m mj.platform.runner --strategy random --games 10 --dump
 - **偶发 409**:窗口竞态(如他家抢先碰)属正常,客户端自动 seq=0 重建;每轮个位数以内可忽略
 - **跨轮批次重号**:每轮 batch 从 0 重号,`mj.replay` 默认只校验**最新轮**;历史轮复盘走门户 `GET /portal/api/games/{id}/events`(需登录态)
 - **正式锦标赛**:同一客户端支持多阶段赛制(status 循环/stage_open 确认),`runner` 同款命令,令牌换成报名令牌即可
+
+## 自由对战(自动匹配,攒真实对手数据)
+
+用单个全局令牌经 `POST /api/match` 入席自动匹配房:服务端凑满 4 人(通常是其他队伍的 bot)开局,满员会话 = M=10 场并发 × 每场 8 局(座次逐场重洗,单房 80 手/人)。打完一房自动 re-match 挂机,直至打满 `--games` 场。
+
+### 1. 配置与运行
+
+`local/platform.json` 的 `match_token` 就位后(见上文配置说明):
+
+```bash
+python3 -m mj.platform.match_runner --games 20                # 默认 ppo4 策略
+python3 -m mj.platform.match_runner --games 100 \
+    --strategy policy --ckpt runs/ppo4/ckpt_400000.pt         # 换 checkpoint
+python3 -m mj.platform.match_runner --games 20 --strategy bot # 启发式 teacher 上场
+python3 -m mj.platform.match_runner --strategy policy --ckpt runs/bc0/best.pt --games 10 # bc策略
+```
+
+可配置项:
+
+| 参数 | 默认 | 说明 |
+|------|------|------|
+| `--strategy` | `policy` | 上场策略:`policy`(神经网络)/ `bot`(启发式 teacher)/ `random`(随机合法,仅规则覆盖用) |
+| `--ckpt` | `runs/ppo4/ckpt_350000.pt` | policy 策略的 checkpoint,BC(`best.pt`)与 PPO(`ckpt_*.pt`)双格式均可;备选 `runs/bc0/best.pt`、`runs/ppo4/ckpt_400000.pt` |
+| `--games` | `10` | 打满场数,**以整房为退出粒度**(不中途弃房——弃房后剩余场次会被服务端代打,污染他人对局) |
+| `--config` | `local/platform.json` | 配置文件路径 |
+| `--dump` | 关 | 原始 /state、/action 报文 dump 到 `local/logs/`(协议排查用) |
+
+对局日志与测试房同构:`local/games/<日期>/<user_id>_<gid>.jsonl`,meta 行带 `mode: match` 标记;`mj.logview` / `mj.log_replay` 复盘对账命令不变。
+
+### 2. 日志转训练数据
+
+```bash
+python3 -m mj.log2data --mode match --out data/bc_match   # 仅自由对战 → npz
+python3 -m mj.log2data --mode test --out data/bc_test     # 仅测试房/存量日志
+python3 -m mj.bc_train --data "data/bc_match/shard_*.npz" \
+    --init runs/bc0/best.pt --epochs 5 --out runs/bc_ft   # 平台数据微调(--init 双格式)
+```
+
+`log2data` 沿用严格过滤(无 illegal/reset 的干净局 + 提交成功的动作);`bc_train --init` 支持从 BC 或 PPO checkpoint 初始化(架构参数随 checkpoint,老 75 平面 ckpt 自动补零迁移)。数据配比/是否按胜负过滤,等数据到手按质量再定(见 PROGRESS.md P4)。
+
+### 3. 注意事项(实测口径)
+
+- **退出粒度**:`--games N` 打满 N 场即止,但总会打完当前房(一房 10 场);想多攒数据把 N 给大点
+- **错误自愈**:409 MATCH_BUSY/MATCH_LIMIT_REACHED 自动退避重试(10s);房间 finished ~60s 宽限关停后 404 属正常,自动开下一房;崩溃重启后重调 `/api/match` 幂等返回原房(v24)
+- **永久错误**:403 PORTAL_BINDING_REQUIRED = 令牌非门户绑定,须去门户领绑定令牌,重试无意义
+- **排行榜曝光**:auto 房整场完整打完会计入门户排行榜(积分榜/胡大牌榜/单场得分榜)
+- **满员等待**:入席后不满 4 人会挂等(池里没人的时段);其他队 bot 活跃时段开打效率最高
 
 ## 训练与评估(离线)
 

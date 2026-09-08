@@ -6,8 +6,9 @@
 > P3 四轮 PPO 跑批均未显著超越 BC 基线——BC 先验正则(ppo4)已消除
 > 训练崩塌但增益仍在评估噪声内,瓶颈为固定启发式 bot 对手的上限
 > (详见 P3 节),下一步靠自博弈对手池或平台真实牌谱;吞吐已修
-> 10.5 倍;2026-09-08 指南自检更新至 **v23**(v21 七对/爆头白板口径
-> 裁定——引擎已同步并 fan-calc 对拍 22/22 全过);**P4 平台对接已
+> 10.5 倍;2026-09-08 指南自检更新至 **v24**(v21 七对/爆头白板口径
+> 裁定——引擎已同步并 fan-calc 对拍 22/22 全过;v24 匿名令牌门禁已
+> 消化,见 P4);**P4 平台对接已
 > 实弹贯通(2026-09-08)**:mj/platform/ 客户端 + replay 对账器,
 > BC 模型测试房 10 场实弹全胜率正常、引擎-平台 1125 动作对账 0 非法
 > (P1.5 收口);下一步攒平台真实牌谱 + 正式锦标赛实测。
@@ -15,7 +16,7 @@
 
 ## 一、规则定稿(与需求方逐条确认)
 
-### 平台固有规则(指南 v23,2026-09-08 经 `GET /portal/api/guide/version` 自检更新;v23 为门户-only 排行榜,规则无涉)
+### 平台固有规则(指南 v24,2026-09-08 经 `GET /portal/api/guide/version` 自检更新;v23 为门户-only 排行榜、v24 为令牌门禁,规则均无涉)
 - 136 张牌:万/筒/条 1-9 各 4 张 + 东南西北中发白各 4 张,无花牌
 - **白板 = 财神(百搭)**,可替代任意牌;不能被吃/碰/杠/胡,可主动打出
 - **打出财神触发抓打圈**:其余玩家一圈内不能吃碰明杠(仅暗杠与自摸胡),
@@ -424,6 +425,50 @@ extract 含 oracle ~1.6ms/决策点。
                      测试(64564 决策点合法集零分歧)、FakeApi 全链路
                      对弈(client 循环/窗口防重/重同步)、replay 对账+
                      污染检测——138 个单测全过
+
+- [x] **自由对战对接(/api/match 自动匹配,2026-09-08 实现并实弹验证)**:
+  单门户绑定全局令牌挂机攒真实对手数据。设计要点(对齐后实现):
+  - **架构**:`BotClient.run_match()` 复用 play_game/窗口状态机/镜像
+    重建(锦标赛 run() 路径零改动);config 来源换轨——全局令牌调
+    /api/tournaments/me/rules 会 400 TOKEN_NOT_SCOPED,YCBK/BaseScore
+    改从 /api/match 响应 config 取;无 register/ready(直连 auto 房
+    409 AUTO_MATCH_ONLY);新 CLI `python3 -m mj.platform.match_runner`
+    (--strategy policy|bot|random,--ckpt 默认 runs/ppo4/ckpt_350000.pt)
+  - **挂机循环**:match 入席 → 打完整房(finished/closed/void 或
+    房间 404 = 本房收官)→ 等 ~65s 宽限关停释放并发额度(v15:每房
+    占 10/16 格)→ re-match,直至 --games 打满。**整房为退出粒度**
+    (不中途弃房——弃房后剩余场次被服务端代打,污染他人对局)
+  - **错误分诊**:403 PORTAL_BINDING_REQUIRED/401/scoped 400 =
+    永久抛出(令牌须门户「我的 AI 身份」绑定签发);409 MATCH_BUSY/
+    MATCH_LIMIT_REACHED/网络抖动 = 10s 退避重试(≥ /api/match
+    10/min 限速);崩溃重启重调 /api/match 幂等返原房(v24)
+  - **数据链路**:Recorder 复用,meta 行新增 `mode:match` 字段
+    (测试房/正式赛缺省不写);`log2data --mode match|test|all` 按来
+    源过滤;`bc_train --init` 微调口(BC 格式全量载入,PPO 格式载
+    主干+value 头、policy 头取 action_net 前 68 列=p_conv 特征段
+    近似暖启动;老 75 平面 BC ckpt stem 权重按 [planes|scalars] 布
+    局分段迁移——oracle 段插中间,scalars 后移,函数不变,有单测);
+    数据配比/胜负过滤等数据到手按质量再定
+  - 测试:FakeMatchApi(auto 房序列:入席→打完→re-match 循环、
+    404 关停、MATCH_BUSY 退避、403 永久、整房退出粒度、mode 落盘
+    与 log2data 过滤)+ bc_train --init 函数保持性 + log_replay 轮边界
+    跳过降级——161 个单测全过
+  - **实弹结果(ppo4/ckpt_350000.pt,1 房 10 场 × 8 局)**:全 10 场
+    正常收官(854 动作、16 自摸胡、0 镜像失步、18 次 409 自愈——真实
+    对手 bot 抢窗比测试房激进,409 高于测试房基线但无害);日志 10/10
+    局干净、log_replay 合法集断言 0 非法、log2data 产出 854 样本
+    动作合法率 100%
+  - **协议新发现(轮边界事件固有丢失,2026-09-08 实弹 + 免认证房流
+    对拍确认)**:/state 轮翻转后返回新局全量快照,游标跳到响应水位
+    res.seq——旧局尾部事件(窗口 pass/timeout + **round_ended**)不再
+    下发。实测 10 局平均仅 1.8/8 个 round_ended 到达自记日志(在线
+    决策不受影响:快照全量重建,0 失步;但 log_replay 积分累计对账
+    全数误报)。修复:log_replay 从 req 记录推断跳过段(快照/finished
+    响应的 [req.seq+1, res.seq]),有跳过时累计对账降级为局数守恒
+    (max round_no − 已记录 round_ended 数 = 丢失局数,须有跳过段解释),
+    合法集/自家胡结算断言保持严格;免认证房流(auto 房可用)对拍
+    证实:全流 8/8 round_ended、各局累计与终局分完全吻合,丢失段
+    与服务端全流逐 seq 对上
   ```
   **实测协议发现(2026-09-08,均已消化)**:
   - 快照(seq=0/gap)远比文档丰富:含四家牌河 discards/副露 melds/
@@ -484,7 +529,7 @@ extract 含 oracle ~1.6ms/决策点。
   recorder / test_log_replay);FakeApi 终局积分改为与 round_ended
   事件自洽(原来硬编码与事件流矛盾,会被对账正确揪出)
 
-- [ ] 平台对接客户端(注册/对局 API)。指南 v2-v23 协议要点(2026-09-03、09-08 两次自检汇总):
+- [ ] 平台对接客户端(注册/对局 API)。指南 v2-v24 协议要点(2026-09-03、09-08 两次自检汇总):
   - **快照无 allowed_actions**(v2 breaking):须依 seat/phase/turn/
     responding_seats/drawn_tile/god.catch_play 自研判定可执行动作
     ——直接复用引擎 `legal_actions()`;窗口"已响应"须本地跟踪,
@@ -553,9 +598,17 @@ extract 含 oracle ~1.6ms/决策点。
     dealer 键(emit 在翻庄前取值)——复盘/跨局对账免自行推导
   - (门户-only,bot 契约零影响:v12/v14 identity 昵称与令牌轮换、
     v17 大厅剔除 auto 房、v19 胡大牌榜、v20 排行榜 20→32 行、
-    v22 分组视图/晋级名单)
+    v22 分组视图/晋级名单、v23 单场得分榜)
+  - **匿名令牌门禁**(v24 breaking):POST /api/users 匿名自注册删除
+    (404);非门户绑定(openid_identity IS NULL)的全局令牌调
+    POST /api/match 或锦标赛新报名 → 403 PORTAL_BINDING_REQUIRED
+    (**永久条件勿重试**);在途照常(已报名 register 幂等放行、
+    ready/me/state/action/notify 不拦、auto 房在途重调 /api/match
+    幂等返原房——崩溃重启天然续房;房出窗口后再调 = 新会话意图 →
+    403);scoped 参赛令牌全链不动。全局令牌唯一合法来源 = 门户
+    「我的 AI 身份」(OpenID 绑定,首访明文一次、可轮换)
   - **bot 启动自检**:`GET /portal/api/guide/version` 核对指南版本
-    (当前 **v23**),版本变化即触发规则复审——v7-v23 本次自检已消化
+    (当前 **v24**),版本变化即触发规则复审——v7-v24 本次自检已消化
   - 观赛快照仅覆盖服务进程内存中的场次;历史轮复盘走
     `GET /portal/api/games/{id}/events`(DB 持久)
 - [ ] 锦标赛实测(多阶段赛制循环已实现于 bot_client.run,待正式赛验证)

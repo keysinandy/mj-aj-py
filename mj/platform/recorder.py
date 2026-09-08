@@ -112,10 +112,15 @@ class Recorder:
 
     # ---------- 记录类型 ----------
 
-    def meta(self, gid, name, tid=None, you_cai_bi_kao=False, base=1):
-        self.log_for(gid, name).write({
-            "type": "meta", "gid": gid, "name": name, "tid": tid,
-            "you_cai_bi_kao": bool(you_cai_bi_kao), "base": base})
+    def meta(self, gid, name, tid=None, you_cai_bi_kao=False, base=1,
+             mode=None):
+        """mode 标记对局来源(match=自由对战;测试房/正式赛缺省不写,
+        log2data 按 mode 过滤时缺省视作非 match)。"""
+        rec = {"type": "meta", "gid": gid, "name": name, "tid": tid,
+               "you_cai_bi_kao": bool(you_cai_bi_kao), "base": base}
+        if mode:
+            rec["mode"] = mode
+        self.log_for(gid, name).write(rec)
 
     def req(self, gid, seq, status, latency_ms, attempts=None, summary=None):
         log = self.log_for(gid)
