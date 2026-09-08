@@ -256,8 +256,8 @@ class TestScenarios(unittest.TestCase):
         self.assertEqual(g.result[1], 8)
         self.assertEqual(g.result[2], ["平胡", "财飘", "4个白板", "爆头"])
 
-    def test_four_whites_not_baotou(self):
-        """站立手恰持 4 白板:计 4 个白板 ×2,不视为爆头。"""
+    def test_four_whites_is_baotou(self):
+        """站立手恰持 4 白听任意:爆头 ×2 与 4 个白板 ×2 叠加(v21 裁定)。"""
         g = setup(
             ["123m456m789mwwww", FA, FB, FC],
             [0],  # 摸 1m
@@ -265,8 +265,8 @@ class TestScenarios(unittest.TestCase):
         self.assertIn(HU, g.legal_actions())
         g.step(HU)
         self.assertTrue(g.done)
-        self.assertEqual(g.result[1], 2)
-        self.assertEqual(g.result[2], ["平胡", "4个白板"])
+        self.assertEqual(g.result[1], 4)
+        self.assertEqual(g.result[2], ["平胡", "4个白板", "爆头"])
 
     def test_chain_breaks_on_normal_discard(self):
         """飘后打出非飘非杠牌:动作链断,重新计数。"""

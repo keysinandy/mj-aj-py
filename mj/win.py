@@ -100,8 +100,9 @@ def is_chiitoi(counts):
     """返回 (是否七对, 豪华组数)。
 
     同种奇数张的自然牌必须配 1 个财神;豪华组 = 手中恰持该牌全部 4 张
-    真牌(4 张真白板也算 1 组),3 真牌 + 财神补齐不算——平台 fan-calc
-    实测口径(2026-09-01 对局七对判定修复)。
+    真牌(3 真牌 + 财神补齐不算)。4 张白板仅当其余牌全为自然对、
+    白板两两自配时才计 1 组;白板已作百搭补配落单成对时不重复计
+    豪华——指南 v21 裁定(2026-09-07,2026-09-08 fan-calc 对拍确认)。
     """
     if sum(counts) != 14:
         return False, 0
@@ -111,7 +112,9 @@ def is_chiitoi(counts):
         return False, 0
     if sum(c // 2 for c in counts[:33]) + singles + (wilds - singles) // 2 != 7:
         return False, 0
-    groups = sum(1 for c in counts if c == 4)
+    groups = sum(1 for c in counts[:33] if c == 4)
+    if wilds == 4 and singles == 0:
+        groups += 1
     return True, groups
 
 
@@ -138,9 +141,8 @@ def is_baotou_wait(counts13, locked=0):
 def is_baotou(counts13, locked=0):
     """爆头态:站立手牌摸任意牌即胡;财神数不限、支持副露。
 
-    恰好持有 4 张白板不视为爆头(此时按「4个白板」×2 计,平台
-    fan-calc 实测:摸牌前持 4 白 → 非爆头;持 3 白摸白 → 爆头)。
+    恰持 4 张白板同样按爆头计,并与「4个白板」×2 叠加——指南 v21
+    裁定(2026-09-07 撤销旧「持 4 白非爆头」口径;2026-09-08
+    fan-calc 对拍确认:持 4 白听任意 → baotou=true)。
     """
-    if counts13[W] == 4:
-        return False
     return is_baotou_wait(counts13, locked)

@@ -62,8 +62,8 @@ class TestWin(unittest.TestCase):
     def test_is_baotou(self):
         self.assertTrue(is_baotou(counts("123m456m789m123pw")))  # 听任意牌
         self.assertFalse(is_baotou(counts("123m456m789m123p5p")))  # 只听 5p
-        # 恰持 4 张白板不视为爆头(按「4个白板」计)
-        self.assertFalse(is_baotou(counts("123m456m789m123pwwww")))
+        # 恰持 4 张白板听任意:同样计爆头(v21 裁定,2026-09-08 fan-calc 对拍)
+        self.assertTrue(is_baotou(counts("123m456m789m wwww")))
 
     def test_is_baotou_with_melds(self):
         # 副露 3 副后暗牌 4 张:1p2p + 双财,摸任意即胡
@@ -141,13 +141,30 @@ class TestScoring(unittest.TestCase):
         self.assertEqual(m, 4)
         self.assertEqual(parts, ["平胡", "4个白板", "爆头"])
 
-    def test_four_whites_held_not_baotou(self):
-        # 站立手恰持 4 白:只计 4 个白板,不视为爆头
+    def test_four_whites_held_is_baotou(self):
+        # 站立手恰持 4 白听任意:爆头 ×2 与 4 个白板 ×2 叠加
+        # (v21 裁定,撤销旧「持 4 白非爆头」口径)
         m, parts = hand_multiplier(
             counts("123m456m789m5pwwww"), counts("123m456m789mwwww"), 0
         )
-        self.assertEqual(m, 2)
-        self.assertEqual(parts, ["平胡", "4个白板"])
+        self.assertEqual(m, 4)
+        self.assertEqual(parts, ["平胡", "4个白板", "爆头"])
+
+    def test_four_whites_luxury_self_paired(self):
+        # 5 自然对 + 4 白两两自配:白板仍计 1 豪华组(v21 裁定)
+        m, parts = hand_multiplier(
+            counts("1122334455m wwww"), counts("1122334455m www"), 0
+        )
+        self.assertEqual(m, 16)
+        self.assertEqual(parts, ["豪华七对×1", "4个白板", "爆头"])
+
+    def test_four_whites_luxury_filling_singles(self):
+        # 白板补配落单成对:不重复计豪华,仅七对(v21 裁定)
+        m, parts = hand_multiplier(
+            counts("1122334456m wwww"), counts("112233456m wwww"), 0
+        )
+        self.assertEqual(m, 8)
+        self.assertEqual(parts, ["七对", "4个白板", "爆头"])
 
     def test_piao_counts_four_whites_mult(self):
         # 持 3 白 + 链内飘 1 = 4 白板(指南口径),财飘 × 爆头

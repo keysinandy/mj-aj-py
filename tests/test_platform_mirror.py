@@ -1,0 +1,114 @@
+"""Mirror 属性测试:synth 自博弈 × 4 座位,逐决策点与引擎真值对拍。
+
+关卡(实施计划第 4 步):每个本人决策点
+- build_game(phase).legal_actions() 集合 == 引擎真值
+- live_wall_left / freeze / chows / melds / discards == 引擎真值
+- 快照锚定:apply_snapshot(my_hand) 与引擎手牌一致
+"""
+
+import unittest
+
+from mj.platform.mirror import Mirror, MirrorInconsistent
+from mj.platform.proto import tname, tidx, EV_DISCARDED
+from mj.platform.synth import synth_game, view_for
+
+N_GAMES = 40  # 全量 200 局在 CI 代价高,日常 40 局;关键回归再加量
+
+
+def _run_games(n, policy=None):
+    checked = 0
+    for seed in range(n):
+        res = synth_game(seed, you_cai_bi_kao=(seed % 3 == 0),
+                         policy=policy)
+        for seat in range(4):
+            checked += _check_view(res, seat)
+    return checked
+
+
+def _initial_snapshot(res, seat):
+    """开局锚点快照(模拟 /state seq=0 的第一发)。"""
+    snap = {
+        "seat": seat,
+        "phase": "draw" if seat == res["game"].dealer else "deal",
+        "turn": res["game"].dealer,
+        "responding_seats": [],
+        "drawn_tile": None,
+        "my_hand": res["start_hands"][seat],
+        "god": {"baotou": False, "chain_count": 0, "catch_play": False},
+        "round_no": 1,
+    }
+    if seat == res["game"].dealer:
+        snap["phase"] = "draw"
+        snap["drawn_tile"] = res["dealer_first_draw"]
+    return snap
+
+
+def _check_view(res, seat):
+    view = view_for(res, seat)
+    mir = Mirror(my_seat=seat, dealer=res["game"].dealer,
+                base=1, you_cai_bi_kao=res["config"]["YouCaiBiKao"],
+                round_no=1)
+    mir.apply_snapshot(_initial_snapshot(res, seat))
+    events, cursor, checked = view["events"], 0, 0
+    for d in view["prompts"]:
+        while cursor < d["events_before"]:
+            mir.apply_event(events[cursor])
+            cursor += 1
+        prompt = d["prompt"]
+        phase = prompt["phase"]
+        if phase == "draw":
+            mir.apply_snapshot(prompt)  # 锚定自有手牌(快照是真相)
+        g = mir.build_game(phase)
+        assert g.turn == seat
+        assert sorted(g.legal_actions()) == d["legal"], (
+            f"座位 {seat} 阶段 {phase} 合法集分歧:\nprompt={prompt}\n"
+            f"mirror 手牌={mir.my_hand}")
+        # 公共状态逐项对拍
+        assert mir.live_wall_left() == d["live_wall"], \
+            f"墙长分歧 seat={seat}: {mir.live_wall_left()} != {d['live_wall']}"
+        assert mir.freeze == d["freeze"], f"冻结分歧 seat={seat}"
+        assert mir.chows == d["chows"], f"吃摊数分歧 seat={seat}"
+        assert mir.melds == d["melds"], f"副露分歧 seat={seat}"
+        assert mir.discards == d["discards"], f"牌河分歧 seat={seat}"
+        checked += 1
+    # 收尾:吃完全部事件应能对上终局(无异常即通过)
+    for ev in events[cursor:]:
+        mir.apply_event(ev)
+    return checked
+
+
+class TestMirrorProperties(unittest.TestCase):
+    def test_random_policy_all_seats(self):
+        checked = _run_games(N_GAMES)
+        self.assertGreater(checked, 1000,
+                           "决策点样本过少,检查 synth 是否正常产出")
+
+    def test_heuristic_policy(self):
+        from mj.bot import choose_action
+        checked = _run_games(8, policy=choose_action)
+        self.assertGreater(checked, 100)
+
+    def test_window_keys_distinguish(self):
+        res = synth_game(0)
+        mir = Mirror(my_seat=0, dealer=res["game"].dealer)
+        k1 = mir.window_key("response_peng")
+        k2 = mir.window_key("response_chi")
+        self.assertNotEqual(k1, k2)
+        # 同一 pending 重复询问:键不变(防重)
+        self.assertEqual(k1, mir.window_key("response_peng"))
+
+    def test_dirty_stream_detected(self):
+        res = synth_game(1)
+        view = view_for(res, 0)
+        mir = Mirror(my_seat=0, dealer=res["game"].dealer)
+        mir.apply_snapshot(_initial_snapshot(res, 0))
+        with self.assertRaises(MirrorInconsistent):
+            for ev in view["events"]:
+                if ev["type"] == EV_DISCARDED and ev["seat"] == 0 \
+                        and ev["tile"] is not None:
+                    ev = dict(ev, tile=tname((tidx(ev["tile"]) + 1) % 34))
+                mir.apply_event(ev)
+
+
+if __name__ == "__main__":
+    unittest.main()
