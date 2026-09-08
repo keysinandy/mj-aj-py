@@ -169,7 +169,9 @@ class Recorder:
     def reset(self, gid, reason):
         self.log_for(gid).write({"type": "reset", "reason": reason})
 
-    def end(self, gid, reason, scores=None):
-        self.log_for(gid).write(
-            {"type": "end", "reason": reason, "scores": scores})
+    def end(self, gid, reason, scores=None, error=None):
+        rec = {"type": "end", "reason": reason, "scores": scores}
+        if error is not None:
+            rec["error"] = error
+        self.log_for(gid).write(rec)
         self.close(gid)

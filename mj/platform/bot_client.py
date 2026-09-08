@@ -58,7 +58,7 @@ class BotClient:
         self.stats = {
             "games": 0, "actions": 0, "hu": 0, "err409": 0, "gaps": 0,
             "auto_played": 0, "mirror_resets": 0, "scores": [],
-            "rooms": 0,
+            "rooms": 0, "hu_failed": 0, "decide_errors": 0,
         }
 
     # ---------- 生命周期(监督线程) ----------
@@ -318,6 +318,10 @@ class BotClient:
             self.play_game(gid)
         except Exception as e:
             self._log(f"场次 {gid} 异常: {type(e).__name__}: {e}")
+            if self.recorder is not None:
+                # 异常终止也落 end 记录:对局日志不再有无终态残局
+                self.recorder.end(gid, "error",
+                                  error=f"{type(e).__name__}: {e}")
         finally:
             self._done_games.add(gid)
 
@@ -377,6 +381,7 @@ class BotClient:
         seq = 0
         mirror = None
         chi_pending = None  # 碰窗响应计数态(吃窗提交前保持)
+        decide_fails = 0    # 决策/快照路径自愈预算(超限上抛终止)
         while True:
             t0 = time.monotonic()
             try:
@@ -421,8 +426,21 @@ class BotClient:
                 seq = res.get("seq", seq)
                 if rec is not None:
                     rec.snapshot(gid, seq, snap)
-                mirror = self._mirror_from_snapshot(snap)
-                self._act_on_snapshot(mirror, snap, gid)
+                try:
+                    mirror = self._mirror_from_snapshot(snap)
+                    self._act_on_snapshot(mirror, snap, gid)
+                except Exception as ex:
+                    decide_fails += 1
+                    if decide_fails > 3:
+                        raise
+                    self._log(f"快照决策异常({type(ex).__name__}: {ex}),"
+                              f"重拉快照({decide_fails}/3)")
+                    with self._stats_lock:
+                        self.stats["decide_errors"] += 1
+                    if rec is not None:
+                        rec.reset(gid,
+                                  f"快照决策异常: {type(ex).__name__}: {ex}")
+                    seq, mirror = 0, None
                 continue
 
             if rec is not None and batch:
@@ -467,6 +485,22 @@ class BotClient:
                     if trigger is not None and trigger[0] == "window":
                         trigger = None  # 同批内认领:窗口已失效
                     batch_seen = set()
+                elif (t == "timeout" and e.get("kind") == "hu_failed"
+                        and e["seat"] == mirror.me):
+                    # 我方吃/碰后平台不发弃牌窗(timeout kind=hu_failed,
+                    # turn 直达下家摸牌,手牌自此比引擎预期多 1 张)——
+                    # 作废本批后续触发并 seq=0 快照重锚,避免提交废弃牌
+                    # (必 409)与后续决策的手牌数断言炸线程
+                    # (match 实测 2026-09-08,详见 PROGRESS.md P4)
+                    self._log("我方吃碰后 hu_failed:弃牌被跳过,快照重锚")
+                    with self._stats_lock:
+                        self.stats["hu_failed"] += 1
+                    if rec is not None:
+                        rec.reset(gid, "hu_failed:吃碰后弃牌被跳过")
+                    seq, mirror, trigger = 0, None, None
+                    chi_pending = None
+                    batch_seen = set()
+                    break
                 elif t in ("pass", "timeout"):
                     # 碰窗响应(pass 或 response 超时;discard 超时不算)
                     if t == "pass" or e.get("kind") == "response":
@@ -489,14 +523,32 @@ class BotClient:
             if trigger is None:
                 self._wait_wake(wake, sse)  # SSE 帧/兜底超时驱动下一轮
                 continue
-            if trigger[0] == "draw":
-                self._act_draw(mirror, gid)
-            elif trigger[0] == "window":
-                chi_pending = self._act_window(mirror, trigger[1], gid)
-                if chi_pending is not None:
-                    # 同批内已到的他家窗口响应直接入账(否则要等下批,
-                    # 吃窗提交被无谓推迟)
-                    chi_pending["seen"] |= batch_seen
+            try:
+                if trigger[0] == "draw":
+                    self._act_draw(mirror, gid)
+                elif trigger[0] == "window":
+                    chi_pending = self._act_window(mirror, trigger[1], gid)
+                    if chi_pending is not None:
+                        # 同批内已到的他家窗口响应直接入账(否则要等下批,
+                        # 吃窗提交被无谓推迟)
+                        chi_pending["seen"] |= batch_seen
+            except Exception as ex:
+                # 决策/提交路径异常(如镜像失步后手牌张数不符,shanten
+                # 断言 ValueError 直穿):有限次快照重锚自愈,超限上抛,
+                # 由 _play_game_safe 落 end(error) 终止——不再静默丢局
+                decide_fails += 1
+                if decide_fails > 3:
+                    raise
+                self._log(f"决策异常({type(ex).__name__}: {ex}),"
+                          f"快照重锚({decide_fails}/3)")
+                with self._stats_lock:
+                    self.stats["decide_errors"] += 1
+                if rec is not None:
+                    rec.reset(gid,
+                              f"决策异常: {type(ex).__name__}: {ex}")
+                seq, mirror, trigger = 0, None, None
+                chi_pending = None
+                continue
 
     # ---------- 决策 ----------
 
@@ -554,6 +606,9 @@ class BotClient:
         elif phase == "response_chi" \
                 and seat in (snap.get("responding_seats") or []):
             # 快照显示吃窗进行中:窗口已开,直接决策提交
+            if not mirror.hand_count_ok("response_chi"):
+                self._skip_drifted(mirror, gid, "response_chi")
+                return
             try:
                 g = mirror.build_game("response_chi")
                 if any(a != -1 for a in g.legal_actions()):
@@ -563,8 +618,18 @@ class BotClient:
             except MirrorInconsistent as e:
                 self._log(f"吃窗构建失败: {e}")
 
+    def _skip_drifted(self, mirror, gid, phase):
+        """手牌张数漂移(hu_failed 等服务端异常):本回合交服务端代打。"""
+        self._log(f"手牌张数 {sum(mirror.my_hand)} 与阶段 {phase} 不符,"
+                  f"本回合交服务端代打")
+        with self._stats_lock:
+            self.stats["auto_played"] += 1
+
     def _act_draw(self, mirror, gid):
         """自家弃牌回合(摸牌后或吃碰后)。"""
+        if not mirror.hand_count_ok("draw"):
+            self._skip_drifted(mirror, gid, "draw")
+            return
         try:
             g = mirror.build_game("draw")
         except MirrorInconsistent as e:
@@ -581,6 +646,9 @@ class BotClient:
         """
         if mirror.freeze > 0 and mirror.me != mirror.freezer:
             return None  # 抓打圈:不能吃碰明杠
+        if not mirror.hand_count_ok("response_peng"):
+            self._skip_drifted(mirror, gid, "response")
+            return None
         try:
             g = mirror.build_game("response_peng")
             claims = [a for a in g.legal_actions() if a != -1]
@@ -610,6 +678,9 @@ class BotClient:
 
     def _act_chi(self, mirror, t0, gid):
         """吃窗决策:等碰窗走满(固定 1s)后提交。"""
+        if not mirror.hand_count_ok("response_chi"):
+            self._skip_drifted(mirror, gid, "response_chi")
+            return
         try:
             g = mirror.build_game("response_chi")
             chi_opts = [a for a in g.legal_actions() if a != -1]

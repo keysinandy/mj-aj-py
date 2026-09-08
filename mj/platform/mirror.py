@@ -317,6 +317,19 @@ class Mirror:
     def already_responded(self, phase):
         return self.window_key(phase) in self._responded
 
+    def hand_count_ok(self, phase):
+        """决策前手牌张数与副露/阶段是否自洽(不自洽 → False)。
+
+        吃碰后 timeout kind=hu_failed 服务端跳过弃牌,手牌自此比引擎
+        预期多 1 张(match 实测 2026-09-08,5/1405 次认领);张数异常时
+        客户端交服务端代打,轮边界快照重建后自愈。
+        """
+        need = 13 - 3 * len(self.melds[self.me])
+        n = sum(self.my_hand)
+        if phase == "draw":
+            return n in (need, need + 1)  # 吃碰后 / 刚摸
+        return n == need
+
     def build_game(self, phase):
         """按决策阶段构建引擎 Game(仅当前决策所需字段,他家暗手置零)。
 

@@ -472,6 +472,12 @@ extract 含 oracle ~1.6ms/决策点。
     对手 bot 抢窗比测试房激进,409 高于测试房基线但无害);日志 10/10
     局干净、log_replay 合法集断言 0 非法、log2data 产出 854 样本
     动作合法率 100%
+  - **轮询时代 4 房 40 场批次复盘(2026-09-08,SSE 上线前日志)**:
+    39/40 正常收官、总分 -180(场均 -4.62、15 局正分);67 次 409
+    INVALID_ACTION(41 chi/16 discard/9 peng/1 pass,全部迟到提交,
+    轮询延迟 p50 371ms/p90 1s/max 55.7s)、我方弃牌窗被代打 50 次
+    (~1.3 次/场)、1140 次 gap 全部快照自愈 0 失步;唯一残局
+    (无 end 记录)= hu_failed 手牌漂移炸线程,已修(见协议发现条目)
   - **409 根因(2026-09-08 排查,免认证房流逐事件对拍 + 计时分析)**:
     全部 20 次 409 都是**迟到提交**(决策/提交本身仅毫秒级),两类:
     ①chi(14 次)——吃窗时序为弃牌+1s 碰窗 →[1s,2s] 吃窗,事件接收
@@ -522,6 +528,16 @@ extract 含 oracle ~1.6ms/决策点。
     须等 ~1.05s(实测 2 次偶发 409 竞态,无害)
   - **无独立 hu 事件**:胡牌只在 round_ended.data{fan,detail,draw,
     scores,round_no,dealer} 与 rounds[]{is_draw,multiplier,winner}
+  - **吃碰后偶发 `timeout kind=hu_failed`(2026-09-08 match 首见,
+    5/1405 次认领,已在客户端消化)**:认领者的 post-claim 弃牌窗不
+    开,turn 直达下家摸牌,手牌自此比引擎预期多 1 张(是否服务端隐性
+    代打无从分辨,按 +1 漂移处理)。客户端三层防御(`tests/test_hu_failed.py`):
+    ① 我方收到该事件 → 作废认领触发 + seq=0 快照重锚(不提交必 409
+    的废弃牌);② `Mirror.hand_count_ok` 决策前张数自洽检查,漂移期的
+    反应窗/弃牌回合交服务端代打(auto_played 计数),轮边界快照自愈;
+    ③ 决策路径异常(shanten 断言 ValueError 直穿曾静默杀线程、丢一局
+    无 end 记录)→ 有限 3 次快照自愈,超限 `_play_game_safe` 落
+    `end(error)` 终态,不再有残局日志
   - 赛后数据 blocks 按 ≤128 事件分块(首块含 start_hands,续块 null);
     牌河含 pending 牌、被 claim 后弹出(与引擎一致)
   - 测试房 M=10 → 同 4 人 10 圡并发:每 bot 须每场次独立工作线程;
