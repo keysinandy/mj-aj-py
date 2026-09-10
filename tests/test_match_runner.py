@@ -10,6 +10,7 @@ import json
 import os
 import queue
 import tempfile
+import time
 import unittest
 
 from mj.log2data import collect
@@ -55,9 +56,10 @@ class FakeMatchApi:
         res = self.results[self.room_idx]
         self.room_id = f"auto_r{self.room_idx}"
         self.game = FakeApi(res, self.seat)
-        self._it = iter(d["action"] for d in res["decisions"]
-                        if d["seat"] == self.seat
-                        and (d["mode"] == "draw" or d["legal"] != [-1]))
+        self._rel = [d for d in res["decisions"]
+                     if d["seat"] == self.seat
+                     and (d["mode"] == "draw" or d["legal"] != [-1])]
+        self._it = iter(self._rel)
         return {"room_id": self.room_id, "config": res["config"],
                 "round_no": 1}
 
@@ -115,6 +117,7 @@ class FakeSseMatchApi(FakeMatchApi):
         self.sse = FakeSseStream()
         self.notify_opens = 0
         self._served = 0
+        self._await_opens = None   # 断流后要求监听先重连(确定性,免调度竞态)
 
     def match(self):
         res = super().match()
@@ -129,11 +132,19 @@ class FakeSseMatchApi(FakeMatchApi):
         return self.sse
 
     def game_state(self, gid, seq):
+        if self._await_opens is not None:
+            # 断流后服务端不给状态,直到监听重连(否则用例依赖线程调度)
+            deadline = time.time() + 2.0
+            while self.notify_opens <= self._await_opens \
+                    and time.time() < deadline:
+                time.sleep(0.001)
+            self._await_opens = None
         res = self.game.game_state(gid, seq)
         self.sse.push(res.get("seq", seq), closed=bool(res.get("finished")))
         self._served += 1
         if self.close_every and self._served % self.close_every == 0:
             self.sse.close()  # 模拟断流:迭代器返回 → 监听重连
+            self._await_opens = self.notify_opens
         return res
 
 
@@ -149,7 +160,9 @@ def _drive_match(n_rooms, seat=0, seed0=0, max_games=None, recorder=None,
     api = cls(results, seat, **api_kwargs)
 
     def decide(g, s):
-        act = next(api._it)
+        d = next(api._it)
+        api.game.deciding(d)      # 通知夹具:该决策点已消费
+        act = d["action"]
         assert act in g.legal_actions()
         return act
 
@@ -213,10 +226,16 @@ class TestMatchRecording(unittest.TestCase):
         # 令牌名区分文件)
         res = synth_game(9)
         fake = FakeApi(res, 0)
-        it = iter(d["action"] for d in res["decisions"]
-                  if d["seat"] == 0
-                  and (d["mode"] == "draw" or d["legal"] != [-1]))
-        bot = BotClient(fake, "t0", lambda g, s: next(it),
+        it = iter([d for d in res["decisions"]
+                   if d["seat"] == 0
+                   and (d["mode"] == "draw" or d["legal"] != [-1])])
+
+        def decide(g, s):
+            d = next(it)
+            fake.deciding(d)      # 通知夹具:该决策点已消费
+            return d["action"]
+
+        bot = BotClient(fake, "t0", decide,
                         log=lambda m: None, window_wait=0, idle_sleep=0,
                         recorder=rec)
         bot.run(max_games=1)

@@ -31,7 +31,9 @@ def _record_game(root, seat=2, seed=5):
     it = iter(relevant)
 
     def decide(g, s):
-        return next(it)["action"]
+        d = next(it)
+        fake.deciding(d)          # 通知夹具:该决策点已消费
+        return d["action"]
 
     rec = Recorder(root=root)
     bot = BotClient(fake, f"bot{seat}", decide, log=lambda m: None,

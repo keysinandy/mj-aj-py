@@ -430,5 +430,43 @@ class ConcurrentGameIsolationTests(unittest.TestCase):
             )
 
 
+class TestChiWindowEagerSnapshot(unittest.TestCase):
+    """无碰/杠可做的吃窗:立刻抓权威快照,而不是干等到 T+1。
+
+    实测(a_8bbc394d729b):增量轮询被服务端挂起拖到 ~0.8s,而吃窗只有 1s;
+    干等期占满往返 → 41/106 窗口从未发出 seq=0。带吃窗截止的 seq=0 快照
+    请求走 EDF(实测往返 ~60ms),相位一进 response_chi 就能决策。
+    """
+
+    def test_chi_window_without_peng_claim_fetches_snapshot_eagerly(self):
+        clock = FakeClock(monotonic=100.0, epoch=1000.0)
+        hand = ["1w", "2w", "3w", "4w", "5w", "6w", "7b", "8b",
+                "1t", "2t", "3t", "4t", "9w"]  # 无 6b 对子 → 不能碰
+        draw = _snapshot(hand, phase="draw", turn=1)  # 非我方回合:开局不决策
+        discard = _ev(5, "tile_discarded", 3, "6b", ts=1000.0)
+        peng = _snapshot(hand, phase="response_peng", turn=3, responding=[0, 1, 2],
+                         discards=[[], [], [], ["6b"]], last_discard="6b",
+                         window_deadline_ms=1001000)
+        chi = _snapshot(hand, phase="response_chi", turn=3, responding=[0],
+                        discards=[[], [], [], ["6b"]], last_discard="6b",
+                        window_deadline_ms=1002000)
+        api = ScriptedServer([
+            {"snapshot": draw, "seq": 4},
+            {"events": [discard], "seq": 5},
+            {"snapshot": peng, "seq": 5},
+            {"snapshot": chi, "seq": 5},
+            _finished(),
+        ], clock, expected_seqs=[0, 4, 0, 0, 5])
+        bot = BotClient(api, "b", _choose_chi_or_draw, log=lambda _: None,
+                        idle_sleep=0, window_wait=0)
+        with mock.patch.object(bot_client_module, "time", clock):
+            bot.play_game("g")
+        # 第 3 次请求必须是 seq=0 快照(旧行为会发增量 seq=5,窗口内发不出确认)
+        self.assertEqual([seq for _, seq, _ in api.state_calls], [0, 4, 0, 0, 5])
+        self.assertEqual(len(api.actions), 1)
+        self.assertEqual(api.actions[0][1]["action"], "chi")
+        self.assertEqual(bot.stats["err409"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

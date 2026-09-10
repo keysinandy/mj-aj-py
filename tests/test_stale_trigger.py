@@ -109,10 +109,11 @@ class TestStaleTriggerCancel(unittest.TestCase):
 
 class TestChiDeadline(unittest.TestCase):
     def test_chi_fires_at_deadline_without_all_responses(self):
-        """吃窗按观察时刻固定等待提交,不等全部碰窗响应(409 根源 3)。
+        """吃窗不依赖「碰窗响应观测齐」,由权威快照相位推进驱动提交。
 
         旧代码 seen<needed 时继续等下一批,吃窗被无谓推迟错过截止;
-        新代码部分响应(仅 pass seat=1)到点即提交。
+        现在无碰/杠可做时直接抓 seq=0 快照(带吃窗截止→EDF 优先):先看到
+        response_peng,相位一到 response_chi 立即决策提交,不等全部响应。
         """
         from mj.platform.proto import tidx
 
@@ -126,6 +127,13 @@ class TestChiDeadline(unittest.TestCase):
                     return a
             return -1
 
+        base = dict(_snap(HAND, turn=3), last_discard="6b",
+                    discards=[["4t"], [], [], ["6b"]])
+        peng_snap = dict(base, phase="response_peng",
+                         responding_seats=[0, 1, 2],
+                         window_deadline_ms=(time.time() + 0.5) * 1000)
+        chi_snap = dict(base, phase="response_chi", responding_seats=[0],
+                        window_deadline_ms=(time.time() + 1.0) * 1000)
         api = ScriptedApi(
             [[_ev(1, "tile_drawn", 3),
               _ev(2, "tile_discarded", 3, "6b")],
@@ -135,16 +143,12 @@ class TestChiDeadline(unittest.TestCase):
                   data={"tiles": ["6b", "7b", "8b"]})],  # 吃回声→弃牌回合
              [_ev(6, "tile_discarded", 0, "9w"),
               _ev(7, "pass", 1), _ev(8, "pass", 2), _ev(9, "pass", 3)]],
-            [_snap(HAND, turn=3),
-             _snap(HAND, turn=3),
-             dict(_snap(HAND, turn=3, phase="response_chi"),
-                  responding_seats=[0], last_discard="6b",
-                  discards=[["4t"], [], [], ["6b"]],
-                  window_deadline_ms=(time.time() + 1) * 1000)])
+            [_snap(HAND, turn=3)],
+            reanchor_snaps=[peng_snap, chi_snap])
         bot = BotClient(api, "bot0", decide, log=lambda m: None,
                         window_wait=0, idle_sleep=0)
         bot.play_game("g1")
-        # 吃 6b 先于弃 9w 提交:截止驱动不等全部响应
+        # 吃 6b 先于弃 9w 提交:相位驱动,不等全部碰窗响应
         self.assertEqual(
             api.submitted,
             [{"action": "chi", "tile": "6b", "tiles": ["7b", "8b"]},

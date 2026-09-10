@@ -226,7 +226,7 @@ class Api:
     """一个参赛令牌的玩家 API(多场次线程共享，/state 限速按实例)。"""
 
     def __init__(self, server: str, token: str, timeout: float = 35.0,
-                 state_rate: float | None = 12.5, state_throttle=None):
+                 state_rate: float | None = 15.0, state_throttle=None):
         self.base = server.rstrip("/")
         self.token = token
         self.timeout = timeout

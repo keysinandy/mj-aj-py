@@ -6,13 +6,27 @@ last_discard)。bot 决策点 = 自家摸牌/吃碰后的弃牌 + 有非过选�
 decide 用记录动作,逐点断言镜像构建的合法集包含该动作。
 """
 
+import time
 import unittest
 
 from mj.platform.bot_client import BotClient
 from mj.platform.synth import synth_game, view_for
 
+# 夹具放行上限:客户端在某决策点连续 N 次未决策(例如其镜像判定无合法选项)
+# 就放行该点,避免夹具与客户端互相等待造成死循环。放行会记入 stalls,
+# 测试可用它断言"没有被兜底放行过"。
+STALL_LIMIT = 4
+
+
 class FakeApi:
-    """按 synth 局回放的假服务器(单座位视角)。"""
+    """按 synth 局回放的假服务器(单座位视角)。
+
+    窗口保真(2026-09-10):客户端改为「快照权威」的吃窗决策后,夹具必须
+    ①不把事件水位推过本方尚未决策的决策点(否则会把客户端自己未来的
+    动作回声提前发下去,镜像越过窗口);②在该决策点下发对应快照并带
+    `window_deadline_ms`。测试的 decide 回调需调用 `deciding(d)` 通知
+    夹具该点已消费。
+    """
 
     def __init__(self, res, seat):
         self.res = res
@@ -24,6 +38,31 @@ class FakeApi:
         self.finished = False
         self._initial_served = False
         self.submitted = []
+        # 本方决策点调度(与测试的 relevant 同口径)
+        self.schedule = [d for d in self.decisions
+                         if d["seat"] == seat
+                         and (d["mode"] == "draw" or d["legal"] != [-1])]
+        self.k = 0               # 下一个待消费的决策点
+        self.stalls = 0          # 兜底放行次数(应恒为 0)
+        self._pending_offers = 0
+
+    # ---- 决策点调度 ----
+    def deciding(self, d):
+        """测试回调:客户端已完成决策点 d 的决策。"""
+        if self.k < len(self.schedule) and self.schedule[self.k] is d:
+            self.k += 1
+            self._pending_offers = 0
+            self.served = max(self.served, d["events_before"])
+
+    def _pending(self):
+        return self.schedule[self.k] if self.k < len(self.schedule) else None
+
+    def _pending_snap(self, d):
+        """本方决策点的快照;反应窗补服务端截止字段(客户端据此提交)。"""
+        snap = dict(d["all_prompts"][self.seat])
+        if str(snap.get("phase", "")).startswith("response"):
+            snap["window_deadline_ms"] = (time.time() + 1.0) * 1000.0
+        return snap
 
     # ---- /api/tournaments 系列 ----
     def me(self):
@@ -46,6 +85,9 @@ class FakeApi:
 
     # ---- /api/games ----
     def _snap(self):
+        d = self._pending()
+        if d is not None and self.served >= d["events_before"]:
+            return self._pending_snap(d)   # 已到本方窗口:给窗口状态
         d = next((d for d in self.decisions
                   if d["events_before"] >= self.served), None)
         if d is None:
@@ -65,19 +107,37 @@ class FakeApi:
         if seq is not None and seq < self.served:
             return {"snapshot": self._snap(), "seq": self.served}
         assert seq == self.served, (seq, self.served)
-        # 释放到下一决策边界;若视角内无事件(全被过滤)则继续推进边界,
-        # 模拟长轮询等到下一个可见事件
         while True:
-            nxt = next((d for d in self.decisions
-                        if d["events_before"] > self.served), None)
-            end = nxt["events_before"] if nxt else len(self.res["events"])
+            pending = self._pending()
+            # 有未消费的本方决策点:事件水位不得推过它(否则提前下发
+            # 客户端自己未来的动作回声,镜像越过窗口 → 跳过该窗口)
+            if pending is not None:
+                end = pending["events_before"]
+            else:
+                nxt = next((d for d in self.decisions
+                            if d["events_before"] > self.served), None)
+                end = nxt["events_before"] if nxt else len(self.res["events"])
             slice_ = [e for e in self.view["events"]
                       if self.served < e["seq"] <= end]
-            if slice_ or nxt is None:
-                self.served = slice_[-1]["seq"] if slice_ else self.served
-                if nxt is None:
-                    self.finished = True
+            if slice_:
+                self.served = slice_[-1]["seq"]
+                self._pending_offers = 0
                 return {"events": slice_, "seq": self.served}
+            if pending is not None:
+                # 已推进到本方决策点:下发窗口快照(“轮到你”)
+                if self._pending_offers >= STALL_LIMIT:
+                    # 客户端始终不决策(镜像判定无选项):放行,防死循环
+                    self.stalls += 1
+                    self.k += 1
+                    self._pending_offers = 0
+                    self.served = max(self.served, pending["events_before"])
+                    continue
+                self._pending_offers += 1
+                return {"snapshot": self._pending_snap(pending),
+                        "seq": self.served}
+            if end >= len(self.res["events"]) and not slice_:
+                self.finished = True
+                return {"events": [], "seq": self.served}
             self.served = end
 
     def game_action(self, gid, payload):
@@ -98,6 +158,7 @@ def _drive(seat, seed=0, ycbk=False):
 
     def decide(g, s):
         d = next(it)
+        fake.deciding(d)          # 通知夹具:该决策点已消费
         act = d["action"]
         assert act in g.legal_actions(), \
             f"seat={seat} mode={d['mode']} act={act} legal={g.legal_actions()}"
@@ -139,7 +200,9 @@ class TestBotClient(unittest.TestCase):
         it = iter(relevant)
 
         def decide(g, s):
-            return next(it)["action"]
+            d = next(it)
+            fake.deciding(d)
+            return d["action"]
 
         bot = BotClient(fake, "bot0", decide, window_wait=0, idle_sleep=0)
         bot.run(max_games=1)

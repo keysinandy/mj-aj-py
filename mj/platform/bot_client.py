@@ -30,6 +30,9 @@ DISCARD_SEC = 3.0
 DEADLINE_MARGIN = 0.12  # 为模型串行决策与动作提交预留的本地安全余量
 SUBMIT_EPS = 0.05  # 窗口守卫余量:仅剩此余量时物理上来不及提交才放弃
 LAZY_POLL_WAIT = 1.2  # 懒轮询:预测无关事件的最长推迟(吃窗 T+2 内须追平)
+EAGER_CHI_LEAD = 0.25  # 吃窗快照提前量:临近开窗才抓,避免长时间空占 EDF
+EAGER_CHI_GAP = 0.12   # 同一吃窗两次快照抓取的最小间隔(限速 ~8/s)
+EAGER_CHI_MAX = 8      # 同一吃窗最多抓取次数(无截止/相位不推进时的兜底界)
 
 
 class _ActionResync(Exception):
@@ -45,6 +48,31 @@ class _ActionResync(Exception):
         self.reason = reason
         self.status = status
         self.uncertain = uncertain
+
+
+class StateDemand(queue.Queue):
+    """每场一个待处理 watermark；单个 play loop 串行执行物理请求。
+
+    SSE 只合并需求，不推进镜像游标。seq=0 确认返回后同样可以消耗
+    已覆盖的提示，因此 SSE 与窗口确认不会各留下一个刷新请求。
+    """
+
+    def _put(self, item):
+        if self.queue:
+            previous = self.queue.pop()
+            watermark = (max(previous[0], item[0])
+                         if previous[0] is not None and item[0] is not None
+                         else None)
+            item = (watermark, previous[1] or item[1])
+        self.queue.append(item)
+
+    def acknowledge(self, seq):
+        with self.mutex:
+            if self.queue:
+                watermark, closed = self.queue[0]
+                if (watermark is not None and seq is not None
+                        and watermark <= seq and not closed):
+                    self.queue.clear()
 
 
 def _ms(t0):
@@ -584,6 +612,9 @@ class BotClient:
             "confirmed": phase_hint == "response_chi",
             "needed": needed,
             "seen": {mirror.me} if passed_explicitly else set(),
+            "resolved": ({mirror.me} if not any(
+                a != -1 for a in mirror.build_game("response_peng").legal_actions())
+                else set()),
         }
 
     @classmethod
@@ -691,7 +722,7 @@ class BotClient:
                         # 帧只是水位唤醒信号；重复/倒退水位不应制造额外
                         # /state 拉取，但绝不把它当作本地事件游标。
                         last = sse.get("last_wake_seq")
-                        if seq is None or last is None or seq > last:
+                        if seq is None or last is None or seq > last or j.get("closed"):
                             sse["last_wake_seq"] = seq
                             wake.put((seq, bool(j.get("closed"))))
                         if j.get("closed"):
@@ -765,7 +796,7 @@ class BotClient:
         # SSE 通知流(v12):帧 = 状态已变信号,唤醒主循环立即拉 /state
         wake = sse = stop_l = listener = None
         if self.use_notify:
-            wake = queue.Queue()
+            wake = StateDemand()
             sse = {"alive": False}
             stop_l = threading.Event()
             listener = threading.Thread(
@@ -872,6 +903,8 @@ class BotClient:
         window_responded = True  # 当前反应窗已被本方响应(超时簇可吸收)
         lazy_until = 0.0       # 懒轮询窗截止:本次拉取后 +LAZY_POLL_WAIT
         lazy_floor = 0.0       # 动作后绝对懒下限(锚定窗关闭+0.6s)
+        chi_fetch_at = 0.0     # 上次吃窗快照抓取(monotonic,限速用)
+        chi_fetches = 0        # 本弃牌窗已抓取次数(每张新弃牌清零)
         decide_fails = 0    # 决策/快照路径自愈预算(超限上抛终止)
         while True:
             t0 = time.monotonic()
@@ -879,6 +912,8 @@ class BotClient:
                 state_deadline, stale_dl_used, t0)
             try:
                 res = self._state(gid, seq, state_deadline)
+                if isinstance(wake, StateDemand):
+                    wake.acknowledge(res.get("seq", seq))
                 status = 200
             except ApiError as e:
                 status = e.status
@@ -1018,6 +1053,7 @@ class BotClient:
                     state_deadline = self._srv_deadline(e["ts"], DISCARD_SEC)
                 elif t == "tile_discarded":
                     window_responded = False  # 新弃牌开新窗:未响应态
+                    chi_fetches = 0           # 新弃牌:吃窗抓取预算重置
                     if e["seat"] == mirror.me:
                         # 自家弃牌:正常提交后的回声(无触发,空跑),或
                         # 网络停摆期弃牌窗超时被服务端代打(批内 draw
@@ -1037,6 +1073,17 @@ class BotClient:
                         # 下一轮把截止放宽到 2 秒。锚定服务端弃牌 ts:
                         # 观测迟到时按真实剩余窗收缩,死窗(None)不抢配额。
                         state_deadline = self._srv_deadline(e["ts"], WINDOW_SEC)
+                        # 本地合法集已可判断时，无关弃牌不持有 urgent。
+                        try:
+                            peng = any(a != -1 for a in mirror.build_game(
+                                "response_peng").legal_actions())
+                            chi = ((e["seat"] + 1) % 4 == mirror.me and any(
+                                a != -1 for a in mirror.build_game(
+                                    "response_chi").legal_actions()))
+                            if not peng and not chi:
+                                state_deadline = None
+                        except MirrorInconsistent:
+                            state_deadline = None
                 elif t in ("chi", "peng", "gang"):
                     chi_pending = None  # 有人吃/碰/杠:窗口被认领
                     window_event = None
@@ -1080,6 +1127,10 @@ class BotClient:
                 elif t in ("pass", "timeout"):
                     # 碰窗响应(pass 或 response 超时;discard 已上面处理)
                     if t == "pass" or e.get("kind") == "response":
+                        if t == "pass" or e["data"].get("window") == "peng":
+                            batch_seen.add(e["seat"])
+                            if chi_pending is not None:
+                                chi_pending["seen"].add(e["seat"])
                         if t == "timeout" and e["seat"] == mirror.me:
                             if e["data"].get("window") == "chi":
                                 # 我方吃窗被服务端代过:记录仍有规则合法动作的机会
@@ -1124,28 +1175,49 @@ class BotClient:
 
             if trigger is None:
                 if chi_pending is not None:
-                    # 响应齐或估算转换点到达只触发快照确认，不能直接
-                    # 授权 POST。秒级时间戳会使这里比实际开窗更早。
-                    deadline = chi_pending.get(
+                    # 无碰/杠可做 → 碰窗与本人无关:不必等响应观测齐,直接
+                    # 用带吃窗截止的 seq=0 快照轮询(EDF 优先,实测往返
+                    # ~60ms)。增量轮询会被服务端挂起拖到 ~0.8s,而吃窗只有
+                    # 1s,等不起——干等期占满往返即丢窗(实测 41/106)。
+                    now = time.monotonic()
+                    chi_deadline = chi_pending.get("deadline_mono")
+                    # 无碰/杠可做 + 截止可评估 + 未超抓取上限 → 直接抓快照
+                    if (not chi_pending.get("peng_claims")
+                            and chi_deadline is not None
+                            and chi_fetches < EAGER_CHI_MAX):
+                        if now >= chi_deadline - SUBMIT_EPS:
+                            chi_pending = None  # 窗已关:不再抢配额
+                            continue
+                        ready = chi_pending.get("ready_mono")
+                        # 离吃窗开启还早 / 距上次抓取太近:短等,别空占 EDF
+                        hold = 0.0
+                        if ready is not None:
+                            hold = max(hold, ready - EAGER_CHI_LEAD - now)
+                        hold = max(hold, chi_fetch_at + EAGER_CHI_GAP - now)
+                        if hold > 0:
+                            self._wait_wake(wake, sse, max_wait=hold)
+                            continue
+                        chi_fetch_at = now
+                        chi_fetches += 1
+                        seq = 0
+                        state_deadline = chi_deadline
+                        chi_pending = None
+                        continue
+                    # 有碰/杠选项:按原语义等响应观测齐/转换点,再抓快照确认
+                    # (不能直接授权 POST;秒级时间戳会使这里比实际开窗更早)
+                    ready = chi_pending.get(
                         "ready_mono", chi_pending["t0"] + self.window_wait + 0.05)
-                    if chi_pending["seen"] < chi_pending["needed"] \
-                            and time.monotonic() < deadline:
+                    if not chi_pending["needed"].issubset(
+                            chi_pending["seen"] | chi_pending.get("resolved", set())) \
+                            and now < ready:
                         if self.long_poll:
-                            # 长轮询:睡到截止前 0.15s 再发一次挂起轮询
-                            # ——碰窗超时事件必在 ~T+1.5 刷新,该轮询有界
-                            # 返回;若他家已碰,批内 chi_pending 被认领
-                            # 分支作废(先查后提交,消除认领竞速 409);
-                            # 返回后截止已过,直接触发提交
-                            pre = deadline - 0.15 - time.monotonic()
+                            pre = ready - 0.15 - now
                             if pre > 0:
                                 time.sleep(pre)
-                            continue  # → 轮询一次(有界),回来再评估
+                            continue
                         else:
-                            self._wait_wake(wake, sse,
-                                            max_wait=deadline - time.monotonic())
-                            continue  # 睡到截止/被帧唤醒,再轮询观察响应与作废
-                    # 增量事件的秒级 ts 只能安排确认，不能证明吃窗开启。
-                    # 复用主循环的限流、日志与快照恢复路径。
+                            self._wait_wake(wake, sse, max_wait=ready - now)
+                            continue
                     seq = 0
                     state_deadline = chi_pending.get("deadline_mono")
                     chi_pending = None
@@ -1195,9 +1267,23 @@ class BotClient:
                     if chi_pending is not None:
                         # 同批内已到的他家窗口响应直接入账(否则要等下批)
                         chi_pending["seen"] |= batch_seen
-                        state_deadline = (chi_pending["t0"]
-                                          + self.window_wait * 2
-                                          - DEADLINE_MARGIN)
+                        chi_deadline = chi_pending.get("deadline_mono")
+                        if (not chi_pending.get("peng_claims")
+                                and chi_deadline is not None
+                                and chi_fetches < EAGER_CHI_MAX):
+                            # 无碰/杠可做:直接抓权威吃窗快照(seq=0 + 吃窗
+                            # 截止 → EDF 优先,实测往返 ~60ms),不要先用增量
+                            # 轮询把 1s 窗耗掉(服务端挂起 ~0.8s,实测
+                            # 41/106 窗口因此从未发出确认请求)
+                            chi_fetch_at = time.monotonic()
+                            chi_fetches += 1
+                            seq = 0
+                            state_deadline = chi_deadline
+                            chi_pending = None
+                        else:
+                            state_deadline = (chi_pending["t0"]
+                                              + self.window_wait * 2
+                                              - DEADLINE_MARGIN)
                     else:
                         state_deadline = None
                 # 动作后的 T+1/T+2 窗口超时簇与我方无关:懒门下限抬到
@@ -1443,10 +1529,14 @@ class BotClient:
             passed_explicitly = True
         # 吃窗:仅出牌者的下家;碰窗响应齐或截止到达后提交。
         # 使用统一构造器，快照中的 window_deadline_ms 优先于事件 ts。
-        return self._make_chi_pending(
+        chi = self._make_chi_pending(
             mirror, ev=ev, snap=ev if ev and "phase" in ev else None,
             passed_explicitly=passed_explicitly,
             peng_end_epoch=None)
+        if chi is not None:
+            # 本窗我方碰/杠选项(空 = 碰窗与本人无关 → 主循环提前抓吃窗快照)
+            chi["peng_claims"] = claims
+        return chi
 
     def _mark_window_attempt(self, mirror, phase, attempted_windows):
         key = self._window_key(mirror, phase)

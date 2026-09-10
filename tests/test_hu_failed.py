@@ -51,9 +51,14 @@ class ScriptedApi:
     水位选择快照(索引 = 已服务的批数 - 1,首查为初始快照)。
     """
 
-    def __init__(self, batches, snaps, final_scores=None):
+    def __init__(self, batches, snaps, final_scores=None,
+                 reanchor_snaps=None):
         self.batches = list(batches)
         self.snaps = list(snaps)
+        # 重锚(seq=0)时按调用次序返回的快照(模拟服务端“当前相位”随时间
+        # 推进:先 response_peng,后 response_chi);缺省退回按水位取 snaps
+        self.reanchor_snaps = list(reanchor_snaps or [])
+        self._reanchor_i = 0
         self.i = 0                 # 已服务批数
         self.final_scores = final_scores or [1, 0, 0, -1]
         self.submitted = []
@@ -67,6 +72,10 @@ class ScriptedApi:
         last = self.batches[self.i - 1][-1]["seq"] if self.i else 0
         if seq is not None and seq < last:
             # 重锚(hu_failed / 决策自愈):快照取当前水位(优先于终局)
+            if self.reanchor_snaps:
+                k = min(self._reanchor_i, len(self.reanchor_snaps) - 1)
+                self._reanchor_i += 1
+                return {"snapshot": self.reanchor_snaps[k], "seq": last}
             k = min(self.i, len(self.snaps) - 1)
             return {"snapshot": self.snaps[k], "seq": last}
         if self.i >= len(self.batches):

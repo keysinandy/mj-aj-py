@@ -29,17 +29,33 @@
   （`current_mirror` / `not_decided` / `stale_or_mismatched`），并沿用
   `decision` id 与 `action` 记录配对。口径与统计命令见
   `docs/平台窗口修复与验收.md`「吃/碰/杠 机会损失日志」节。
-- 聚焦回归：窗口/时序/镜像 9 个文件 67 passed, 2 subtests passed；`git diff --check`
-  通过。这是局部回归，不是完整套件验收。已知 `tests/test_platform_recorder.py::TestRecorderFullGame::test_full_game_records`
-  在本次改动前即失败（synth 决策日志 `-4 not in [9,15,...]`）并会拖挂同文件
-  后续全场用例，与 claim_miss 无关，未修。
+- 聚焦回归：窗口/时序/镜像 11 个文件 76 passed, 2 subtests passed；
+  `git diff --check` 通过。
+- 全量 `tests/`（无 deselect）：**232 passed, 2 subtests passed**，连续两轮
+  一致。此前 9 个失败与 2 个挂起用例已随「测试夹具窗口保真修复」全部转绿
+  （见下节）。
 - 工具链同步：`mj/logview.py` 新增 `MISS` 行渲染（显示“策略已选/策略未决策”）
   与摘要分类计数（按 reason × 已决策/未决策）；`log_replay`/`log2data` 按
   type 过滤，新记录类型天然被忽略，无兼容问题。
-- 回归补充：`test_409_recorded` 会永久挂起在 `BotClient.run()` 监督循环
-  （409 重锚后场次不收敛到 max_games）；已用改动前 HEAD 的独立 worktree
-  复现同样挂起栈，确认与 claim_miss 无关。
+## 测试夹具窗口保真修复（2026-09-10）
 
+- 现象：`ea9db5c` 三个 synth 驱动文件 21 个用例全绿，`8ef0fb1`（窗口修复）
+  起 9 个失败、并拖挂 `test_platform_recorder` 两个全场用例。根因是夹具
+  未跟上「快照权威」的吃窗决策：①`synth._prompt()` 反应窗快照缺
+  `window_deadline_ms`；②`FakeApi` 会把事件水位推过**本方尚未决策的决策
+  点**，把客户端自己未来的动作回声提前下发 → 镜像越过窗口 → 跳过该窗口
+  → 测试决策迭代器错位 → `action_to_payload(-4, pending=None)` 抛
+  `TypeError` → 落 `reset` → `replay_game` 的 `clean=False`。期望值本身
+  正确（线上实测服务器确实在窗口内返回 `response_chi` 快照）。
+- 修复（纯测试代码）：`FakeApi` 增加决策点调度（`schedule`/`k`/`deciding`），
+  水位不得推过未消费决策点，到点下发该点快照并补 `window_deadline_ms`；
+  `STALL_LIMIT` 兜底放行（计 `stalls`，应恒为 0）防互等死循环；
+  `FakeSseMatchApi` 断流后要求先重连再发状态，去掉 SSE 重连用例的线程
+  调度 flaky。三个测试文件的 `decide` 回调补 `fake.deciding(d)`。
+- 结果：全量 `tests/` **232 passed, 2 subtests passed**（无 deselect，
+  连续两轮）。
+
+## 后续接口调度修复（2026-09-10）
 - 线上验证（默认 12.5/s，房 `a_59753d3945aa`，10/10 局）：actions=865 失败=0、
   409=0、post_uncertain=0、deadline_abandons=0、auto_played=1；`claim_miss=25`
   （chi timeout 未决策 23、peng timeout 未决策 1、peng 决策临界重锚已决策 1）。
@@ -79,9 +95,21 @@
   683 = 642 无合法吃牌 + 41 有合法吃牌；`my_timeout_peng` 2238 全部无合法
   碰/杠。即这两个值是**服务端窗口关闭事件数**，绝大多数无事可做、零损失；
   只有与 `claim_miss` 交集的部分是真实损失。
-- 修复方向（均未实施）：压低共享排队（提 state-rate/分令牌/隔离配额）；
-  削减非窗口轮询占用（帧合并、每场单在途）；修正 `seen` 语义使 T+1 一到
-  即可发起快照请求；兜底方案是“预决策 + 快照校验”，须保持确认后才 POST。
+- **已实施修复（2026-09-10，待线上复测）**：无碰/杠可做的吃窗不再等
+  `seen>=needed`/`ready_mono`、也不用增量轮询占窗，而是立刻发**带吃窗截止
+  的 `seq=0` 快照请求**（EDF 优先，实测队列 42ms/端到端 63ms），相位一进
+  `response_chi` 即决策提交；`_act_window` 记录 `peng_claims`，两道界
+  `EAGER_CHI_LEAD=0.25s` / `EAGER_CHI_GAP=0.12s` / `EAGER_CHI_MAX=8`
+  （每张新弃牌重置），截止不可评估时退回原等待语义；有碰/杠选项的窗口
+  保持原语义。离线仿真（快照 60ms、增量挂起 800ms、观测迟到 0.86s）：
+  新逻辑 T+1.11 提交吃牌，对照（快照亦 800ms）窗口内无决策。
+  新增 `tests/test_window_recovery.py::TestChiWindowEagerSnapshot`
+  （请求序列 [0,4,0,0,5]）；`TestChiDeadline` 改为相位驱动；
+  `ScriptedApi` 增可选 `reanchor_snaps`。
+- 回归：聚焦 10 文件 72 passed, 2 subtests passed；全量（排除 2 个已知坏
+  用例）221 passed, 9 failed —— 9 个失败与改动前 HEAD 逐条一致。
+- 剩余杠杆（未实施）：压低共享排队（97.6% 为普通轮询，p50 739ms）、
+  帧合并/每场单在途、或"预决策+快照校验"兜底。
 
 ## 后续接口调度修复（2026-09-10）
 
@@ -107,7 +135,7 @@
 - 快照是对应 seq 的规范状态；响应窗口 `responding_seats` 不等于尚未响应成员，客户端要防重复提交。
 - 动作 POST 不应通用重试：409 是明确拒绝；5xx/超时/响应丢失结果可能未知，不能重发旧动作。
 - 单令牌 10 场共享 `/state` 限速器，当前默认 `state_rate=12.5/s`，窗口请求按 EDF 调度；共享排队是关键瓶颈。
-- 线上指南限速为同一用户/令牌聚合 **16 次 `/state`/秒**，不是每场 16/s；客户端 12.5/s 是保守主动限速。历史约 15/s 实验出现 429 风暴，因此不能直接把默认改为 16，若实验应逐档比较 13.5/14/15，并观察 429、排队、409、截止放弃和 timeout。
+- 线上指南限速为同一用户/令牌聚合 **16 次 `/state`/秒**，不是每场 16/s；客户端 12.5/s 是保守主动限速。2026-09-10 实测 15/s 表现良好（房 `a_9158e09dae81`：0 个 429、10/10 局完成，队列 p50 492ms / p95 679ms），默认暂仍保留 12.5/s；若继续实验应记录 429、排队分位、409、截止放弃与 timeout。
 - 健康 SSE 模式下，无状态变化的普通 `/state` 刷新不是必须；必须保留：初始 `seq=0`、SSE 帧后的本地游标增量拉取、窗口必要确认、gap/409/POST 未知结果后的 `seq=0` 重锚、SSE 断线回退、跨局/终局确认。
 - 碰/吃窗口请求 `/state` 是为了获得权威弃牌/认领/timeout/phase/turn/deadline 状态，不是为了固定高频轮询；不能收到弃牌后直接 sleep 到 T+2 再 POST，否则会漏掉他家先碰、本人被代过或阶段已推进。
 - 优化方向：每场一个在途 state 请求；合并多个 SSE 帧；窗口内只在 SSE/必要截止确认时拉取；避免同一窗口的 SSE 拉取和截止追赶重复占用全局配额；先做离线调度仿真，不只调 sleep。
@@ -211,7 +239,7 @@ throttle_waits=14978, throttle_wait_ms≈4051167.5, max_wait=1573.9ms
 
 ### `/state` 的 16/s 上限
 
-线上指南 v29 的 `/state` 限速是同一用户/令牌聚合 16 次/秒，10 场共用，不是每场 16/s。当前客户端主动限速 12.5/s 是保守值；历史约 15/s 实验曾触发 429 风暴，因此不能直接将默认改为 16。若要实验，建议 13.5、14、15 逐档对照，并记录 429、最大/分位排队、409、client deadline abandon、本人 timeout。
+线上指南 v29 的 `/state` 限速是同一用户/令牌聚合 16 次/秒，10 场共用，不是每场 16/s。当前客户端主动限速 12.5/s 是保守值；2026-09-10 实测 15/s 表现良好（0 个 429，队列 p50 492ms、p95 679ms），需要时可逐档对照 13.5/14/15，并记录 429、最大/分位排队、409、client deadline abandon、本人 timeout。
 
 ### 为什么窗口期间仍需要 `/state`
 
@@ -227,7 +255,7 @@ SSE 只推“状态变化”提示，不含完整弃牌、牌值、认领结果�
 
 1. **先检查并修正第二轮新增统计/时间日志实现**：确认 `started_epoch` 已由所有动作成功/失败路径写入，`received_epoch` 不破坏旧 Recorder 测试；运行 timing focused tests。
 2. **分析 response_peng `gang not your response turn` 前的事件批次**：从 `a_e2b47e90ea65_r1_b3_t0.jsonl` 的失败 action decision seq 往前找事件；验证是否他家认领/新事件已在同批，或者 `_act_window` 未检查 `responding_seats`/窗口身份。
-3. **给 state 请求做真正窗口调度评估**：当前 SSE 仍在共享 12.5/s throttle 排队；不要贸然提高到 15/s（历史实弹曾引发 429 风暴）。可研究每场 SSE 唤醒合并、动作后抑制无关刷新、近窗抢占、多个令牌分摊，先加离线仿真测试。
+3. **给 state 请求做真正窗口调度评估**：当前 SSE 仍在共享 12.5/s throttle 排队。可研究每场 SSE 唤醒合并、动作后抑制无关刷新、近窗抢占、多个令牌分摊，先加离线仿真测试。
 4. **完善 `no_legal_response`/`stale_trigger_cancelled` 分类**：目前值为 0 可能只是没有在所有路径调用，不应解读为实际没有这些情况。明确区分：无合法选项、策略主动过、本人 timeout、平台 forced discard、客户端 deadline abandon、旧触发被新事实取消。
 5. **重新跑 focused tests，再谨慎决定是否需要第三轮线上。** 线上对局是有副作用的自由匹配，运行前需用户明确（已明确过一次但不要无限重复）；不并跑重负载。
 6. **完整测试修复**：旧 FakeApi 测试在 seed=1 seat=2 / seed=2 seat=0 等组合可能 StopIteration 后重派挂起；需查状态机为何额外调用决策，或让 FakeApi/测试符合新快照行为，不能直接禁掉失败重派。
