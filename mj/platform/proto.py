@@ -55,7 +55,8 @@ def parse_tile(v) -> int:
 def parse_event(raw: dict) -> dict:
     """原始事件 → 归一化 dict:
     {type, seat, tile(int|None), kind(str|None), tiles(list[int]|None),
-     seq(int|None), data(原始 data,round_ended 结算对账用)}
+     seq(int|None), ts(float|None 服务端 epoch,窗口截止锚定用),
+     data(原始 data,round_ended 结算对账用)}
 
     chi 的 tiles = 去掉被吃牌后的两张手牌(replay.js:data.tiles 含河牌,
     fromHand = tiles − 被吃牌)。
@@ -68,6 +69,7 @@ def parse_event(raw: dict) -> dict:
         "type": etype,
         "seat": raw.get("seat"),
         "tile": tidx(raw["tile"]) if raw.get("tile") else None,
+        "ts": raw.get("ts"),
         "kind": data.get("kind"),
         "tiles": None,
         "seq": raw.get("seq"),

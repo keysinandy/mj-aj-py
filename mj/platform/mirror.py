@@ -114,14 +114,45 @@ class Mirror:
             owner = snap.get("turn")
             if owner is not None and 0 <= owner <= 3:
                 self.pending = (owner, tidx(ld))
-        # 抓打圈:god.catch_play(本人视角)
-        if god.get("catch_play"):
-            if not (self.freeze > 0 and self.freezer != self.me):
-                self.freeze = max(self.freeze, 1)
-                self.freezer = -1 if self.freezer is None else self.freezer
+        # 抓打圈:gap 快照必须恢复发起者与剩余冻结弃牌数。catch_play 是
+        # 本人视角（发起者自己会是 false），故以 god_discarder_seat 为准。
+        freezer = god.get("god_discarder_seat")
+        if isinstance(freezer, int) and 0 <= freezer <= 3:
+            self._rebuild_freeze(snap, freezer)
+        elif god.get("catch_play"):
+            if self.freeze > 0 and self.freezer != self.me:
+                # 增量事件已知发起者的旧快照（synth/早期协议不带字段）：
+                # 保留精确状态，不能用保守值覆盖它。
+                pass
+            else:
+                # 新建镜像且旧快照没有发起者时宁可保守冻结整圈，不能放宽
+                # 出牌/反应合法集造成 409；下一份 catch_play=false 快照清除。
+                self.freeze, self.freezer = 3, -1
+        elif self.freezer == -1 and self.freeze > 0:
+            self.freeze = 0
+
+    def _rebuild_freeze(self, snap, freezer):
+        """用快照牌河+phase 精确还原抓打圈，失败时保守降级。
+
+        白板弃牌后 freeze=3；每张后续弃牌先消耗一次。发起者若在圈内
+        认领后再次弃牌，牌河中白板后的额外一张需要纳入计数。
+        """
+        river = self.discards[freezer]
+        last_white = max((i for i, t in enumerate(river) if t == W), default=-1)
+        turn = snap.get("turn")
+        phase = snap.get("phase")
+        consumed = -1
+        if last_white >= 0 and isinstance(turn, int) and 0 <= turn <= 3:
+            post_white = len(river) - last_white - 1
+            if phase == "draw":
+                consumed = ((turn - freezer - 1) % 4) + 2 * post_white
+            elif phase in ("response_peng", "response_chi") and post_white == 0:
+                consumed = (turn - freezer) % 4
+        if 0 <= consumed <= 2:
+            self.freeze, self.freezer = 3 - consumed, freezer
         else:
-            if self.freezer == -1 and self.freeze > 0:
-                self.freeze = 0
+            # 同一坏快照重拉会循环，不能抛失步；保守近似保证不放宽动作。
+            self.freeze, self.freezer = 1, -1
 
     @classmethod
     def _parse_melds(cls, raw_melds):

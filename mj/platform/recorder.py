@@ -122,12 +122,20 @@ class Recorder:
             rec["mode"] = mode
         self.log_for(gid, name).write(rec)
 
-    def req(self, gid, seq, status, latency_ms, attempts=None, summary=None):
+    def req(self, gid, seq, status, latency_ms, attempts=None, summary=None,
+            transport=None, throttle=None):
+        """记录一次逻辑 /state 请求；新增诊断字段均为可选，兼容旧日志。"""
         log = self.log_for(gid)
         log.cursor = seq
-        log.write({"type": "req", "seq": seq, "status": status,
-                   "latency_ms": latency_ms, "attempts": attempts,
-                   **({"res": summary} if summary else {})})
+        rec = {"type": "req", "seq": seq, "status": status,
+               "latency_ms": latency_ms, "attempts": attempts}
+        if summary:
+            rec["res"] = summary
+        if transport:
+            rec["transport"] = transport
+        if throttle:
+            rec["throttle"] = throttle
+        log.write(rec)
 
     def snapshot(self, gid, seq, snap):
         log = self.log_for(gid)
@@ -139,7 +147,10 @@ class Recorder:
         log = self.log_for(gid)
         if seq_to is not None:
             log.cursor = seq_to
-        log.write({"type": "events", "seq_to": seq_to, "events": events})
+        # This is the local epoch at which the response was consumed, not the
+        # server event timestamp. Keep it separate for window diagnostics.
+        log.write({"type": "events", "seq_to": seq_to,
+                   "received_epoch": time.time(), "events": events})
 
     def decision(self, gid, phase, legal, action, latency_ms, digest=None):
         """返回决策 id(action 记录据此配对)。"""
@@ -155,11 +166,21 @@ class Recorder:
         return did
 
     def action(self, gid, phase, payload, ok, status=200, code="",
-               latency_ms=None, attempts=None):
+               latency_ms=None, attempts=None, started_at=None,
+               started_epoch=None, deadline_at=None, message=None,
+               transport=None):
         log = self.log_for(gid)
         rec = {"type": "action", "phase": phase, "payload": payload,
                "ok": ok, "status": status, "code": code,
                "latency_ms": latency_ms, "attempts": attempts}
+        # ts is response completion/log time, not the time the POST was sent.
+        # Keep both ends so slow responses cannot be mistaken for late sends.
+        for key, value in (("started_at", started_at),
+                           ("started_epoch", started_epoch),
+                           ("deadline_at", deadline_at),
+                           ("message", message), ("transport", transport)):
+            if value is not None:
+                rec[key] = value
         did = log.pending_decision
         if did is not None:
             rec["decision"] = did

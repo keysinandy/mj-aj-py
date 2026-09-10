@@ -69,7 +69,7 @@ python3 -m mj.platform.runner --strategy random --games 10 --dump
 - **房间生命周期**:finished 后空闲 30 分钟即自动回收(令牌失效)——打完一轮想继续就立刻跑下一轮;脚本连打无此问题
 - **M=10 并发**:测试房按 config.M 开 10 场并发(同 4 人),客户端每场次独立线程;轮询预算 16 次/秒/用户
 - **窗口时序**:碰/吃窗固定走满 1s,不响应=隐式过(无惩罚);吃窗在碰窗结束后开启,客户端自动处理
-- **偶发 409**:窗口竞态(如他家抢先碰)属正常,客户端自动 seq=0 重建;每轮个位数以内可忽略
+- **动作 409**:用 seq=0 快照重建后继续；需结合窗口与服务端错误信息归因，不能仅按次数少就忽略。响应丢失时也先重建，不自动重发旧动作
 - **跨轮批次重号**:每轮 batch 从 0 重号,`mj.replay` 默认只校验**最新轮**;历史轮复盘走门户 `GET /portal/api/games/{id}/events`(需登录态)
 - **正式锦标赛**:同一客户端支持多阶段赛制(status 循环/stage_open 确认),`runner` 同款命令,令牌换成报名令牌即可
 
@@ -97,6 +97,9 @@ python3 -m mj.platform.match_runner --strategy policy --ckpt runs/bc0/best.pt --
 | `--ckpt` | `runs/ppo4/ckpt_350000.pt` | policy 策略的 checkpoint,BC(`best.pt`)与 PPO(`ckpt_*.pt`)双格式均可;备选 `runs/bc0/best.pt`、`runs/ppo4/ckpt_400000.pt` |
 | `--games` | `10` | 打满场数,**以整房为退出粒度**(不中途弃房——弃房后剩余场次会被服务端代打,污染他人对局) |
 | `--config` | `local/platform.json` | 配置文件路径 |
+| `--state-rate` | `12.5` | 每令牌共享的 /state 请求预算（次/秒） |
+| `--no-long-poll` | 关 | 兼容旧参数；当前默认即为 SSE + `/state?seq=N` |
+| `--no-notify` | 关 | 禁用 SSE，退回普通主动 `/state?seq=N` 轮询 |
 | `--dump` | 关 | 原始 /state、/action 报文 dump 到 `local/logs/`(协议排查用) |
 
 对局日志与测试房同构:`local/games/<日期>/<user_id>_<gid>.jsonl`,meta 行带 `mode: match` 标记;`mj.logview` / `mj.log_replay` 复盘对账命令不变。
@@ -115,11 +118,12 @@ python3 -m mj.bc_train --data "data/bc_match/shard_*.npz" \
 ### 3. 注意事项(实测口径)
 
 - **退出粒度**:`--games N` 打满 N 场即止,但总会打完当前房(一房 10 场);想多攒数据把 N 给大点
-- **事件驱动(SSE)**:对弈默认走 `/notify` SSE 通知流(v12)——服务器状态变更即推信号,客户端立即拉 `/state` 增量,事件感知延迟从轮询的 ~0.5s+(p90 1.5s、429 退避尾部可达数十秒)压到帧级,显著降低吃/碰/弃牌窗超时 409;断流自动重连,重连期间自动退回轮询节奏(无需配置)
+- **接收模式**:默认使用 `/state` 长轮询；`--no-long-poll` 切换 `/notify` SSE 唤醒后拉取增量，SSE 帧不直接推进游标。两种模式共享每令牌限速；历史延迟分布不构成当前环境的延迟保证
 - **错误自愈**:409 MATCH_BUSY/MATCH_LIMIT_REACHED 自动退避重试(10s);房间 finished ~60s 宽限关停后 404 属正常,自动开下一房;崩溃重启后重调 `/api/match` 幂等返回原房(v24)
-- **永久错误**:403 PORTAL_BINDING_REQUIRED = 令牌非门户绑定,须去门户领绑定令牌,重试无意义
+- **永久错误**:403 PORTAL_BINDING_REQUIRED = 令牌非门户绑定；403 FEATURE_DISABLED = 平台关闭新自由匹配（v29），均不自动重试
 - **排行榜曝光**:auto 房整场完整打完会计入门户排行榜(积分榜/胡大牌榜/单场得分榜)
 - **满员等待**:入席后不满 4 人会挂等(池里没人的时段);其他队 bot 活跃时段开打效率最高
+- **窗口验收**:见 [平台窗口修复与验收](docs/平台窗口修复与验收.md)。日志 `started_at` 为动作调用起点，`ts` 为响应完成后的记录时间；两者均不是服务端实际接受时间
 
 ## 训练与评估(离线)
 

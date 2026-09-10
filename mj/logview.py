@@ -78,9 +78,17 @@ def render(rec, t0):
             f"[{k}]" for k in ("pending", "gap", "finished") if res.get(k))
         snap = "[快照]" if res.get("snapshot") else ""
         att = f" ×{rec['attempts']}" if (rec.get("attempts") or 1) != 1 else ""
+        tr = rec.get("transport") or {}
+        th = rec.get("throttle") or {}
+        retry = "/".join(str(tr.get(k, 0)) for k in
+                          ("retry_429", "retry_gateway", "retry_network"))
+        retry = f" retry={retry}" if retry != "0/0/0" else ""
+        backoff = f" backoff={tr['backoff_ms']}ms" if tr.get("backoff_ms") else ""
+        queued = f" queue={th['queue_wait_ms']}ms" if th.get("queue_wait_ms") else ""
+        missed = "[截止已失]" if th.get("deadline_missed") else ""
         return (f"{pre} req    seq={rec.get('seq')} "
-                f"{rec.get('latency_ms')}ms{att} → {rec.get('status')} "
-                f"{res.get('n_events', 0)}ev{snap}{flags}")
+                f"{rec.get('latency_ms')}ms{att}{retry}{backoff}{queued} {missed}→ "
+                f"{rec.get('status')} {res.get('n_events', 0)}ev{snap}{flags}")
     if t == "snapshot":
         snap = rec.get("snap") or {}
         return (f"{pre} snap   seq={rec.get('seq')} "
@@ -153,12 +161,23 @@ def summarize(recs):
     fails = [r for r in recs if r["type"] == "action" and not r.get("ok")]
     retries = [r for r in recs
                if r["type"] == "req" and (r.get("attempts") or 1) > 1]
+    reqs = [r for r in recs if r["type"] == "req"]
+    physical = sum(r.get("attempts") or 1 for r in reqs)
+    retry_429 = sum((r.get("transport") or {}).get("retry_429", 0)
+                    for r in reqs)
+    queued = sorted((r.get("throttle") or {}).get("queue_wait_ms", 0)
+                    for r in reqs)
+    missed = sum(bool((r.get("throttle") or {}).get("deadline_missed"))
+                 for r in reqs)
     print("----- 摘要 -----")
     print("记录:", " ".join(f"{k}×{v}" for k, v in sorted(counts.items())))
     if lat:
         p50 = lat[len(lat) // 2]
         print(f"req 耗时: p50={p50}ms max={lat[-1]}ms "
-              f"(n={len(lat)}, 重试{len(retries)}次)")
+              f"(逻辑{len(reqs)}/物理{physical}, 重试{len(retries)}, 429={retry_429})")
+    if queued and any(queued):
+        print(f"调度等待: p50={queued[len(queued) // 2]}ms max={queued[-1]}ms "
+              f"截止已失={missed}")
     if fails:
         codes = {}
         for f in fails:
@@ -176,6 +195,120 @@ def summarize(recs):
         print(f"终局: {end.get('reason')} scores={end.get('scores')}")
 
 
+# ---------- 动作窗口时间线 ----------
+
+WINDOW_SPAN = {"draw": 3.0, "response_peng": 1.0, "response_chi": 2.0}
+KIND_DESC = {"draw": "自家摸/吃碰→弃牌窗[3s]",
+             "response_peng": "碰窗[T,T+1]",
+             "response_chi": "吃窗[T+1,T+2]"}
+
+
+def window_timeline(recs):
+    """每个动作窗口的完整时间链:服务端 T → 我方观测 → 决策 → 提交落点。
+
+    行格式: 观测迟到 / 提交=T+x / 距窗口关闭余量 / 结果。供优化归因:
+    迟到来自排队还是服务端刷新、提交是否掐在窗内、错过的是哪一段。
+    """
+    seat = None
+    t0 = recs[0].get("ts", time.time())
+    win = None
+    rows = []
+
+    def close(reason):
+        nonlocal win
+        if win is not None:
+            rows.append((win, None, None, reason))
+            win = None
+
+    for rec in recs:
+        t = rec["type"]
+        if t == "snapshot" and seat is None:
+            seat = (rec.get("snap") or {}).get("seat")
+        elif t == "events":
+            for ev in rec.get("events") or []:
+                et, es = ev.get("type"), ev.get("seat")
+                if et == "tile_drawn" and es == seat:
+                    close("被新触发覆盖")
+                    win = {"kind": "draw", "T": ev.get("ts"),
+                           "arrival": rec["ts"]}
+                elif et in ("chi", "peng") and es == seat:
+                    close("被新触发覆盖")
+                    win = {"kind": "draw", "T": ev.get("ts"),
+                           "arrival": rec["ts"]}
+                elif et == "tile_discarded" and es != seat:
+                    close("被新触发覆盖")
+                    win = {"kind": "window", "T": ev.get("ts"),
+                           "arrival": rec["ts"], "tile": ev.get("tile"),
+                           "seat": es}
+                elif et == "timeout" and es == seat \
+                        and win is not None and win["kind"] == "window":
+                    data = ev.get("data") or {}
+                    if data.get("kind") == "response":
+                        close(f"未响应(无碰/吃选项或窗已关,"
+                              f"{data.get('window')})")
+        elif t == "decision" and win is not None:
+            win["dec_ms"] = rec.get("latency_ms")
+        elif t == "action" and win is not None:
+            phase = rec.get("phase") or ""
+            kind = phase if phase in WINDOW_SPAN else win["kind"]
+            rows.append((win, rec, kind,
+                         "ok" if rec.get("ok")
+                         else f"✗{rec.get('status')}"))
+            win = None
+    close("局终未决")
+
+    print("----- 动作窗口时间线 -----")
+    obs_l, subs, ok_cnt, miss_cnt = [], [], 0, 0
+    for win, act, kind, status in rows:
+        T, arr = win.get("T"), win["arrival"]
+        if T is None:
+            continue
+        obs = arr - T
+        obs_l.append(obs)
+        if win["kind"] == "draw":
+            desc = "自家回合 "
+        else:
+            desc = f"他{win.get('seat')}弃{win.get('tile')} "
+        if act is None:
+            miss_cnt += 1
+            print(f"{_t({'ts': arr}, t0)} {desc}{KIND_DESC.get(win['kind'], '')} "
+                  f"观测迟到={obs:.2f}s → {status}")
+            continue
+        span = WINDOW_SPAN.get(kind, 1.0)
+        # New logs record the send start explicitly. Older logs only have
+        # response completion and elapsed time: their start is an estimate.
+        # Compare server epoch T with the separately recorded local epoch.
+        # started_at is monotonic and must never be subtracted from T.
+        started_at = act.get("started_epoch")
+        estimated = started_at is None
+        sub = (started_at - T) if started_at is not None else None
+        if sub is not None:
+            subs.append((sub, span, kind))
+        if status == "ok":
+            ok_cnt += 1
+        # Only the server's result proves acceptance. Local clocks and event
+        # timestamps cannot establish the instant the server accepted a POST.
+        mark = "✓" if status == "ok" else "✗"
+        dec = f" 决策{win.get('dec_ms', '?')}ms" if win.get("dec_ms") else ""
+        position = (f"发送{'估计' if estimated else ''}=T+{sub:.2f}s "
+                    f"估计余{span - sub:+.2f}s "
+                    if sub is not None else "发送落点=不可推断 ")
+        print(f"{_t({'ts': arr}, t0)} {desc}{KIND_DESC.get(kind, '')} "
+              f"观测迟到={obs:.2f}s{dec} {position}"
+              f"HTTP={act.get('latency_ms', '?')}ms "
+              f"{mark}{'' if status == 'ok' else status}")
+    if obs_l:
+        obs_l.sort()
+        n = len(obs_l)
+        print(f"\n观测迟到: n={n} p50={obs_l[n // 2]:.2f}s "
+              f"p90={obs_l[int(n * 0.9)]:.2f}s max={obs_l[-1]:.2f}s "
+              f">1s={sum(1 for x in obs_l if x > 1)}")
+    if subs:
+        inwin = [s for s, span, _ in subs if s <= span]
+        print(f"发送时刻估计: {len(inwin)}/{len(subs)} 不晚于事件推算截止; "
+              f"未提交(过/代过)={miss_cnt}")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="自记对局日志时间线查看")
     ap.add_argument("target", help="gid 或日志文件路径")
@@ -184,14 +317,21 @@ def main(argv=None):
                     help="只看这些记录类型(逗号分隔: req,decision,...)")
     ap.add_argument("--full-events", action="store_true",
                     help="展开事件批内每条事件")
+    ap.add_argument("--windows", action="store_true",
+                    help="打印动作窗口时间线(观测迟到/提交落点/结果)")
     args = ap.parse_args(argv)
     paths = find_logs(args.target, args.root)
     if not paths:
         print(f"未找到日志: {args.target} (root={args.root})", file=sys.stderr)
         return 1
-    types = set(args.types.split(",")) if args.types else None
     for p in paths:
-        show_file(p, types, args.full_events)
+        if args.windows:
+            recs = load_records(p)
+            if recs:
+                print(f"\n===== {p} =====")
+                window_timeline(recs)
+            continue
+        show_file(p, args.types, args.full_events)
     return 0
 
 

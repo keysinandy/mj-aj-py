@@ -40,33 +40,70 @@ def make_decide(strategy, ckpt=None):
 class DumpingApi(Api):
     """原始请求/响应 dump 到目录(首跑探针用)。"""
 
-    def __init__(self, server, token, name, dump_dir):
-        super().__init__(server, token)
+    def __init__(self, server, token, name, dump_dir, **api_kwargs):
+        super().__init__(server, token, **api_kwargs)
         self.name = name
         self.dump_dir = dump_dir
         self._n = 0
+        self._dump_lock = threading.Lock()
         os.makedirs(dump_dir, exist_ok=True)
 
     def _dump(self, kind, payload):
-        self._n += 1
-        path = os.path.join(self.dump_dir,
-                            f"{self.name}_{self._n:04d}_{kind}.json")
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=1)
+        # match 模式的十个场次线程共享一个 DumpingApi；编号和写文件
+        # 必须一并串行化，否则并发动作会覆盖 dump 或复用编号。
+        with self._dump_lock:
+            self._n += 1
+            path = os.path.join(self.dump_dir,
+                                f"{self.name}_{self._n:04d}_{kind}.json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=1)
 
-    def game_state(self, gid, seq):
-        r = super().game_state(gid, seq)
-        self._dump("state", {"gid": gid, "seq": seq, "res": r})
+    def game_state(self, gid, seq, deadline=None, request_timeout=None):
+        try:
+            r = super().game_state(gid, seq, deadline=deadline,
+                                   request_timeout=request_timeout)
+        except Exception as e:
+            self._dump("state", {"gid": gid, "seq": seq,
+                                  "deadline": deadline,
+                                  "request_timeout": request_timeout,
+                                  "error": _dump_error(e)})
+            raise
+        self._dump("state", {"gid": gid, "seq": seq,
+                              "deadline": deadline,
+                              "request_timeout": request_timeout, "res": r})
         return r
 
-    def game_action(self, gid, payload):
-        r = super().game_action(gid, payload)
-        self._dump("action", {"gid": gid, "payload": payload, "res": r})
+    def game_action(self, gid, payload, deadline=None):
+        try:
+            r = super().game_action(gid, payload, deadline=deadline)
+        except Exception as e:
+            # 传输异常也要落盘，尤其是 uncertain=True 的响应丢失；这
+            # 能和客户端随后的 seq=0 重锚在日志中对应起来。
+            self._dump("action", {"gid": gid, "payload": payload,
+                                   "deadline": deadline,
+                                   "error": _dump_error(e)})
+            raise
+        self._dump("action", {"gid": gid, "payload": payload,
+                               "deadline": deadline, "res": r})
         return r
+
+
+def _dump_error(exc):
+    """把异常转成稳定、可 JSON 序列化的传输诊断。"""
+    return {
+        "type": type(exc).__name__,
+        "message": str(exc),
+        "status": getattr(exc, "status", None),
+        "code": getattr(exc, "code", ""),
+        "uncertain": bool(getattr(exc, "uncertain", False)),
+        "timed_out": bool(getattr(exc, "timed_out", False)),
+        "deadline_exceeded": bool(getattr(exc, "deadline_exceeded", False)),
+        "attempts": getattr(exc, "attempts", None),
+    }
 
 
 def run_room(cfg, strategy="policy", ckpt=None, games=1, dump=False,
-             dump_dir="local/logs", record=True):
+             dump_dir="local/logs", record=True, state_rate=12.5):
     tokens = cfg["tokens"]
     stop = threading.Event()
     results = {}
@@ -75,8 +112,9 @@ def run_room(cfg, strategy="policy", ckpt=None, games=1, dump=False,
 
     def worker(name, token):
         decide = make_decide(strategy, ckpt)
-        api = DumpingApi(cfg["server"], token, name, dump_dir) if dump \
-            else Api(cfg["server"], token)
+        api = DumpingApi(cfg["server"], token, name, dump_dir,
+                         state_rate=state_rate) if dump \
+            else Api(cfg["server"], token, state_rate=state_rate)
         bot = BotClient(
             api, name, decide,
             log=lambda m: (print(f"[{name}] {m}", flush=True)),
@@ -117,11 +155,17 @@ def main(argv=None):
     ap.add_argument("--no-recorder", action="store_true",
                     help="关闭结构化对局日志(默认写 local/games/,"
                          "正式赛数据不可再生,建议保持开启)")
+    ap.add_argument("--state-rate", type=float, default=12.5,
+                    help="每令牌 /state 主动限速(默认 12.5/s)")
+    ap.add_argument("--no-state-throttle", action="store_true",
+                    help="关闭 /state 主动限速(仅排障/回滚)")
     args = ap.parse_args(argv)
     cfg = load_config(args.config)
     results = run_room(cfg, strategy=args.strategy, ckpt=args.ckpt,
                        games=args.games, dump=args.dump,
-                       record=not args.no_recorder)
+                       record=not args.no_recorder,
+                       state_rate=None if args.no_state_throttle
+                       else args.state_rate)
     print("\n===== 汇总 =====")
     for name, st in results.items():
         print(f"{name}: {json.dumps(st, ensure_ascii=False)}")

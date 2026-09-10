@@ -109,6 +109,40 @@ class TestMirrorProperties(unittest.TestCase):
                     ev = dict(ev, tile=tname((tidx(ev["tile"]) + 1) % 34))
                 mir.apply_event(ev)
 
+    def test_snapshot_rebuild_restores_catch_play_circle(self):
+        """gap 快照位于抓打圈中时，后续冻结不能在首张弃牌后丢失。
+
+        复现 match a_19d56a5bc8ac 的唯一 409：seat 0 打白，快照落在
+        seat 1 已摸待弃；seat 1 弃后 seat 2 摸牌只能弃刚摸的 5w。
+        """
+        hand = ["1w", "2w", "3w", "4w", "6w", "7w", "8w",
+                "9w", "1b", "2b", "3b", "1t", "2t"]
+        snap = {
+            "seat": 2, "phase": "draw", "turn": 1, "drawn_tile": "",
+            "my_hand": hand, "round_no": 1, "dealer": 0,
+            "wall_remaining": 82,
+            "discards": [["白"], [], [], []], "melds": [[], [], [], []],
+            "god": {"catch_play": True, "god_discarder_seat": 0},
+        }
+        mir = Mirror(my_seat=2, dealer=0)
+        mir.apply_snapshot(snap)
+        self.assertEqual((mir.freeze, mir.freezer), (3, 0))
+        mir.apply_event({"type": "tile_discarded", "seat": 1,
+                         "tile": "6b", "seq": 1})
+        self.assertEqual(mir.freeze, 2)
+        mir.apply_event({"type": "tile_drawn", "seat": 2,
+                         "tile": "5w", "seq": 2})
+        self.assertEqual(mir.build_game("draw").legal_actions(), [4])
+
+    def test_snapshot_catch_play_without_freezer_is_conservative(self):
+        """旧快照缺发起者时，不得把抓打圈错误降级成任意弃牌。"""
+        mir = Mirror(my_seat=2, dealer=0)
+        mir.apply_snapshot({
+            "seat": 2, "phase": "draw", "turn": 1, "my_hand": [],
+            "god": {"catch_play": True},
+        })
+        self.assertEqual((mir.freeze, mir.freezer), (3, -1))
+
     def test_react_on_own_pending_rejected(self):
         """自家打出的牌没有自家反应窗:build_game 拒绝(防陈旧窗口
         构建出"吃自己弃牌"的假合法集——2026-09-08 实弹 409 根因)。"""

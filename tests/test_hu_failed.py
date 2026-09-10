@@ -8,7 +8,8 @@
 3. 张数漂移期间的反应窗/弃牌回合交服务端代打(stats.auto_played),
    不炸线程、不烧决策自愈预算;
 4. 决策路径异常(shanten 断言 ValueError)有限次快照自愈;
-5. 自愈超限上抛时 _play_game_safe 落 end(error) 终态记录。
+5. 自愈超限上抛时 _play_game_safe 计一次场次异常,连续 3 次才放弃
+   重派并落 end(error) 终态记录(未超限不标完成,监督线程重派续打)。
 """
 
 import unittest
@@ -172,7 +173,8 @@ class TestHuFailed(unittest.TestCase):
                          [{"action": "discard", "tile": "4t"}])
 
     def test_decide_crash_budget_ends_with_error_record(self):
-        """自愈超限:上抛终止并落 end(error),不再静默丢局。"""
+        """自愈超限上抛:连续 3 次异常才放弃(有限重派),落 end(error);
+        前两次不标完成、不落终态——监督线程重派后续写同一日志。"""
 
         class RecStub:
             def __init__(self):
@@ -202,25 +204,32 @@ class TestHuFailed(unittest.TestCase):
             def end(self, gid, reason, scores=None, error=None):
                 self.records.append(("end", reason, error))
 
-        api = ScriptedApi([[_ev(1, "tile_drawn", 0, "4t")]],
-                          [_snap(HAND0, turn=1),
-                           _snap(HAND0, turn=0, drawn="4t")])
-
         def boom(g, s):
             raise ValueError("暗牌张数 12 与副露不符")
 
         rec = RecStub()
+        api = ScriptedApi([[_ev(1, "tile_drawn", 0, "4t")]],
+                          [_snap(HAND0, turn=1),
+                           _snap(HAND0, turn=0, drawn="4t")])
         bot = BotClient(api, "bot0", boom, log=lambda m: None,
                         window_wait=0, idle_sleep=0, recorder=rec)
-        bot._play_game_safe("g1")  # 不应向外抛
+        for i in range(2):
+            bot._play_game_safe("g1")  # 不应向外抛
+            self.assertEqual(len([r for r in rec.records
+                                  if r[0] == "end"]), 0,
+                             f"第 {i + 1} 次异常不应落终态(待重派)")
+            self.assertNotIn("g1", bot._done_games)
+        # 第 3 次异常后放弃重派,落 end(error) 并标记完成
+        bot._play_game_safe("g1")
         ends = [r for r in rec.records if r[0] == "end"]
         self.assertEqual(len(ends), 1)
         self.assertEqual(ends[0][1], "error")
         self.assertIn("暗牌张数", ends[0][2])
-        # 3 次重锚后第 4 次上抛
+        self.assertIn("g1", bot._done_games)
+        # 每次 play_game 自愈预算独立:3 次尝试 × 各 3 次 reset
         resets = [r for r in rec.records if r[0] == "reset"]
-        self.assertEqual(len(resets), 3)
-        self.assertEqual(bot.stats["decide_errors"], 3)
+        self.assertEqual(len(resets), 9)
+        self.assertEqual(bot.stats["decide_errors"], 9)
 
 
 if __name__ == "__main__":

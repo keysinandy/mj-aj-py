@@ -45,10 +45,12 @@ python3 -m mj.platform.runner --strategy policy --ckpt runs/bc0/best.pt --games 
 # (对局日志默认落 local/games/<日期>/<令牌>_<gid>.jsonl;--no-recorder 关闭)
 
 # 自由对战(单全局令牌自动匹配,meta.mode=match 区分来源)
-python3 -m mj.platform.match_runner --games 20   # 默认 ppo4 策略,整房退出粒度
+python3 -m mj.platform.match_runner --games 20   # 默认 ppo4 策略+长轮询,整房退出粒度
+python3 -m mj.platform.match_runner --games 10 --no-notify  # 关闭 SSE，普通轮询排障
 
 # 对局日志时间线复盘(按 gid 查 local/games/)
 python3 -m mj.logview <gid> --types decision,action
+python3 -m mj.logview <gid> --windows   # 动作窗口时间线:观测迟到/提交落点/结果
 
 # 自记日志对账:重放断言合法集 + 自家胡结算 + 积分累计
 python3 -m mj.log_replay <gid>
@@ -96,7 +98,7 @@ platform/ (P4 平台对接:api/proto/actions/mirror/bot_client/recorder/runner/s
      对账+训练样本重建)/ mj/log2data.py (日志→BC npz,严格过滤)
 ```
 
-平台对接层要点(实测口径,详见 PROGRESS.md P4 节):事件流只含自家摸牌,他家暗手不可见——`mirror.py` 事件源重建公共状态,决策点用 `Game.__new__` 模式构建引擎;快照含四家牌河/副露/wall_remaining,`apply_snapshot` 全量自愈;测试房 M=10 → 10 场并发,每场次独立工作线程;窗口固定走满 1s,吃窗提交须等碰窗结束(~1.05s);无独立 hu 事件(结算在 round_ended.data);吃碰后偶发 `timeout kind=hu_failed` 跳过弃牌且手牌 +1 漂移(客户端三层防御:`tests/test_hu_failed.py`);自由对战(match_runner)默认挂 `/notify` SSE(v12)事件驱动——帧只作唤醒信号不当游标,断流重连期间退回轮询。
+平台对接层要点(实测口径,详见 PROGRESS.md P4 节):事件流只含自家摸牌,他家暗手不可见——`mirror.py` 事件源重建公共状态,决策点用 `Game.__new__` 模式构建引擎;快照含四家牌河/副露/wall_remaining,`apply_snapshot` 全量自愈;测试房 M=10 → 10 场并发,每场次独立工作线程;碰窗 (T,T+1)/吃窗 (T+1,T+2) 固定走满(T=弃牌 ts),吃窗在「响应观测齐或截止(~1.05s)」先到先触发、提交不早于观察后 1.05s;无独立 hu 事件(结算在 round_ended.data);吃碰后偶发 `timeout kind=hu_failed` 跳过弃牌且手牌 +1 漂移(客户端三层防御:`tests/test_hu_failed.py`);停摆期代打回声/窗口超时在批内作废陈旧触发、api 5xx 退避重试、场次异常 ≤3 次重派(`tests/test_stale_trigger.py`);自由对战(match_runner)默认**长轮询**(v11 语义:`/state` 服务端挂起至事件刷新,观测迟到 ~0.6s;SSE 在场会禁用挂起,故长轮询不兼容 SSE,`--no-long-poll` 回滚到 SSE 事件驱动——帧只作唤醒信号不当游标)；同一 `Api`(令牌)的 `/state` 由 12.5/s 主动限速器统一仲裁，临近窗口的请求 EDF 优先（过期截止仅允许一次追赶拉取），动作与 SSE 不限速；窗口截止锚定服务端事件 ts（观测迟到按真实剩余收缩），碰/吃/弃牌守卫仅在物理来不及提交时放弃；gap 快照中的抓打圈须用 `god.god_discarder_seat` + 牌河/phase/turn 重建 freezer 与剩余 freeze，不能仅用 `catch_play` 布尔值，否则会错误放宽“只弃刚摸牌”并触发 409。
 
 关键设计约束(改动前必读,均有 PROGRESS.md 或测试背书):
 
@@ -115,5 +117,5 @@ platform/ (P4 平台对接:api/proto/actions/mirror/bot_client/recorder/runner/s
 
 ## 约定
 
-- 引擎/规则行为的改动必须同步更新 PROGRESS.md 的对应结论与测试;规则口径以平台 `GET /portal/api/guide/version`(当前 v22)+ fan-calc 对拍为准。
+- 引擎/规则行为的改动必须同步更新 PROGRESS.md 的对应结论与测试;规则口径以平台 `GET /portal/api/guide/version`(当前 v27)+ fan-calc 对拍为准。
 - `runs/`(checkpoint)、`data/bc/`(npz 分片)是产物目录,不手改;`local/`(平台配置、`local/games/` 对局日志、dump)已 gitignore,对局日志是正式赛唯一可复盘数据源,不手改不清理。

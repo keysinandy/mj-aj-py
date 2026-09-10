@@ -8,3 +8,4 @@ runs/
 local/
 .DS_Store
 .codemap
+.venv
