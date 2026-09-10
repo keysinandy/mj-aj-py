@@ -1,9 +1,7 @@
 __pycache__/
 .pytest_cache/
 data/
-runs/
 *.npz
-*.pt
 .qoder/
 local/
 .DS_Store

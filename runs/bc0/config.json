@@ -1,0 +1,14 @@
+{
+  "data": "data/bc/shard_*.npz",
+  "epochs": 6,
+  "bs": 256,
+  "lr": 0.0003,
+  "blocks": 2,
+  "width": 64,
+  "value_w": 0.5,
+  "out": "runs/bc0",
+  "seed": 0,
+  "device": "cpu",
+  "threads": 16,
+  "best_val_top1": 0.930022119445003
+}

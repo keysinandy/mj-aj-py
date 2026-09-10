@@ -10,6 +10,7 @@
 - 紧急预测不再被动作后 lazy_floor 强制压住；默认 12.5/s 保持不变。每次物理 state 重试重新申请共享限流许可，单次逻辑请求的排队时间累计记录。
 - 新增 tests/test_window_confirmation.py；调整旧测试提供权威确认快照。聚焦回归 60 passed, 2 subtests passed。本轮修复后未启动线上匹配，不能宣称线上超时或 409 已清零。
 - 补充镜像/SSE/确认/动作日志回归：18 passed, 2 subtests passed（与聚焦集有重叠，不相加）；git diff --check 通过。不是完整测试集验收。
+- 线上验收房 `a_6e9d146f7906`（日志 `local/games/20260910/u_9812ba08fe2f_a_6e9d146f7906_r1_b*.jsonl`）：10/10 局完成，861 次动作全部成功，0 个 409、0 个 post_uncertain、0 次 client_deadline_abandons/auto_played；17 次重锚（16 次时间戳精度保护、1 次决策临界保护），均恢复成功。请求队列 p50=733.5ms、p95=886.8ms、max=1471.8ms；共享限流累计等待 5643962ms，deadline_missed=0。timeout_response=5290（其中 my_timeout_peng=2017、my_timeout_chi=612）；timeout 分类仍应结合服务端事件口径解读，不能等同于客户端丢牌。
 
 ## 后续接口调度修复（2026-09-10）
 
