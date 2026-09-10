@@ -22,6 +22,23 @@
 > 结果见 [平台窗口修复与验收](docs/平台窗口修复与验收.md)。本次已在线
 > 核验指南 **v29**：v28 为排行榜，v29 为功能开关，吃碰协议未变；
 > 只读查询 `match_enabled=true`，账号当时无在途对局。
+>
+> **吃/碰/杠机会损失日志 `claim_miss`（2026-09-10 新增）**：验证“窗口
+> 是否真的丢机会”此前只能事后重放合法集推断，现在客户端直接落盘。
+> 写入条件：phase ∈ {response_peng, response_chi}、镜像能算出非 pass
+> 合法动作，且满足两类之一——① 策略已选动作却未落地（`chosen` 非空：
+> `action_rejected`/`action_uncertain`/`decision_boundary_resync`/
+> `window_already_attempted`/碰窗精确截止/吃窗等待后关闭）；② 服务端
+> timeout 时策略尚未完成决策（`chosen=null` + `server_timeout_peng|chi`）。
+> 无合法动作自动过、策略明确 pass、镜像张数漂移不可评估均不记录。
+> 注意 `claim_miss` ≠ 策略本来一定会执行；统计漏窗损耗须按 `reason`
+> 与 `client_decision` 分开看。字段/口径/统计命令见
+> [平台窗口修复与验收](docs/平台窗口修复与验收.md)。
+> 线上验证（房 `a_59753d3945aa`，默认 12.5/s，10/10 局）：865 动作 0 失败、
+> 0 个 409、0 次 post_uncertain；`claim_miss=25`（chi/peng timeout 未决策
+> 23+1、peng 决策临界重锚 1），23 条 chi 全部回放确认为“窗口内确无本地
+> 决策”。验证后补入窗口决策跟踪（`_window_decisions`）：已本地决策为过
+> 的窗口不再计入 claim_miss，碰窗也不计 auto_played（`tests/test_claim_miss.py`）。
 
 ## 一、规则定稿(与需求方逐条确认)
 
@@ -752,6 +769,8 @@ extract 含 oracle ~1.6ms/决策点。
   - events    事件批原文(离线重放数据源)
   - decision  决策点:phase/合法动作集/所选动作/decide 耗时/
               镜像摘要(手数/墙余/局号);id 与 action 配对
+  - claim_miss 规则允许吃/碰/杠但未成功:chosen(已选动作或 null)/
+              client_decision/reason/legal/chosen_legal,与 decision 配对
   - action    payload/结果(成功或错误码)/耗时/配对决策 id
   - reset     镜像失步重建原因
   - end       终局积分/原因(finished/inaccessible)

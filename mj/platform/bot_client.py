@@ -351,15 +351,43 @@ class BotClient:
             self.stats["stale_trigger_cancelled"] += 1
         self._log(f"陈旧触发作废:{reason}")
 
-    def _deadline_abandon(self, gid, phase, reason):
+    def _deadline_abandon(self, gid, phase, reason, legal=None, chosen=None,
+                          mirror=None, deadline=None):
         """本地根据截止时间放弃提交。
 
         这条路径不能冒充已经观测到的服务端 timeout，也不递增
         auto_played，避免随后收到 timeout 时重复计数。
         """
         self._log(f"我方{reason}({phase}),本地放弃提交，等待服务端状态")
+        if legal:
+            self._claim_miss(gid, phase, legal, chosen=chosen, reason=reason,
+                             mirror=mirror, deadline=deadline)
         with self._stats_lock:
             self.stats["client_deadline_abandons"] += 1
+
+    def _claim_miss(self, gid, phase, legal, chosen=None, reason="",
+                    payload=None, status=None, code="", deadline=None,
+                    mirror=None, seq=None):
+        """记录规则允许、但客户端未成功完成的吃/碰/杠机会。"""
+        # 已完成策略决策时 chosen 为非 pass；服务端 timeout 也记录“规则有
+        # 合法动作但策略尚未完成决策”的窗口，供区分两类损失。
+        undecided_timeout = (chosen is None
+                             and reason.startswith("server_timeout_"))
+        if (phase not in ("response_peng", "response_chi")
+                or not legal or (chosen is None and not undecided_timeout)
+                or chosen == -1):
+            return
+        deadline_at = None
+        if deadline is not None:
+            deadline_at = time.time() + deadline - time.monotonic()
+        if self.recorder is not None:
+            self.recorder.claim_miss(
+                gid, phase, sorted(legal), chosen=chosen, reason=reason,
+                payload=payload, status=status, code=code,
+                deadline_at=deadline_at, seq=seq,
+                pending=None if mirror is None else mirror.pending)
+        self._log(f"规则可{phase}但未成功: legal={sorted(legal)} "
+                  f"chosen={chosen} reason={reason}")
 
     def _state_abandon(self, gid, phase, reason):
         """镜像/手牌状态无法安全决策时的交接诊断。"""
@@ -393,10 +421,6 @@ class BotClient:
                 self.stats["other_timeout_discard"] += 1
             else:
                 self.stats["other_timeout_response"] += 1
-
-    def _mark_no_legal_response(self):
-        with self._stats_lock:
-            self.stats["no_legal_response"] += 1
 
     @staticmethod
     def _epoch_seconds(value):
@@ -577,14 +601,57 @@ class BotClient:
     def _lost_claim(self, mirror):
         """碰窗作废时是否可能损失碰/杠机会:可评估时以真实合法集为准
         (无选项 = 服务端代过与我们自选过等价,不记代打——match 实测
-        22 次作废仅 1 次真持有对子);张数漂移无法评估则保守记账。"""
+        22 次作废仅 1 次真持有对子);张数漂移无法评估则保守记账;本窗
+        已本地决策为过(-1)时不算损失。注意保守记账只影响 auto_played,
+        漂移时算不出合法集,不会写 claim_miss(诊断日志只记可评估的窗口)。"""
         if not mirror.hand_count_ok("response_peng"):
             return True
-        try:
-            g = mirror.build_game("response_peng")
-            return any(a != -1 for a in g.legal_actions())
-        except MirrorInconsistent:
+        if self._window_decision(mirror, "response_peng") == -1:
             return False
+        return bool(self._claim_legal(mirror, "response_peng"))
+
+    @staticmethod
+    def _claim_legal(mirror, phase):
+        """返回规则允许的非 pass 吃/碰/杠动作；无法评估时返回空集。"""
+        if mirror is None or not mirror.hand_count_ok(phase):
+            return []
+        try:
+            g = mirror.build_game(phase)
+            return [a for a in g.legal_actions() if a != -1]
+        except MirrorInconsistent:
+            return []
+
+    def _record_claim_timeout(self, gid, mirror, phase, reason, seq=None):
+        """服务端 timeout 时仍有规则合法动作 → 按本地决策归因写 claim_miss。
+
+        本窗已本地决策为过(-1)不算机会损失,直接跳过;已决策为吃/碰/杠
+        记 chosen=该动作;尚无决策记 chosen=None(决策预算不足)。
+        """
+        legal = self._claim_legal(mirror, phase)
+        if not legal:
+            return []
+        decided = self._window_decision(mirror, phase)
+        if decided == -1:
+            return legal
+        self._claim_miss(gid, phase, legal,
+                         chosen=None if decided == "unset" else decided,
+                         reason=reason, mirror=mirror, seq=seq)
+        return legal
+
+    def _mark_window_decision(self, mirror, phase, act):
+        """记录本窗本地已选动作;timeout 归因据此区分未决策/主动过/已选。"""
+        decisions = getattr(mirror, "_window_decisions", None)
+        if decisions is None:
+            return
+        key = self._window_key(mirror, phase)
+        if key is not None:
+            decisions[key] = act
+
+    def _window_decision(self, mirror, phase):
+        """本窗本地决策:动作值 / -1(主动过) / "unset"(尚未决策)。"""
+        decisions = getattr(mirror, "_window_decisions", None) or {}
+        key = self._window_key(mirror, phase)
+        return decisions.get(key, "unset") if key is not None else "unset"
 
     def _listen_notify(self, gid, wake, stop, sse):
         """SSE 监听线程(GET /api/games/{gid}/notify,v12)。
@@ -798,6 +865,7 @@ class BotClient:
         chi_pending = None  # 吃窗等待态 {"t0","needed","seen"}(提交前保持)
         responded_windows = set()  # 当前对局已成功提交的响应窗身份
         attempted_windows = set()  # 409/未知结果后禁止在同窗盲重试
+        window_decisions = {}  # 窗口身份 → 本地已选动作(timeout 归因用)
         state_deadline = None  # 下一次 /state 的本地窗口截止(monotonic)
         stale_dl_used = False  # 过期截止已用于一次追赶拉取
         next_seat = None       # 下一个动作者预测(懒轮询门;快照后重置)
@@ -861,6 +929,7 @@ class BotClient:
                 try:
                     mirror = self._mirror_from_snapshot(snap)
                     mirror._attempted_windows = attempted_windows
+                    mirror._window_decisions = window_decisions
                     next_seat = None  # 快照后动作者未知,懒门转急直至事件重建
                     # 快照是新的事实边界；旧批次的 trigger/chi 等待态
                     # 不能跨边界携带。已成功/已尝试的响应身份保留在本
@@ -1013,7 +1082,10 @@ class BotClient:
                     if t == "pass" or e.get("kind") == "response":
                         if t == "timeout" and e["seat"] == mirror.me:
                             if e["data"].get("window") == "chi":
-                                # 我方吃窗被服务端代过:彻底作废
+                                # 我方吃窗被服务端代过:记录仍有规则合法动作的机会
+                                self._record_claim_timeout(
+                                    gid, mirror, "response_chi",
+                                    "server_timeout_chi", seq=seq)
                                 chi_pending = None
                                 chi_timeout = True
                             elif e["data"].get("window") == "peng":
@@ -1026,6 +1098,9 @@ class BotClient:
                                     trigger = None
                                     state_deadline = None  # peng 窗已死
                                 if self._lost_claim(mirror):
+                                    self._record_claim_timeout(
+                                        gid, mirror, "response_peng",
+                                        "server_timeout_peng", seq=seq)
                                     self._auto_played(gid, "碰窗超时被代打")
                         else:
                             if chi_pending is not None:
@@ -1342,18 +1417,27 @@ class BotClient:
             stamp = self._epoch_seconds((ev or {}).get("ts"))
             if (self._snapshot_deadline(ev) is None and stamp is not None
                     and stamp + WINDOW_SEC - time.time() <= SUBMIT_EPS):
+                # 尚未完成策略决策，不能判定为“策略想做”。
                 raise _ActionResync("碰窗时间戳精度不足，确认当前窗口")
             act = self._decide_logged(g, mirror, "response_peng", gid)
+            self._mark_window_decision(mirror, "response_peng", act)
             if act != -1:  # 碰/明杠:窗口开启期间立即提交
                 # 只有快照精确截止可直接判定本地放弃。
                 deadline = self._mono_deadline(self._snapshot_deadline(ev))
                 if (deadline is None and stamp is not None
                         and stamp + WINDOW_SEC - time.time() <= SUBMIT_EPS):
+                    self._claim_miss(
+                        gid, "response_peng", claims, chosen=act,
+                        reason="decision_boundary_resync", mirror=mirror)
                     raise _ActionResync("决策期间接近碰窗边界，确认当前窗口")
                 if deadline is not None and deadline - time.monotonic() <= SUBMIT_EPS:
-                    self._deadline_abandon(gid, "response_peng", "碰窗精确截止已到")
+                    self._deadline_abandon(
+                        gid, "response_peng", "碰窗精确截止已到",
+                        legal=claims, chosen=act, mirror=mirror,
+                        deadline=deadline)
                     return None
-                self._submit(mirror, gid, act, "response_peng", deadline=deadline)
+                self._submit(mirror, gid, act, "response_peng", deadline=deadline,
+                             legal=claims)
                 return None
             self._submit(mirror, gid, -1, "response_peng")
             passed_explicitly = True
@@ -1389,6 +1473,7 @@ class BotClient:
         if not chi_opts:
             return
         act = self._decide_logged(g, mirror, "response_chi", gid)
+        self._mark_window_decision(mirror, "response_chi", act)
         if act == -1:
             return
         # 吃窗守卫:超过锚定 T+2+eps(错过关闭点,物理上来不及)则不
@@ -1400,24 +1485,33 @@ class BotClient:
             deadline = t0 + self.window_wait * 2
         now = time.monotonic()
         if deadline is not None and now >= deadline - SUBMIT_EPS:
-            self._deadline_abandon(gid, "response_chi", "吃窗截止前已无提交余量")
+            self._deadline_abandon(gid, "response_chi", "吃窗截止前已无提交余量",
+                                   legal=chi_opts, chosen=act, mirror=mirror,
+                                   deadline=deadline)
             return
         wait = ready - now
         if wait > 0:
             time.sleep(wait)
         now = time.monotonic()
         if deadline is not None and now >= deadline - SUBMIT_EPS:
-            self._deadline_abandon(gid, "response_chi", "吃窗在等待后已关闭")
+            self._deadline_abandon(gid, "response_chi", "吃窗在等待后已关闭",
+                                   legal=chi_opts, chosen=act, mirror=mirror,
+                                   deadline=deadline)
             return
         self._submit(mirror, gid, act, "response_chi", deadline=deadline,
-                     window_key=chi.get("key"))
+                     window_key=chi.get("key"), legal=chi_opts)
 
-    def _submit(self, mirror, gid, act, phase, deadline=None, window_key=None):
+    def _submit(self, mirror, gid, act, phase, deadline=None, window_key=None,
+                legal=None):
         if phase in ("response_peng", "response_chi"):
             key = self._window_key(mirror, phase)
             attempted = getattr(mirror, "_attempted_windows", None)
             if attempted is not None:
                 if key in attempted:
+                    self._claim_miss(
+                        gid, phase, legal or self._claim_legal(mirror, phase),
+                        chosen=act, reason="window_already_attempted",
+                        mirror=mirror, deadline=deadline)
                     return False
                 attempted.add(key)
         payload = action_to_payload(
@@ -1433,6 +1527,15 @@ class BotClient:
             else:
                 self.api.game_action(gid, payload)
         except ApiError as e:
+            if phase in ("response_peng", "response_chi") and act != -1:
+                claim_legal = (legal if legal is not None else
+                               self._claim_legal(mirror, phase))
+                self._claim_miss(
+                    gid, phase, claim_legal, chosen=act,
+                    reason="action_uncertain" if getattr(e, "uncertain", False)
+                    else "action_rejected", payload=payload,
+                    status=e.status, code=e.code, deadline=deadline,
+                    mirror=mirror)
             if self.recorder is not None:
                 self.recorder.action(gid, phase, payload, ok=False,
                                      status=e.status, code=e.code,

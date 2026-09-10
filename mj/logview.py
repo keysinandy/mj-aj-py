@@ -116,6 +116,18 @@ def render(rec, t0):
                     + f" ok ({rec.get('latency_ms')}ms)")
         return (f"{pre} ACT    {p.get('action')} {p.get('tile', '')} "
                 f"✗ {rec.get('status')} {rec.get('code')}")
+    if t == "claim_miss":
+        legal = rec.get("legal") or []
+        lsum = (f"{len(legal)}项" if len(legal) > 8
+                else "[" + ",".join(action_name(a) for a in legal) + "]")
+        chosen = rec.get("chosen")
+        what = (f"策略已选 {action_name(chosen)}" if chosen is not None
+                else "策略未决策")
+        return (f"{pre} MISS   {rec.get('phase')} {what} 规则合法={lsum} "
+                f"reason={rec.get('reason')} "
+                f"({rec.get('legal_check')}"
+                + (f" status={rec.get('status')} {rec.get('code')}"
+                   if rec.get("status") else "") + ")")
     if t == "reset":
         return f"{pre} !!RESET {rec.get('reason')}"
     if t == "end":
@@ -190,6 +202,19 @@ def summarize(recs):
                     if r.get("latency_ms") is not None)
         print(f"决策: {len(dec)} 次, decide p50="
               f"{dl[len(dl) // 2] if dl else '?'}ms max={dl[-1] if dl else '?'}ms")
+    miss = [r for r in recs if r["type"] == "claim_miss"]
+    if miss:
+        by_reason = {}
+        decided = 0
+        for m in miss:
+            key = (m.get("reason"),
+                   "已决策" if m.get("chosen") is not None else "未决策")
+            by_reason[key] = by_reason.get(key, 0) + 1
+            decided += m.get("chosen") is not None
+        detail = ", ".join(f"{k[0]}/{k[1]}×{v}"
+                           for k, v in sorted(by_reason.items()))
+        print(f"吃碰杠机会损失(claim_miss): {len(miss)} 次"
+              f"(已决策 {decided}/未决策 {len(miss) - decided}) {detail}")
     end = next((r for r in reversed(recs) if r["type"] == "end"), None)
     if end:
         print(f"终局: {end.get('reason')} scores={end.get('scores')}")

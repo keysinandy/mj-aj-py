@@ -11,6 +11,77 @@
 - 新增 tests/test_window_confirmation.py；调整旧测试提供权威确认快照。聚焦回归 60 passed, 2 subtests passed。本轮修复后未启动线上匹配，不能宣称线上超时或 409 已清零。
 - 补充镜像/SSE/确认/动作日志回归：18 passed, 2 subtests passed（与聚焦集有重叠，不相加）；git diff --check 通过。不是完整测试集验收。
 - 线上验收房 `a_6e9d146f7906`（日志 `local/games/20260910/u_9812ba08fe2f_a_6e9d146f7906_r1_b*.jsonl`）：10/10 局完成，861 次动作全部成功，0 个 409、0 个 post_uncertain、0 次 client_deadline_abandons/auto_played；17 次重锚（16 次时间戳精度保护、1 次决策临界保护），均恢复成功。请求队列 p50=733.5ms、p95=886.8ms、max=1471.8ms；共享限流累计等待 5643962ms，deadline_missed=0。timeout_response=5290（其中 my_timeout_peng=2017、my_timeout_chi=612）；timeout 分类仍应结合服务端事件口径解读，不能等同于客户端丢牌。
+- 对上述日志做合法集重放后的更正：`auto_played=0` 不等于零窗口损失。2629 个我方 response timeout 中，有 22 个 chi timeout 在镜像中仍有非 pass 合法动作；另有 17 次 peng 临界保护后直接进入 response_chi（16 次尚未决策、1 次已选 peng 但未 POST）。因此本轮至少存在服务端代过/窗口未提交，需把 22 个 chi 作为明确漏吃候选，把 17 个 peng 作为临界窗口漏碰候选；不能宣称“没有错过窗口”。
+
+## 吃/碰/杠 机会损失日志（2026-09-10，claim_miss）
+
+- 新增 `claim_miss` JSONL 记录（`mj/platform/recorder.py` + `BotClient._claim_miss`
+  / `_claim_legal` / `_record_claim_timeout`），回答“规则允许吃/碰/杠却没成”
+  的两类情况：① 策略已选动作但未落地（`chosen` 非空，reason 为
+  `action_rejected`/`action_uncertain`/`*_boundary_resync`/
+  `window_already_attempted`/`碰窗精确截止已到`/`吃窗*已关闭*`）；
+  ② 服务端 timeout 时规则仍有合法动作但策略未决策（`chosen=null`，
+  reason `server_timeout_peng`/`server_timeout_chi`）。无合法动作、策略明确
+  `pass`、镜像张数漂移不可评估均不记录。
+- 碰窗作废的 `_lost_claim()` 改为复用 `_claim_legal()`；`server_timeout_*`
+  记录不再要求张数漂移时保守记账，只写“有非 pass 合法动作”的窗口。
+- `Recorder.claim_miss` 额外写 `client_decision`/`chosen_legal`/`legal_check`
+  （`current_mirror` / `not_decided` / `stale_or_mismatched`），并沿用
+  `decision` id 与 `action` 记录配对。口径与统计命令见
+  `docs/平台窗口修复与验收.md`「吃/碰/杠 机会损失日志」节。
+- 聚焦回归：窗口/时序/镜像 9 个文件 67 passed, 2 subtests passed；`git diff --check`
+  通过。这是局部回归，不是完整套件验收。已知 `tests/test_platform_recorder.py::TestRecorderFullGame::test_full_game_records`
+  在本次改动前即失败（synth 决策日志 `-4 not in [9,15,...]`）并会拖挂同文件
+  后续全场用例，与 claim_miss 无关，未修。
+- 工具链同步：`mj/logview.py` 新增 `MISS` 行渲染（显示“策略已选/策略未决策”）
+  与摘要分类计数（按 reason × 已决策/未决策）；`log_replay`/`log2data` 按
+  type 过滤，新记录类型天然被忽略，无兼容问题。
+- 回归补充：`test_409_recorded` 会永久挂起在 `BotClient.run()` 监督循环
+  （409 重锚后场次不收敛到 max_games）；已用改动前 HEAD 的独立 worktree
+  复现同样挂起栈，确认与 claim_miss 无关。
+
+- 线上验证（默认 12.5/s，房 `a_59753d3945aa`，10/10 局）：actions=865 失败=0、
+  409=0、post_uncertain=0、deadline_abandons=0、auto_played=1；`claim_miss=25`
+  （chi timeout 未决策 23、peng timeout 未决策 1、peng 决策临界重锚已决策 1）。
+  逐条按 pending 回放配对本地决策，23/23 确认“该窗口从无本地决策”，
+  `not_decided` 标注准确。
+- 该验证暴露的语义漏洞已修：原先 `_record_claim_timeout` 只看“有非 pass
+  合法动作”，无法区分“未决策”与“已决策为 `pass`（吃窗 pass 不提交、
+  服务端随后 timeout）”，会把策略主动过误记为未决策。现按窗口身份
+  （`_window_key`）记录 `_window_decisions`：已决策为过 → 不写 claim_miss
+  （碰窗也不计 `auto_played`）；已决策为吃/碰/杠 → `chosen` 记该动作；
+  未决策 → `chosen=null`。新增 `tests/test_claim_miss.py`（4 用例）锁定。
+- 注意：第一轮线上（`a_59753d3945aa`）跑的是**修补前**的构建；修补后已补跑
+  第二轮 `a_8bbc394d729b`（10/10 局）：actions=925 失败=0、409=0、
+  post_uncertain=0、deadline_abandons=0、auto_played=0；`claim_miss=41`
+  （全为 chi timeout 未决策），独立回放 41/41 确认窗口内确无本地决策，
+  无“已决策为过”被误写。本地 chi 决策 65 次全部提交成功（chi=65 动作）：
+  可吃窗口 106 个 → 65 成功 / 41 未及决策 → 瓶颈是 T+2 前拿到权威
+  `response_chi` 快照（`/state` 排队 max 1270ms 同量级），下一步应做调度
+  优化而不是策略侧改动。
+
+## 未及决策根因（2026-09-10，基于 a_8bbc394d729b 回放）
+
+- `decide` 不是瓶颈：成功窗口 decide p50=5ms / max=26ms。
+- 成功路径：权威 `response_chi` 快照在 T+1.1~1.7 到达（p50 T+1.52），
+  POST 在 0.02~0.18s 内完成 → 落在 T+2 前。
+- 失败路径（41 个）：41/41 窗口内无任何快照响应、无 `seq=0` 请求，只有
+  2~3 次增量轮询，单次端到端 ≈1.0s；第 3 次请求在 T+1 前后发出、被排队
+  拖到窗口关闭后才返回，批内直接是吃窗 timeout。
+- 主因：`/state` 端到端 p50=819ms（排队 p50=739ms + hold p50=29ms，
+  hold≥900ms 占 3.8%），10 场共享 12.5/s 使队列饱和、请求节奏≈1 次/秒，
+  而吃窗只有 1s 宽且快照只能在 T+1 后才有意义 → 命中率 65/106≈61%。
+- 放大器：`_make_chi_pending` 的 `needed` 含自己，但 `seen` 只由 `pass`
+  或**他家** timeout 增长；无碰牌选项时不提交 pass、自己的 timeout 走
+  `mine` 分支 → `seen < needed` 恒真 → 必然等到 `ready_mono`(T+1) 才请求
+  权威吃窗快照，把“必须落在 T+1 之后的一次往返”变成硬路径。
+- timeout 计数口径（同房回放，回答“这些数说明什么”）：`my_timeout_chi`
+  683 = 642 无合法吃牌 + 41 有合法吃牌；`my_timeout_peng` 2238 全部无合法
+  碰/杠。即这两个值是**服务端窗口关闭事件数**，绝大多数无事可做、零损失；
+  只有与 `claim_miss` 交集的部分是真实损失。
+- 修复方向（均未实施）：压低共享排队（提 state-rate/分令牌/隔离配额）；
+  削减非窗口轮询占用（帧合并、每场单在途）；修正 `seen` 语义使 T+1 一到
+  即可发起快照请求；兜底方案是“预决策 + 快照校验”，须保持确认后才 POST。
 
 ## 后续接口调度修复（2026-09-10）
 

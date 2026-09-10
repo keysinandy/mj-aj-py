@@ -7,6 +7,7 @@
 - snapshot  快照原文(离线重建锚点:my_hand/公共状态/墙长)
 - events    事件批原文(离线重放数据源)
 - decision  决策点:phase/合法动作集/所选动作/decide 耗时/镜像摘要
+- claim_miss 规则允许的吃/碰/杠未成功(策略已选未成 / 未决策即 timeout)
 - action    动作提交:payload/结果(成功或错误码)/耗时/配对决策 id
 - reset     镜像失步重建原因
 - end       收场:终局积分/原因
@@ -164,6 +165,34 @@ class Recorder:
             rec["digest"] = digest
         log.write(rec)
         return did
+
+    def claim_miss(self, gid, phase, legal, chosen=None, reason="",
+                   payload=None, status=None, code="", deadline_at=None,
+                   seq=None, pending=None):
+        """记录规则允许的吃/碰/杠机会未成功，供离线对账归因。"""
+        rec = {"type": "claim_miss", "phase": phase,
+               "legal": list(legal), "chosen": chosen,
+               "client_decision": chosen is not None, "reason": reason}
+        if chosen is None:
+            rec["chosen_legal"] = None
+            rec["legal_check"] = "not_decided"
+        elif chosen not in legal:
+            rec["chosen_legal"] = False
+            rec["legal_check"] = "stale_or_mismatched"
+        else:
+            rec["chosen_legal"] = True
+            rec["legal_check"] = "current_mirror"
+        # 只读 pending_decision 与其配对，不清空：紧随其后的 action 记录
+        # （POST 被拒/结果未知）仍要按同一 decision id 配对。
+        did = self.log_for(gid).pending_decision
+        if did is not None:
+            rec["decision"] = did
+        for key, value in (("payload", payload), ("status", status),
+                           ("code", code), ("deadline_at", deadline_at),
+                           ("seq", seq), ("pending", pending)):
+            if value is not None and value != "":
+                rec[key] = value
+        self.log_for(gid).write(rec)
 
     def action(self, gid, phase, payload, ok, status=200, code="",
                latency_ms=None, attempts=None, started_at=None,
