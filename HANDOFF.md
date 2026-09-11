@@ -1,5 +1,19 @@
 # Handoff: 杭州麻将平台窗口/SSE 验收（2026-09-10）
 
+## 当前线上测试策略约定（2026-09-11）
+
+后续线上测试对战、窗口调度验收和性能基线优先使用启发式 BOT，运行时必须
+显式指定策略，避免误用 `match_runner.py` 代码默认的 `policy`：
+
+```bash
+python3 -m mj.platform.match_runner --games 10 \
+  --strategy bot --state-rate 15
+```
+
+`policy` 仅用于明确的模型对照/专项实验，需同时记录 `--ckpt`；`random` 仅用于
+规则覆盖或故障排查，不作为线上调度基线。本文件后续新增的线上数据默认按上述
+BOT 命令执行，既有回放中的策略和 checkpoint 记录保持不变。
+
 ## 最新：429 反馈平滑复测（2026-09-11）
 
 在保持 15/s 与默认 SSE+增量 state 下，`StateThrottle` 增加 429 后一次性

@@ -45,8 +45,9 @@ python3 -m mj.platform.runner --strategy policy --ckpt runs/bc0/best.pt --games 
 # (对局日志默认落 local/games/<日期>/<令牌>_<gid>.jsonl;--no-recorder 关闭)
 
 # 自由对战(单全局令牌自动匹配,meta.mode=match 区分来源)
-python3 -m mj.platform.match_runner --games 20   # 默认 ppo4 策略+长轮询,整房退出粒度
-python3 -m mj.platform.match_runner --games 10 --no-notify  # 关闭 SSE，普通轮询排障
+# 线上测试优先启发式 BOT；必须显式指定（runner 代码默认仍为 policy）
+python3 -m mj.platform.match_runner --games 10 --strategy bot --state-rate 15
+python3 -m mj.platform.match_runner --games 10 --strategy bot --no-notify  # 关闭 SSE，普通轮询排障
 
 # 对局日志时间线复盘(按 gid 查 local/games/)
 python3 -m mj.logview <gid> --types decision,action

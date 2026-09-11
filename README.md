@@ -82,11 +82,14 @@ python3 -m mj.platform.runner --strategy random --games 10 --dump
 `local/platform.json` 的 `match_token` 就位后(见上文配置说明):
 
 ```bash
-python3 -m mj.platform.match_runner --games 20                # 默认 ppo4 策略
+# 线上窗口/调度验收：优先显式使用启发式 BOT
+python3 -m mj.platform.match_runner --games 10 --strategy bot --state-rate 15
+
+# policy 仅用于专项模型对照（需明确记录 checkpoint）
 python3 -m mj.platform.match_runner --games 100 \
-    --strategy policy --ckpt runs/ppo4/ckpt_400000.pt         # 换 checkpoint
-python3 -m mj.platform.match_runner --games 20 --strategy bot # 启发式 teacher 上场
-python3 -m mj.platform.match_runner --strategy policy --ckpt runs/bc0/best.pt --games 10 # bc策略
+    --strategy policy --ckpt runs/ppo4/ckpt_400000.pt --state-rate 15
+python3 -m mj.platform.match_runner --strategy policy \
+    --ckpt runs/bc0/best.pt --games 10 --state-rate 15       # BC 对照
 ```
 
 可配置项:
@@ -101,6 +104,8 @@ python3 -m mj.platform.match_runner --strategy policy --ckpt runs/bc0/best.pt --
 | `--no-long-poll` | 关 | 兼容旧参数；当前默认即为 SSE + `/state?seq=N` |
 | `--no-notify` | 关 | 禁用 SSE，退回普通主动 `/state?seq=N` 轮询 |
 | `--dump` | 关 | 原始 /state、/action 报文 dump 到 `local/logs/`(协议排查用) |
+
+> 线上测试约定：`match_runner.py` 的代码默认策略仍是 `policy`，因此线上窗口/调度测试必须显式带 `--strategy bot`。`policy` 只用于明确的模型对照或专项实验；`random` 仅用于规则覆盖/故障排查，不作为性能基线。
 
 对局日志与测试房同构:`local/games/<日期>/<user_id>_<gid>.jsonl`,meta 行带 `mode: match` 标记;`mj.logview` / `mj.log_replay` 复盘对账命令不变。
 
