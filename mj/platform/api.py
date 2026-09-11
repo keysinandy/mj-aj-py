@@ -71,7 +71,8 @@ class StateSnapshotDeadlineExceeded(StateSnapshotError):
 
 def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
              deadline=None, retry=True, retry_429=True,
-             retry_transient=True, error_cls=ApiError, before_attempt=None):
+             retry_transient=True, error_cls=ApiError, before_attempt=None,
+             state_diagnostics=False):
     """执行 HTTP 请求并把本次传输明细留在线程局部供记录器读取。
 
     deadline 使用 monotonic 秒；/state 用它参与限速与退避调度，动作
@@ -88,6 +89,10 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
     attempts = retry_429_count = retry_gateway = retry_network = 0
     backoff_ms = 0.0
     deadline_fast_retry = False
+    # Keep this deliberately small: one dictionary per physical HTTP attempt,
+    # without copying the URL, headers, or response body.  It is enabled only
+    # by Api.game_state so ordinary endpoints retain their old metadata shape.
+    state_attempts = [] if state_diagnostics else None
     allow_retry_429 = bool(retry and retry_429)
     allow_retry_transient = bool(retry and retry_transient)
     is_action = issubclass(error_cls, ActionSubmissionError)
@@ -95,12 +100,51 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
 
     def set_meta():
         _TLS.attempts = attempts
-        _TLS.request_meta = {
+        meta = {
             "attempts": attempts, "retry_429": retry_429_count,
             "retry_gateway": retry_gateway,
             "retry_network": retry_network,
             "backoff_ms": round(backoff_ms, 1),
         }
+        if state_diagnostics:
+            # Copy the list so a caller observing _TLS after the request gets
+            # a stable snapshot even while another retry is being prepared.
+            meta["state_attempts"] = [dict(item) for item in state_attempts]
+            meta["state_physical_attempts"] = len(state_attempts)
+            meta["state_429"] = sum(
+                item.get("status") == 429 for item in state_attempts)
+        _TLS.request_meta = meta
+
+    def record_state_attempt(started_epoch, started_mono, status=None,
+                             error=None):
+        if not state_diagnostics:
+            return
+        item = {
+            "started_epoch": round(started_epoch, 3),
+            "status": status,
+            "latency_ms": round((time.monotonic() - started_mono) * 1000.0,
+                                 1),
+        }
+        if error:
+            item["error"] = error
+        state_attempts.append(item)
+        # Keep the thread-local metadata current on every terminal outcome;
+        # this matters for callers that inspect it after an ApiError.
+        set_meta()
+
+    def response_status(response):
+        status = getattr(response, "status", None)
+        if status is None:
+            getcode = getattr(response, "getcode", None)
+            if getcode is not None:
+                try:
+                    status = getcode()
+                except Exception:
+                    status = None
+        # Test doubles and custom response wrappers sometimes expose a
+        # MagicMock or another object here.  Keep diagnostics JSON-safe and
+        # use null for an unavailable HTTP status.
+        return status if isinstance(status, int) else None
 
     def make_error(status, body, **kwargs):
         kwargs.setdefault("attempts", attempts)
@@ -138,6 +182,12 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
             time.sleep(sec)
             backoff_ms += sec * 1000.0
 
+    # Initialize metadata before the first throttle callback.  If acquiring a
+    # state permit itself fails, the caller still sees a fresh zero-attempt
+    # diagnostic instead of metadata left by the previous request in the same
+    # worker thread.
+    if state_diagnostics:
+        set_meta()
     while True:
         if before_attempt is not None:
             before_attempt()
@@ -154,16 +204,31 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
         req.add_header("Content-Type", "application/json")
         if token:
             req.add_header("Authorization", "Bearer " + token)
+        started_epoch = time.time()
+        started_mono = time.monotonic()
+        attempt_status = None
         try:
             with urllib.request.urlopen(req, timeout=request_timeout(),
                                         context=_CTX) as r:
-                _TLS.request_meta = {
-                    "attempts": attempts, "retry_429": retry_429_count,
-                    "retry_gateway": retry_gateway, "retry_network": retry_network,
-                    "backoff_ms": round(backoff_ms, 1),
-                }
-                return json.loads(r.read().decode())
+                if state_diagnostics:
+                    attempt_status = response_status(r)
+                    # A successful response wrapper without status metadata
+                    # still represents an HTTP 200 from this call.  Keep the
+                    # summary useful while retaining JSON-safe values for
+                    # test doubles and custom wrappers.
+                    if attempt_status is None:
+                        attempt_status = 200
+                raw = r.read()
+                result = json.loads(raw.decode())
+                record_state_attempt(started_epoch, started_mono,
+                                     attempt_status)
+                set_meta()
+                return result
         except urllib.error.HTTPError as e:
+            # Record before reading the body: an HTTPError body is not part of
+            # the diagnostic contract and a broken body stream must not erase
+            # evidence that a physical attempt happened.
+            record_state_attempt(started_epoch, started_mono, e.code)
             if e.code == 429:
                 retry_429_count += 1
                 set_meta()
@@ -202,6 +267,8 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
             raise make_error(e.code, e.read().decode(errors="replace"),
                              uncertain=False) from None
         except (urllib.error.URLError, TimeoutError, OSError) as e:
+            record_state_attempt(started_epoch, started_mono, None,
+                                 type(e).__name__ if state_diagnostics else None)
             failures += 1
             retry_network += 1
             timed_out = is_timeout(e)
@@ -214,6 +281,8 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
             sleep_retry(delay)
             delay = min(delay * 2, 10.0)
         except (http.client.HTTPException, ValueError) as e:
+            record_state_attempt(started_epoch, started_mono, attempt_status,
+                                 type(e).__name__ if state_diagnostics else None)
             # 连接在响应头或 JSON body 中途断开时，服务端可能已经执
             # 行了动作；这类「响应丢失」不能按普通 GET 的重试规则处理。
             if wraps_transport:
@@ -301,7 +370,7 @@ class Api:
         return _request("GET", self._url(f"/api/games/{gid}/state",
                                            {"seq": seq}), token=self.token,
                         timeout=timeout, deadline=deadline,
-                        before_attempt=acquire)
+                        before_attempt=acquire, state_diagnostics=True)
 
     def game_snapshot(self, gid, deadline=None, timeout=0.5):
         """有界地请求 ``seq=0`` 全量快照。

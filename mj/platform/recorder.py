@@ -124,8 +124,13 @@ class Recorder:
         self.log_for(gid, name).write(rec)
 
     def req(self, gid, seq, status, latency_ms, attempts=None, summary=None,
-            transport=None, throttle=None):
-        """记录一次逻辑 /state 请求；新增诊断字段均为可选，兼容旧日志。"""
+            transport=None, throttle=None, request_kind=None):
+        """记录一次逻辑 /state 请求；新增诊断字段均为可选，兼容旧日志。
+
+        ``request_kind`` 只描述调度诊断用途，例如 ``WINDOW_PENG``、
+        ``WINDOW_CHI``、``RESYNC`` 或 ``SSE_DELTA``。它不改变请求语义，
+        省略时旧日志的字段形状保持不变。
+        """
         log = self.log_for(gid)
         log.cursor = seq
         rec = {"type": "req", "seq": seq, "status": status,
@@ -136,7 +141,23 @@ class Recorder:
             rec["transport"] = transport
         if throttle:
             rec["throttle"] = throttle
+        if request_kind:
+            rec["request_kind"] = request_kind
         log.write(rec)
+
+    def window_confirm(self, gid, **fields):
+        """记录一次窗口权威确认过程。
+
+        调用方按确认阶段填充字段；常用字段为 ``phase``、``window_id``、
+        ``seq``、``status``、``request_kind``、``responding_seats``、
+        ``legal``、``chosen``、``deadline_at``、``reason`` 和 ``outcome``。
+        字段保持开放以兼容 peng/chi 两条确认路径，值为 ``None`` 的可选
+        字段不落盘。该记录不会推进事件 cursor。
+        """
+        rec = {"type": "window_confirm"}
+        rec.update({key: value for key, value in fields.items()
+                    if value is not None})
+        self.log_for(gid).write(rec)
 
     def snapshot(self, gid, seq, snap):
         log = self.log_for(gid)
@@ -181,11 +202,12 @@ class Recorder:
             rec["legal_check"] = "stale_or_mismatched"
         else:
             rec["chosen_legal"] = True
-            rec["legal_check"] = "current_mirror"
+            rec["legal_check"] = ("source_window" if reason.startswith("window_confirm_")
+                                  else "current_mirror")
         # 只读 pending_decision 与其配对，不清空：紧随其后的 action 记录
         # （POST 被拒/结果未知）仍要按同一 decision id 配对。
         did = self.log_for(gid).pending_decision
-        if did is not None:
+        if did is not None and chosen is not None:
             rec["decision"] = did
         for key, value in (("payload", payload), ("status", status),
                            ("code", code), ("deadline_at", deadline_at),

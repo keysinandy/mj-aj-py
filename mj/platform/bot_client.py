@@ -50,6 +50,30 @@ class _ActionResync(Exception):
         self.uncertain = uncertain
 
 
+class _WindowConfirm(Exception):
+    """碰窗临界时请求一次权威 seq=0 快照。
+
+    这条路径只为确认窗口事实，不能复用确认前的动作，也不能把秒级
+    弃牌时间戳当作动作授权截止。``schedule_deadline`` 仅传给共享
+    /state 调度器排序；最终是否还能提交只由确认快照的精确 deadline
+    和新的合法集决定。
+    """
+
+    def __init__(self, *, phase, pending, round_no, legal, source_seq=None,
+                 source_ts=None, chosen=None, schedule_deadline=None,
+                 reason="quantized_deadline"):
+        super().__init__(reason)
+        self.phase = phase
+        self.pending = tuple(pending) if pending is not None else None
+        self.round_no = round_no
+        self.legal = tuple(legal or ())
+        self.source_seq = source_seq
+        self.source_ts = source_ts
+        self.chosen = chosen
+        self.schedule_deadline = schedule_deadline
+        self.reason = reason
+
+
 class StateDemand(queue.Queue):
     """每场一个待处理 watermark；单个 play loop 串行执行物理请求。
 
@@ -136,6 +160,19 @@ class BotClient:
             "platform_forced_discard": 0,
             "no_legal_response": 0,
             "stale_trigger_cancelled": 0,
+            # 碰窗临界确认与最终结果分开计数。确认本身不是动作重锚，
+            # 也不代表提交成功；action/response_409/post_uncertain 仍
+            # 维持原有口径。
+            "window_confirm_requests": 0,
+            "window_confirm_open": 0,
+            "window_confirm_closed": 0,
+            "window_confirm_stale": 0,
+            "window_confirm_unconfirmed": 0,
+            "window_confirm_miss": 0,
+            # /state 传输诊断在收到响应后立即累计，避免后续动作覆盖
+            # Api TLS 上下文。
+            "state_attempts": 0,
+            "state_retry_429": 0,
         }
 
     # ---------- 生命周期(监督线程) ----------
@@ -395,12 +432,13 @@ class BotClient:
 
     def _claim_miss(self, gid, phase, legal, chosen=None, reason="",
                     payload=None, status=None, code="", deadline=None,
-                    mirror=None, seq=None):
+                    mirror=None, seq=None, pending=None):
         """记录规则允许、但客户端未成功完成的吃/碰/杠机会。"""
         # 已完成策略决策时 chosen 为非 pass；服务端 timeout 也记录“规则有
         # 合法动作但策略尚未完成决策”的窗口，供区分两类损失。
         undecided_timeout = (chosen is None
-                             and reason.startswith("server_timeout_"))
+                             and (reason.startswith("server_timeout_")
+                                  or reason.startswith("window_confirm_")))
         if (phase not in ("response_peng", "response_chi")
                 or not legal or (chosen is None and not undecided_timeout)
                 or chosen == -1):
@@ -413,9 +451,186 @@ class BotClient:
                 gid, phase, sorted(legal), chosen=chosen, reason=reason,
                 payload=payload, status=status, code=code,
                 deadline_at=deadline_at, seq=seq,
-                pending=None if mirror is None else mirror.pending)
+                pending=(pending if pending is not None else
+                         (None if mirror is None else mirror.pending)))
         self._log(f"规则可{phase}但未成功: legal={sorted(legal)} "
                   f"chosen={chosen} reason={reason}")
+
+    def _record_window_confirm(self, gid, confirm, outcome, *, reason=None,
+                               snap=None, seq=None, legal=None):
+        """写碰窗确认诊断；Recorder 尚未升级时保持 fake 兼容。
+
+        ``window_confirm`` 的字段契约：
+        ``phase``, ``outcome`` (requested/open/closed/stale/unconfirmed/no_legal),
+        ``reason``, ``pending`` (owner,tile), ``round_no``, ``legal``、
+        ``source_seq``、``seq``、``estimated_deadline_at``、
+        ``exact_deadline_at``。这些字段只描述确认过程，不描述动作 POST。
+        """
+        if confirm is None:
+            return
+        phase = confirm.phase
+        fields = {
+            "phase": phase,
+            "outcome": outcome,
+            "reason": reason or confirm.reason,
+            "pending": (list(confirm.pending)
+                         if confirm.pending is not None else None),
+            "round_no": confirm.round_no,
+            "legal": sorted(legal if legal is not None else confirm.legal),
+            "source_seq": confirm.source_seq,
+            "window_id": [phase, confirm.round_no, confirm.source_seq,
+                          confirm.pending],
+            "seq": seq,
+            "estimated_deadline_at": self._epoch_from_mono(
+                confirm.schedule_deadline),
+        }
+        if isinstance(snap, dict):
+            fields["exact_deadline_at"] = self._snapshot_deadline(snap)
+            fields["snapshot_phase"] = snap.get("phase")
+            fields["responding_seats"] = snap.get("responding_seats") or []
+        # JSONL 记录不需要 null 字段，且旧 fake Recorder 可能只接收
+        # 非空字段；保留 pending/round 等稳定字段，丢弃未提供项。
+        fields = {key: value for key, value in fields.items()
+                  if value is not None}
+        with self._stats_lock:
+            if outcome == "requested":
+                self.stats["window_confirm_requests"] += 1
+            elif outcome in ("open", "confirmed"):
+                self.stats["window_confirm_open"] += 1
+            elif outcome in ("closed", "expired", "not_responding",
+                             "deadline_missing"):
+                self.stats["window_confirm_closed"] += 1
+            elif outcome in ("stale", "identity_changed", "new_round"):
+                self.stats["window_confirm_stale"] += 1
+            elif outcome == "unconfirmed":
+                self.stats["window_confirm_unconfirmed"] += 1
+            if outcome == "miss":
+                self.stats["window_confirm_miss"] += 1
+        if self.recorder is not None:
+            writer = getattr(self.recorder, "window_confirm", None)
+            if writer is not None:
+                writer(gid, **fields)
+
+    @classmethod
+    def _epoch_from_mono(cls, mono):
+        """把本地 monotonic 截止转回 epoch，仅用于诊断记录。"""
+        if mono is None:
+            return None
+        try:
+            return time.time() + (float(mono) - time.monotonic())
+        except (TypeError, ValueError):
+            return None
+
+    @classmethod
+    def _confirm_schedule_deadline(cls, stamp):
+        """以秒级弃牌 ts+2 生成仅供 EDF 排序的乐观上界。
+
+        与 ``_srv_deadline`` 不同，这里故意保留已过期值；确认请求即使
+        排队超时也必须发出以取得最终权威状态。调用者绝不以此授权动作。
+        """
+        stamp = cls._epoch_seconds(stamp)
+        if stamp is None:
+            return None
+        return time.monotonic() + (stamp + WINDOW_SEC * 2 - time.time())
+
+    @classmethod
+    def _window_confirm_matches(cls, mirror, confirm, snap=None, seq=None):
+        """确认快照是否仍是原碰窗；不比较脆弱的 ``_window_key``。
+
+        同局同家同牌可能再次出现，因此补充 latest discard 与秒级 ts
+        的一致性检查；牌河计数只作镜像重建提示，不作为硬条件。
+        """
+        if mirror is None or confirm is None:
+            return False
+        if mirror.round_no != confirm.round_no:
+            return False
+        if mirror.pending is None or confirm.pending is None:
+            return False
+        if tuple(mirror.pending) != tuple(confirm.pending):
+            return False
+        if (confirm.source_seq is not None and seq is not None
+                and seq < confirm.source_seq):
+            return False
+        if isinstance(snap, dict) and snap.get("last_discard"):
+            try:
+                if tidx(snap["last_discard"]) != confirm.pending[1]:
+                    return False
+            except (KeyError, TypeError, ValueError):
+                return False
+        return True
+
+    def _resolve_window_confirm(self, gid, mirror, snap, confirm, seq=None):
+        """消费一次临界碰窗确认，返回 ``confirmed`` 或最终结果。
+
+        ``confirmed`` 只说明快照允许重新计算动作；动作仍由
+        ``_act_window`` 用快照阶段、responding、精确 deadline 和新合法集
+        再次判断。其它结果不会沿用旧动作。
+        """
+        if not isinstance(snap, dict) or not self._window_confirm_matches(
+                mirror, confirm, snap=snap, seq=seq):
+            reason = "new_round" if (mirror is not None and
+                                      mirror.round_no != confirm.round_no) \
+                else "identity_changed"
+            self._record_window_confirm(gid, confirm, "stale", reason=reason,
+                                        snap=snap, seq=seq)
+            if confirm.legal and confirm.chosen != -1:
+                self._claim_miss(
+                    gid, confirm.phase, confirm.legal, chosen=confirm.chosen,
+                    reason="window_confirm_" + reason, mirror=None, seq=confirm.source_seq,
+                    pending=confirm.pending)
+                self._record_window_confirm(gid, confirm, "miss",
+                                            reason=reason, snap=snap, seq=seq)
+            return "stale"
+
+        phase = snap.get("phase")
+        seat = mirror.me
+        responding = seat in (snap.get("responding_seats") or [])
+        exact = self._snapshot_deadline(snap)
+        current_legal = self._claim_legal(mirror, "response_peng") \
+            if phase == "response_peng" else []
+        if phase != "response_peng":
+            outcome, reason = "closed", "phase_changed"
+        elif not responding:
+            outcome, reason = "not_responding", "seat_not_responding"
+        elif exact is None:
+            outcome, reason = "deadline_missing", "exact_deadline_missing"
+        elif (confirm.source_ts is not None
+              and exact > confirm.source_ts + WINDOW_SEC * 2):
+            # 秒级 ts+2 只能给调度器提供乐观上界；如果精确 deadline
+            # 已跳到它之后，当前快照身份无法确认，不能把新窗当旧窗，
+            # 也不能据此写最终 miss。
+            outcome, reason = "identity_unconfirmed", "deadline_outside_source_window"
+        elif exact - time.time() <= SUBMIT_EPS:
+            outcome, reason = "expired", "exact_deadline_expired"
+        elif not current_legal:
+            outcome, reason = "no_legal", "new_legal_set_empty"
+        else:
+            self._record_window_confirm(
+                gid, confirm, "open", reason="authoritative_open",
+                snap=snap, seq=seq, legal=current_legal)
+            return "confirmed"
+
+        # 缺少精确 deadline 只能说明无法授权动作，不能推断服务端已
+        # 关闭窗口；这类结果保持 unconfirmed，不记最终 miss。
+        if outcome in ("deadline_missing", "identity_unconfirmed"):
+            self._record_window_confirm(gid, confirm, "unconfirmed",
+                                        reason=reason, snap=snap, seq=seq,
+                                        legal=current_legal)
+            return "unconfirmed"
+
+        self._record_window_confirm(gid, confirm, outcome, reason=reason,
+                                    snap=snap, seq=seq, legal=current_legal)
+        # 新快照已证明原碰窗不能再安全提交；只有原镜像确实有候选时
+        # 才落最终 miss。预确认阶段绝不写 claim_miss。
+        if outcome != "no_legal" and confirm.legal and confirm.chosen != -1:
+            self._claim_miss(
+                gid, confirm.phase, confirm.legal, chosen=confirm.chosen,
+                reason="window_confirm_" + reason, mirror=None, seq=confirm.source_seq,
+                pending=confirm.pending)
+            self._record_window_confirm(gid, confirm, "miss", reason=reason,
+                                        snap=snap, seq=seq,
+                                        legal=current_legal)
+        return outcome
 
     def _state_abandon(self, gid, phase, reason):
         """镜像/手牌状态无法安全决策时的交接诊断。"""
@@ -894,6 +1109,8 @@ class BotClient:
         seq = 0
         mirror = None
         chi_pending = None  # 吃窗等待态 {"t0","needed","seen"}(提交前保持)
+        window_confirm = None  # 临界 response_peng 的一次权威确认
+        request_kind = "RESYNC"  # 本轮 /state 的诊断分类，消费后清空
         responded_windows = set()  # 当前对局已成功提交的响应窗身份
         attempted_windows = set()  # 409/未知结果后禁止在同窗盲重试
         window_decisions = {}  # 窗口身份 → 本地已选动作(timeout 归因用)
@@ -910,18 +1127,43 @@ class BotClient:
             t0 = time.monotonic()
             state_deadline, stale_dl_used = self._stale_deadline_step(
                 state_deadline, stale_dl_used, t0)
+            used_request_kind = request_kind
+            if used_request_kind is None:
+                if window_confirm is not None:
+                    used_request_kind = "WINDOW_PENG"
+                elif chi_pending is not None:
+                    used_request_kind = "WINDOW_CHI"
+                elif seq == 0:
+                    used_request_kind = "RESYNC"
+                else:
+                    used_request_kind = "SSE_DELTA"
+            # request_kind 描述这一轮物理/逻辑 state 请求，返回后立即
+            # 清除；后续动作或普通追赶不能继承窗口标签。
+            request_kind = None
+            state_attempts = None
+            state_transport = None
             try:
-                res = self._state(gid, seq, state_deadline)
+                res = self._state(gid, seq, state_deadline,
+                                  request_kind=used_request_kind)
+                state_attempts = self._attempts()
+                state_transport = self._transport()
+                self._record_state_transport(state_attempts, state_transport)
                 if isinstance(wake, StateDemand):
                     wake.acknowledge(res.get("seq", seq))
                 status = 200
             except ApiError as e:
                 status = e.status
+                # Api TLS 诊断必须在后续 throttle/日志路径前取出；错误
+                # 请求同样计入物理 state 尝试和 429 重试。
+                state_attempts = self._attempts()
+                state_transport = self._transport()
+                self._record_state_transport(state_attempts, state_transport)
                 ticket = self._throttle_ticket()
                 self._record_throttle(ticket)
                 if rec is not None:
-                    rec.req(gid, seq, status, _ms(t0), self._attempts(),
-                            transport=self._transport(), throttle=ticket)
+                    self._record_state_req(
+                        rec, gid, seq, status, _ms(t0), state_attempts,
+                        state_transport, ticket, used_request_kind)
                 if e.status == 404:
                     # 场次不可访问(轮次切换/房间回收):视作已结束计数
                     self._log(f"场次 {gid} 已不可访问")
@@ -935,10 +1177,15 @@ class BotClient:
             self._record_throttle(ticket)
             lazy_until = time.monotonic() + LAZY_POLL_WAIT
             if rec is not None:
-                rec.req(gid, seq, status, _ms(t0), self._attempts(),
-                        self._state_summary(res), transport=self._transport(),
-                        throttle=ticket)
+                self._record_state_req(
+                    rec, gid, seq, status, _ms(t0), state_attempts,
+                    state_transport, ticket, used_request_kind,
+                    summary=self._state_summary(res))
             if res.get("finished"):
+                if window_confirm is not None:
+                    self._resolve_window_confirm(
+                        gid, None, None, window_confirm, seq=res.get("seq"))
+                    window_confirm = None
                 snap = res.get("snapshot") or {}
                 with self._stats_lock:
                     self.stats["games"] += 1
@@ -966,15 +1213,24 @@ class BotClient:
                     mirror._attempted_windows = attempted_windows
                     mirror._window_decisions = window_decisions
                     next_seat = None  # 快照后动作者未知,懒门转急直至事件重建
+                    confirm_outcome = None
+                    if window_confirm is not None:
+                        pending_confirm = window_confirm
+                        window_confirm = None
+                        confirm_outcome = self._resolve_window_confirm(
+                            gid, mirror, snap, pending_confirm,
+                            seq=res.get("seq", seq))
                     # 快照是新的事实边界；旧批次的 trigger/chi 等待态
                     # 不能跨边界携带。已成功/已尝试的响应身份保留在本
                     # 局循环内，防止 seq=0 后重复 POST。
                     chi_pending = self._act_on_snapshot(
                         mirror, snap, gid,
                         responded_keys=responded_windows,
-                        attempted_keys=attempted_windows)
+                        attempted_keys=attempted_windows,
+                        allow_peng=(confirm_outcome in (None, "confirmed", "stale")))
                     if chi_pending is not None:
                         state_deadline = chi_pending.get("deadline_mono")
+                        request_kind = "WINDOW_CHI"
                         window_responded = bool(
                             self._window_key(mirror, "response_peng",
                                              snap=snap)
@@ -985,13 +1241,27 @@ class BotClient:
                     else:
                         state_deadline = None
                 except Exception as ex:
+                    if isinstance(ex, _WindowConfirm):
+                        window_confirm = ex
+                        seq, mirror = 0, None
+                        chi_pending = None
+                        state_deadline = ex.schedule_deadline
+                        request_kind = "WINDOW_PENG"
+                        next_seat = None
+                        window_responded = True
+                        self._record_window_confirm(
+                            gid, ex, "requested", reason=ex.reason,
+                            seq=ex.source_seq)
+                        continue
                     if isinstance(ex, _ActionResync):
                         self._log(f"动作结果需重锚: {ex.reason}")
                         if rec is not None:
                             rec.reset(gid, f"动作结果需重锚: {ex.reason}")
                         seq, mirror = 0, None
                         chi_pending = None
+                        window_confirm = None
                         state_deadline = None
+                        request_kind = "RESYNC"
                         next_seat = None
                         window_responded = True
                         continue
@@ -1007,7 +1277,9 @@ class BotClient:
                                   f"快照决策异常: {type(ex).__name__}: {ex}")
                     seq, mirror = 0, None
                     chi_pending = None
+                    window_confirm = None
                     state_deadline = None
+                    request_kind = "RESYNC"
                     next_seat = None
                     window_responded = True
                 continue
@@ -1201,6 +1473,7 @@ class BotClient:
                         chi_fetches += 1
                         seq = 0
                         state_deadline = chi_deadline
+                        request_kind = "WINDOW_CHI"
                         chi_pending = None
                         continue
                     # 有碰/杠选项:按原语义等响应观测齐/转换点,再抓快照确认
@@ -1220,6 +1493,7 @@ class BotClient:
                             continue
                     seq = 0
                     state_deadline = chi_pending.get("deadline_mono")
+                    request_kind = "WINDOW_CHI"
                     chi_pending = None
                     continue
                 elif self.long_poll:
@@ -1279,6 +1553,7 @@ class BotClient:
                             chi_fetches += 1
                             seq = 0
                             state_deadline = chi_deadline
+                            request_kind = "WINDOW_CHI"
                             chi_pending = None
                         else:
                             state_deadline = (chi_pending["t0"]
@@ -1303,13 +1578,27 @@ class BotClient:
                         + random.random() * 0.3)
                     lazy_until = max(lazy_until, lazy_floor)
             except Exception as ex:
+                if isinstance(ex, _WindowConfirm):
+                    window_confirm = ex
+                    seq, mirror, trigger = 0, None, None
+                    chi_pending = None
+                    state_deadline = ex.schedule_deadline
+                    request_kind = "WINDOW_PENG"
+                    next_seat = None
+                    window_responded = True
+                    self._record_window_confirm(
+                        gid, ex, "requested", reason=ex.reason,
+                        seq=ex.source_seq)
+                    continue
                 if isinstance(ex, _ActionResync):
                     self._log(f"动作结果需重锚: {ex.reason}")
                     if rec is not None:
                         rec.reset(gid, f"动作结果需重锚: {ex.reason}")
                     seq, mirror, trigger = 0, None, None
                     chi_pending = None
+                    window_confirm = None
                     state_deadline = None
+                    request_kind = "RESYNC"
                     next_seat = None
                     window_responded = True
                     continue
@@ -1328,7 +1617,9 @@ class BotClient:
                               f"决策异常: {type(ex).__name__}: {ex}")
                 seq, mirror, trigger = 0, None, None
                 chi_pending = None
+                window_confirm = None
                 state_deadline = None  # 重锚后旧窗截止作废(防滞留虚增 dm)
+                request_kind = "RESYNC"
                 next_seat = None
                 window_responded = True
                 continue
@@ -1375,12 +1666,53 @@ class BotClient:
                 "deadline_missed": ticket.deadline_missed,
                 "deadline_left_ms": ticket.deadline_left_ms}
 
-    def _state(self, gid, seq, deadline):
-        """向真实 Api 传截止时间；保持既有 duck-typed fake API 兼容。"""
+    def _state(self, gid, seq, deadline, request_kind=None):
+        """向真实 Api 传截止；request_kind 留在逻辑请求日志中。"""
         from .api import Api
         if isinstance(self.api, Api):
             return self.api.game_state(gid, seq, deadline=deadline)
         return self.api.game_state(gid, seq)
+
+    def _record_state_transport(self, attempts, transport):
+        """收到 state 返回后立即汇总物理尝试/429，避免动作覆盖 TLS。"""
+        if isinstance(transport, dict):
+            physical = transport.get("state_physical_attempts")
+            if physical is None:
+                physical = transport.get("attempts")
+            retry_429 = transport.get("state_429")
+            if retry_429 is None:
+                retry_429 = transport.get("retry_429", 0)
+        else:
+            physical = attempts
+            retry_429 = 0
+        try:
+            physical = int(physical) if physical is not None else 1
+        except (TypeError, ValueError):
+            physical = 1
+        try:
+            retry_429 = int(retry_429 or 0)
+        except (TypeError, ValueError):
+            retry_429 = 0
+        with self._stats_lock:
+            self.stats["state_attempts"] += max(physical, 0)
+            self.stats["state_retry_429"] += max(retry_429, 0)
+
+    @staticmethod
+    def _record_state_req(rec, gid, seq, status, latency_ms, attempts,
+                          transport, throttle, request_kind, summary=None):
+        """调用新旧 Recorder.req，给旧 fake 保持可选字段兼容。"""
+        kwargs = {"transport": transport, "throttle": throttle}
+        if summary is not None:
+            kwargs["summary"] = summary
+        try:
+            params = inspect.signature(rec.req).parameters
+        except (TypeError, ValueError):
+            params = {}
+        if ("request_kind" in params
+                or any(p.kind == inspect.Parameter.VAR_KEYWORD
+                       for p in params.values())):
+            kwargs["request_kind"] = request_kind
+        rec.req(gid, seq, status, latency_ms, attempts, **kwargs)
 
     def _record_throttle(self, ticket):
         if ticket is None:
@@ -1414,7 +1746,7 @@ class BotClient:
         return mirror
 
     def _act_on_snapshot(self, mirror, snap, gid, responded_keys=None,
-                         attempted_keys=None):
+                         attempted_keys=None, allow_peng=True):
         """快照驱动的决策兜底(开局直抽/409 重建后的窗口)。
 
         response_peng 快照不能直接丢弃：若本人只需过碰窗，返回吃窗等待态，
@@ -1429,8 +1761,19 @@ class BotClient:
         if phase == "draw" and snap.get("turn") == seat:
             self._act_draw(mirror, gid)
             return None
-        if phase == "response_peng" \
+        if phase == "response_peng" and allow_peng \
                 and seat in (snap.get("responding_seats") or []):
+            if self._snapshot_deadline(snap) is None:
+                # 快照缺少截止时不能把未完成的确认变成无界 POST。
+                return None
+            key = self._window_key(mirror, "response_peng", snap=snap)
+            if key in attempted_keys or key in responded_keys:
+                # 服务端 responding_seats 不保证只包含尚未响应者。
+                # 重复快照不得再决策 peng；后续 chi 仍须独立权威确认。
+                return self._make_chi_pending(
+                    mirror, snap=snap, phase_hint=phase,
+                    passed_explicitly=key in responded_keys,
+                    responded_keys=responded_keys, attempted_keys=attempted_keys)
             return self._act_window(mirror, snap, gid)
         if phase == "response_chi" \
                 and seat in (snap.get("responding_seats") or []):
@@ -1504,7 +1847,11 @@ class BotClient:
             if (self._snapshot_deadline(ev) is None and stamp is not None
                     and stamp + WINDOW_SEC - time.time() <= SUBMIT_EPS):
                 # 尚未完成策略决策，不能判定为“策略想做”。
-                raise _ActionResync("碰窗时间戳精度不足，确认当前窗口")
+                raise _WindowConfirm(
+                    phase="response_peng", pending=mirror.pending,
+                    round_no=mirror.round_no, legal=claims,
+                    source_seq=(ev or {}).get("seq"), source_ts=stamp,
+                    schedule_deadline=self._confirm_schedule_deadline(stamp))
             act = self._decide_logged(g, mirror, "response_peng", gid)
             self._mark_window_decision(mirror, "response_peng", act)
             if act != -1:  # 碰/明杠:窗口开启期间立即提交
@@ -1512,10 +1859,13 @@ class BotClient:
                 deadline = self._mono_deadline(self._snapshot_deadline(ev))
                 if (deadline is None and stamp is not None
                         and stamp + WINDOW_SEC - time.time() <= SUBMIT_EPS):
-                    self._claim_miss(
-                        gid, "response_peng", claims, chosen=act,
-                        reason="decision_boundary_resync", mirror=mirror)
-                    raise _ActionResync("决策期间接近碰窗边界，确认当前窗口")
+                    raise _WindowConfirm(
+                        phase="response_peng", pending=mirror.pending,
+                        round_no=mirror.round_no, legal=claims,
+                        source_seq=(ev or {}).get("seq"), source_ts=stamp,
+                        chosen=act,
+                        schedule_deadline=self._confirm_schedule_deadline(stamp),
+                        reason="decision_boundary")
                 if deadline is not None and deadline - time.monotonic() <= SUBMIT_EPS:
                     self._deadline_abandon(
                         gid, "response_peng", "碰窗精确截止已到",

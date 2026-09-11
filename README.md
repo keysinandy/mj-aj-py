@@ -97,7 +97,7 @@ python3 -m mj.platform.match_runner --strategy policy --ckpt runs/bc0/best.pt --
 | `--ckpt` | `runs/ppo4/ckpt_350000.pt` | policy 策略的 checkpoint,BC(`best.pt`)与 PPO(`ckpt_*.pt`)双格式均可;备选 `runs/bc0/best.pt`、`runs/ppo4/ckpt_400000.pt` |
 | `--games` | `10` | 打满场数,**以整房为退出粒度**(不中途弃房——弃房后剩余场次会被服务端代打,污染他人对局) |
 | `--config` | `local/platform.json` | 配置文件路径 |
-| `--state-rate` | `12.5` | 每令牌共享的 /state 请求预算（次/秒） |
+| `--state-rate` | `15` | 每令牌共享的 /state 请求预算（次/秒） |
 | `--no-long-poll` | 关 | 兼容旧参数；当前默认即为 SSE + `/state?seq=N` |
 | `--no-notify` | 关 | 禁用 SSE，退回普通主动 `/state?seq=N` 轮询 |
 | `--dump` | 关 | 原始 /state、/action 报文 dump 到 `local/logs/`(协议排查用) |
@@ -118,7 +118,7 @@ python3 -m mj.bc_train --data "data/bc_match/shard_*.npz" \
 ### 3. 注意事项(实测口径)
 
 - **退出粒度**:`--games N` 打满 N 场即止,但总会打完当前房(一房 10 场);想多攒数据把 N 给大点
-- **接收模式**:默认使用 `/state` 长轮询；`--no-long-poll` 切换 `/notify` SSE 唤醒后拉取增量，SSE 帧不直接推进游标。两种模式共享每令牌限速；历史延迟分布不构成当前环境的延迟保证
+- **接收模式**:默认使用 `/notify` SSE 唤醒后拉取增量 `/state`，SSE 帧不直接推进游标；`--no-long-poll` 保留为兼容参数，`--no-notify` 退回普通轮询。各场共享每令牌限速
 - **错误自愈**:409 MATCH_BUSY/MATCH_LIMIT_REACHED 自动退避重试(10s);房间 finished ~60s 宽限关停后 404 属正常,自动开下一房;崩溃重启后重调 `/api/match` 幂等返回原房(v24)
 - **永久错误**:403 PORTAL_BINDING_REQUIRED = 令牌非门户绑定；403 FEATURE_DISABLED = 平台关闭新自由匹配（v29），均不自动重试
 - **排行榜曝光**:auto 房整场完整打完会计入门户排行榜(积分榜/胡大牌榜/单场得分榜)
