@@ -295,6 +295,35 @@ locked 手牌向听数虚高 bug(见下)。
     **待办**:平台 fan-calc 对拍复核(需内网手动)——修复只放宽
     is_win,与 shanten.py 既有口径对齐;平台指南 v27 无"财神不可
     补顺子前置位"的限定,但按约定规则改动应过一遍对拍
+11. **吃/碰反应侧只比 shanten——等向听进张减半的碰照做**(2026-09-11,
+    openspec change `bot-react-full-eval`):旧 _choose_react 的门槛
+    是 `after_s <= cur_s`,副露后必须立即舍牌的最终牌面完全不可见
+    (ukeire/结构损失不参与),且 `cur_s` 的"含刚打出的候选牌"注释
+    系误导(反应玩家手牌本不含他家 pending 牌,真正问题是 PASS 基准
+    只覆盖向听数单维)。重写为"副露 + 最佳弃牌"完整评价:PASS
+    基准 `_eval_standing(hand, locked, vis)` → (s, uke) 与 claim 后
+    need+1 态手牌枚举舍牌(_post_claim_min_shanten → _best_standing,
+    仅最小向听舍牌算 ukeire)同键比较;等向听需进张增量
+    ≥ PONG_UKE_GAIN(2)/CHOW_UKE_GAIN(4);多候选择优
+    向听→进张→弃牌结构损失→动作序。**KONG 边界**:KONG_OPEN 与
+    PONG 同窗竞争(h[tile]==3 时同窗),PONG 换评价体系后相对结果
+    无法保持,故 KONG_OPEN ∈ acts 时整窗(含 PONG)走 legacy 决策
+    (_legacy_claim_react,行为与旧实现逐动作一致);暗杠/加杠本就
+    不在 bot 的决策集(choose_action discard 分支只处理 HU/弃牌),
+    KONG 三态统一另立 change。vis 快照不变量:pending 牌已入河
+    (game.py _do_discard 先 append 再 _begin_react)、claim 时移入
+    自家副露,claim 前后可见总量不变,单快照贯穿评价(有测试)。
+    性能:两阶段评价(向听扫描先行、ukeire 懒算)实测吃窗均 3.9
+    ukeire/窗(最大 30)、纯碰窗均 2.5(最大 12,含 PASS 基准 1 次),
+    KONG legacy 窗 0;交错 A/B 自博弈吞吐 -2%~-10%(机器后台负载
+    波动,15% 闸门内)。七对无特判:副露后 shanten 的七对分支自动
+    失效(_chiitoi locked>0 → 9),PASS 基准保留——"自然偏向保护"
+    而非绝对 guard(七对同向听且副露进张大幅改善时仍可能吃碰)。
+    验收:tests/test_bot.py::TestReactDecision 16 用例(向听下降吃/
+    碰、两种吃法选最终牌面优者、等向听进张增量恰达/未达门槛边界、
+    KONG 同窗 legacy 不漂移、七对保护、vis 不变量、副露 0/1/2 张数
+    三档);全量 283 passed。教师分布变化未重训管线(BC/PPO 重跑
+    另行决策)。
 
 
 ### 性能现状(2026-09-03,shanten 剪枝界重构 + shanten/is_win 记忆化)

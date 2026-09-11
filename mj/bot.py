@@ -6,9 +6,12 @@
 1. 摸牌阶段弃牌:最小化向听数 → 保护财神 → 最大化进张数 →
    最小化牌型结构损失 → 少喂下家 → tile 编号(仅稳定排序)。
    同向听候选**全部**参与进张比较,不再按编号预截断。
-2. 吃/碰/杠:向听数下降才做;杠额外要求不破坏听牌结构
-  (杠开 ×2 的期望价值由补充摸牌体现,简单起见杠在向听数
-   不变时也做——加速摸牌且杠开有倍率加成)。
+2. 吃/碰:与 PASS 基准(反应时点站立牌面的 (shanten, ukeire))比较
+   "副露 + 最佳弃牌"后的最终站立牌面——向听下降才做;等向听需
+   进张增量达标(PONG≥2/CHOW≥4,补偿副露损失的手牌灵活度);
+   多候选按 向听→进张→弃牌结构损失→稳定动作序 择优。
+   KONG_OPEN 合法时整个 claim 窗口(含 PONG)沿用既有决策
+   (明杠立即补牌、补牌期望模型另立 change)。
 3. 打牌倾向:少喂牌——避开下家可能吃的相邻牌(简单启发)。
 """
 
@@ -111,6 +114,76 @@ def _feed_risk(g, seat, t):
     return risk
 
 
+# 等向听时副露的最小进张增量(门槛):碰损失一点手牌自由度,
+# 吃受上家位置与两摊上限(CHOW_LIMIT)限制更多,门槛更高。
+PONG_UKE_GAIN = 2
+CHOW_UKE_GAIN = 4
+
+
+def _eval_standing(hand, locked, vis):
+    """站立暗牌(need 态)的门槛判据 (shanten, ukeire)。
+
+    PASS 基准与 claim 后站立牌面同口径;ukeire 按可见牌折算真实剩余
+    进张(vis 须含被评估手牌——claim 前后可见总量不变,快照可复用)。
+    _choose_react 出于性能将其内联为懒算(shanten 先行、等向听才
+    ukeire),本函数是同语义的规范入口(测试用)。
+    """
+    return (shanten(hand, locked), ukeire(hand, locked, vis)[2])
+
+
+def _post_claim_min_shanten(hand, locked):
+    """need+1 态手牌各舍牌向听的最小值与候选(仅最小向听,财神保护)。
+
+    返回 (best_s, [(d, 舍牌后手牌), ...]);无候选(手牌全财神)返回
+    (None, [])。
+    """
+    best_s, cands = None, []
+    for d in range(34):
+        if hand[d] <= 0 or d == W:
+            continue
+        c = list(hand)
+        c[d] -= 1
+        s = shanten(c, locked)
+        if best_s is None or s < best_s:
+            best_s, cands = s, [(d, c)]
+        elif s == best_s:
+            cands.append((d, c))
+    return best_s, cands
+
+
+def _best_standing(cands, locked, vis, post_hand):
+    """最小向听舍牌候选中取最优站立,返回 (ukeire, 结构损失, 舍牌)。
+
+    排序:进张多 → 结构损失小 → 舍牌编号(稳定)。
+    """
+    best = None  # (排序键, uke, shape, d)
+    for d, c in cands:
+        uke = ukeire(c, locked, vis)[2]
+        shape = _discard_shape_cost(post_hand, d)
+        key = (-uke, shape, d)
+        if best is None or key < best[0]:
+            best = (key, uke, shape, d)
+    return (best[1], best[2], best[3])
+
+
+def _best_post_claim_discard(hand, locked, vis):
+    """need+1 态手牌(副露完成、待立即舍牌)枚举舍牌,返回最优
+    (shanten, ukeire, 弃牌结构损失, 舍牌)。
+
+    对每种合法舍牌后的 need 态站立手牌取 (shanten, ukeire) 字典序
+    最优——实现上仅对最小向听候选计算 ukeire(向听是硬约束,更高
+    向听的舍牌不可能胜出)。财神保护与 choose_discard 同口径:W 不入
+    候选(手牌全财神的理论边缘兜底舍出)。
+    """
+    best_s, cands = _post_claim_min_shanten(hand, locked)
+    if not cands:
+        c = list(hand)
+        c[W] -= 1
+        return (shanten(c, locked), ukeire(c, locked, vis)[2], 0, W)
+    uke, shape, d = _best_standing(cands, locked, vis, hand)
+    return (best_s, uke, shape, d)
+
+
 def _should_piao(g, seat):
     """弃胡打白飘判定:成胡在手的 14 张里打出一张财神后,
     站立手牌仍听任意牌(爆头态保持,下次摸牌必胡,倍率翻倍)。
@@ -144,47 +217,103 @@ def choose_action(g, seat):
 
 
 def _choose_react(g, seat, acts):
+    """吃/碰按"副露 + 最佳弃牌后站立牌面"与 PASS 基准比较。
+
+    门槛:向听下降即做;等向听需进张增量 ≥ PONG_UKE_GAIN /
+    CHOW_UKE_GAIN;向听上升不做。多个过门槛候选(限当前 react
+    mode 的合法候选——引擎 claim 窗只有 PONG/KONG_OPEN、吃窗只有
+    CHOW,二者不同窗竞争)按 更低向听 → 更高进张 → 更低弃牌
+    结构损失 → 稳定动作序 择优。KONG_OPEN 合法时整窗走 legacy
+    (PONG 换评价体系后与 KONG 的相对结果无法保持,见
+    _legacy_claim_react)。
+    """
+    if KONG_OPEN in acts:
+        return _legacy_claim_react(g, seat, acts)
+
     owner, tile = g.pending
     hand = g.hands[seat]
     locked = len(g.melds[seat])
-    base_hand = list(hand)
-    best_act, best_key = PASS, None
+    vis = g.visible_counts(seat)  # claim 前后可见总量不变,快照复用
 
-    def eval_after(act, remove):
-        c = list(base_hand)
+    # 两阶段评价:先向听门槛(零 ukeire 止步多数被拒窗口),等向听
+    # 才懒算 PASS/claim 进张;择优仅在多候选同向听时补算。
+    pass_s = shanten(hand, locked)
+    pass_uke = None
+
+    options = []  # (act, s, cands, 副露后手牌, uke, shape)
+
+    def consider(act, remove, gain):
+        nonlocal pass_uke
+        c = list(hand)
         for t, n in remove:
             c[t] -= n
-        return shanten(c, locked + 1)
-
-    cur_s = shanten(hand, locked)  # 含刚打出的候选牌(不精确,仅参考)
+        s, cands = _post_claim_min_shanten(c, locked + 1)
+        if not cands or s > pass_s:
+            return  # 向听门槛外:省去全部进张计算
+        uke = shape = None
+        if s == pass_s:  # 等向听:需进张增量 ≥ gain
+            uke, shape, _d = _best_standing(cands, locked + 1, vis, c)
+            if pass_uke is None:
+                pass_uke = ukeire(hand, locked, vis)[2]
+            if uke - pass_uke < gain:
+                return
+        options.append((act, s, cands, c, uke, shape))
 
     if PONG in acts:
-        s = eval_after(PONG, [(tile, 2)])
-        key = (s, 0)
-        if best_key is None or key < best_key:
-            best_act, best_key = PONG, key
-    if KONG_OPEN in acts:
-        s = eval_after(KONG_OPEN, [(tile, 3)])
-        # 杠开期望:向听数不变也杠(加速+倍率)
-        key = (s, -1)
-        if best_key is None or key < best_key:
-            best_act, best_key = KONG_OPEN, key
+        consider(PONG, [(tile, 2)], PONG_UKE_GAIN)
     for a in (CHOW_LOW, CHOW_MID, CHOW_HIGH):
         if a not in acts:
             continue
         pos = CHOW_LOW - a
         start = tile - pos
         remove = [(x, 1) for x in (start, start + 1, start + 2) if x != tile]
-        s = eval_after(a, remove)
-        key = (s, 1)
+        consider(a, remove, CHOW_UKE_GAIN)
+
+    if not options:
+        return PASS
+    best_s = min(o[1] for o in options)
+    top = [o for o in options if o[1] == best_s]
+    if len(top) == 1 and best_s < pass_s:
+        return top[0][0]  # 唯一候选且向听严格下降:接受,无需进张
+    best_act, best_key = None, None
+    for act, s, cands, c, uke, shape in top:
+        if uke is None:
+            uke, shape, _d = _best_standing(cands, locked + 1, vis, c)
+        key = (s, -uke, shape, act)
         if best_key is None or key < best_key:
-            best_act, best_key = a, key
+            best_act, best_key = act, key
+    return best_act
+
+
+def _legacy_claim_react(g, seat, acts):
+    """KONG_OPEN 同窗时的既有 claim 决策(行为保持,KONG out-of-scope)。
+
+    口径:shanten(hand, locked) 与副露后 shanten(locked+1) 比较,
+    等向听也执行;同向听时 KONG 优先于 PONG(key 次项 -1 < 0)。
+    """
+    owner, tile = g.pending
+    hand = g.hands[seat]
+    locked = len(g.melds[seat])
+    best_act, best_key = PASS, None
+
+    def eval_after(remove):
+        c = list(hand)
+        for t, n in remove:
+            c[t] -= n
+        return shanten(c, locked + 1)
+
+    cur_s = shanten(hand, locked)
+
+    if PONG in acts:
+        key = (eval_after([(tile, 2)]), 0)
+        if best_key is None or key < best_key:
+            best_act, best_key = PONG, key
+    if KONG_OPEN in acts:
+        # 杠开期望:向听数不变也杠(加速+倍率)
+        key = (eval_after([(tile, 3)]), -1)
+        if best_key is None or key < best_key:
+            best_act, best_key = KONG_OPEN, key
 
     if best_act == PASS:
         return PASS
-    # 只有当副露后向听数 <= 当前向听数才执行
-    # (副露会减少手牌灵活度,要求不退步)
-    after_s = best_key[0]
-    if after_s <= cur_s:
-        return best_act
-    return PASS
+    return best_act if best_key[0] <= cur_s else PASS

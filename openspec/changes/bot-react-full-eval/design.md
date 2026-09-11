@@ -93,7 +93,7 @@ KONG_OPEN ∉ acts 且 PONG ∈ acts     → PONG 用 v2 完整评价
 
 ## Risks / Trade-offs
 
-- [React 性能回退：吃窗 3 吃法 × ≤11 舍牌候选 ≈ ≤33 次 ukeire、纯碰窗 ≤11 次（legacy KONG 路径不计）] → Rust 内核默认路径（40~97x）；合入闸门（可判定）：同机同内核环境，变更前后各 3 次 `python3 -m mj.evaluate 200`，4 bots 段中位吞吐（elapsed/games）下降 ≤15%；ukeire 的 `(bytes, locked)` 记忆化对重复子手牌有效。
+- [React 性能回退：吃窗 3 吃法 × ≤11 舍牌候选 + PASS 基准 ≈ ≤34 次 ukeire、纯碰窗 ≤12 次（legacy KONG 路径不计）] → 两阶段评价（向听扫描先行、ukeire 懒算：向听门槛外零 ukeire、PASS 基准仅在等向听时算、唯一候选且向听严格下降直接接受）；实测吃窗均 3.9 ukeire/窗（最大 30）、纯碰窗均 2.5（最大 12）；Rust 内核默认路径（40~97x）；合入闸门（可判定）：同机同内核环境，变更前后各 3 次 `python3 -m mj.evaluate 200`，4 bots 段中位吞吐（elapsed/games）下降 ≤15%（实测交错 A/B -2%~-10%，机器后台负载波动；ukeire 的 `(bytes, locked)` 记忆化对重复子手牌有效）。
 - [阈值初值 (2, 4) 拍脑袋] → 第一版只靠固定牌例锁定语义（等向听时碰要明显改善、吃要更明显改善），不做 A/B；牌例断言的是边界行为不是最优性。
 - [等向听 uke_gain 规则可能拒绝"结构上该吃的副露"（如为守听/防守）] → 接受：本规则集吃碰不加番（动作链只数飘/杠），副露只换向听推进，保守方向正确；漏吃候选由后续 KONG/lookahead change 处理。
 - [七对同向听时豪华番潜力被 ukeire 阈值放过的副露杀死] → 已知限制，记入 Non-Goals；固定牌例只锁"七对为更优分支时 PASS"。

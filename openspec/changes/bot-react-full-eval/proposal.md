@@ -33,5 +33,5 @@
 - **代码**：`mj/bot.py`（`_choose_react()` 重写，新增评价辅助函数）；`tests/test_bot.py`（追加 `TestReactDecision`）。不触碰 `game.py`/`shanten.py`/`scoring.py` 等引擎与规则层。
 - **下游行为**：`bc_data` 教师分布、`train_ppo` 自博弈对手、平台对局（经策略模型间接）——本 change 只改教师/对手行为，不重训管线。
 - **评估口径**：`evaluate` 直接 `from mj.bot import choose_action`（`evaluate.py:14`），启发式 bot 随本 change 升级为 v2，不维护 v1 runtime；前后性能用同一命令、同机同内核环境，对变更前 commit `9f4f8de` 与变更后版本各测 3 次取中位对比。
-- **性能**：react 决策 ukeire 调用理论上限——吃窗 ≤33 次（3 吃法 × ≤11 舍牌候选）、纯碰窗 ≤11 次（legacy KONG 路径不计）；合入闸门：4 bots 段中位吞吐降幅 ≤15%（见 spec）。
+- **性能**：react 决策 ukeire 调用理论上限——吃窗 ≤34 次（3 吃法 × ≤11 舍牌候选 + PASS 基准 1）、纯碰窗 ≤12 次（legacy KONG 路径不计）；合入闸门：4 bots 段中位吞吐降幅 ≤15%（见 spec）。
 - **文档**：按仓库约定同步 PROGRESS.md 对应结论与测试清单。

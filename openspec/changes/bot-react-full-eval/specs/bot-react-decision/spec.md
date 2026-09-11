@@ -67,7 +67,7 @@
 
 ### Requirement: 反应侧决策性能受闸门约束
 
-重写后的 `_choose_react()` 单次决策 SHALL 控制 ukeire 调用量：吃窗 ≤33 次（3 吃法 × ≤11 舍牌候选）、纯碰窗 ≤11 次（legacy KONG 路径不计），Rust 内核默认路径。MUST 通过可判定压测：同机同内核环境，对变更前 commit `9f4f8de` 与变更后版本各运行 3 次 `python3 -m mj.evaluate 200`，4 bots 段中位吞吐（elapsed/games）下降不超过 15%。
+重写后的 `_choose_react()` 单次决策 SHALL 控制 ukeire 调用量：吃窗 ≤34 次（3 吃法 × ≤11 舍牌候选 + PASS 基准 1 次）、纯碰窗 ≤12 次（11 + PASS 基准 1 次；legacy KONG 路径不计），Rust 内核默认路径。MUST 通过可判定压测：同机同内核环境，对变更前 commit `9f4f8de` 与变更后版本各运行 3 次 `python3 -m mj.evaluate 200`，4 bots 段中位吞吐（elapsed/games）下降不超过 15%。
 
 #### Scenario: 吞吐压测
 - **WHEN** 实现完成后在同一机器、同一 Python/Rust 内核环境下，对变更前 `9f4f8de` 与变更后版本各运行 3 次 `python3 -m mj.evaluate 200`
