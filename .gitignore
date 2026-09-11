@@ -7,3 +7,4 @@ local/
 .DS_Store
 .codemap
 .venv
+rust/target/

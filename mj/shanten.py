@@ -9,10 +9,16 @@
   shanten = 2*(4-locked-面子数) - 剩余搭子数 - 雀头
 七对:7 - 对子数(财神配单张)。两者取小。
 
-性能:shanten 结果按 (手牌字节串, locked) 记忆化;_std 剪枝界用
+性能:shanten/ukeire 对外接口优先走 Rust 内核(rust/src/lib.rs,
+`python3 -m pip install -e rust/` 构建,快 40~97x);未安装扩展时
+自动回退纯 Python(shanten_py/ukeire_py,shanten 按 (手牌字节串,
+locked) 记忆化);MJ_KERNELS=python 强制纯 Python(排障/对拍)。
+两实现语义由 scripts/rust_parity.py 随机差分锁定。_std 剪枝界用
 剩余牌数材料上界(纯自然牌 r 张最多省 2*(r//3)+(r%3)//2 向听,
 每张财神最多省 2),是可证明的保守下界,比按位置数估计紧得多。
 """
+
+import os
 
 from .tiles import W
 
@@ -27,7 +33,8 @@ def clear_caches():
     clear_win_cache()
 
 
-def shanten(counts, locked=0):
+def shanten_py(counts, locked=0):
+    """纯 Python 向听数(记忆化);对外入口见下方调度器 shanten。"""
     key = (bytes(counts), locked)
     hit = _shanten_cache.get(key)
     if hit is not None:
@@ -173,30 +180,87 @@ def waits(counts, locked=0):
     return out
 
 
-def ukeire(counts, locked=0, visible=None):
-    """返回 (向听数, 进张种类列表, 进张总张数)。
+def _ukeire_candidates(counts):
+    """无财神时可能降低向听数的摸牌候选(升序列表)。
+
+    数学依据:不在手(counts[t]==0)且与任何手数牌同花色距离 >2 的牌,
+    在 _std 的任何分解分支里都只能走孤张——同种(对子/刻子)要求
+    counts[t]>0,顺子/两面/坎张要求 ±1/±2 内有同花色手牌;七对在
+    13 张奇数手必有单张,新孤张只增 singles 不增 pairs。因此这些牌
+    摸到后向听数必不降,可安全跳过。字牌(27~32)无顺子语义,只做
+    同种候选。财神(W)始终纳入(万能牌)。返回前排序,保证 acc
+    与全量 range(34) 枚举同序。
+    """
+    useful = {W}
+    for t in range(33):
+        if counts[t] == 0:
+            continue
+        useful.add(t)  # 同种:对子/刻子/七对
+        if t < 27:  # 数牌:顺子/两面/坎张只涉及同花色 ±2
+            lo = t - t % 9
+            for x in (t - 2, t - 1, t + 1, t + 2):
+                if lo <= x < lo + 9:
+                    useful.add(x)
+    return sorted(useful)
+
+
+def ukeire_py(counts, locked=0, visible=None):
+    """纯 Python 进张枚举(含候选剪枝);对外入口见下方调度器 ukeire。
 
     visible: 34 维已见牌计数(自己手牌+四家牌河+全部副露),进张张数
     按 4 - visible[t] 折算。须含被评估手牌——弃牌候选场景传弃牌前的
     完整手牌即可(弃牌只是手→牌河转移,可见总量不变);
     None 时退化为仅按手牌折算(4 - 手牌张数)。
+
+    性能:无财神且向听数 > 0 时用 _ukeire_candidates 剪枝(34 →
+    约 15~22 次内层 shanten)。有财神时不剪——财神可配任意新单张
+    成对(七对)或补结构(标准形),必须全量枚举;除非有完整证明 +
+    大规模差分,不再细分。语义由 tests/test_shanten_props.py
+    随机差分 + 非候选不降向听性质断言保证。
     """
     from .win import is_win
 
-    s = shanten(counts, locked)
+    s = shanten_py(counts, locked)
     vis = counts if visible is None else visible
     if s <= 0:
         if s == 0:
             acc = [t for t in range(34) if is_win(_add(counts, t), locked)]
             return s, acc, sum(_left(t, vis) for t in acc)
         return s, [], 0
+    candidates = range(34) if counts[W] else _ukeire_candidates(counts)
     acc = []
-    for t in range(34):
+    for t in candidates:
         if counts[t] >= 4:
             continue
-        if shanten(_add(counts, t), locked) < s:
+        if shanten_py(_add(counts, t), locked) < s:
             acc.append(t)
     return s, acc, sum(_left(t, vis) for t in acc)
+
+
+# ---------- Rust 内核调度(2026-09-11 接入默认路径) ----------
+# mj_kernels(rust/,pip install -e rust/ 构建)可导入即优先 Rust;
+# 未安装自动回退纯 Python。MJ_KERNELS=python 强制纯 Python(排障/对拍)。
+try:
+    from mj_kernels import shanten as _rust_shanten, ukeire as _rust_ukeire
+except ImportError:
+    _rust_shanten = None
+    _rust_ukeire = None
+
+_FORCE_PY = os.environ.get("MJ_KERNELS", "").lower() == "python"
+
+
+def shanten(counts, locked=0):
+    """向听数(调度器:Rust 内核优先,回退 shanten_py)。"""
+    if _rust_shanten is not None and not _FORCE_PY:
+        return _rust_shanten(counts, locked)
+    return shanten_py(counts, locked)
+
+
+def ukeire(counts, locked=0, visible=None):
+    """进张枚举(调度器:Rust 内核优先,回退 ukeire_py)。"""
+    if _rust_ukeire is not None and not _FORCE_PY:
+        return _rust_ukeire(counts, locked, visible)
+    return ukeire_py(counts, locked, visible)
 
 
 def _left(t, vis):

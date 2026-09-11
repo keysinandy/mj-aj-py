@@ -1,0 +1,16 @@
+[package]
+name = "mj_kernels"
+version = "0.1.0"
+edition = "2021"
+description = "杭州麻将 AI 引擎热点内核(shanten/ukeire)的 Rust 实现"
+
+[lib]
+name = "mj_kernels"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.22", features = ["extension-module"] }
+
+[profile.release]
+opt-level = 3
+lto = true

@@ -76,7 +76,9 @@ tiles.py (34 类牌编码,白板=33 财神)
    ↓
 win.py (财神百搭回溯分解:和牌/听牌/爆头判定)
    ↓
-shanten.py (向听数+进张,记忆化+保守剪枝界)
+shanten.py (向听数+进张,记忆化+保守剪枝界;shanten/ukeire 默认走
+            Rust 内核 rust/mj_kernels,未装扩展回退纯 Python,MJ_KERNELS=python
+            强制回退;对拍验收 scripts/rust_parity.py)
    ↓
 game.py (对局状态机:legal_actions()+step(),自博弈友好)
    ↓

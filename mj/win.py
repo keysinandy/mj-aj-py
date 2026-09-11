@@ -49,26 +49,38 @@ def _melds(nat, wilds, need):
             nat[t] += k
             if ok:
                 return True
-    # 顺子分支:t 是当前最小自然牌,只能作为顺子首位;t+1/t+2 用自然牌或财神
-    if t < 27 and t % 9 <= 6:
+    # 顺子分支:t 是当前最小自然牌,可位于顺子第 1/2/3 位——更小的
+    # 起始位只能由财神补(t 之前更小的自然牌必为 0)。
+    # 2026-09-11 修复:旧版只枚举 t 作顺子首位,漏掉 [财,t,t+1] 与
+    # [财,财,t] 形态(如 8筒9筒+财神补 7筒),导致 shanten=-1 而
+    # is_win=False 的内部矛盾、合法自摸胡被拒。
+    for s in (t, t - 1, t - 2):
+        if s < 0 or s >= 27 or s % 9 > 6:
+            continue
         for u1 in (1, 0):
             for u2 in (1, 0):
-                if u1 and nat[t + 1] == 0:
-                    continue
-                if u2 and nat[t + 2] == 0:
-                    continue
-                w = 2 - u1 - u2
-                if wilds < w:
-                    continue
-                nat[t] -= 1
-                nat[t + 1] -= u1
-                nat[t + 2] -= u2
-                ok = _melds(nat, wilds - w, need - 1)
-                nat[t] += 1
-                nat[t + 1] += u1
-                nat[t + 2] += u2
-                if ok:
-                    return True
+                for u3 in (1, 0):
+                    # t 所在位必须用真牌(财神与同值真牌可互换,不失一般性)
+                    if (u1, u2, u3)[t - s] == 0:
+                        continue
+                    if u1 and nat[s] == 0:
+                        continue
+                    if u2 and nat[s + 1] == 0:
+                        continue
+                    if u3 and nat[s + 2] == 0:
+                        continue
+                    w = 3 - u1 - u2 - u3
+                    if wilds < w:
+                        continue
+                    nat[s] -= u1
+                    nat[s + 1] -= u2
+                    nat[s + 2] -= u3
+                    ok = _melds(nat, wilds - w, need - 1)
+                    nat[s] += u1
+                    nat[s + 1] += u2
+                    nat[s + 2] += u3
+                    if ok:
+                        return True
     return False
 
 

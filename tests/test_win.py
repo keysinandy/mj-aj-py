@@ -18,6 +18,19 @@ class TestWin(unittest.TestCase):
     def test_wild_fills_chow(self):
         self.assertTrue(is_win(counts("12m456m789m123p55pw")))
 
+    def test_wild_before_smallest_in_chow(self):
+        """最小自然牌位于顺子第 2/3 位、前置位用财神(2026-09-11 修复)。
+
+        旧版 _melds 只枚举 t 作顺子首位,漏掉 [财,t,t+1]/[财,财,t],
+        shanten=-1 而 is_win=False,合法自摸胡被 game.py 拒绝。
+        """
+        # [白(1万) 2万 3万][456万][789万][567筒][东东]
+        self.assertTrue(is_win(counts("23m456m789m567pEE w")))
+        # [8筒9筒白(7筒)][6条6条白][789万][456筒][5万5万]
+        self.assertTrue(is_win(counts("55m789m456p89p66s w w")))
+        # 同形听牌(13 张双财神):摸 9筒 成胡——旧版 waiting_tiles 漏 9筒
+        self.assertIn(17, waiting_tiles(counts("55m789m456p8p66s w w")))
+
     def test_wild_fills_pong(self):
         self.assertTrue(is_win(counts("1mww456m789m123p55p")))
 
