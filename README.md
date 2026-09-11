@@ -124,11 +124,13 @@ python3 -m mj.bc_train --data "data/bc_match/shard_*.npz" \
 
 - **退出粒度**:`--games N` 打满 N 场即止,但总会打完当前房(一房 10 场);想多攒数据把 N 给大点
 - **接收模式**:默认使用 `/notify` SSE 唤醒后拉取增量 `/state`，SSE 帧不直接推进游标；`--no-long-poll` 保留为兼容参数，`--no-notify` 退回普通轮询。各场共享每令牌限速
+- **状态需求协调**:每个 gid 维护一个 `StateDemand`；增量 watermark 与 `seq=0` 全量快照请求分开合并，RESYNC、SSE_DELTA、WINDOW_CONFIRM 各自保留完成条件；同一 gid 最多一个物理 state 在途，所有 retry 继续经过共享 StateThrottle（默认 15/s 配置保持不变）
 - **错误自愈**:409 MATCH_BUSY/MATCH_LIMIT_REACHED 自动退避重试(10s);房间 finished ~60s 宽限关停后 404 属正常,自动开下一房;崩溃重启后重调 `/api/match` 幂等返回原房(v24)
 - **永久错误**:403 PORTAL_BINDING_REQUIRED = 令牌非门户绑定；403 FEATURE_DISABLED = 平台关闭新自由匹配（v29），均不自动重试
 - **排行榜曝光**:auto 房整场完整打完会计入门户排行榜(积分榜/胡大牌榜/单场得分榜)
 - **满员等待**:入席后不满 4 人会挂等(池里没人的时段);其他队 bot 活跃时段开打效率最高
 - **窗口验收**:见 [平台窗口修复与验收](docs/平台窗口修复与验收.md)。日志 `started_at` 为动作调用起点，`ts` 为响应完成后的记录时间；两者均不是服务端实际接受时间
+- **分层完整性**:`scripts/window_acceptance.py` 按房输出 `transport_status`、`window_status`、`game_status`；缺少 `round_ended` 只标记 game 层 `protocol_skipped`，日志缺尾才影响对应层的 `partial` 分母。报告同时区分 logical/coalesced/physical/suppressed state demand 与物理 retry
 - **吃碰杠机会损失**:日志含 `claim_miss` 记录——规则允许吃/碰/杠但未成功。`chosen` 非空表示策略已选动作却没成；`chosen=null` + `reason=server_timeout_*` 表示 timeout 时策略尚未完成决策；策略已决策为过不记录。判定口径与统计命令见上述验收文档
 
 ## 训练与评估(离线)

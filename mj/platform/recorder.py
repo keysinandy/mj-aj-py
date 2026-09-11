@@ -29,6 +29,16 @@ import threading
 import time
 
 
+def _json_default(value):
+    if hasattr(value, "as_json"):
+        return value.as_json()
+    if hasattr(value, "to_json"):
+        return value.to_json()
+    if isinstance(value, (set, frozenset, tuple)):
+        return list(value)
+    return str(value)
+
+
 class GameLog:
     """单场对局 JSONL;写失败降级为静默丢弃(不影响对弈)。"""
 
@@ -52,7 +62,7 @@ class GameLog:
         if self._closed:
             return
         line = json.dumps({"ts": round(time.time(), 3), **rec},
-                          ensure_ascii=False)
+                          ensure_ascii=False, default=_json_default)
         try:
             with self._lock:
                 if self._closed:
@@ -126,7 +136,9 @@ class Recorder:
         self.log_for(gid, name).write(rec)
 
     def req(self, gid, seq, status, latency_ms, attempts=None, summary=None,
-            transport=None, throttle=None, request_kind=None):
+            transport=None, throttle=None, request_kind=None,
+            logical_request_id=None, attempt_index=None, reason=None,
+            generation=None, demand=None, requested_seq=None):
         """记录一次逻辑 /state 请求；新增诊断字段均为可选，兼容旧日志。
 
         ``request_kind`` 只描述调度诊断用途，例如 ``WINDOW_PENG``、
@@ -145,6 +157,12 @@ class Recorder:
             rec["throttle"] = throttle
         if request_kind:
             rec["request_kind"] = request_kind
+        for key, value in (("logical_request_id", logical_request_id),
+                           ("attempt_index", attempt_index),
+                           ("reason", reason), ("generation", generation),
+                           ("demand", demand), ("requested_seq", requested_seq)):
+            if value is not None:
+                rec[key] = value
         log.write(rec)
 
     def window_confirm(self, gid, **fields):
@@ -221,7 +239,9 @@ class Recorder:
     def action(self, gid, phase, payload, ok, status=200, code="",
                latency_ms=None, attempts=None, started_at=None,
                started_epoch=None, deadline_at=None, message=None,
-               transport=None):
+               transport=None, logical_request_id=None, attempt_index=None,
+               window_id=None, window_attempt_key=None,
+               identity_status=None):
         log = self.log_for(gid)
         rec = {"type": "action", "phase": phase, "payload": payload,
                "ok": ok, "status": status, "code": code,
@@ -234,6 +254,13 @@ class Recorder:
                            ("message", message), ("transport", transport)):
             if value is not None:
                 rec[key] = value
+        for key, value in (("logical_request_id", logical_request_id),
+                           ("attempt_index", attempt_index),
+                           ("window_id", window_id),
+                           ("window_attempt_key", window_attempt_key),
+                           ("identity_status", identity_status)):
+            if value is not None:
+                rec[key] = value
         did = log.pending_decision
         if did is not None:
             rec["decision"] = did
@@ -243,9 +270,17 @@ class Recorder:
     def reset(self, gid, reason):
         self.log_for(gid).write({"type": "reset", "reason": reason})
 
-    def end(self, gid, reason, scores=None, error=None):
+    def end(self, gid, reason, scores=None, error=None, demand=None,
+            transport_status=None, window_status=None, game_status=None):
         rec = {"type": "end", "reason": reason, "scores": scores}
         if error is not None:
             rec["error"] = error
+        if demand is not None:
+            rec["demand"] = demand
+        for key, value in (("transport_status", transport_status),
+                           ("window_status", window_status),
+                           ("game_status", game_status)):
+            if value is not None:
+                rec[key] = value
         self.log_for(gid).write(rec)
         self.close(gid)

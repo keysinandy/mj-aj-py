@@ -65,3 +65,30 @@ def test_report_keeps_physical_429_and_window_request_group(tmp_path):
     assert report["window_confirm_records"] == {"requested": 1, "closed": 1}
     assert report["claim_miss_records"] == {
         "response_peng/window_confirm_phase_changed": 1}
+
+
+def test_report_uses_layered_status_and_demand_denominators(tmp_path):
+    records = [
+        {"type": "req", "seq": 4, "status": 200, "attempts": 1,
+         "transport": {"state_physical_attempts": 2},
+         "demand": {"logical_demands": 4, "coalesced_demands": 2,
+                     "physical_state_requests": 1,
+                     "suppressed_duplicates": 1}},
+        {"type": "end", "reason": "finished",
+         "demand": {"logical_demands": 4, "coalesced_demands": 2,
+                     "physical_state_requests": 1,
+                     "suppressed_duplicates": 1}},
+    ]
+    path = tmp_path / "layered.jsonl"
+    path.write_text("\n".join(json.dumps(row) for row in records))
+    report = summarize([path])
+    assert report["games"][0]["status"] == {
+        "transport_status": "complete",
+        "window_status": "complete",
+        "game_status": "protocol_skipped",
+    }
+    assert report["layer_metrics"]["transport"]["denominator"] == 1
+    assert report["layer_metrics"]["window"]["denominator"] == 1
+    assert report["layer_metrics"]["game"]["denominator"] == 0
+    assert report["layer_metrics"]["transport"]["demand"][
+        "coalescing_ratio"] == 0.75

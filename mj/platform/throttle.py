@@ -13,6 +13,11 @@ class ThrottleTicket:
     urgent: bool
     deadline_missed: bool
     deadline_left_ms: float | None
+    # Monotonic boundaries for this physical permit.  The first four fields
+    # stay positional-compatible with older fakes/tests.
+    throttle_enter: float | None = None
+    throttle_granted: float | None = None
+    queue_wait_ms: float | None = None
 
 
 class StateThrottle:
@@ -84,8 +89,12 @@ class StateThrottle:
                     if missed:
                         self._stats["deadline_missed"] += 1
                     self._cv.notify_all()
-                    return ThrottleTicket(waited_ms, deadline is not None,
-                                          missed, left)
+                    return ThrottleTicket(
+                        waited_ms, deadline is not None, missed, left,
+                        throttle_enter=arrived,
+                        throttle_granted=now,
+                        queue_wait_ms=waited_ms,
+                    )
                 # 被更早 deadline 插队时应马上重算；否则睡到下一个许可或
                 # normal 老化点，避免普通请求在持续窗口流量中永久不醒。
                 waits = [max(0.0, grant_at - now)]

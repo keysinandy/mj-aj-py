@@ -16,8 +16,9 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from email.utils import parsedate_to_datetime
 
-from .throttle import StateThrottle, ThrottleTicket
+from .throttle import StateThrottle
 
 _CTX = ssl.create_default_context()
 _CTX.check_hostname = False
@@ -75,7 +76,9 @@ class StateSnapshotDeadlineExceeded(StateSnapshotError):
 def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
              deadline=None, retry=True, retry_429=True,
              retry_transient=True, error_cls=ApiError, before_attempt=None,
-             state_diagnostics=False, on_429=None, diagnostic_kind=None):
+             state_diagnostics=False, on_429=None, diagnostic_kind=None,
+             logical_request_id=None, logical_reason=None,
+             logical_generation=None):
     """执行 HTTP 请求并把本次传输明细留在线程局部供记录器读取。
 
     deadline 使用 monotonic 秒；/state 用它参与限速与退避调度，动作
@@ -125,7 +128,13 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
             meta[f"{diagnostic_kind}_429"] = sum(
                 item.get("status") == 429 for item in diagnostic_attempts)
             meta["diagnostic_capabilities"] = {
+                # Keep the original aggregate capability list stable for
+                # consumers; the richer boundary fields are listed
+                # separately below.
                 "measured": ["total_ms", "pre_read_ms", "read_ms"],
+                "boundaries_measured": ["http_start", "headers_received",
+                                         "body_finished", "throttle_enter",
+                                         "throttle_granted", "queue_wait_ms"],
                 "unavailable": ["dns_ms", "connect_ms", "tls_ms",
                                 "send_ms"],
                 "source": "urllib.request.urlopen + response.read",
@@ -135,9 +144,16 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
     def record_diagnostic_attempt(started_epoch, started_mono, status=None,
                                   error=None, timeout_s=None,
                                   timed_out=False, pre_read_mono=None,
+                                  headers_received_mono=None,
                                   read_started_mono=None,
                                   read_finished_mono=None,
-                                  retry_after_s=None):
+                                  retry_after_s=None,
+                                  retry_after_raw=None,
+                                  server_date_raw=None,
+                                  server_date_epoch=None,
+                                  throttle=None,
+                                  deadline_left_at_send_ms=None,
+                                  deadline_left_at_response_ms=None):
         if not diagnostic_enabled:
             return
         now = time.monotonic()
@@ -161,6 +177,7 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
             "send_ms": None,
         }
         item = {
+            "attempt_index": len(diagnostic_attempts) + 1,
             "started_epoch": round(started_epoch, 3),
             "status": status,
             "latency_ms": timing["total_ms"],
@@ -168,29 +185,99 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
                           if timeout_s is not None else None),
             "timed_out": bool(timed_out),
             "timing": timing,
+            "http_start_mono": round(started_mono, 6),
+            "headers_received_mono": (
+                round(headers_received_mono, 6)
+                if headers_received_mono is not None else None),
+            "body_finished_mono": (
+                round(read_finished_mono, 6)
+                if read_finished_mono is not None else None),
+            "deadline_left_at_send_ms": deadline_left_at_send_ms,
+            "deadline_left_at_response_ms": deadline_left_at_response_ms,
+            "deadline_left_at_send": deadline_left_at_send_ms,
+            "deadline_left_at_response": deadline_left_at_response_ms,
         }
+        if logical_request_id is not None:
+            item["logical_request_id"] = logical_request_id
+        if logical_reason is not None:
+            item["reason"] = logical_reason
+        if logical_generation is not None:
+            item["generation"] = logical_generation
+        if throttle is None and diagnostic_kind == "action":
+            item["throttle"] = {
+                "status": "not_applicable",
+                "throttle_enter": None,
+                "throttle_granted": None,
+                "queue_wait_ms": None,
+            }
+        elif throttle is not None:
+            item["throttle"] = throttle
+        throttle_record = item.get("throttle")
+        if isinstance(throttle_record, dict):
+            item["throttle_enter"] = throttle_record.get("throttle_enter")
+            item["throttle_granted"] = throttle_record.get("throttle_granted")
+            item["queue_wait_ms"] = throttle_record.get("queue_wait_ms")
         if error:
             item["error"] = error
         if retry_after_s is not None:
             item["retry_after_s"] = retry_after_s
+            item["retry_after_seconds"] = retry_after_s
+        if retry_after_raw is not None:
+            item["retry_after_raw"] = retry_after_raw
+        if server_date_raw is not None:
+            item["server_date_raw"] = server_date_raw
+        if server_date_epoch is not None:
+            item["server_date_epoch"] = round(server_date_epoch, 3)
         diagnostic_attempts.append(item)
         # Keep the thread-local metadata current on every terminal outcome;
         # this matters for callers that inspect it after an ApiError.
         set_meta()
 
-    def retry_after_seconds(exc):
-        """Return a JSON-safe numeric Retry-After delta, if supplied."""
-        headers = getattr(exc, "headers", None)
+    def header_value(headers, name):
         if headers is None:
             return None
         try:
-            value = headers.get("Retry-After")
-            seconds = float(value)
-        except (AttributeError, TypeError, ValueError):
+            value = headers.get(name)
+        except AttributeError:
             return None
-        if not math.isfinite(seconds) or seconds < 0:
+        if value is None:
             return None
-        return round(seconds, 3)
+        return str(value)
+
+    def date_epoch(raw):
+        if not raw:
+            return None
+        try:
+            return parsedate_to_datetime(raw).timestamp()
+        except (TypeError, ValueError, OverflowError):
+            return None
+
+    def retry_after_details(exc):
+        """Return parsed and raw Retry-After/Date metadata."""
+        headers = getattr(exc, "headers", None)
+        retry_raw = header_value(headers, "Retry-After")
+        date_raw = header_value(headers, "Date")
+        date_value = date_epoch(date_raw)
+        seconds = None
+        if retry_raw is not None:
+            try:
+                parsed = float(retry_raw)
+            except (TypeError, ValueError):
+                parsed = None
+            if parsed is not None and math.isfinite(parsed) and parsed >= 0:
+                seconds = parsed
+            else:
+                target = date_epoch(retry_raw)
+                if target is not None:
+                    seconds = max(0.0, target - time.time())
+        if seconds is not None:
+            seconds = round(seconds, 3)
+        return {
+            "seconds": seconds,
+            "retry_after_raw": retry_raw,
+            "server_date_raw": date_raw,
+            "server_date_epoch": date_value,
+        }
 
     def response_status(response):
         status = getattr(response, "status", None)
@@ -249,8 +336,9 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
     if diagnostic_enabled:
         set_meta()
     while True:
+        throttle_info = None
         if before_attempt is not None:
-            before_attempt()
+            throttle_info = before_attempt()
         if is_action and deadline is not None and time.monotonic() >= deadline:
             set_meta()
             raise ActionDeadlineExceeded(
@@ -269,12 +357,14 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
         attempt_status = None
         attempt_timeout = request_timeout()
         open_finished_mono = None
+        headers_received_mono = None
         read_started_mono = None
         read_finished_mono = None
         try:
             with urllib.request.urlopen(req, timeout=attempt_timeout,
                                         context=_CTX) as r:
                 open_finished_mono = time.monotonic()
+                headers_received_mono = open_finished_mono
                 if diagnostic_enabled:
                     attempt_status = response_status(r)
                     # A successful response wrapper without status metadata
@@ -291,21 +381,61 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
                     started_epoch, started_mono, attempt_status,
                     timeout_s=attempt_timeout,
                     pre_read_mono=open_finished_mono,
+                    headers_received_mono=headers_received_mono,
                     read_started_mono=read_started_mono,
-                    read_finished_mono=read_finished_mono)
+                    read_finished_mono=read_finished_mono,
+                    throttle=throttle_info,
+                    deadline_left_at_send_ms=(
+                        round((deadline - started_mono) * 1000.0, 1)
+                        if deadline is not None else None),
+                    deadline_left_at_response_ms=(
+                        round((deadline - read_finished_mono) * 1000.0, 1)
+                        if deadline is not None and read_finished_mono is not None
+                        else None))
                 if not diagnostic_enabled:
                     set_meta()
                 return result
         except urllib.error.HTTPError as e:
-            # Record before reading the body: an HTTPError body is not part of
-            # the diagnostic contract and a broken body stream must not erase
-            # evidence that a physical attempt happened.
+            # urllib raises HTTPError from urlopen, but the response headers
+            # have already arrived at this point.  Read the body once for the
+            # error message and record the two boundaries separately.
             open_finished_mono = time.monotonic()
+            headers_received_mono = open_finished_mono
+            # A retryable 429 body is intentionally not consumed: the retry
+            # decision needs only headers and this keeps the legacy diagnostic
+            # contract explicit.  Other terminal/error responses read their
+            # body, so body_finished is the completion of e.read().
+            if e.code == 429:
+                error_body = ""
+            else:
+                read_started_mono = time.monotonic()
+                try:
+                    error_raw = e.read()
+                except Exception:
+                    error_raw = b""
+                read_finished_mono = time.monotonic()
+                error_body = (error_raw.decode(errors="replace")
+                              if isinstance(error_raw, bytes)
+                              else str(error_raw))
+            retry_details = retry_after_details(e)
             record_diagnostic_attempt(
                 started_epoch, started_mono, e.code,
                 timeout_s=attempt_timeout, timed_out=e.code == 408,
                 pre_read_mono=open_finished_mono,
-                retry_after_s=retry_after_seconds(e))
+                headers_received_mono=headers_received_mono,
+                read_started_mono=read_started_mono,
+                read_finished_mono=read_finished_mono,
+                retry_after_s=retry_details["seconds"],
+                retry_after_raw=retry_details["retry_after_raw"],
+                server_date_raw=retry_details["server_date_raw"],
+                server_date_epoch=retry_details["server_date_epoch"],
+                throttle=throttle_info,
+                deadline_left_at_send_ms=(
+                    round((deadline - started_mono) * 1000.0, 1)
+                    if deadline is not None else None),
+                deadline_left_at_response_ms=(
+                    round((deadline - read_finished_mono) * 1000.0, 1)
+                    if deadline is not None else None))
             if e.code == 429:
                 retry_429_count += 1
                 set_meta()
@@ -318,9 +448,11 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
                     except Exception:
                         pass
                 if not allow_retry_429:
-                    raise make_error(e.code, e.read().decode(errors="replace"),
-                                     uncertain=False) from None
-                sleep_retry(delay)
+                    raise make_error(e.code, error_body, uncertain=False) \
+                        from None
+                retry_delay = retry_details["seconds"]
+                sleep_retry(delay if retry_delay is None
+                            else max(delay, retry_delay))
                 delay = min(delay * 2, 10.0)
                 continue
             if e.code in (502, 503, 504):
@@ -335,22 +467,21 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
                     continue
                 # 网关错误发生在 POST 之后时，上游是否执行未知；动作
                 # 提交必须把它交给客户端重锚，不能再次发送旧 payload。
-                raise make_error(e.code, e.read().decode(errors="replace"),
+                raise make_error(e.code, error_body,
                                  uncertain=is_action) from None
             if 500 <= e.code < 600:
                 # 500/501/505 等非网关 5xx 也可能发生在上游已执行
                 # 动作之后；动作调用方同样必须把结果视为未知。
-                raise make_error(e.code, e.read().decode(errors="replace"),
+                raise make_error(e.code, error_body,
                                  uncertain=is_action) from None
             if e.code == 408:
                 # HTTP 层明确超时同样不能证明动作未到达上游。
-                raise make_error(e.code, e.read().decode(errors="replace"),
+                raise make_error(e.code, error_body,
                                  uncertain=is_action, timed_out=wraps_transport) \
                     from None
             # 400/401/403/404/409 等是服务端已经明确作出的语义裁定，
             # 不应进入下面的瞬态重试路径。
-            raise make_error(e.code, e.read().decode(errors="replace"),
-                             uncertain=False) from None
+            raise make_error(e.code, error_body, uncertain=False) from None
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             open_finished_mono = time.monotonic()
             if read_started_mono is not None:
@@ -361,7 +492,14 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
                 timeout_s=attempt_timeout, timed_out=is_timeout(e),
                 pre_read_mono=open_finished_mono,
                 read_started_mono=read_started_mono,
-                read_finished_mono=read_finished_mono)
+                read_finished_mono=read_finished_mono,
+                throttle=throttle_info,
+                deadline_left_at_send_ms=(
+                    round((deadline - started_mono) * 1000.0, 1)
+                    if deadline is not None else None),
+                deadline_left_at_response_ms=(
+                    round((deadline - open_finished_mono) * 1000.0, 1)
+                    if deadline is not None else None))
             failures += 1
             retry_network += 1
             timed_out = is_timeout(e)
@@ -375,14 +513,19 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
             delay = min(delay * 2, 10.0)
         except (http.client.HTTPException, ValueError) as e:
             open_finished_mono = time.monotonic()
-            if read_started_mono is not None and read_finished_mono is None:
-                read_finished_mono = open_finished_mono
             record_diagnostic_attempt(
                 started_epoch, started_mono, attempt_status,
                 error=type(e).__name__ if diagnostic_enabled else None,
                 timeout_s=attempt_timeout, pre_read_mono=open_finished_mono,
                 read_started_mono=read_started_mono,
-                read_finished_mono=read_finished_mono)
+                read_finished_mono=read_finished_mono,
+                throttle=throttle_info,
+                deadline_left_at_send_ms=(
+                    round((deadline - started_mono) * 1000.0, 1)
+                    if deadline is not None else None),
+                deadline_left_at_response_ms=(
+                    round((deadline - open_finished_mono) * 1000.0, 1)
+                    if deadline is not None else None))
             # 连接在响应头或 JSON body 中途断开时，服务端可能已经执
             # 行了动作；这类「响应丢失」不能按普通 GET 的重试规则处理。
             if wraps_transport:
@@ -443,7 +586,8 @@ class Api:
         """
         return self.post("/api/match")
 
-    def game_state(self, gid, seq, deadline=None, request_timeout=None):
+    def game_state(self, gid, seq, deadline=None, request_timeout=None,
+                   logical_request_id=None, reason=None, generation=None):
         """拉取状态；只有该端点消耗每令牌共享的 /state 预算。
 
         服务端上限约为 16/s，客户端默认以 15/s 主动限速；收到真实
@@ -458,14 +602,24 @@ class Api:
         def acquire():
             ticket = self.state_throttle.acquire(gid, deadline) \
                 if self.state_throttle is not None else None
-            previous = _TLS.throttle_ticket
-            if ticket is not None and previous is not None:
-                ticket = ThrottleTicket(
-                    previous.waited_ms + ticket.waited_ms,
-                    previous.urgent or ticket.urgent,
-                    previous.deadline_missed or ticket.deadline_missed,
-                    ticket.deadline_left_ms)
             _TLS.throttle_ticket = ticket
+            if ticket is None:
+                return {"status": "not_applicable",
+                        "throttle_enter": None,
+                        "throttle_granted": None,
+                        "queue_wait_ms": None}
+            return {
+                "status": "applicable",
+                "throttle_enter": getattr(ticket, "throttle_enter", None),
+                "throttle_granted": getattr(ticket, "throttle_granted", None),
+                "queue_wait_ms": getattr(ticket, "queue_wait_ms", None)
+                if getattr(ticket, "queue_wait_ms", None) is not None
+                else ticket.waited_ms,
+                "waited_ms": ticket.waited_ms,
+                "urgent": ticket.urgent,
+                "deadline_missed": ticket.deadline_missed,
+                "deadline_left_ms": ticket.deadline_left_ms,
+            }
         timeout = self.timeout
         if request_timeout is not None:
             timeout = max(0.001, float(request_timeout))
@@ -476,7 +630,10 @@ class Api:
                                            {"seq": seq}), token=self.token,
                         timeout=timeout, deadline=deadline,
                         before_attempt=acquire, state_diagnostics=True,
-                        on_429=on_429)
+                        on_429=on_429,
+                        logical_request_id=logical_request_id,
+                        logical_reason=reason,
+                        logical_generation=generation)
 
     def game_snapshot(self, gid, deadline=None, timeout=0.5):
         """有界地请求 ``seq=0`` 全量快照。

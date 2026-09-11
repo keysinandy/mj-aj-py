@@ -14,6 +14,25 @@ python3 -m mj.platform.match_runner --games 10 \
 规则覆盖或故障排查，不作为线上调度基线。本文件后续新增的线上数据默认按上述
 BOT 命令执行，既有回放中的策略和 checkpoint 记录保持不变。
 
+## `state-window-observability` 实现修订（2026-09-11）
+
+实现前最后一轮设计修订已落到工作树：`StateDemand` 将增量
+`watermark_target` 与 `full_snapshot_required` 分开，`seq=0` 不参与 watermark
+max；SSE_DELTA、RESYNC、WINDOW_CONFIRM 保留各自 metadata/status，并按最新
+demand 做 reason-specific reconcile。generation 变化本身不会触发补请求，只有
+仍有 PENDING reason 才能产生 successor；默认 state rate、共享 StateThrottle、
+动作 409/未知结果后的 seq=0 重锚边界保持不变。
+
+窗口身份使用显式 source discard sequence；缺失时记录 `legacy_unresolved` 弱
+fallback，不把 snapshot watermark、牌河长度或副露数当作跨重锚权威身份。
+`catch_play`/未确认 phase 下只有牌结构证明或 authoritative snapshot 才能清除
+urgent。state/action 日志新增 throttle 与 HTTP 边界、Retry-After/Date raw 值、
+logical request/physical attempt 关联；验收报告按 transport/window/game 三层
+分类，并分别统计 logical、coalesced、physical、suppressed demand。
+
+当前只完成离线实现与回归，尚未以这份工作树启动新的 3～5 房线上验收；线上结论
+仍沿用下方已有房间的历史证据，不能把 focused/full test 通过解释成线上窗口完整。
+
 ## 最新：429 反馈平滑复测（2026-09-11）
 
 在保持 15/s 与默认 SSE+增量 state 下，`StateThrottle` 增加 429 后一次性

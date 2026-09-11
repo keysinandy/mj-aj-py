@@ -75,6 +75,17 @@ def parse_event(raw: dict) -> dict:
         "seq": raw.get("seq"),
         "data": data,
     }
+    # ``seq`` remains the inclusive event/state watermark.  A discard window
+    # may use a source identity only when the protocol explicitly supplies
+    # one; never infer it from the watermark.  Keep the field at the top
+    # level so window identity consumers do not need to inspect raw payloads.
+    for field in ("source_discard_seq", "last_discard_seq", "discard_seq"):
+        if raw.get(field) is not None:
+            ev[field] = raw[field]
+            break
+        if data.get(field) is not None:
+            ev[field] = data[field]
+            break
     if etype == EV_CHI:
         raw_tiles = data.get("tiles") or []
         tile = ev["tile"]

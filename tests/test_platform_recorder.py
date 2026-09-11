@@ -186,6 +186,27 @@ class TestRecorderUnits(unittest.TestCase):
         self.assertIn("decision", bad[0])
         self.assertEqual(recs[-1]["type"], "end")
 
+    def test_logical_request_and_physical_attempt_fields_are_additive(self):
+        self.rec.req(
+            "g", 0, 200, 1.0, attempts=2,
+            request_kind="WINDOW_PENG",
+            logical_request_id="state-7", attempt_index=1,
+            reason=["SSE_DELTA", "WINDOW_CONFIRM"], generation=4,
+            demand={"watermark_target": 12,
+                    "full_snapshot_required": True})
+        self.rec.action(
+            "g", "response_peng", {"action": "pass"}, ok=True,
+            logical_request_id="window:g:7", attempt_index=2,
+            window_id={"source_discard_seq": 7,
+                       "identity_status": "authoritative"},
+            window_attempt_key={"phase": "response_peng"},
+            identity_status="authoritative")
+        recs = _read_all(self.rec, "g", "bot")
+        self.assertEqual(recs[0]["logical_request_id"], "state-7")
+        self.assertEqual(recs[0]["attempt_index"], 1)
+        self.assertEqual(recs[1]["logical_request_id"], "window:g:7")
+        self.assertEqual(recs[1]["identity_status"], "authoritative")
+
     def test_gamelog_thread_safe(self):
         with tempfile.TemporaryDirectory() as d:
             log = GameLog(os.path.join(d, "x.jsonl"), "g")

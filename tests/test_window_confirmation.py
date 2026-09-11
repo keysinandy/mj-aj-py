@@ -78,6 +78,36 @@ def test_window_identity_survives_snapshot_but_not_new_meld():
     assert first != bot._window_key(mirror, "response_chi")
 
 
+def test_legacy_window_identity_is_diagnostic_not_cross_reanchor_dedupe():
+    bot = BotClient(mock.Mock(), "b", lambda *_: -1, log=lambda _: None)
+    snap = _snapshot(phase="response_chi", turn=3, responding=[0],
+                     discards=[[], [], [], ["6b"]], last_discard="6b")
+    mirror = bot._mirror_from_snapshot(snap)
+    key = bot._window_key(mirror, "response_chi", snap=snap)
+    assert key.window_id.identity_status == "legacy_unresolved"
+    assert bot._same_window_identity(key, key) is False
+    assert bot._strong_window_key(key) is False
+
+
+def test_urgent_downgrade_uses_card_structure_not_stale_local_phase():
+    bot = BotClient(mock.Mock(), "b", lambda *_: -1, log=lambda _: None)
+    no_claim = _snapshot(
+        phase="draw", turn=3, hand=["1w", "2w", "3w", "4w", "5w",
+                                     "6w", "7w", "8w", "9w", "1b",
+                                     "2b", "3b", "4b"],
+        discards=[[], ["9b"], [], []], last_discard="9b")
+    mirror = bot._mirror_from_snapshot(no_claim)
+    assert bot._structurally_no_nonpass_response(mirror, 1, 17) is True
+
+    has_peng = _snapshot(
+        phase="draw", turn=3, hand=["5b", "5b", "1w", "2w", "3w",
+                                     "4w", "6w", "7w", "8w", "1t",
+                                     "2t", "3t", "4t"],
+        discards=[[], ["5b"], [], []], last_discard="5b")
+    mirror = bot._mirror_from_snapshot(has_peng)
+    assert bot._structurally_no_nonpass_response(mirror, 1, 13) is False
+
+
 def test_chi_409_recovers_in_same_loop_without_reposting():
     clock = FakeClock()
     chi = _snapshot(phase="response_chi", turn=3, responding=[0],

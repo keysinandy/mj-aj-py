@@ -199,6 +199,40 @@ def test_action_error_keeps_retry_after_and_timeout_diagnostics_without_retry():
     assert attempt["timing"]["read_ms"] is None
 
 
+def test_http_error_records_header_and_body_boundaries_and_http_date_headers():
+    error = urllib.error.HTTPError(
+        "https://state.example/api/games/g/state", 503, "busy",
+        {
+            "Retry-After": "Wed, 21 Oct 2015 07:28:10 GMT",
+            "Date": "Wed, 21 Oct 2015 07:28:00 GMT",
+        }, io.BytesIO(b'{"message":"gateway"}'))
+    api = Api("https://state.example", "secret-token", state_rate=None)
+    with mock.patch("urllib.request.urlopen", side_effect=error), \
+            mock.patch("mj.platform.api.time.time", return_value=1445412480.0), \
+            mock.patch("mj.platform.api.time.sleep"):
+        with pytest.raises(Exception):
+            api.game_state("g", 1)
+
+    attempt = _TLS.request_meta["state_attempts"][0]
+    assert attempt["headers_received_mono"] is not None
+    assert attempt["body_finished_mono"] is not None
+    assert attempt["retry_after_raw"] == "Wed, 21 Oct 2015 07:28:10 GMT"
+    assert attempt["server_date_raw"] == "Wed, 21 Oct 2015 07:28:00 GMT"
+    assert attempt["retry_after_seconds"] == 10.0
+    assert attempt["server_date_epoch"] == 1445412480.0
+    assert attempt["deadline_left_at_send"] is None
+
+
+def test_action_attempt_marks_state_throttle_not_applicable():
+    api = Api("https://state.example", "secret-token", state_rate=None)
+    with mock.patch("urllib.request.urlopen",
+                    return_value=_http_response({"ok": True})):
+        api.game_action("g", {"action": "pass"})
+    attempt = _TLS.request_meta["action_attempts"][0]
+    assert attempt["throttle"]["status"] == "not_applicable"
+    assert attempt["queue_wait_ms"] is None
+
+
 def test_recorder_request_kind_and_window_confirmation_are_optional_records():
     with tempfile.TemporaryDirectory() as root:
         recorder = Recorder(root=root)

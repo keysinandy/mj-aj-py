@@ -14,25 +14,32 @@ change 不重新修改该正确性路径，也不把它与调度重构混合归�
 
 - 定义稳定的 `WindowId = (game_id, round_id, discard_owner, source_discard_seq, tile)`
   和 `WindowAttemptKey = (WindowId, phase)`；`peng → chi` 共享同一 `WindowId`。
+  `WindowAttemptKey` 只作逻辑窗口阶段键，另以 `logical_request_id` 和
+  `attempt_index` 区分物理请求/重试。
 - 收紧 legacy 窗口身份语义：生产事件缺 `source_discard_seq` 时标记
   `legacy/unresolved`，不得使用牌河长度、副露数或 `/state` 的 snapshot
   watermark `seq` 做跨 `seq=0` 重锚的强去重或动作防重。
 - 在 `BotClient` 与 `Api.game_state()` 之间增加按 gid 的 `StateDemand` 协调：
-  每场最多一个物理 `/state` 在途；合并 `wanted_seq`、最早有效 `deadline`、
-  `reason_mask`、优先级和 `generation`，请求返回后分别判断每个逻辑 reason
-  是否满足，必要时最多补一次最新请求。
-- 固定需求优先级 `WINDOW_CONFIRM > RESYNC > SSE_DELTA`，并让没有非 pass
-  合法反应的窗口退出 urgent；本 change 不提高默认 15/s、不调整 BOT 策略、
-  sleep 或 release-aware EDF。
+  每场最多一个物理 `/state` 在途；将 `watermark_target` 与
+  `full_snapshot_required` 分开，按 reason 保存 SSE/RESYNC/WINDOW_CONFIRM 的
+  metadata，派生优先级、有效截止和 reason mask。全量模式使用 seq=0，不能把
+  seq=0 参与 watermark max；请求返回后按最新 demand 分别判断 reason，只有仍有
+  PENDING reason 时每次 completion 最多产生一个 successor。
+- 固定需求优先级 `WINDOW_CONFIRM > RESYNC > SSE_DELTA`，并仅在结构性合法候选
+  证明或 authoritative snapshot 证明没有非 pass 合法反应时让窗口退出 urgent；
+  本 change 不提高默认 15/s、不调整 BOT 策略、sleep 或 release-aware EDF。
 - 为 state/action 记录可区分排队与 HTTP 阶段的诊断字段：本地
-  `throttle_enter/granted`、`http_start`、`headers_received`、`body_finished`、
-  `response_status`，以及 `pre_read_ms`、`read_ms`、deadline 剩余时间；DNS、
-  connect、TLS、send 等不可观测阶段保持 unavailable。
+  `throttle_enter/granted`、`queue_wait_ms`、`http_start`、`headers_received`、
+  `body_finished`、`response_status`，以及 `pre_read_ms`、`read_ms`、deadline
+  剩余时间；HTTPError 捕获时视为 headers 已收到，error body 读完才有
+  `body_finished`；DNS、connect、TLS、send 等不可观测阶段保持 unavailable。
 - 原样保留 `Retry-After` 和 `server Date`，同时提供可解析的秒数/epoch（若能
   解析）；它们只用于诊断，不参与基于本地 monotonic deadline 的控制逻辑。
-- 建立三层线上验收口径（transport/window/game），并将房间标记为
-  `complete`、`partial` 或 `protocol_skipped`；只有完整房进入 A/B 房级主指标。
-  增加窗口确认比例和 state demand 合并/重复指标。
+- 建立三层线上验收口径（transport/window/game），为每个房间分别记录层级状态；
+  `protocol_skipped` 只排除协议无法验证的层，`partial` 只排除受影响层。增加
+  窗口确认比例，以及 `logical_demands`、`coalesced_demands`、
+  `physical_state_requests`、`suppressed_duplicates` 和
+  `coalescing_ratio` 等 state demand 指标。
 
 ## Capabilities
 
@@ -53,10 +60,11 @@ change 不重新修改该正确性路径，也不把它与调度重构混合归�
   传递；不改变速率）、`mj/platform/recorder.py`（窗口身份、reason、完整性和
   诊断字段）。
 - **测试**：扩展 `tests/test_state_scheduling.py` 及窗口/传输记录器回归，使用
-  fake clock 模拟十场并发、同 gid 单在途、SSE watermark 合并、reason 分别完成、
-  generation 竞态、legacy 身份和过期确认。
+  fake clock 模拟十场并发、同 gid 单在途、SSE watermark/full snapshot 合并、
+  reason 分别完成、generation reconcile、legacy 身份、过期确认和 catch_play
+  urgent 降级边界。
 - **线上验收**：继续使用默认 SSE + 增量 `/state`、15/s、启发式 BOT；至少收集
-  3～5 个完整房。`partial` 房（中断、日志缺尾、缺 end）只作诊断样本，
-  `protocol_skipped` 需明确标注协议无法提供的结算证据。
+  3～5 个房，transport/window/game 各按对应层完整性纳入统计。`partial` 只从
+  受影响层排除，`protocol_skipped` 需明确标注协议无法提供的层级证据。
 - **兼容性**：新增日志字段和诊断标签应向后兼容既有回放；动作 POST 单次提交、
   409/未知结果 `seq=0` 重锚且不盲重发的安全边界保持不变。

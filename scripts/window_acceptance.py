@@ -48,6 +48,13 @@ def summarize(paths):
         cursor = None
         decision_keys, successful_keys, boundary_keys = {}, set(), []
         rounds = set()
+        room_requests = []
+        room_physical = []
+        room_physical_count = 0
+        room_confirms = Counter()
+        room_confirm_keys = set()
+        end_row = None
+        demand_end = None
         for row in records:
             kind = row["type"]
             types[kind] += 1
@@ -92,13 +99,21 @@ def summarize(paths):
                 mirror = None
             elif kind == "req":
                 requests.append(row)
+                room_requests.append(row)
                 for name in ("retry_429", "retry_gateway", "retry_network"):
                     transport[name] += row.get("transport", {}).get(name, 0)
                 meta = row.get("transport", {})
                 diagnostic_attempts["state"].extend(
                     meta.get("state_attempts", []))
-                transport["physical_attempts"] += meta.get(
+                physical_rows = meta.get("state_attempts", [])
+                room_physical.extend(physical_rows)
+                physical_count = meta.get(
                     "state_physical_attempts", row.get("attempts") or 1)
+                try:
+                    room_physical_count += int(physical_count or 0)
+                except (TypeError, ValueError):
+                    pass
+                transport["physical_attempts"] += physical_count
             elif kind == "action":
                 payload = row.get("payload", {}).get("action", "unknown")
                 actions[f'{row.get("phase")}/{payload}/{"ok" if row.get("ok") else "failed"}'] += 1
@@ -112,17 +127,41 @@ def summarize(paths):
                     boundary_keys.append((row["phase"], mirror.round_no,
                                           mirror.pending, row.get("seq", cursor)))
             elif kind == "window_confirm":
-                confirms[row.get("outcome", row.get("stage", "unknown"))] += 1
+                outcome = row.get("outcome", row.get("stage", "unknown"))
+                confirms[outcome] += 1
+                room_confirms[outcome] += 1
+                if outcome == "requested":
+                    room_confirm_keys.add((
+                        row.get("logical_request_id"),
+                        json.dumps(row.get("window_id"), sort_keys=True,
+                                   ensure_ascii=False),
+                        row.get("phase")))
+            elif kind == "end":
+                end_row = row
+                demand_end = row.get("demand")
         boundary_recovered += sum(key in successful_keys for key in boundary_keys)
         audit_totals.update(audit)
         replay = replay_game(records, want_samples=False)
-        games.append({"file": str(path), "end": next(
-            (r.get("reason") for r in reversed(records) if r["type"] == "end"), None),
+        end_reason = (end_row or {}).get("reason")
+        has_end = end_row is not None
+        transport_status = "complete" if has_end else "partial"
+        window_status = "complete" if has_end else "partial"
+        game_status = ("complete" if audit["round_ended_recorded"]
+                       else "protocol_skipped" if has_end else "partial")
+        games.append({"file": str(path), "end": end_reason,
+            "status": {"transport_status": transport_status,
+                       "window_status": window_status,
+                       "game_status": game_status},
             "rounds_in_snapshots": sorted(rounds), "coverage": dict(audit),
             "replay_illegal": len(replay["illegal"]),
             "replay_warnings": replay["warnings"],
             "replay_rounds_settled": replay["n_rounds"],
-            "replay_clean": replay["clean"]})
+            "replay_clean": replay["clean"],
+            "eligible_windows": len(room_confirm_keys),
+            "window_confirm_seq0": room_confirms.get("requested", 0),
+            "demand": demand_end or {},
+            "transport_requests": len(room_requests),
+            "transport_physical_attempts": room_physical_count})
 
     def request_group(rows):
         return {"requests": len(rows),
@@ -169,6 +208,45 @@ def summarize(paths):
             "retry_after_s": distribution(retry_after),
         }
 
+    def layer_room_indexes(status_key):
+        return [i for i, room in enumerate(games)
+                if room.get("status", {}).get(status_key) == "complete"]
+
+    def demand_totals(indexes):
+        totals = Counter()
+        for index in indexes:
+            demand = games[index].get("demand") or {}
+            for key in ("logical_demands", "coalesced_demands",
+                        "physical_state_requests", "suppressed_duplicates"):
+                totals[key] += int(demand.get(key) or 0)
+        logical = totals["logical_demands"]
+        physical_requests = totals["physical_state_requests"]
+        totals["coalescing_ratio"] = (
+            round(1.0 - physical_requests / logical, 6)
+            if logical else None)
+        return dict(totals)
+
+    def layer_summary(status_key):
+        indexes = layer_room_indexes(status_key)
+        # Request rows intentionally remain unmodified in the public report;
+        # use room-local demand/attempt counts for the layer denominator.
+        layer_request_count = sum(games[i]["transport_requests"]
+                                  for i in indexes)
+        layer_physical = sum(games[i]["transport_physical_attempts"]
+                             for i in indexes)
+        return {
+            "rooms_complete": len(indexes),
+            "rooms_excluded": len(games) - len(indexes),
+            "denominator": len(indexes),
+            "requests": layer_request_count,
+            "physical_state_attempts": layer_physical,
+            "eligible_windows": sum(games[i]["eligible_windows"]
+                                     for i in indexes),
+            "window_confirm_seq0": sum(games[i]["window_confirm_seq0"]
+                                        for i in indexes),
+            "demand": demand_totals(indexes),
+        }
+
     return {
         "files": len(paths), "record_counts": dict(types), "actions": dict(actions),
         "claim_miss_records": dict(misses), "window_confirm_records": dict(confirms),
@@ -189,6 +267,15 @@ def summarize(paths):
         "state_urgent": request_group([r for r in requests
                                         if r.get("throttle", {}).get("urgent")]),
         "state_by_kind": {k: request_group(v) for k, v in sorted(by_kind.items())},
+        "layer_status_counts": {
+            key: dict(Counter(room["status"][key] for room in games))
+            for key in ("transport_status", "window_status", "game_status")
+        },
+        "layer_metrics": {
+            "transport": layer_summary("transport_status"),
+            "window": layer_summary("window_status"),
+            "game": layer_summary("game_status"),
+        },
         "coverage": dict(audit_totals), "games": games,
         "limitations": [
             "Only recorded decisions and observable windows can be verified.",
