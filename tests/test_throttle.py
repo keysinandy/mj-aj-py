@@ -59,6 +59,17 @@ class TestStateThrottle(unittest.TestCase):
         self.assertTrue(ticket.deadline_missed)
         self.assertLessEqual(ticket.deadline_left_ms, 0)
 
+    def test_429_feedback_delays_only_the_next_permit(self):
+        now = [10.0]
+        throttle = StateThrottle(rate=10.0, burst=1, clock=lambda: now[0])
+        throttle.acquire("seed")
+        before = throttle._next
+        throttle.note_429()
+        self.assertEqual(throttle._next, max(before, 10.0 + 0.2))
+        stats = throttle.stats()
+        self.assertEqual(stats["feedback_429"], 1)
+        self.assertGreaterEqual(stats["feedback_cooldown_ms"], 0.0)
+
 
 class TestApiStateGating(unittest.TestCase):
     def test_only_game_state_uses_throttle_and_forwards_deadline(self):

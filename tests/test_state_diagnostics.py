@@ -65,6 +65,34 @@ def test_state_attempts_keep_429_and_final_200_without_url_or_token():
     assert "state.example" not in encoded
 
 
+def test_state_429_notifies_shared_throttle_before_retry():
+    class Throttle:
+        def __init__(self):
+            self.acquires = []
+            self.feedback = 0
+
+        def acquire(self, gid, deadline):
+            self.acquires.append((gid, deadline))
+
+        def note_429(self):
+            self.feedback += 1
+
+    throttle = Throttle()
+    api = Api("https://state.example", "secret-token",
+              state_throttle=throttle)
+    with mock.patch(
+        "urllib.request.urlopen",
+        side_effect=[
+            urllib.error.HTTPError("https://state.example/state", 429,
+                                   "busy", {}, io.BytesIO(b"{}")),
+            _http_response({"seq": 1}),
+        ],
+    ), mock.patch("mj.platform.api.time.sleep"):
+        assert api.game_state("g", 1) == {"seq": 1}
+    assert throttle.feedback == 1
+    assert throttle.acquires == [("g", None), ("g", None)]
+
+
 def test_non_state_request_keeps_existing_transport_shape():
     api = Api("https://state.example", "secret-token", state_rate=None)
     with mock.patch("urllib.request.urlopen",

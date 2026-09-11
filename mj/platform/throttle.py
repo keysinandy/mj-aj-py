@@ -39,7 +39,9 @@ class StateThrottle:
         # 允许冷启动 burst 个请求；之后维持匀速发起。
         self._next = self.clock() - (self.burst - 1) * self.interval
         self._stats = {"grants": 0, "urgent": 0, "deadline_missed": 0,
-                       "waited_ms": 0.0, "waited_ms_max": 0.0}
+                       "waited_ms": 0.0, "waited_ms_max": 0.0,
+                       "feedback_429": 0, "feedback_cooldown_ms": 0.0,
+                       "feedback_cooldown_ms_max": 0.0}
 
     def _head(self, now):
         def key(w):
@@ -91,6 +93,31 @@ class StateThrottle:
                     waits.append(max(0.0, waiter["arrived"] + self.max_normal_wait - now))
                 timeout = min(x for x in waits if x > 0) if any(waits) else self.interval
                 self._cv.wait(timeout=timeout)
+
+    def note_429(self, cooldown_intervals=1.0):
+        """把服务端 429 反馈折算成下一许可的短暂冷却。
+
+        名义速率和 EDF 排序不变；只有收到真实 429 后才把下一个许可
+        向后平移一个间隔，避免网络抖动把匀速的客户端请求在服务端的
+        滑动窗口里挤成一簇。调用方通常在 429 重试退避前调用一次，
+        因而不会影响没有 429 的正常路径。
+        """
+        try:
+            intervals = float(cooldown_intervals)
+        except (TypeError, ValueError):
+            intervals = 1.0
+        intervals = max(0.0, intervals)
+        now = self.clock()
+        with self._cv:
+            target = now + self.interval * (1.0 + intervals)
+            previous = self._next
+            self._next = max(self._next, target)
+            added_ms = max(0.0, (self._next - previous) * 1000.0)
+            self._stats["feedback_429"] += 1
+            self._stats["feedback_cooldown_ms"] += added_ms
+            self._stats["feedback_cooldown_ms_max"] = max(
+                self._stats["feedback_cooldown_ms_max"], added_ms)
+            self._cv.notify_all()
 
     def stats(self):
         with self._cv:

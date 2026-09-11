@@ -72,7 +72,7 @@ class StateSnapshotDeadlineExceeded(StateSnapshotError):
 def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
              deadline=None, retry=True, retry_429=True,
              retry_transient=True, error_cls=ApiError, before_attempt=None,
-             state_diagnostics=False):
+             state_diagnostics=False, on_429=None):
     """执行 HTTP 请求并把本次传输明细留在线程局部供记录器读取。
 
     deadline 使用 monotonic 秒；/state 用它参与限速与退避调度，动作
@@ -232,6 +232,14 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
             if e.code == 429:
                 retry_429_count += 1
                 set_meta()
+                if on_429 is not None:
+                    # Feedback is advisory.  A custom throttle must not be
+                    # able to turn a retryable state response into a failed
+                    # game, and the built-in callback is thread-safe.
+                    try:
+                        on_429()
+                    except Exception:
+                        pass
                 if not allow_retry_429:
                     raise make_error(e.code, e.read().decode(errors="replace"),
                                      uncertain=False) from None
@@ -344,7 +352,10 @@ class Api:
         return self.post("/api/match")
 
     def game_state(self, gid, seq, deadline=None, request_timeout=None):
-        """拉取状态；只有该端点消耗每令牌共享的 16/s 预算。
+        """拉取状态；只有该端点消耗每令牌共享的 /state 预算。
+
+        服务端上限约为 16/s，客户端默认以 15/s 主动限速；收到真实
+        429 时，内置限速器只对后续许可做一次短暂冷却。
 
         ``request_timeout`` 是本次 urllib 调用的单次 timeout 上限，
         不是端到端耗时保证；默认仍使用实例 timeout。需要确认窗口
@@ -367,10 +378,13 @@ class Api:
         if request_timeout is not None:
             timeout = max(0.001, float(request_timeout))
             timeout = min(timeout, self.timeout)
+        on_429 = (getattr(self.state_throttle, "note_429", None)
+                  if self.state_throttle is not None else None)
         return _request("GET", self._url(f"/api/games/{gid}/state",
                                            {"seq": seq}), token=self.token,
                         timeout=timeout, deadline=deadline,
-                        before_attempt=acquire, state_diagnostics=True)
+                        before_attempt=acquire, state_diagnostics=True,
+                        on_429=on_429)
 
     def game_snapshot(self, gid, deadline=None, timeout=0.5):
         """有界地请求 ``seq=0`` 全量快照。
