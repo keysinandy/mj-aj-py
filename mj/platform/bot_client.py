@@ -1899,6 +1899,22 @@ class BotClient:
             return None
         passed_explicitly = False
         if claims:
+            # A catch-play discard can arrive before the incremental mirror
+            # knows which seat owns the freeze.  Do not infer that every
+            # locally legal peng is currently actionable: ask for one
+            # authoritative response_peng snapshot, then let
+            # responding_seats + exact deadline decide.  This is deliberately
+            # limited to the protocol's explicit catch_play marker so normal
+            # discard latency and request volume remain unchanged.
+            event_data = (ev or {}).get("data") or {}
+            if event_data.get("catch_play") and "phase" not in (ev or {}):
+                stamp = self._epoch_seconds((ev or {}).get("ts"))
+                raise _WindowConfirm(
+                    phase="response_peng", pending=mirror.pending,
+                    round_no=mirror.round_no, legal=claims,
+                    source_seq=(ev or {}).get("seq"), source_ts=stamp,
+                    schedule_deadline=self._confirm_schedule_deadline(stamp),
+                    reason="catch_play_confirmation")
             # 秒级 ts 的 T+1 只是最早可能关闭点：临界时确认快照，
             # 不把估计当成已超时，也不盲发迟到的动作。
             stamp = self._epoch_seconds((ev or {}).get("ts"))

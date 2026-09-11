@@ -118,3 +118,31 @@ def test_quantized_peng_timestamp_confirms_instead_of_abandoning():
     assert api.actions[0][1]["action"] == "peng"
     assert bot.stats["auto_played"] == 0
     assert bot.stats["client_deadline_abandons"] == 0
+
+
+def test_catch_play_peng_waits_for_authoritative_response_turn():
+    """抓打圈弃牌先确认冻结/response turn，不提前 POST 碰。"""
+    clock = FakeClock()
+    hand = ["1w", "1w", "2w", "3w", "4w", "5w", "6w", "7b",
+            "8b", "1t", "2t", "3t", "9w"]
+    initial = _snapshot(hand, phase="draw", turn=1)
+    discard = _ev(1, "tile_discarded", 1, "1w", clock=clock,
+                  data={"catch_play": True})
+    authoritative = _snapshot(
+        hand, phase="response_peng", turn=1, responding=[2],
+        discards=[[], ["1w"], [], []], last_discard="1w",
+        window_deadline_ms=1001000)
+    api = ScriptedServer([
+        {"snapshot": initial, "seq": 0},
+        {"events": [discard], "seq": 1},
+        {"snapshot": authoritative, "seq": 1},
+        _finished(),
+    ], clock, expected_seqs=[0, 0, 0, 1])
+    bot = BotClient(api, "b", lambda g, s: next(
+        a for a in g.legal_actions() if a != -1), log=lambda _: None,
+                    window_wait=0, idle_sleep=0)
+    with mock.patch.object(module, "time", clock):
+        bot.play_game("g")
+
+    assert api.actions == []
+    assert bot.stats["err409"] == 0
