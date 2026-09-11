@@ -2,23 +2,28 @@
 
 ### Requirement: 吃/碰按"副露 + 最佳弃牌后站立牌面"完整评价
 
-启发式 bot 对他家弃牌的反应侧决策（CHOW_LOW/MID/HIGH、PONG）SHALL 以"副露动作完成 + 枚举每种合法舍牌后的站立牌面"为评价对象，评价键固定为 `(shanten, ukeire, shape)` 三元组，其中 ukeire 按可见牌折算真实剩余进张。
+启发式 bot 对他家弃牌的反应侧决策（CHOW_LOW/MID/HIGH、PONG）SHALL 以"副露动作完成 + 枚举每种合法舍牌后的站立牌面"为评价对象，门槛判据为 `(shanten, ukeire)`，ukeire 按可见牌折算真实剩余进张。
 
-- 吃/碰评价流程 MUST 为：从反应时点手牌移除该动作消耗的 2 张牌得到 need+1 态手牌，显式枚举每种合法舍牌得到 need 态站立手牌，对每个站立手牌计算 `(shanten, ukeire, shape)`，取最优者作为该动作评分。
+- 吃/碰评价流程 MUST 为：从反应时点手牌移除该动作消耗的 2 张牌得到 need+1 态手牌，显式枚举每种合法舍牌得到 need 态站立手牌，对每个站立手牌计算 `(shanten, ukeire)`，返回最优舍牌的 `(shanten, ukeire, discard_shape_cost, 舍牌)` 作为该动作评分。`discard_shape_cost` 复用弃牌侧 `_discard_shape_cost` 语义，仅作多候选择优，MUST NOT 进入门槛判据。
 - 评价张数口径 MUST 满足 `shanten()` 的暗牌张数断言（副露数 0/1/2 三档均须正确）。
-- 明杠（KONG_OPEN）MUST 保留既有独立启发式，不套用本评价框架。
+- 多个通过门槛的候选 MUST 在当前 react mode 的合法候选内择优（引擎 claim 窗只产生 PONG/KONG_OPEN、吃窗只产生 CHOW，二者不同窗竞争）。
+- KONG 窗口 MUST 沿用既有决策：`KONG_OPEN ∈ acts` 时整个 claim 窗口（含 PONG）不进入本评价流程；仅 `KONG_OPEN ∉ acts` 且 `PONG ∈ acts` 时 PONG 使用本评价框架。
 
 #### Scenario: 吃后向听降低则执行吃
 - **WHEN** 某吃选项（含其最佳舍牌后的站立牌面）的 shanten 低于 PASS 基准
-- **THEN** bot 从所有过门槛的吃/碰选项中按 更低 shanten → 更高 ukeire → 更低结构损失 → 稳定 action 顺序 选出最优并执行
+- **THEN** bot 从当前 react mode 的所有过门槛候选中按 更低 shanten → 更高 ukeire → 更低 discard_shape_cost → 稳定 action 顺序 选出最优并执行
 
 #### Scenario: 两种吃法选最终牌面更优者
 - **WHEN** 同一张弃牌存在多种合法吃法，且吃完 + 最佳弃牌后的 (shanten, ukeire) 不同
 - **THEN** bot 选择最终站立牌面评价更高的吃法
 
+#### Scenario: KONG 与 PONG 同窗时行为不变
+- **WHEN** 手持三张 pending 牌，PONG 与 KONG_OPEN 同时合法
+- **THEN** 决策结果与既有实现一致（整个 claim 窗口不进入新评价流程）
+
 ### Requirement: PASS 基准为反应时点站立暗牌原样评价
 
-反应侧决策 SHALL 存在 PASS 基准：对反应时点的站立暗牌（13−3·locked 张，不做任何增删）以 `(shanten, ukeire, shape)` 评价，与各吃/碰选项评分同键比较。基准 MUST NOT 引入"含他家刚打出候选牌"的口径。
+反应侧决策 SHALL 存在 PASS 基准：对反应时点的站立暗牌（13−3·locked 张，不做任何增删）以 `(shanten, ukeire)` 评价，与各吃/碰选项门槛判据同键比较。基准 MUST NOT 引入"含他家刚打出候选牌"的口径（该牌本不在反应玩家手牌中）。
 
 #### Scenario: 可碰但向听不变且进张明显变差
 - **WHEN** 碰 + 最佳弃牌后与 PASS 基准 shanten 相同，且 ukeire 增量小于该动作阈值
@@ -62,8 +67,8 @@
 
 ### Requirement: 反应侧决策性能受闸门约束
 
-重写后的 `_choose_react()` 单次决策 SHALL 控制 ukeire 调用量（约 ≤50 次/决策，Rust 内核默认路径），MUST 在合入前通过吞吐压测（`python3 -m mj.evaluate 200` 相对基线降幅可接受）。
+重写后的 `_choose_react()` 单次决策 SHALL 控制 ukeire 调用量：吃窗 ≤33 次（3 吃法 × ≤11 舍牌候选）、纯碰窗 ≤11 次（legacy KONG 路径不计），Rust 内核默认路径。MUST 通过可判定压测：同机同内核环境，对变更前 commit `9f4f8de` 与变更后版本各运行 3 次 `python3 -m mj.evaluate 200`，4 bots 段中位吞吐（elapsed/games）下降不超过 15%。
 
 #### Scenario: 吞吐压测
-- **WHEN** 实现完成后运行 `python3 -m mj.evaluate 200`
-- **THEN** 相对弃牌侧重构后基线（~107.8 局/秒单核自博弈口径）吞吐降幅在可接受范围内
+- **WHEN** 实现完成后在同一机器、同一 Python/Rust 内核环境下，对变更前 `9f4f8de` 与变更后版本各运行 3 次 `python3 -m mj.evaluate 200`
+- **THEN** 4 bots 段中位吞吐下降 ≤15%
