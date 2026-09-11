@@ -41,9 +41,50 @@ def test_each_reason_keeps_its_own_metadata_and_deadline_recomputes():
     assert demand.full_snapshot_required is True  # RESYNC still pending
 
     demand.reconcile(130, response_mode="FULL", snapshot={"seq": 130})
+    assert demand.reasons[RESYNC]["status"] == PENDING
+    demand.finish_resync(SATISFIED)
     assert demand.reasons[RESYNC]["status"] == SATISFIED
     assert demand.reasons[SSE_DELTA]["status"] == SATISFIED
     assert demand.full_snapshot_required is False
+
+
+def test_resync_requires_snapshot_rebuild_ack_not_full_request_mode():
+    demand = StateDemand()
+    demand.submit_resync(cause="action_409")
+    plan = demand.start_request(default_seq=42)
+    assert plan.mode == "FULL"
+
+    demand.reconcile(42, response_mode="FULL", snapshot=None)
+    assert demand.has_pending is True
+    assert demand.reasons[RESYNC]["status"] == PENDING
+
+    demand.finish_resync(SATISFIED)
+    assert demand.has_pending is False
+
+
+def test_window_confirm_has_priority_over_resync_and_keeps_deadline():
+    demand = StateDemand()
+    demand.submit_resync(cause="action_409")
+    demand.submit_window_confirm(
+        WindowId("g", 1, 2, 7, 5), "response_peng", deadline=123.0)
+
+    plan = demand.start_request(default_seq=11)
+
+    assert plan.mode == "FULL"
+    assert plan.seq == 0
+    assert plan.kind == WINDOW_CONFIRM
+    assert plan.effective_deadline == 123.0
+
+
+def test_delta_uses_local_cursor_not_sse_wake_watermark():
+    demand = StateDemand()
+    demand.submit_sse(2)
+
+    plan = demand.start_request(default_seq=1)
+
+    assert demand.watermark_target == 2
+    assert plan.mode == "DELTA"
+    assert plan.seq == 1
 
 
 def test_generation_change_only_successors_if_latest_reason_is_pending():
@@ -62,10 +103,12 @@ def test_generation_change_only_successors_if_latest_reason_is_pending():
     second = demand.start_request()
     demand.submit_sse(130)
     demand.reconcile(125, snapshot={"seq": 125})
-    successor = demand.start_request()
+    successor = demand.start_request(default_seq=125)
     assert successor is not None
-    assert successor.seq == 130
+    assert successor.seq == 125
     assert successor.logical_request_id != second.logical_request_id
+    assert demand.successor_requests == 1
+    assert demand.logical_demands >= 3
 
 
 def test_duplicate_or_lower_watermark_does_not_advance_generation():

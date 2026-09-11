@@ -1,9 +1,11 @@
 """SSE 合并与十场共享配额的离线调度回归。"""
 
 import queue
+from unittest import mock
 
 from mj.platform.bot_client import BotClient, StateDemand
 from mj.platform.throttle import StateThrottle
+from mj.platform.state_demand import WindowId
 
 
 def test_sse_burst_is_one_successful_wakeup():
@@ -109,3 +111,16 @@ def test_ten_play_loops_acknowledge_inflight_sse_with_one_state_each():
             future.result(timeout=10)
     assert all(count == 1 for count in calls.values())
     assert all(demand.empty() for demand in demands.values())
+
+
+def test_play_loop_passes_merged_deadline_to_physical_state_call():
+    demand = StateDemand()
+    demand.submit_window_confirm(
+        WindowId("g", 1, 2, 7, 5), "response_peng", deadline=42.0)
+    bot = BotClient(mock.Mock(), "bot", None)
+    bot._state = mock.Mock(return_value={
+        "finished": True, "seq": 0, "snapshot": {"scores": [0, 0, 0, 0]}})
+
+    bot._play_loop("g", demand, {"alive": False})
+
+    assert bot._state.call_args.args[2] == 42.0

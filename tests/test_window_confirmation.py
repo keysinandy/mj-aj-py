@@ -4,9 +4,12 @@ import io
 import urllib.error
 from unittest import mock
 
+from mj.game import CHOW_LOW
 from mj.platform.api import Api, ApiError
 from mj.platform.throttle import ThrottleTicket
 from mj.platform.bot_client import BotClient
+from mj.platform.state_demand import WindowAttemptKey, WindowId
+from mj.platform.proto import tidx
 import mj.platform.bot_client as module
 from test_window_recovery import (
     FakeClock, ScriptedServer, _snapshot, _finished, _choose_chi_or_draw,
@@ -87,6 +90,57 @@ def test_legacy_window_identity_is_diagnostic_not_cross_reanchor_dedupe():
     assert key.window_id.identity_status == "legacy_unresolved"
     assert bot._same_window_identity(key, key) is False
     assert bot._strong_window_key(key) is False
+
+
+def test_tile_discard_event_seq_is_authoritative_source_identity():
+    bot = BotClient(mock.Mock(), "b", lambda *_: -1, log=lambda _: None)
+    snap = _snapshot(phase="response_chi", turn=3, responding=[0],
+                     discards=[[], [], [], ["6b"]], last_discard="6b")
+    mirror = bot._mirror_from_snapshot(snap, gid="g1")
+    key = bot._window_key(
+        mirror, "response_chi",
+        ev={"type": "tile_discarded", "seq": 42})
+
+    assert key.window_id.identity_status == "authoritative"
+    assert key.window_id.source_discard_seq == 42
+
+
+def test_chi_confirmation_does_not_satisfy_on_phase_only():
+    bot = BotClient(mock.Mock(), "b", lambda *_: -1, log=lambda _: None)
+    snap = _snapshot(phase="response_chi", turn=3, responding=[0],
+                     discards=[[], [], [], ["6b"]], last_discard="6b",
+                     window_deadline_ms=1002000)
+    mirror = bot._mirror_from_snapshot(snap, gid="g1")
+    mirror._source_discard_seq = 42
+    window_id = WindowId("g1", 1, 3, 42, tidx("6b"))
+    confirm = module._WindowConfirm(
+        phase="response_chi", pending=mirror.pending, round_no=1,
+        legal=[CHOW_LOW], source_seq=42,
+        window_key=WindowAttemptKey(window_id, "response_chi"))
+
+    with mock.patch.object(module.time, "time", return_value=1000.0):
+        assert bot._resolve_window_confirm(
+            "g1", mirror, snap, confirm, seq=42) == "confirmed"
+
+    no_deadline = dict(snap)
+    no_deadline.pop("window_deadline_ms")
+    with mock.patch.object(module.time, "time", return_value=1000.0):
+        assert bot._resolve_window_confirm(
+            "g1", mirror, no_deadline, confirm, seq=42) == "unconfirmed"
+
+    not_responding = dict(snap, responding_seats=[])
+    with mock.patch.object(module.time, "time", return_value=1000.0):
+        assert bot._resolve_window_confirm(
+            "g1", mirror, not_responding, confirm, seq=42) == "not_responding"
+
+
+def test_snapshot_game_id_is_injected_from_worker_gid():
+    bot = BotClient(mock.Mock(), "b", lambda *_: -1, log=lambda _: None)
+    snap = _snapshot()
+    snap.pop("game_id")
+    mirror = bot._mirror_from_snapshot(snap, gid="worker-gid")
+
+    assert mirror._game_id == "worker-gid"
 
 
 def test_urgent_downgrade_uses_card_structure_not_stale_local_phase():

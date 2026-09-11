@@ -223,6 +223,21 @@ def test_http_error_records_header_and_body_boundaries_and_http_date_headers():
     assert attempt["deadline_left_at_send"] is None
 
 
+def test_long_retry_after_is_capped_by_state_deadline():
+    error = urllib.error.HTTPError(
+        "https://state.example/api/games/g/state", 429, "busy",
+        {"Retry-After": "60"}, io.BytesIO(b"{}"))
+    api = Api("https://state.example", "secret-token", state_rate=None)
+    with mock.patch("urllib.request.urlopen",
+                    side_effect=[error, _http_response({"seq": 2})]), \
+            mock.patch("mj.platform.api.time.monotonic", return_value=100.0), \
+            mock.patch("mj.platform.api.time.sleep") as sleep:
+        assert api.game_state("g", 2, deadline=100.1) == {"seq": 2}
+
+    sleep.assert_called_once()
+    assert sleep.call_args.args[0] <= 0.05
+
+
 def test_action_attempt_marks_state_throttle_not_applicable():
     api = Api("https://state.example", "secret-token", state_rate=None)
     with mock.patch("urllib.request.urlopen",

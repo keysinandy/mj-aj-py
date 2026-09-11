@@ -23,12 +23,14 @@ demand 做 reason-specific reconcile。generation 变化本身不会触发补请
 仍有 PENDING reason 才能产生 successor；默认 state rate、共享 StateThrottle、
 动作 409/未知结果后的 seq=0 重锚边界保持不变。
 
-窗口身份使用显式 source discard sequence；缺失时记录 `legacy_unresolved` 弱
-fallback，不把 snapshot watermark、牌河长度或副露数当作跨重锚权威身份。
+窗口身份使用协议显式 source discard sequence 或 `tile_discarded` 自身 event
+seq；其他事件缺失时记录 `legacy_unresolved` 弱 fallback，不把 snapshot
+watermark、牌河长度或副露数当作跨重锚权威身份。增量物理 `/state` 使用本地已
+应用 cursor，不使用 SSE watermark 跳过未消费事件。
 `catch_play`/未确认 phase 下只有牌结构证明或 authoritative snapshot 才能清除
 urgent。state/action 日志新增 throttle 与 HTTP 边界、Retry-After/Date raw 值、
 logical request/physical attempt 关联；验收报告按 transport/window/game 三层
-分类，并分别统计 logical、coalesced、physical、suppressed demand。
+分类，并分别统计 logical、coalesced、successor、physical、suppressed demand。
 
 当前只完成离线实现与回归，尚未以这份工作树启动新的 3～5 房线上验收；线上结论
 仍沿用下方已有房间的历史证据，不能把 focused/full test 通过解释成线上窗口完整。

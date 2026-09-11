@@ -395,8 +395,13 @@ class ConcurrentGameIsolationTests(unittest.TestCase):
                         return {"snapshot": _snapshot(turn=1), "seq": 0}
                     if stage == 1:
                         tile = tiles[gids.index(gid)]
-                        return {"events": [_ev(1, "tile_drawn", 0, tile,
-                                                clock=clock)], "seq": 1}
+                        # A FULL request must prove RESYNC by returning a
+                        # usable snapshot.  Put the draw fact in that
+                        # snapshot so the test still exercises the action
+                        # path without treating a non-snapshot FULL response
+                        # as a successful re-anchor.
+                        return {"snapshot": _snapshot(
+                            turn=0, drawn=tile), "seq": 1}
                     if stage == 2:
                         return _finished()
                     raise AssertionError(f"extra state call for {gid}")

@@ -217,7 +217,8 @@ def summarize(paths):
         for index in indexes:
             demand = games[index].get("demand") or {}
             for key in ("logical_demands", "coalesced_demands",
-                        "physical_state_requests", "suppressed_duplicates"):
+                        "successor_requests", "physical_state_requests",
+                        "suppressed_duplicates"):
                 totals[key] += int(demand.get(key) or 0)
         logical = totals["logical_demands"]
         physical_requests = totals["physical_state_requests"]

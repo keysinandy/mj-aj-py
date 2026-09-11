@@ -33,6 +33,7 @@
 
 当生产事件缺少可确认的 `source_discard_seq` 时，系统 MUST 将窗口身份标记为
 `legacy/unresolved`，并可记录牌河长度、副露数等弱 fallback 作为诊断信息；
+但 `tile_discarded` 事件自身的 event `seq` 可作为该弃牌的 source sequence。
 这些 fallback 和 `/state` 快照 `seq` MUST NOT 用于跨 seq=0 重锚的强去重、
 窗口同一性证明或动作授权。只有 authoritative `WindowId` 才拥有与安全去重
 相同的语义。
@@ -73,8 +74,8 @@ in_flight
 （包括 retry）仍 MUST 经过该令牌共享的 `StateThrottle`。
 
 当 `full_snapshot_required=true` 时物理请求 MUST 使用 `game_state(seq=0)`；否则
-才使用 `game_state(seq=watermark_target)`。`seq=0` 是全量快照模式，不参与
-`watermark_target` 的数值 max，但返回快照中的实际 watermark 可以满足
+才使用 BotClient 当前已应用的 local cursor，而不是 `watermark_target`。`seq=0`
+是全量快照模式，不参与 `watermark_target` 的数值 max，但返回快照中的实际 watermark 可以满足
 `SSE_DELTA`。
 
 #### Scenario: 一阵 SSE 帧合并为一个需求
@@ -139,8 +140,9 @@ reason。只有 PENDING reason 继续留在 active `StateDemand`；reason 终止
 必须重新计算 `full_snapshot_required`、`kind_priority`、`effective_deadline` 和
 `reason_mask`。至少：
 
-- `RESYNC` 在权威快照按其 cause 完成重建且（若有）返回 watermark 覆盖其目标时
-  为 `SATISFIED`；
+- `RESYNC` 在 BotClient 成功应用权威快照按其 cause 完成重建且（若有）返回
+  watermark 覆盖其目标时为 `SATISFIED`；仅请求了 seq=0 或收到无 snapshot 响应
+  不得满足该 reason；
 - `SSE_DELTA` 在返回 watermark 覆盖其 `wanted_seq` 时为 `SATISFIED`，否则为
   `PENDING`；
 - `WINDOW_CONFIRM` 只有在 authoritative `WindowId` 仍相同、phase 正确、
@@ -359,13 +361,15 @@ claim_miss）和 game（round started/ended、winner、score delta/final score�
 ```text
 logical_demands
 coalesced_demands
+successor_requests
 physical_state_requests
 suppressed_duplicates
 coalescing_ratio = 1 - physical_state_requests / logical_demands
 ```
 
-`logical_demands` 统计每次提交给协调器的逻辑需求事件（包括一次 completion
-因仍有 PENDING reason 而产生的 successor intent）；
+`logical_demands` 统计每次提交给协调器的逻辑需求事件；一次 completion 因仍有
+PENDING reason 而产生 successor intent 时，`successor_requests` 与
+`logical_demands` 各增加一次，避免 successor 使 `coalescing_ratio` 变成负数；
 `coalesced_demands` 统计被合并进已有 pending/in-flight demand 且改变语义状态的
 事件；`suppressed_duplicates` 统计相同或被更高 watermark 支配、未改变语义状态
 的重复事件；`physical_state_requests` 统计协调器新启动的物理 `/state` 请求，

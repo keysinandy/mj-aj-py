@@ -8,8 +8,10 @@ SSE 或窗口事件时，缺少显式的目标 watermark、原因集合和代际
 是否产生了重复物理请求，也难以在返回后分别判断“重锚完成”和“窗口确认完成”。
 
 窗口身份已有 `source_discard_seq` 优先逻辑，但旧夹具/旧协议仍可能只有牌河、
-副露计数或快照 watermark。增量 claim 会改变牌河，而 `/state` 的 `snap["seq"]`
-只是包含式 watermark；因此这些值不能跨 seq=0 重锚承担安全去重语义。
+副露计数或快照 watermark。真实 `tile_discarded` 事件自身的 `seq` 是该弃牌事件
+的 source sequence；而 `/state` 的 `snap["seq"]` 只是包含式 watermark。因此只
+允许事件自身 seq 或协议显式 source 字段承担身份，snapshot watermark 不能跨
+seq=0 重锚承担安全去重语义。
 
 HTTP 层已有 `urlopen` 聚合耗时和 `response.read()` 耗时，足以区分响应头前与
 响应体阶段，但还需要明确时间点和 Retry-After/Date 的原始值，才能把窗口内
@@ -51,7 +53,8 @@ flowchart LR
   `StateThrottle` 的现有 15/s 排序和 429 反馈行为。
 - 不调整启发式 BOT、policy checkpoint、sleep、动作策略或窗口协议时序。
 - 不提前提交动作、不根据不权威快照授权动作、不对 409/未知结果重发旧 POST。
-- 不把 `snap["seq"]`、牌河长度或副露数升级为 legacy 窗口的权威身份。
+- 不把 `snap["seq"]`、牌河长度或副露数升级为窗口的权威身份；事件自身的
+  `tile_discarded.seq` 与协议显式 source 字段除外。
 - 不把 partial 房补成完整房，也不为缺失的 `round_ended` 伪造游戏结算证据。
 
 ## Decisions
@@ -77,7 +80,8 @@ attempt id。同一个 `WindowAttemptKey` 可能因为重复确认而对应多�
 `attempt_index=1` 递增。这样可以同时表达“同一 `response_peng` 窗口”和“第一次、
 第二次实际抓取”这两个不同维度。
 
-`source_discard_seq` 必须来自协议明确的源弃牌序号；同一次弃牌从
+`source_discard_seq` 必须来自协议明确的源弃牌序号，或 `tile_discarded` 事件自身
+的 event seq；同一次弃牌从
 `response_peng` 转为 `response_chi` 时只改变 `phase`，不得创建第二个
 `WindowId`。窗口身份变化的判据是局号、出牌者、源序号或牌值变化，不能依赖
 牌河数量或快照 watermark。
@@ -135,10 +139,12 @@ SSE 帧只更新 `SSE_DELTA.wanted_seq` 和派生的 `watermark_target`，不推
 if full_snapshot_required:
     game_state(seq=0)
 else:
-    game_state(seq=watermark_target)
+    game_state(seq=local_applied_cursor)
 ```
 
-`seq=0` 返回的快照仍包含实际 watermark，可以同时满足已覆盖的 `SSE_DELTA`。
+`local_applied_cursor` 由 BotClient 的镜像消费进度提供；`watermark_target` 只用于
+协调、诊断和返回后的覆盖判断，不能让增量请求跳过尚未应用的事件。`seq=0` 返回
+的快照仍包含实际 watermark，可以同时满足已覆盖的 `SSE_DELTA`。
 一个请求在途期间到达的新需求只更新对应 reason 的 metadata；只有语义状态实际
 变化时才递增 generation。重复的同一 watermark、重复 reason metadata 或更低的
 watermark 不得仅因到达而递增 generation。当前请求完成后，必须先按最新
@@ -156,7 +162,7 @@ successor request，后续 completion 仍可在最新 demand 仍有 PENDING reas
 返回一个 `/state` 后，协调器不能用“seq=0 已返回”一次性清空所有需求。分别
 判断：
 
-- `RESYNC`：权威快照已按该 reason 的 cause 完成重建，且若 reason 带有目标
+- `RESYNC`：BotClient 已成功应用权威快照按该 reason 的 cause 完成重建，且若 reason 带有目标
   watermark，则返回 watermark 覆盖该目标。
 - `SSE_DELTA`：返回结果的 watermark 覆盖其 `wanted_seq`；未覆盖则保留
   `PENDING`。
@@ -267,13 +273,15 @@ window 指标只使用 window complete 的房，game 指标只使用 game comple
 ```text
 logical_demands
 coalesced_demands
+successor_requests
 physical_state_requests
 suppressed_duplicates
 coalescing_ratio = 1 - physical_state_requests / logical_demands
 ```
 
-其中 `logical_demands` 是每次向协调器提交的逻辑需求事件（包括一次 completion
-因仍有 PENDING reason 而产生的 successor intent），
+其中 `logical_demands` 是每次向协调器提交的逻辑需求事件；一次 completion 因仍有
+PENDING reason 而产生 successor 时，`successor_requests` 与 `logical_demands` 各
+增加一次，避免 successor 让 ratio 变成负数。
 `coalesced_demands` 是被合并进已有 pending/in-flight demand 且改变了其语义
 状态的事件，`suppressed_duplicates` 是相同或被更高 watermark 支配、未改变
 语义状态的重复事件。`physical_state_requests` 是协调器新启动物理 `/state`
@@ -322,8 +330,9 @@ protocol_skipped 数量。
 ## Open Questions
 
 - 线上协议实际提供的源弃牌字段可能存在 `source_discard_seq`、
-  `last_discard_seq` 等版本别名；实现时需逐字段记录来源，并在无法确认权威
-  语义时统一标为 `legacy/unresolved`。
+  `last_discard_seq` 等版本别名；实现时逐字段记录来源，`tile_discarded` 自身
+  event seq 作为协议没有别名时的 authoritative fallback，其他 payload 在无法
+  确认权威语义时统一标为 `legacy/unresolved`。
 - 现有历史日志的 `round_ended` 覆盖不足；验收脚本需要区分“协议未提供”与
   “工具/日志缺尾”，不能仅凭缺少一条记录直接归为同一类。
 - 若后续 3～5 个房的对应 complete 层样本仍显示 urgent 排队尾部超标，再单独

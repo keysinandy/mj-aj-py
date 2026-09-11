@@ -32,8 +32,8 @@ _REASON_BITS = {
 }
 _KIND_PRIORITY = {
     SSE_DELTA: 1,
-    WINDOW_CONFIRM: 2,
-    RESYNC: 3,
+    RESYNC: 2,
+    WINDOW_CONFIRM: 3,
 }
 
 
@@ -57,9 +57,10 @@ def _json_value(value: Any) -> Any:
 class WindowId:
     """Logical identity of one discard response window.
 
-    ``source_discard_seq`` is authoritative only when it came from an
-    explicit source-sequence field in a state/event payload.  Legacy windows
-    retain a weak fallback for logging and local dedupe, but are marked
+    ``source_discard_seq`` is authoritative when it came from an explicit
+    source-sequence field or the event seq of a ``tile_discarded`` payload.
+    Snapshot watermarks are never source identity.  Legacy windows retain a
+    weak fallback for logging and local dedupe, but are marked
     ``legacy_unresolved`` and must not be treated as proof of identity.
     """
 
@@ -171,6 +172,7 @@ class StateDemand(queue.Queue):
         self._logical_counter = 0
         self.logical_demands = 0
         self.coalesced_demands = 0
+        self.successor_requests = 0
         self.physical_state_requests = 0
         self.suppressed_duplicates = 0
 
@@ -191,31 +193,41 @@ class StateDemand(queue.Queue):
     def _put(self, item: Any) -> None:
         """Keep the old ``(watermark, closed)`` wake queue semantics."""
 
-        if isinstance(item, tuple) and len(item) >= 2:
-            # The old queue keeps only the strongest wake.  A closed wake is
-            # sticky, while an unknown watermark remains unknown.
-            if self.queue:
-                previous = self.queue.pop()
-                previous_seq = previous[0] if isinstance(previous, tuple) and previous else None
-                previous_closed = bool(previous[1]) if isinstance(previous, tuple) and len(previous) > 1 else False
-                current_seq = item[0]
-                if previous_seq is None or current_seq is None:
-                    merged_seq = None
-                else:
-                    try:
-                        merged_seq = max(previous_seq, current_seq)
-                    except TypeError:
-                        merged_seq = current_seq
-                item = (merged_seq, previous_closed or bool(item[1]))
+        # Queue.put() already holds queue.Queue.mutex while calling _put.
+        # Take the demand lock inside that same critical section so the legacy
+        # wake item and the structured reason cannot observe half of one
+        # another.  All other structured mutations use this same lock.
+        with self._demand_lock:
+            if isinstance(item, tuple) and len(item) >= 2:
+                # The old queue keeps only the strongest wake.  A closed wake
+                # is sticky, while an unknown watermark remains unknown.
+                if self.queue:
+                    previous = self.queue.pop()
+                    previous_seq = (previous[0]
+                                    if isinstance(previous, tuple) and previous
+                                    else None)
+                    previous_closed = bool(
+                        previous[1]
+                        if isinstance(previous, tuple) and len(previous) > 1
+                        else False)
+                    current_seq = item[0]
+                    if previous_seq is None or current_seq is None:
+                        merged_seq = None
+                    else:
+                        try:
+                            merged_seq = max(previous_seq, current_seq)
+                        except TypeError:
+                            merged_seq = current_seq
+                    item = (merged_seq, previous_closed or bool(item[1]))
+                super()._put(item)
+                # Make tuple wakeups participate in the structured model too.
+                self._submit(
+                    SSE_DELTA,
+                    wanted_seq=item[0],
+                    _count_logical=True,
+                )
+                return
             super()._put(item)
-            # Make tuple wakeups participate in the structured model too.
-            self._submit(
-                SSE_DELTA,
-                wanted_seq=item[0],
-                _count_logical=True,
-            )
-            return
-        super()._put(item)
 
     def _reason_changed(self, reason: str, incoming: dict[str, Any]) -> bool:
         previous = self._reasons.get(reason)
@@ -408,14 +420,19 @@ class StateDemand(queue.Queue):
                     self._submit(SSE_DELTA, wanted_seq=default_seq)
                 kind = self._next_kind(default_kind)
             mode = "FULL" if self.full_snapshot_required else "DELTA"
-            seq = 0 if mode == "FULL" else self.watermark_target
-            if seq is None:
+            # SSE watermarks are coordination targets, not cursors.  The
+            # physical incremental request must start at the caller's local
+            # applied cursor; using watermark_target here would skip events
+            # between that cursor and the wake watermark.  The target remains
+            # in the request/reason diagnostics and is reconciled by the
+            # returned watermark.  The target is only a compatibility
+            # fallback for direct callers that do not provide a cursor.
+            if mode == "FULL":
+                seq = 0
+            elif default_seq is not None:
                 seq = default_seq
-            if mode != "FULL" and default_seq is not None and seq is not None:
-                try:
-                    seq = max(int(seq), int(default_seq))
-                except (TypeError, ValueError):
-                    pass
+            else:
+                seq = self.watermark_target
             self._logical_counter += 1
             request = StateRequest(
                 logical_request_id=logical_request_id
@@ -469,13 +486,23 @@ class StateDemand(queue.Queue):
                     if covered:
                         data["status"] = SATISFIED
                 elif reason == RESYNC:
-                    if snapshot is not None or response_mode == "FULL" or (request and request.full_snapshot):
-                        data["status"] = SATISFIED
+                    # A FULL request is only an intent.  The BotClient must
+                    # mark RESYNC satisfied after Mirror.apply_snapshot()
+                    # succeeds; a seq=0 response without a usable snapshot
+                    # must remain pending.
+                    pass
                 # WINDOW_CONFIRM is resolved by the caller with a
                 # reason-specific result; a state response alone must not
                 # accidentally mark it satisfied.
             self._recompute()
-            return self.has_pending
+            pending = self.has_pending
+            if pending and request is not None:
+                # A successor is a new logical intent for metrics, even when
+                # no new external submit arrived.  Count it once per
+                # completion, not once per physical retry.
+                self.logical_demands += 1
+                self.successor_requests += 1
+            return pending
 
     def resolve_reason(self, reason: str, status: str) -> bool:
         """Set one reason's terminal result and recompute derived fields."""
@@ -496,6 +523,11 @@ class StateDemand(queue.Queue):
     def finish_window_confirm(self, status: str) -> bool:
         return self.resolve_reason(WINDOW_CONFIRM, status)
 
+    def finish_resync(self, status: str = SATISFIED) -> bool:
+        """Finish RESYNC only after the caller has rebuilt authoritative state."""
+
+        return self.resolve_reason(RESYNC, status)
+
     def request_snapshot(self) -> dict[str, Any]:
         with self._demand_lock:
             return {
@@ -509,6 +541,7 @@ class StateDemand(queue.Queue):
                 "in_flight": self.in_flight,
                 "logical_demands": self.logical_demands,
                 "coalesced_demands": self.coalesced_demands,
+                "successor_requests": self.successor_requests,
                 "physical_state_requests": self.physical_state_requests,
                 "suppressed_duplicates": self.suppressed_duplicates,
             }

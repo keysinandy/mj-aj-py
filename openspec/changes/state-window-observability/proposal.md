@@ -16,14 +16,16 @@ change 不重新修改该正确性路径，也不把它与调度重构混合归�
   和 `WindowAttemptKey = (WindowId, phase)`；`peng → chi` 共享同一 `WindowId`。
   `WindowAttemptKey` 只作逻辑窗口阶段键，另以 `logical_request_id` 和
   `attempt_index` 区分物理请求/重试。
-- 收紧 legacy 窗口身份语义：生产事件缺 `source_discard_seq` 时标记
-  `legacy/unresolved`，不得使用牌河长度、副露数或 `/state` 的 snapshot
-  watermark `seq` 做跨 `seq=0` 重锚的强去重或动作防重。
+- 收紧 legacy 窗口身份语义：协议显式 source 字段或
+  `tile_discarded` 自身 event `seq` 可作为 source identity；其他生产事件缺
+  `source_discard_seq` 时标记 `legacy/unresolved`，不得使用牌河长度、副露数或
+  `/state` 的 snapshot watermark `seq` 做跨 `seq=0` 重锚的强去重或动作防重。
 - 在 `BotClient` 与 `Api.game_state()` 之间增加按 gid 的 `StateDemand` 协调：
   每场最多一个物理 `/state` 在途；将 `watermark_target` 与
   `full_snapshot_required` 分开，按 reason 保存 SSE/RESYNC/WINDOW_CONFIRM 的
-  metadata，派生优先级、有效截止和 reason mask。全量模式使用 seq=0，不能把
-  seq=0 参与 watermark max；请求返回后按最新 demand 分别判断 reason，只有仍有
+  metadata，派生优先级、有效截止和 reason mask。全量模式使用 seq=0，增量模式
+  使用本地已应用 cursor，不能把 SSE watermark 当作物理 cursor，也不能把 seq=0
+  参与 watermark max；请求返回后按最新 demand 分别判断 reason，只有仍有
   PENDING reason 时每次 completion 最多产生一个 successor。
 - 固定需求优先级 `WINDOW_CONFIRM > RESYNC > SSE_DELTA`，并仅在结构性合法候选
   证明或 authoritative snapshot 证明没有非 pass 合法反应时让窗口退出 urgent；
@@ -38,7 +40,7 @@ change 不重新修改该正确性路径，也不把它与调度重构混合归�
 - 建立三层线上验收口径（transport/window/game），为每个房间分别记录层级状态；
   `protocol_skipped` 只排除协议无法验证的层，`partial` 只排除受影响层。增加
   窗口确认比例，以及 `logical_demands`、`coalesced_demands`、
-  `physical_state_requests`、`suppressed_duplicates` 和
+  `successor_requests`、`physical_state_requests`、`suppressed_duplicates` 和
   `coalescing_ratio` 等 state demand 指标。
 
 ## Capabilities

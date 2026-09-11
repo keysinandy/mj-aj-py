@@ -418,6 +418,12 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
                               if isinstance(error_raw, bytes)
                               else str(error_raw))
             retry_details = retry_after_details(e)
+            # 429 bodies are intentionally not consumed before retrying, so
+            # the response boundary is headers_received rather than a
+            # missing body_finished timestamp.
+            response_finished_mono = (read_finished_mono
+                                      if read_finished_mono is not None
+                                      else headers_received_mono)
             record_diagnostic_attempt(
                 started_epoch, started_mono, e.code,
                 timeout_s=attempt_timeout, timed_out=e.code == 408,
@@ -434,8 +440,9 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
                     round((deadline - started_mono) * 1000.0, 1)
                     if deadline is not None else None),
                 deadline_left_at_response_ms=(
-                    round((deadline - read_finished_mono) * 1000.0, 1)
-                    if deadline is not None else None))
+                    round((deadline - response_finished_mono) * 1000.0, 1)
+                    if deadline is not None and response_finished_mono is not None
+                    else None))
             if e.code == 429:
                 retry_429_count += 1
                 set_meta()

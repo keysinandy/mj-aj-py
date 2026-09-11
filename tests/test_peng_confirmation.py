@@ -36,6 +36,14 @@ def play(tmp_path, snap, *, decide=None, epoch=1001.2, errors=None, repeat=False
         responses.append({"snapshot": snap, "seq": 12})
         expected.append(0 if errors else 12)
     responses.append(_finished())
+    # Missing or source-inconsistent exact deadlines keep WINDOW_CONFIRM
+    # PENDING for one successor; the next completion can then observe the
+    # terminal finished response.  This is distinct from a closed/expired
+    # window, which terminates in the first confirmation.
+    deadline_ms = snap.get("window_deadline_ms")
+    if (snap.get("phase") == "response_peng"
+            and (deadline_ms is None or deadline_ms > 1002000)):
+        expected.append(0)
     expected.append(12)
     api = ScriptedServer(responses, clock, expected_seqs=expected,
                          action_errors=errors)

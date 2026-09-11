@@ -7,7 +7,8 @@
   source discard seq、tile、phase 和 identity status；另为每个逻辑请求定义
   `logical_request_id`，为每个物理 retry 维护递增 `attempt_index`，不让
   `WindowAttemptKey` 兼任物理 attempt ID。
-- [x] 1.3 收紧 source sequence 提取：权威字段优先，缺失时标记
+- [x] 1.3 收紧 source sequence 提取：协议权威字段或
+  `tile_discarded` 自身 event seq 优先，其他事件缺失时标记
   `legacy/unresolved`；禁止把 snapshot watermark、牌河长度或副露数升级为
   跨 seq=0 的强身份，并保留弱 fallback 诊断字段。
 - [x] 1.4 将 `peng → chi`、seq=0 重锚、换轮/新弃牌和动作防重路径统一接入
@@ -22,7 +23,8 @@
   `effective_deadline`、`reason_mask` 作为派生值。SSE queue 只作为需求输入/唤醒，
   不再承担完成语义。
 - [x] 2.2 实现确定性合并与物理选择：只有增量 watermark 取 max，`seq=0` 由
-  `full_snapshot_required` 选择而不参与 max；有效 deadline 取剩余窗口 reason
+  `full_snapshot_required` 选择而不参与 max；DELTA 物理请求使用 BotClient 的
+  local applied cursor，不得跳到 SSE watermark；有效 deadline 取剩余窗口 reason
   的最早值，reason metadata 分别保留，优先级固定为
   `WINDOW_CONFIRM > RESYNC > SSE_DELTA`。重复/更低 watermark 不递增 generation，
   过期窗口进入 `SATISFIED/TERMINAL/PENDING` 规则，不改变 StateThrottle 的
@@ -32,10 +34,11 @@
   状态变化才递增 generation。每次 completion 先 reconcile 最新 demand；仅当
   仍有 PENDING reason 时最多创建一个 successor，不能把 generation 变化本身当
   成补请求条件。
-- [x] 2.4 实现 reason-specific satisfier：RESYNC、SSE_DELTA 和 WINDOW_CONFIRM
-  分别判断 watermark/镜像重建、目标覆盖以及 WindowId/phase/responding_seats/
-  精确截止条件；固定输出 `SATISFIED/TERMINAL/PENDING`，只保留 PENDING，不能
-  以一次 seq=0 返回清空全部 reason，并在 reason 结束后重算派生字段。
+- [x] 2.4 实现 reason-specific satisfier：RESYNC 只有在 snapshot 成功重建镜像后
+  才完成，SSE_DELTA 判断 watermark 覆盖，WINDOW_CONFIRM 的 peng/chi 统一判断
+  WindowId/phase/responding_seats/精确截止条件；固定输出
+  `SATISFIED/TERMINAL/PENDING`，只保留 PENDING，不能以一次 seq=0 返回清空全部
+  reason，并在 reason 结束后重算派生字段。
 - [x] 2.5 在安全的结构性合法候选证明或 authoritative snapshot 证明无响应资格
   后，才对无非 pass 合法动作的弃牌窗口清除 urgent、回退普通 SSE 追赶；不得仅
   依据 local phase/`mirror.legal_actions()`/unresolved identity 降级。分别记录
@@ -91,8 +94,8 @@
   `protocol_skipped`。
 - [x] 5.2 按层输出 transport/window/game 指标，增加
   `WINDOW_CONFIRM seq=0 / eligible_windows`，并分别输出
-  `logical_demands`、`coalesced_demands`、`physical_state_requests`、
-  `suppressed_duplicates`、`coalescing_ratio` 和独立的
+  `logical_demands`、`coalesced_demands`、`successor_requests`、
+  `physical_state_requests`、`suppressed_duplicates`、`coalescing_ratio` 和独立的
   `physical_state_attempts`；同时输出各层完整性数量和对应分母。
 - [x] 5.3 同步 `README.md`、`HANDOFF.md`、验收/计划文档和运行说明：线上基线
   显式使用启发式 BOT、SSE+增量 `/state`、15/s；policy 只作专项对照。
