@@ -98,9 +98,12 @@ class StateThrottle:
         """把服务端 429 反馈折算成下一许可的短暂冷却。
 
         名义速率和 EDF 排序不变；只有收到真实 429 后才把下一个许可
-        向后平移一个间隔，避免网络抖动把匀速的客户端请求在服务端的
-        滑动窗口里挤成一簇。调用方通常在 429 重试退避前调用一次，
-        因而不会影响没有 429 的正常路径。
+        向后平移 cooldown_intervals 个间隔，避免网络抖动把匀速的
+        客户端请求在服务端的滑动窗口里挤成一簇。基线取
+        max(_next, now)——429 响应本身耗时超过一个间隔、_next 已
+        落后于 now 时，冷却仍从"现在"起算一个间隔，不把网络耗时
+        叠进冷却。调用方通常在 429 重试退避前调用一次，因而不会
+        影响没有 429 的正常路径。
         """
         try:
             intervals = float(cooldown_intervals)
@@ -109,10 +112,9 @@ class StateThrottle:
         intervals = max(0.0, intervals)
         now = self.clock()
         with self._cv:
-            target = now + self.interval * (1.0 + intervals)
-            previous = self._next
-            self._next = max(self._next, target)
-            added_ms = max(0.0, (self._next - previous) * 1000.0)
+            baseline = max(self._next, now)
+            self._next = baseline + self.interval * intervals
+            added_ms = (self._next - baseline) * 1000.0
             self._stats["feedback_429"] += 1
             self._stats["feedback_cooldown_ms"] += added_ms
             self._stats["feedback_cooldown_ms_max"] = max(

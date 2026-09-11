@@ -305,7 +305,11 @@ locked 手牌向听数虚高 bug(见下)。
     need+1 态手牌枚举舍牌(_post_claim_min_shanten → _best_standing,
     仅最小向听舍牌算 ukeire)同键比较;等向听需进张增量
     ≥ PONG_UKE_GAIN(2)/CHOW_UKE_GAIN(4);多候选择优
-    向听→进张→弃牌结构损失→动作序。**KONG 边界**:KONG_OPEN 与
+    向听→进张→弃牌结构损失→动作序。财神弃牌与 choose_discard 同口径
+    (参与最小向听比较、同向听候选内 (d==W, -uke, shape, d) 保护——
+    评审修正:初版直接跳过 W 且注释谎称同口径;百搭语义下"打财神是
+    唯一降向听舍牌"实证不可达,随机 5000 手无反例,修正为显式一致
+    防语义漂移,test_bot.py 有随机性质测试)。**KONG 边界**:KONG_OPEN 与
     PONG 同窗竞争(h[tile]==3 时同窗),PONG 换评价体系后相对结果
     无法保持,故 KONG_OPEN ∈ acts 时整窗(含 PONG)走 legacy 决策
     (_legacy_claim_react,行为与旧实现逐动作一致);暗杠/加杠本就

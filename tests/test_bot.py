@@ -286,8 +286,8 @@ class TestReactDecision(unittest.TestCase):
     def test_pong_equal_shanten_gain_and_threshold_boundary(self):
         """等向听 + 进张增量 +12 → PONG;门槛边界用常量锁定。
 
-        同一局面增量恰为 +12:PONG_UKE_GAIN=12 时可接受(≥),
-        =13 时拒绝——直接锁死门槛语义是"≥ 增量"。
+        同一局面增量恰为 +12:PONG_UKE_GAIN=12 时重新决策仍可接受
+        (≥),=13 时拒绝——直接锁死门槛语义是"≥ 增量"。
         """
         spec, owner, tile = "33m456m789m12p45pE", 0, 2
         base, claims, act = self._probe(spec, owner, tile, mode="claim")
@@ -296,7 +296,8 @@ class TestReactDecision(unittest.TestCase):
         self.assertEqual(delta, 12)
         self.assertEqual(act, PONG)
         with mock.patch.object(bot_mod, "PONG_UKE_GAIN", 12):
-            self.assertEqual(act, PONG)  # 增量恰达门槛仍可接受(上面已验)
+            g = _react_game(spec, owner, tile, mode="claim")
+            self.assertEqual(bot_mod.choose_action(g, 1), PONG)
         with mock.patch.object(bot_mod, "PONG_UKE_GAIN", 13):
             g = _react_game(spec, owner, tile, mode="claim")
             self.assertEqual(bot_mod.choose_action(g, 1), PASS)
@@ -324,6 +325,29 @@ class TestReactDecision(unittest.TestCase):
         base, claims, act = self._probe("1122334455667m", 0, 2, mode="chow")
         self.assertTrue(claims)  # 吃窗确有合法吃法(123m/234m)
         self.assertEqual(act, PASS)
+
+    def test_post_claim_discard_joker_rule_matches_choose_discard(self):
+        """claim 后舍牌的财神口径与 choose_discard 一致。
+
+        财神参与最小向听比较(不为保护财神而错失降向听的舍牌——
+        百搭语义下实证不可达,随机 5000 手无反例,但口径必须显式
+        一致防语义漂移);同向听候选内部用 (d==W, -uke, shape, d)
+        保护:存在非财神候选时最优舍牌绝不是财神。
+        """
+        rng = random.Random(20260911)
+        for _ in range(40):
+            hand = [0] * 34
+            hand[W] = rng.randint(1, 2)
+            while sum(hand) < 11:  # need+1(locked=1 的吃/碰后手牌)
+                t = rng.randrange(33)
+                if hand[t] < 4:
+                    hand[t] += 1
+            best_s, cands = bot_mod._post_claim_min_shanten(hand, 1)
+            self.assertIsNotNone(best_s)
+            self.assertTrue(any(hand[d] > 0 for d, _ in cands))
+            if any(d != W for d, _ in cands):
+                uke, shape, d = bot_mod._best_standing(cands, 1, hand, hand)
+                self.assertNotEqual(d, W)
 
 
 if __name__ == "__main__":

@@ -132,14 +132,16 @@ def _eval_standing(hand, locked, vis):
 
 
 def _post_claim_min_shanten(hand, locked):
-    """need+1 态手牌各舍牌向听的最小值与候选(仅最小向听,财神保护)。
+    """need+1 态手牌各舍牌向听的最小值与候选(仅最小向听)。
 
-    返回 (best_s, [(d, 舍牌后手牌), ...]);无候选(手牌全财神)返回
-    (None, [])。
+    返回 (best_s, [(d, 舍牌后手牌), ...])。财神与 choose_discard
+    同口径参与最小向听比较——保护只作用于同向听候选内部:
+    若"打财神"是唯一能再降向听的舍牌,必须让 claim 评价看到,
+    否则吃/碰会被系统性低估(甚至错判 PASS)。手牌非空则候选非空。
     """
     best_s, cands = None, []
     for d in range(34):
-        if hand[d] <= 0 or d == W:
+        if hand[d] <= 0:
             continue
         c = list(hand)
         c[d] -= 1
@@ -154,13 +156,15 @@ def _post_claim_min_shanten(hand, locked):
 def _best_standing(cands, locked, vis, post_hand):
     """最小向听舍牌候选中取最优站立,返回 (ukeire, 结构损失, 舍牌)。
 
-    排序:进张多 → 结构损失小 → 舍牌编号(稳定)。
+    排序与 choose_discard 同口径:非财神 → 进张多 → 结构损失小 →
+    舍牌编号(稳定)——财神保护只在同向听候选内部生效,向听数
+    仍是硬约束。
     """
     best = None  # (排序键, uke, shape, d)
     for d, c in cands:
         uke = ukeire(c, locked, vis)[2]
         shape = _discard_shape_cost(post_hand, d)
-        key = (-uke, shape, d)
+        key = (d == W, -uke, shape, d)
         if best is None or key < best[0]:
             best = (key, uke, shape, d)
     return (best[1], best[2], best[3])
@@ -172,14 +176,10 @@ def _best_post_claim_discard(hand, locked, vis):
 
     对每种合法舍牌后的 need 态站立手牌取 (shanten, ukeire) 字典序
     最优——实现上仅对最小向听候选计算 ukeire(向听是硬约束,更高
-    向听的舍牌不可能胜出)。财神保护与 choose_discard 同口径:W 不入
-    候选(手牌全财神的理论边缘兜底舍出)。
+    向听的舍牌不可能胜出)。财神保护与 choose_discard 同口径:
+    参与最小向听比较、同向听时非财神优先。
     """
     best_s, cands = _post_claim_min_shanten(hand, locked)
-    if not cands:
-        c = list(hand)
-        c[W] -= 1
-        return (shanten(c, locked), ukeire(c, locked, vis)[2], 0, W)
     uke, shape, d = _best_standing(cands, locked, vis, hand)
     return (best_s, uke, shape, d)
 

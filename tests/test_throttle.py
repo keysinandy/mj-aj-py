@@ -70,6 +70,26 @@ class TestStateThrottle(unittest.TestCase):
         self.assertEqual(stats["feedback_429"], 1)
         self.assertGreaterEqual(stats["feedback_cooldown_ms"], 0.0)
 
+    def test_429_feedback_after_slow_429_cooldown_from_now(self):
+        """429 响应耗时超过一个间隔时,冷却仍从"现在"起算一个间隔。
+
+        旧实现 target = now + interval*(1+intervals) 会在 _next 已
+        落后于 now 时多等一个间隔(12.0→12.2);现口径基线取
+        max(_next, now),下一个许可在 12.1,反馈冷却统计 100ms
+        只计自身施加的冷却,不含 429 响应网络耗时。
+        """
+        now = [10.0]
+        throttle = StateThrottle(rate=10.0, burst=1, clock=lambda: now[0])
+        throttle.acquire("seed")
+        self.assertAlmostEqual(throttle._next, 10.1)
+        now[0] = 12.0  # 429 往返耗时 2s,_next 早已落后
+        throttle.note_429()
+        self.assertAlmostEqual(throttle._next, 12.1)
+        stats = throttle.stats()
+        self.assertEqual(stats["feedback_429"], 1)
+        self.assertAlmostEqual(stats["feedback_cooldown_ms"], 100.0)
+        self.assertAlmostEqual(stats["feedback_cooldown_ms_max"], 100.0)
+
 
 class TestApiStateGating(unittest.TestCase):
     def test_only_game_state_uses_throttle_and_forwards_deadline(self):
