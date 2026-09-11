@@ -35,6 +35,7 @@ def distribution(values):
 def summarize(paths):
     types, actions, misses, confirms, transport = (Counter() for _ in range(5))
     requests = []
+    diagnostic_attempts = defaultdict(list)
     games = []
     audit_totals = Counter()
     boundary_recovered = 0
@@ -94,11 +95,15 @@ def summarize(paths):
                 for name in ("retry_429", "retry_gateway", "retry_network"):
                     transport[name] += row.get("transport", {}).get(name, 0)
                 meta = row.get("transport", {})
+                diagnostic_attempts["state"].extend(
+                    meta.get("state_attempts", []))
                 transport["physical_attempts"] += meta.get(
                     "state_physical_attempts", row.get("attempts") or 1)
             elif kind == "action":
                 payload = row.get("payload", {}).get("action", "unknown")
                 actions[f'{row.get("phase")}/{payload}/{"ok" if row.get("ok") else "failed"}'] += 1
+                diagnostic_attempts["action"].extend(
+                    row.get("transport", {}).get("action_attempts", []))
                 if row.get("ok") and row.get("decision") in decision_keys:
                     successful_keys.add(decision_keys[row["decision"]])
             elif kind == "claim_miss":
@@ -140,11 +145,39 @@ def summarize(paths):
         while starts[left] <= stamp - 1.0:
             left += 1
         peak = max(peak, right - left + 1)
+
+    def diagnostic_group(items):
+        status = Counter(str(item.get("status")) for item in items)
+        total = [item.get("timing", {}).get("total_ms")
+                 for item in items
+                 if item.get("timing", {}).get("total_ms") is not None]
+        pre_read = [item.get("timing", {}).get("pre_read_ms")
+                    for item in items
+                    if item.get("timing", {}).get("pre_read_ms") is not None]
+        read = [item.get("timing", {}).get("read_ms")
+                for item in items
+                if item.get("timing", {}).get("read_ms") is not None]
+        retry_after = [item.get("retry_after_s") for item in items
+                       if item.get("retry_after_s") is not None]
+        return {
+            "attempts": len(items),
+            "status": dict(status),
+            "total_ms": distribution(total),
+            "pre_read_ms": distribution(pre_read),
+            "read_ms": distribution(read),
+            "timed_out": sum(bool(item.get("timed_out")) for item in items),
+            "retry_after_s": distribution(retry_after),
+        }
+
     return {
         "files": len(paths), "record_counts": dict(types), "actions": dict(actions),
         "claim_miss_records": dict(misses), "window_confirm_records": dict(confirms),
         "legacy_boundary_misses_later_succeeded": boundary_recovered,
         "transport": dict(transport),
+        "transport_phases": {
+            kind: diagnostic_group(items)
+            for kind, items in sorted(diagnostic_attempts.items())
+        },
         "physical_state_evidence": {
             "attempts_logged": len(physical),
             "status": dict(Counter(str(item.get("status")) for item in physical)),

@@ -706,14 +706,36 @@ class BotClient:
     def _window_key(cls, mirror, phase, ev=None, snap=None):
         """生成跨 seq=0 快照仍稳定的窗口身份。
 
-        Mirror.window_key() 依赖增量计数，快照重建后该计数会从零开始；
-        这里加入当前牌河总数、出牌者和牌值，避免重锚后重复提交旧窗口。
+        Mirror.window_key() 依赖增量计数，且牌河会在增量 claim 时弹出
+        被认领牌，快照重建后计数因此不稳定。优先使用触发弃牌事件的
+        ``seq``（或服务端明确提供的 source_discard_seq）；它是窗口的
+        稳定身份。旧夹具/旧协议没有该字段时才回退牌河与副露计数。
         """
         if mirror is None or mirror.pending is None:
             return None
         owner, tile = mirror.pending
-        identity = ("count", mirror.n_discards(),
-                    tuple(len(m) for m in mirror.melds))
+        source_seq = None
+        if isinstance(ev, dict):
+            source_seq = ev.get("source_discard_seq", ev.get("seq"))
+        if source_seq is None and isinstance(snap, dict):
+            # 这些是可选的显式源字段；严禁使用 snap['seq']，它是
+            # /state 的包含式 watermark，不一定等于弃牌事件序号。
+            for field in ("source_discard_seq", "last_discard_seq",
+                          "discard_seq"):
+                if snap.get(field) is not None:
+                    source_seq = snap[field]
+                    break
+        if source_seq is None:
+            source_seq = getattr(mirror, "_source_discard_seq", None)
+        if source_seq is not None:
+            try:
+                source_seq = int(source_seq)
+            except (TypeError, ValueError):
+                source_seq = str(source_seq)
+            identity = ("source_seq", source_seq)
+        else:
+            identity = ("count", mirror.n_discards(),
+                        tuple(len(m) for m in mirror.melds))
         return (phase, mirror.round_no, owner, tile, identity)
 
     def _make_chi_pending(self, mirror, ev=None, snap=None,
@@ -1114,6 +1136,9 @@ class BotClient:
         responded_windows = set()  # 当前对局已成功提交的响应窗身份
         attempted_windows = set()  # 409/未知结果后禁止在同窗盲重试
         window_decisions = {}  # 窗口身份 → 本地已选动作(timeout 归因用)
+        # 当前 pending 弃牌的来源身份：(round_no, owner, tile, event_seq)；
+        # seq=0 重锚只在快照仍指向同一 pending 时沿用它。
+        pending_source = None
         state_deadline = None  # 下一次 /state 的本地窗口截止(monotonic)
         stale_dl_used = False  # 过期截止已用于一次追赶拉取
         next_seat = None       # 下一个动作者预测(懒轮询门;快照后重置)
@@ -1210,6 +1235,27 @@ class BotClient:
                     rec.snapshot(gid, seq, snap)
                 try:
                     mirror = self._mirror_from_snapshot(snap)
+                    # /state seq is a stream watermark, not the source
+                    # discard identity.  Carry the latest parsed discard
+                    # sequence only when this authoritative snapshot still
+                    # describes that exact pending tile; otherwise start
+                    # without a synthetic identity and let the snapshot's
+                    # explicit source field (if any) win.
+                    source_seq = None
+                    for field in ("source_discard_seq", "last_discard_seq",
+                                  "discard_seq"):
+                        if isinstance(snap, dict) and snap.get(field) is not None:
+                            source_seq = snap[field]
+                            break
+                    if source_seq is None and pending_source is not None:
+                        source_round, source_owner, source_tile, source_seq = \
+                            pending_source
+                        if (source_round != mirror.round_no
+                                or mirror.pending != (source_owner,
+                                                      source_tile)):
+                            source_seq = None
+                    if source_seq is not None:
+                        mirror._source_discard_seq = source_seq
                     mirror._attempted_windows = attempted_windows
                     mirror._window_decisions = window_decisions
                     next_seat = None  # 快照后动作者未知,懒门转急直至事件重建
@@ -1307,6 +1353,7 @@ class BotClient:
                     if rec is not None:
                         rec.reset(gid, str(ex))
                     seq, mirror, trigger = 0, None, None
+                    pending_source = None
                     chi_pending = None
                     state_deadline = None  # 重锚后旧窗截止作废(防滞留虚增 dm)
                     next_seat = None
@@ -1324,6 +1371,12 @@ class BotClient:
                     chi_pending = None
                     state_deadline = self._srv_deadline(e["ts"], DISCARD_SEC)
                 elif t == "tile_discarded":
+                    # Keep the source discard sequence outside Mirror: a
+                    # seq=0 snapshot rebuild resets Mirror's local counters,
+                    # while this identity must survive until the pending
+                    # discard is claimed, timed out, or replaced.
+                    pending_source = (mirror.round_no, e["seat"], e["tile"],
+                                      e.get("seq"))
                     window_responded = False  # 新弃牌开新窗:未响应态
                     chi_fetches = 0           # 新弃牌:吃窗抓取预算重置
                     if e["seat"] == mirror.me:
@@ -1357,6 +1410,8 @@ class BotClient:
                         except MirrorInconsistent:
                             state_deadline = None
                 elif t in ("chi", "peng", "gang"):
+                    if mirror.pending is None:
+                        pending_source = None
                     chi_pending = None  # 有人吃/碰/杠:窗口被认领
                     window_event = None
                     if trigger is not None and trigger[0] == "window":
@@ -1375,6 +1430,7 @@ class BotClient:
                     if rec is not None:
                         rec.reset(gid, "hu_failed:吃碰后弃牌被跳过")
                     seq, mirror, trigger = 0, None, None
+                    pending_source = None
                     chi_pending = None
                     state_deadline = None  # 重锚后旧窗截止作废(防滞留虚增 dm)
                     next_seat = None
@@ -1396,6 +1452,8 @@ class BotClient:
                         else:
                             self._auto_played(gid, "弃牌窗超时被代打")
                         state_deadline = None  # 弃牌窗已死:截止滞留虚增 dm
+                elif t in ("round_ended", "game_ended"):
+                    pending_source = None
                 elif t in ("pass", "timeout"):
                     # 碰窗响应(pass 或 response 超时;discard 已上面处理)
                     if t == "pass" or e.get("kind") == "response":
@@ -1944,7 +2002,15 @@ class BotClient:
     def _submit(self, mirror, gid, act, phase, deadline=None, window_key=None,
                 legal=None):
         if phase in ("response_peng", "response_chi"):
-            key = self._window_key(mirror, phase)
+            current_key = self._window_key(mirror, phase)
+            key = current_key
+            # A chi wait-state was keyed from the original discard event.
+            # Keep that source identity across a seq=0 rebuild, but only if
+            # the rebuilt mirror still points at the same round/seat/tile;
+            # never let an old wait-state authorize a new pending discard.
+            if (window_key is not None and current_key is not None
+                    and tuple(window_key[:4]) == tuple(current_key[:4])):
+                key = window_key
             attempted = getattr(mirror, "_attempted_windows", None)
             if attempted is not None:
                 if key in attempted:

@@ -7,7 +7,9 @@ import tempfile
 import urllib.error
 from unittest import mock
 
-from mj.platform.api import Api, _TLS
+import pytest
+
+from mj.platform.api import ActionSubmissionError, Api, _TLS
 from mj.platform.recorder import Recorder
 
 
@@ -60,6 +62,18 @@ def test_state_attempts_keep_429_and_final_200_without_url_or_token():
     assert [a["status"] for a in meta["state_attempts"]] == [429, 200]
     assert all("started_epoch" in a and "latency_ms" in a
                for a in meta["state_attempts"])
+    first, final = meta["state_attempts"]
+    assert first.get("retry_after_s") is None
+    assert first["timed_out"] is False
+    assert first["timing"]["dns_ms"] is None
+    assert first["timing"]["connect_ms"] is None
+    assert first["timing"]["tls_ms"] is None
+    assert first["timing"]["send_ms"] is None
+    assert first["timing"]["pre_read_ms"] >= 0
+    assert first["timing"]["read_ms"] is None
+    assert final["timing"]["read_ms"] >= 0
+    assert meta["diagnostic_capabilities"]["measured"] == [
+        "total_ms", "pre_read_ms", "read_ms"]
     encoded = json.dumps(meta)
     assert "secret-token" not in encoded
     assert "state.example" not in encoded
@@ -139,6 +153,50 @@ def test_failed_state_permit_does_not_reuse_previous_attempt_metadata():
     assert _TLS.attempts == 0
     assert _TLS.request_meta["state_attempts"] == []
     assert _TLS.request_meta["state_physical_attempts"] == 0
+
+
+def test_action_attempt_has_safe_phase_timing_and_no_payload_metadata():
+    api = Api("https://state.example", "secret-token", state_rate=None)
+    payload = {"action": "discard", "tile": "1w"}
+    with mock.patch("urllib.request.urlopen",
+                    return_value=_http_response({"ok": True})):
+        assert api.game_action("g", payload) == {"ok": True}
+
+    meta = _TLS.request_meta
+    assert meta["diagnostic_kind"] == "action"
+    assert meta["action_physical_attempts"] == 1
+    attempt = meta["action_attempts"][0]
+    assert attempt["status"] == 200
+    assert attempt["timed_out"] is False
+    assert attempt["timeout_s"] == 35.0
+    assert attempt["timing"]["total_ms"] >= 0
+    assert attempt["timing"]["read_ms"] >= 0
+    encoded = json.dumps(meta)
+    assert "secret-token" not in encoded
+    assert "discard" not in encoded
+    assert "1w" not in encoded
+    assert "state.example" not in encoded
+
+
+def test_action_error_keeps_retry_after_and_timeout_diagnostics_without_retry():
+    error = urllib.error.HTTPError(
+        "https://state.example/api/games/g/action", 429, "busy",
+        {"Retry-After": "1.25"}, io.BytesIO(b'{"code":"RATE_LIMITED"}'))
+    api = Api("https://state.example", "secret-token", state_rate=None)
+    with mock.patch("urllib.request.urlopen", side_effect=error) as send:
+        with pytest.raises(ActionSubmissionError) as raised:
+            api.game_action("g", {"action": "pass"})
+
+    assert raised.value.status == 429
+    send.assert_called_once()
+    meta = _TLS.request_meta
+    assert meta["diagnostic_kind"] == "action"
+    assert meta["action_physical_attempts"] == 1
+    attempt = meta["action_attempts"][0]
+    assert attempt["status"] == 429
+    assert attempt["retry_after_s"] == 1.25
+    assert attempt["timed_out"] is False
+    assert attempt["timing"]["read_ms"] is None
 
 
 def test_recorder_request_kind_and_window_confirmation_are_optional_records():

@@ -66,9 +66,15 @@ def test_window_identity_survives_snapshot_but_not_new_meld():
     snap = _snapshot(phase="response_chi", turn=3, responding=[0],
                      discards=[[], [], [], ["6b"]], last_discard="6b")
     mirror = bot._mirror_from_snapshot(snap)
+    mirror._source_discard_seq = 10
     first = bot._window_key(mirror, "response_chi", ev={"seq": 10})
     assert first == bot._window_key(mirror, "response_chi", snap=snap)
     mirror.melds[1].append(object())
+    # A re-anchor may rebuild meld/discard counts differently (a claimed
+    # discard is popped from the river), but the source discard sequence is
+    # the stable identity for this still-pending window.
+    assert first == bot._window_key(mirror, "response_chi")
+    mirror._source_discard_seq = 11
     assert first != bot._window_key(mirror, "response_chi")
 
 

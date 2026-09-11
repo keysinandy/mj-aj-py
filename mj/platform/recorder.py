@@ -3,12 +3,14 @@
 每场对局一个文件 local/games/<YYYYMMDD>/<令牌>_<gid>.jsonl,一行一条
 记录。记录类型:
 - meta      开场:gid/令牌/锦标赛/YCBK/base
-- req       每次状态轮询:请求时游标 seq/响应耗时/状态码/尝试次数/响应摘要
+- req       每次状态轮询:请求时游标 seq/响应耗时/状态码/尝试次数/响应摘要；
+            transport 可带 state_attempts 的物理状态与分阶段耗时摘要
 - snapshot  快照原文(离线重建锚点:my_hand/公共状态/墙长)
 - events    事件批原文(离线重放数据源)
 - decision  决策点:phase/合法动作集/所选动作/decide 耗时/镜像摘要
 - claim_miss 规则允许的吃/碰/杠未成功(策略已选未成 / 未决策即 timeout)
-- action    动作提交:payload/结果(成功或错误码)/耗时/配对决策 id
+- action    动作提交:payload/结果(成功或错误码)/耗时/配对决策 id；
+            transport 可带 action_attempts 的安全分阶段耗时摘要
 - reset     镜像失步重建原因
 - end       收场:终局积分/原因
 

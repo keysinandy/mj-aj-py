@@ -2,11 +2,14 @@
 
 姿态与 tests/fancalc_parity.py 一致:自签证书按请求关闭校验,不改
 全局 SSL 配置。一个 Api 实例对应一个令牌，可被该令牌的多个场次线程
-共享；/state 配额由实例内的限速器统一仲裁。免认证测试房端点为模块级函数。
+共享；/state 配额由实例内的限速器统一仲裁。state/action 的 transport
+metadata 可选记录安全的物理尝试与 urlopen/read 分段耗时，不包含 URL、令牌
+或 body；免认证测试房端点为模块级函数。
 """
 
 import http.client
 import json
+import math
 import ssl
 import threading
 import time
@@ -72,7 +75,7 @@ class StateSnapshotDeadlineExceeded(StateSnapshotError):
 def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
              deadline=None, retry=True, retry_429=True,
              retry_transient=True, error_cls=ApiError, before_attempt=None,
-             state_diagnostics=False, on_429=None):
+             state_diagnostics=False, on_429=None, diagnostic_kind=None):
     """执行 HTTP 请求并把本次传输明细留在线程局部供记录器读取。
 
     deadline 使用 monotonic 秒；/state 用它参与限速与退避调度，动作
@@ -91,8 +94,13 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
     deadline_fast_retry = False
     # Keep this deliberately small: one dictionary per physical HTTP attempt,
     # without copying the URL, headers, or response body.  It is enabled only
-    # by Api.game_state so ordinary endpoints retain their old metadata shape.
-    state_attempts = [] if state_diagnostics else None
+    # for game_state/game_action so ordinary endpoints retain their old
+    # metadata shape.  ``state_diagnostics`` is the original compatibility
+    # switch; ``diagnostic_kind`` adds the same safe summary to game_action.
+    if diagnostic_kind is None and state_diagnostics:
+        diagnostic_kind = "state"
+    diagnostic_enabled = diagnostic_kind in ("state", "action")
+    diagnostic_attempts = [] if diagnostic_enabled else None
     allow_retry_429 = bool(retry and retry_429)
     allow_retry_transient = bool(retry and retry_transient)
     is_action = issubclass(error_cls, ActionSubmissionError)
@@ -106,31 +114,83 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
             "retry_network": retry_network,
             "backoff_ms": round(backoff_ms, 1),
         }
-        if state_diagnostics:
+        if diagnostic_enabled:
             # Copy the list so a caller observing _TLS after the request gets
             # a stable snapshot even while another retry is being prepared.
-            meta["state_attempts"] = [dict(item) for item in state_attempts]
-            meta["state_physical_attempts"] = len(state_attempts)
-            meta["state_429"] = sum(
-                item.get("status") == 429 for item in state_attempts)
+            attempts_copy = [dict(item) for item in diagnostic_attempts]
+            meta["diagnostic_kind"] = diagnostic_kind
+            meta[f"{diagnostic_kind}_attempts"] = attempts_copy
+            meta[f"{diagnostic_kind}_physical_attempts"] = len(
+                diagnostic_attempts)
+            meta[f"{diagnostic_kind}_429"] = sum(
+                item.get("status") == 429 for item in diagnostic_attempts)
+            meta["diagnostic_capabilities"] = {
+                "measured": ["total_ms", "pre_read_ms", "read_ms"],
+                "unavailable": ["dns_ms", "connect_ms", "tls_ms",
+                                "send_ms"],
+                "source": "urllib.request.urlopen + response.read",
+            }
         _TLS.request_meta = meta
 
-    def record_state_attempt(started_epoch, started_mono, status=None,
-                             error=None):
-        if not state_diagnostics:
+    def record_diagnostic_attempt(started_epoch, started_mono, status=None,
+                                  error=None, timeout_s=None,
+                                  timed_out=False, pre_read_mono=None,
+                                  read_started_mono=None,
+                                  read_finished_mono=None,
+                                  retry_after_s=None):
+        if not diagnostic_enabled:
             return
+        now = time.monotonic()
+        total_end = (read_finished_mono if read_finished_mono is not None
+                     else now)
+        pre_read_end = (pre_read_mono if pre_read_mono is not None
+                        else total_end)
+        timing = {
+            "total_ms": round((total_end - started_mono) * 1000.0, 1),
+            # urlopen includes DNS, connect, TLS, request write, and waiting
+            # for response headers.  Keep it as an aggregate instead of
+            # mislabeling it as one of those phases.
+            "pre_read_ms": round((pre_read_end - started_mono) * 1000.0, 1),
+            "read_ms": (round((read_finished_mono - read_started_mono)
+                               * 1000.0, 1)
+                        if read_started_mono is not None
+                        and read_finished_mono is not None else None),
+            "dns_ms": None,
+            "connect_ms": None,
+            "tls_ms": None,
+            "send_ms": None,
+        }
         item = {
             "started_epoch": round(started_epoch, 3),
             "status": status,
-            "latency_ms": round((time.monotonic() - started_mono) * 1000.0,
-                                 1),
+            "latency_ms": timing["total_ms"],
+            "timeout_s": (round(timeout_s, 3)
+                          if timeout_s is not None else None),
+            "timed_out": bool(timed_out),
+            "timing": timing,
         }
         if error:
             item["error"] = error
-        state_attempts.append(item)
+        if retry_after_s is not None:
+            item["retry_after_s"] = retry_after_s
+        diagnostic_attempts.append(item)
         # Keep the thread-local metadata current on every terminal outcome;
         # this matters for callers that inspect it after an ApiError.
         set_meta()
+
+    def retry_after_seconds(exc):
+        """Return a JSON-safe numeric Retry-After delta, if supplied."""
+        headers = getattr(exc, "headers", None)
+        if headers is None:
+            return None
+        try:
+            value = headers.get("Retry-After")
+            seconds = float(value)
+        except (AttributeError, TypeError, ValueError):
+            return None
+        if not math.isfinite(seconds) or seconds < 0:
+            return None
+        return round(seconds, 3)
 
     def response_status(response):
         status = getattr(response, "status", None)
@@ -186,7 +246,7 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
     # state permit itself fails, the caller still sees a fresh zero-attempt
     # diagnostic instead of metadata left by the previous request in the same
     # worker thread.
-    if state_diagnostics:
+    if diagnostic_enabled:
         set_meta()
     while True:
         if before_attempt is not None:
@@ -207,10 +267,15 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
         started_epoch = time.time()
         started_mono = time.monotonic()
         attempt_status = None
+        attempt_timeout = request_timeout()
+        open_finished_mono = None
+        read_started_mono = None
+        read_finished_mono = None
         try:
-            with urllib.request.urlopen(req, timeout=request_timeout(),
+            with urllib.request.urlopen(req, timeout=attempt_timeout,
                                         context=_CTX) as r:
-                if state_diagnostics:
+                open_finished_mono = time.monotonic()
+                if diagnostic_enabled:
                     attempt_status = response_status(r)
                     # A successful response wrapper without status metadata
                     # still represents an HTTP 200 from this call.  Keep the
@@ -218,17 +283,29 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
                     # test doubles and custom wrappers.
                     if attempt_status is None:
                         attempt_status = 200
+                read_started_mono = time.monotonic()
                 raw = r.read()
+                read_finished_mono = time.monotonic()
                 result = json.loads(raw.decode())
-                record_state_attempt(started_epoch, started_mono,
-                                     attempt_status)
-                set_meta()
+                record_diagnostic_attempt(
+                    started_epoch, started_mono, attempt_status,
+                    timeout_s=attempt_timeout,
+                    pre_read_mono=open_finished_mono,
+                    read_started_mono=read_started_mono,
+                    read_finished_mono=read_finished_mono)
+                if not diagnostic_enabled:
+                    set_meta()
                 return result
         except urllib.error.HTTPError as e:
             # Record before reading the body: an HTTPError body is not part of
             # the diagnostic contract and a broken body stream must not erase
             # evidence that a physical attempt happened.
-            record_state_attempt(started_epoch, started_mono, e.code)
+            open_finished_mono = time.monotonic()
+            record_diagnostic_attempt(
+                started_epoch, started_mono, e.code,
+                timeout_s=attempt_timeout, timed_out=e.code == 408,
+                pre_read_mono=open_finished_mono,
+                retry_after_s=retry_after_seconds(e))
             if e.code == 429:
                 retry_429_count += 1
                 set_meta()
@@ -275,8 +352,16 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
             raise make_error(e.code, e.read().decode(errors="replace"),
                              uncertain=False) from None
         except (urllib.error.URLError, TimeoutError, OSError) as e:
-            record_state_attempt(started_epoch, started_mono, None,
-                                 type(e).__name__ if state_diagnostics else None)
+            open_finished_mono = time.monotonic()
+            if read_started_mono is not None:
+                read_finished_mono = open_finished_mono
+            record_diagnostic_attempt(
+                started_epoch, started_mono, None,
+                error=type(e).__name__ if diagnostic_enabled else None,
+                timeout_s=attempt_timeout, timed_out=is_timeout(e),
+                pre_read_mono=open_finished_mono,
+                read_started_mono=read_started_mono,
+                read_finished_mono=read_finished_mono)
             failures += 1
             retry_network += 1
             timed_out = is_timeout(e)
@@ -289,8 +374,15 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
             sleep_retry(delay)
             delay = min(delay * 2, 10.0)
         except (http.client.HTTPException, ValueError) as e:
-            record_state_attempt(started_epoch, started_mono, attempt_status,
-                                 type(e).__name__ if state_diagnostics else None)
+            open_finished_mono = time.monotonic()
+            if read_started_mono is not None and read_finished_mono is None:
+                read_finished_mono = open_finished_mono
+            record_diagnostic_attempt(
+                started_epoch, started_mono, attempt_status,
+                error=type(e).__name__ if diagnostic_enabled else None,
+                timeout_s=attempt_timeout, pre_read_mono=open_finished_mono,
+                read_started_mono=read_started_mono,
+                read_finished_mono=read_finished_mono)
             # 连接在响应头或 JSON body 中途断开时，服务端可能已经执
             # 行了动作；这类「响应丢失」不能按普通 GET 的重试规则处理。
             if wraps_transport:
@@ -413,7 +505,7 @@ class Api:
             "POST", self._url(f"/api/games/{gid}/action"), body=payload,
             token=self.token, timeout=self.timeout, deadline=deadline,
             retry=False, retry_429=False, retry_transient=False,
-            error_cls=ActionSubmissionError)
+            error_cls=ActionSubmissionError, diagnostic_kind="action")
 
     def open_notify(self, gid, timeout=45.0):
         """打开 /api/games/{gid}/notify SSE 通知流(v12),返回可逐行读的
