@@ -3168,6 +3168,16 @@ class BotClient:
         except MirrorInconsistent as e:
             self._log(f"弃牌决策构建失败: {e}")
             return
+        # A post-claim ``phase=draw`` snapshot can arrive before the next
+        # tile_drawn event.  In particular, a catch-play/freeze snapshot
+        # makes Game.legal_actions() expose the not-yet-known drawn tile as
+        # ``None``.  That is a wait state, not a decision point: passing it
+        # to a strategy can produce a None action and an invalid POST.  Do
+        # not reject every draw snapshot with ``drawn=None``: legacy/fake
+        # snapshots can still carry a complete actionable hand.
+        legal = g.legal_actions()
+        if not legal or any(action is None for action in legal):
+            return
         act = self._decide_logged(g, mirror, "draw", gid)
         if ev is not None and ev.get("ts") is not None \
                 and ev["ts"] + DISCARD_SEC - time.time() <= SUBMIT_EPS:

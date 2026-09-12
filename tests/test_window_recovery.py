@@ -213,6 +213,21 @@ class WindowRecoveryTests(unittest.TestCase):
         self.assertEqual(bot.stats["auto_played"], 0)
         self.assertEqual(bot.stats["client_deadline_abandons"], 1)
 
+    def test_draw_snapshot_without_drawn_tile_is_not_a_decision_point(self):
+        """吃碰后的 draw 快照可能早于摸牌事件，不能提交 None 动作。"""
+        clock = FakeClock()
+        api = ScriptedServer([], clock)
+        bot = BotClient(api, "bot0", _choose_chi_or_draw,
+                        log=lambda _: None, window_wait=0)
+        mirror = bot._mirror_from_snapshot(_snapshot(turn=1, drawn=None))
+        mirror.freeze = 1  # 使引擎的暂态合法集暴露 drawn=None
+
+        with mock.patch.object(bot_client_module, "time", clock):
+            bot._act_draw(mirror, "g1")
+
+        self.assertEqual(api.actions, [])
+        self.assertEqual(bot.stats["decide_errors"], 0)
+
 
 class ActionRecoveryTests(unittest.TestCase):
     def test_409_forces_seq_zero_resync_without_retry_or_decide_error(self):

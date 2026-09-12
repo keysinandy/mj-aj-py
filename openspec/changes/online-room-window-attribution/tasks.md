@@ -4,6 +4,7 @@
 - [x] 1.2 Extend BotClient window confirmation, decision and action paths with WindowAttemptKey, logical request id, attempt index, stage timestamps, authorization snapshot sequence, exact deadline and identity provenance.
 - [x] 1.3 Extend API/action diagnostics with server trace id when supplied, explicit headers-received/body-finished boundaries for HTTPError, and monotonic throttle fields without fabricating non-applicable values.
 - [x] 1.4 Do not create an authorization/loss candidate for a pass-only response; persist authorization only after a non-PASS legal action is established.
+- [x] 1.5 Treat a post-claim draw snapshot without a known drawn tile as a wait state; do not call strategy or submit a `None` action.
 
 ## 2. Canonical lifecycle and safe recovery
 

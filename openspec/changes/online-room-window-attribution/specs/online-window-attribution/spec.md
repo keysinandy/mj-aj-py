@@ -127,6 +127,19 @@ At room end the report SHALL preserve demand counters and source (`end`, `req_fa
 - **WHEN** transport and window logs are complete but the protocol has no round-ended settlement marker
 - **THEN** transport/window may be complete while game status remains `protocol_skipped` or `partial`
 
+### Requirement: Draw submission requires an actionable tile
+
+The client MUST NOT invoke strategy submission or POST an action when a
+`phase=draw` snapshot does not expose an actionable legal tile. In particular,
+a post-claim/freeze snapshot may arrive before the next `tile_drawn` event and
+may expose `None` as the temporary frozen discard; this MUST be treated as a
+wait state and MUST NOT become a decision error or an action request.
+
+#### Scenario: Post-claim draw snapshot precedes tile draw
+
+- **WHEN** a draw snapshot has no actionable tile and the engine legal set contains the temporary `None` placeholder
+- **THEN** the client waits for the next authoritative draw fact without calling strategy or submitting an invalid action
+
 ### Requirement: Frozen online acceptance enforces safety gates
 
 Final acceptance SHALL use a clean commit, fixed BOT strategy, fixed state rate 15, SSE plus incremental state, and three to five serial independent rooms of ten games. The report MUST include the run manifest, per-room evidence, hard-fail checks, and cross-room aggregate; old rooms MUST NOT enter the final denominator.
