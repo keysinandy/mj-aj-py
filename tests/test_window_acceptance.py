@@ -518,3 +518,4 @@ def test_legacy_identity_and_window_409_are_reported_as_weak_evidence(tmp_path):
     assert report["window_409"]["normal_action_409"] == 1
     assert report["window_409"]["window_409_linked"] == 1
     assert report["window_409"]["duplicate_post_after_409"] == 0
+    assert report["window_409"]["chains"][0]["gid"] == "g"

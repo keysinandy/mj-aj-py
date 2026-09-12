@@ -573,8 +573,12 @@ def _canonical_window_resolutions(records, claim_events=None, my_seat=None):
     return resolutions, identity_unverifiable
 
 
-def _recovery_chains(records, action_rows):
+def _recovery_chains(records, action_rows, gid=None):
     """Link response-action errors to the first following RESYNC evidence."""
+    if gid is None:
+        gid = next((item.get("gid") for item in records
+                    if item.get("type") == "meta" and item.get("gid")),
+                   None)
     chains = []
     duplicate_post_after_409 = 0
     duplicate_post_after_uncertain = 0
@@ -617,11 +621,12 @@ def _recovery_chains(records, action_rows):
             duplicate_post_after_uncertain += duplicates
         transport = row.get("transport") or {}
         attempts = transport.get("action_attempts") or []
+        window_id = _window_id_from_row(row)
         chain = {
-            "gid": row.get("gid"),
+            "gid": row.get("gid") or gid or (window_id or {}).get("game_id"),
             "status": status,
             "outcome": outcome,
-            "window_id": _window_id_from_row(row),
+            "window_id": window_id,
             "window_attempt_key": row.get("window_attempt_key"),
             "phase": row.get("phase"),
             "source_discard_seq": (_window_id_from_row(row) or {}).get(
