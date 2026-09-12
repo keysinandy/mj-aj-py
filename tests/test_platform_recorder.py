@@ -255,6 +255,34 @@ class TestRecorderUnits(unittest.TestCase):
         assert recs[-1]["demand_source"] == "end"
         assert recs[-1]["demand"] == explicit
 
+    def test_window_lifecycle_and_authorization_keep_null_trace_evidence(self):
+        wid = {"game_id": "g", "round_id": 1, "discard_owner": 2,
+               "source_discard_seq": 9, "tile": 5,
+               "identity_status": "authoritative"}
+        key = {"window_id": wid, "phase": "response_peng"}
+        self.rec.window_lifecycle(
+            "g", stage="post_result", state="POST_REJECTED",
+            outcome="POST_REJECTED", window_id=wid,
+            window_attempt_key=key, loss_stage="POST_RESULT")
+        self.rec.window_authorization(
+            "g", outcome="authoritative_open", window_id=wid,
+            window_attempt_key=key, authorization_snapshot_seq=10,
+            exact_deadline_at=123.0)
+        self.rec.window_terminal(
+            "g", window_id=wid, window_attempt_key=key,
+            terminal_reason="server_timeout_peng")
+        self.rec.action(
+            "g", "response_peng", {"action": "peng"}, ok=False,
+            status=409, outcome="POST_REJECTED", post_status="POST_REJECTED",
+            server_trace_id=None, window_id=wid,
+            window_attempt_key=key)
+
+        recs = _read_all(self.rec, "g", "bot")
+        assert [row["type"] for row in recs] == [
+            "window_lifecycle", "window_authorization", "window_terminal",
+            "action"]
+        assert recs[-1]["server_trace_id"] is None
+
     def test_gamelog_thread_safe(self):
         with tempfile.TemporaryDirectory() as d:
             log = GameLog(os.path.join(d, "x.jsonl"), "g")

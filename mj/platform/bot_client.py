@@ -97,6 +97,7 @@ class _WindowConfirm(Exception):
         # tests and callers constructing this object early remain consistent.
         self.retry_deadline = schedule_deadline
         self.pending_retries = 0
+        self.requested_at = None
         # A chi wait-state carries the same logical WindowAttemptKey as the
         # preceding peng phase.  Keeping it on the confirmation object lets
         # both phases use one identity/deadline resolver.
@@ -147,6 +148,13 @@ class BotClient:
         self._action_counters = {}
         self._window_attempt_counters = {}
         self._window_confirm_attempts = {}
+        # Runtime lifecycle facts are keyed by a phase-specific logical key;
+        # the recorder remains the durable source, while this small ledger
+        # prevents late timeout/snapshot callbacks from reopening a closed
+        # attempt in the live worker.
+        self._window_lifecycle_lock = threading.RLock()
+        self._window_lifecycles = {}
+        self._uncertain_recoveries = {}
         self.stats = {
             "games": 0, "actions": 0, "hu": 0, "err409": 0, "gaps": 0,
             "auto_played": 0, "mirror_resets": 0, "scores": [],
@@ -184,10 +192,12 @@ class BotClient:
             "state_attempts": 0,
             "state_retry_429": 0,
             "logical_demands": 0,
+            "logical_input_demands": 0,
             "coalesced_demands": 0,
             "successor_requests": 0,
             "physical_state_requests": 0,
             "suppressed_duplicates": 0,
+            "coalesced_or_suppressed": 0,
             "coalescing_ratio": None,
         }
 
@@ -443,6 +453,18 @@ class BotClient:
         if legal:
             self._claim_miss(gid, phase, legal, chosen=chosen, reason=reason,
                              mirror=mirror, deadline=deadline)
+        if mirror is not None and phase in ("response_peng", "response_chi"):
+            key = self._window_key(mirror, phase)
+            if isinstance(key, WindowAttemptKey) and chosen not in (None, -1):
+                self._record_window_lifecycle(
+                    gid, key, "submit", state="TERMINAL",
+                    outcome="CLIENT_LOSS", loss_stage="SUBMIT",
+                    loss_reason="submit_exact_deadline_expired"
+                    if "截止" in reason or "关闭" in reason
+                    else "submit_unknown",
+                    decision_action=chosen,
+                    exact_deadline_at=self._epoch_from_mono(deadline),
+                    submit_finished_at=time.time())
         with self._stats_lock:
             self.stats["client_deadline_abandons"] += 1
 
@@ -485,6 +507,10 @@ class BotClient:
                 action_posted = self._window_was_attempted(
                     mirror, window_key,
                     getattr(mirror, "_attempted_windows", None))
+        decision_id = None
+        if isinstance(window_key, WindowAttemptKey) and mirror is not None:
+            decision_id = (getattr(mirror, "_window_decision_ids", {}) or {}
+                           ).get(window_key)
         if self.recorder is not None:
             self.recorder.claim_miss(
                 gid, phase, sorted(legal), chosen=chosen, reason=reason,
@@ -496,7 +522,8 @@ class BotClient:
                 window_attempt_key=window_key_json,
                 logical_request_id=logical_request_id,
                 exact_deadline_at=exact_deadline_at,
-                action_posted=action_posted)
+                action_posted=action_posted,
+                decision_id=decision_id)
         self._log(f"规则可{phase}但未成功: legal={sorted(legal)} "
                   f"chosen={chosen} reason={reason}")
 
@@ -544,6 +571,9 @@ class BotClient:
                 f"window-confirm:{gid}:{confirm.round_no}:"
                 f"{repr(window_id.as_tuple())}:{phase}")
             confirm.logical_request_id = logical_confirm_id
+        now_epoch = time.time()
+        if outcome == "requested":
+            confirm.requested_at = now_epoch
         if outcome == "requested":
             with self._action_counter_lock:
                 confirm_attempt_index = max(
@@ -567,10 +597,14 @@ class BotClient:
             "identity_origin": window_id.identity_origin,
             "first_seen_via": window_id.first_seen_via,
             "logical_request_id": logical_confirm_id,
+            "confirm_request_logical_id": logical_confirm_id,
+            "confirm_requested_at": getattr(confirm, "requested_at", None),
+            "confirm_response_at": now_epoch,
             "attempt_index": confirm_attempt_index or None,
             "generation": getattr(confirm, "generation", None),
             "source_watermark": confirm.source_watermark,
             "seq": seq,
+            "source_observed_at": self._epoch_seconds(confirm.source_ts),
             "estimated_deadline_at": self._epoch_from_mono(
                 confirm.schedule_deadline),
         }
@@ -578,6 +612,11 @@ class BotClient:
             fields["exact_deadline_at"] = self._snapshot_deadline(snap)
             fields["snapshot_phase"] = snap.get("phase")
             fields["responding_seats"] = snap.get("responding_seats") or []
+            fields["deadline_left_ms"] = self._deadline_left_ms(
+                fields["exact_deadline_at"])
+            if outcome in ("open", "confirmed"):
+                fields["authorization_snapshot_seq"] = seq
+                fields["authoritative_open_at"] = now_epoch
         # JSONL 记录不需要 null 字段，且旧 fake Recorder 可能只接收
         # 非空字段；保留 pending/round 等稳定字段，丢弃未提供项。
         fields = {key: value for key, value in fields.items()
@@ -600,6 +639,201 @@ class BotClient:
             writer = getattr(self.recorder, "window_confirm", None)
             if writer is not None:
                 writer(gid, **fields)
+        lifecycle_key = WindowAttemptKey(window_id, phase)
+        lifecycle_fields = dict(fields)
+        lifecycle_fields.pop("outcome", None)
+        if outcome in ("requested", "unconfirmed"):
+            self._record_window_lifecycle(
+                gid, lifecycle_key, "confirm", state="CONFIRM_PENDING",
+                outcome="PENDING", **lifecycle_fields)
+        elif outcome == "open":
+            self._record_window_lifecycle(
+                gid, lifecycle_key, "authorization", state="AUTHORIZED",
+                outcome="AUTHORIZED", **lifecycle_fields)
+        elif outcome == "confirmed":
+            # A confirmed record may be an already-completed action; do not
+            # overwrite a stronger SUCCESS/STRATEGY_PASS state.
+            self._record_window_lifecycle(
+                gid, lifecycle_key, "confirm", state="AUTHORIZED",
+                outcome="AUTHORIZED", **lifecycle_fields)
+        elif outcome in ("closed", "stale", "expired", "not_responding",
+                         "deadline_missing", "no_legal", "miss"):
+            self._record_window_terminal(
+                gid, lifecycle_key, reason or outcome, phase=phase, seq=seq,
+                outcome="TERMINAL")
+
+    @staticmethod
+    def _window_lifecycle_token(window_key):
+        if not isinstance(window_key, WindowAttemptKey):
+            return None
+        # Use the phase-independent WindowId tuple plus phase, deliberately
+        # excluding diagnostic provenance/fallback fields from the join key.
+        return repr(window_key.as_tuple())
+
+    @staticmethod
+    def _deadline_left_ms(exact_deadline_at):
+        if exact_deadline_at is None:
+            return None
+        try:
+            return round((float(exact_deadline_at) - time.time()) * 1000.0, 1)
+        except (TypeError, ValueError):
+            return None
+
+    def _record_window_lifecycle(self, gid, window_key, stage, *, state=None,
+                                 outcome=None, **fields):
+        """Record a monotonic lifecycle transition without reopening it.
+
+        ``window_lifecycle`` is deliberately best-effort: a recorder failure
+        must never alter action safety.  A late SUCCESS is allowed to upgrade
+        a prior POST_UNCERTAIN because it is reconciliation evidence, but a
+        stale confirm/timeout cannot move a closed attempt back to pending.
+        """
+        token = self._window_lifecycle_token(window_key)
+        if token is None:
+            return
+        closed_states = {
+            "POST_OK", "POST_REJECTED", "POST_UNCERTAIN",
+            "DECIDED_PASS", "PREEMPTED", "TERMINAL", "SUCCESS",
+        }
+        with self._window_lifecycle_lock:
+            current = self._window_lifecycles.setdefault(
+                (gid, token), {"state": "OBSERVED"})
+            previous = current.get("state")
+            # Do not let delayed state/timeout facts reopen a terminal phase.
+            if previous in closed_states and state not in ("SUCCESS", None):
+                return
+            if state is not None:
+                if previous == "POST_UNCERTAIN" and state == "SUCCESS":
+                    current["state"] = state
+                elif previous not in closed_states:
+                    current["state"] = state
+            current.update({key: value for key, value in fields.items()
+                            if value is not None})
+            if outcome is not None:
+                current["outcome"] = outcome
+            current["stage"] = stage
+            snapshot = dict(current)
+        writer = (getattr(self.recorder, "window_lifecycle", None)
+                  if self.recorder is not None else None)
+        if writer is not None:
+            try:
+                writer(gid, stage=stage, state=snapshot.get("state"),
+                       outcome=snapshot.get("outcome"),
+                       window_id=(window_key.window_id.as_json()),
+                       window_attempt_key=window_key.as_json(),
+                       **{key: value for key, value in snapshot.items()
+                          if key not in ("state", "outcome", "stage",
+                                         "window_id",
+                                         "window_attempt_key")
+                          and value is not None})
+            except Exception:
+                pass
+
+    def _set_window_authorization(self, mirror, window_key, snap, seq=None):
+        """Attach and persist the exact authorization snapshot for an attempt."""
+        if mirror is None or not isinstance(window_key, WindowAttemptKey):
+            return None
+        exact = self._snapshot_deadline(snap)
+        context = {
+            "window_id": window_key.window_id.as_json(),
+            "window_attempt_key": window_key.as_json(),
+            "authorization_snapshot_seq": seq,
+            "authorization_phase": snap.get("phase") if isinstance(
+                snap, dict) else None,
+            "authorization_responding_seats": list(
+                (snap or {}).get("responding_seats") or [])
+            if isinstance(snap, dict) else None,
+            "exact_deadline_at": exact,
+            "authoritative_open_at": time.time(),
+            "identity_status": window_key.window_id.identity_status,
+            "identity_origin": window_key.window_id.identity_origin,
+            "first_seen_via": window_key.window_id.first_seen_via,
+        }
+        contexts = getattr(mirror, "_window_authorizations", None)
+        if contexts is None:
+            contexts = {}
+            mirror._window_authorizations = contexts
+        contexts[window_key] = context
+        self._record_window_lifecycle(
+            getattr(mirror, "_game_id", None), window_key, "authorization",
+            state="AUTHORIZED", outcome="AUTHORIZED", **context)
+        writer = (getattr(self.recorder, "window_authorization", None)
+                  if self.recorder is not None else None)
+        if writer is not None:
+            try:
+                writer(getattr(mirror, "_game_id", None),
+                       outcome="authoritative_open", **context,
+                       deadline_left_ms=self._deadline_left_ms(exact),
+                       observed_at=time.time())
+            except Exception:
+                pass
+        return context
+
+    @staticmethod
+    def _window_authorization(mirror, window_key):
+        contexts = getattr(mirror, "_window_authorizations", None) or {}
+        return contexts.get(window_key, {}) if window_key is not None else {}
+
+    def _record_window_terminal(self, gid, window_key, reason, *, phase=None,
+                                seq=None, outcome=None):
+        if not isinstance(window_key, WindowAttemptKey):
+            return
+        self._record_window_lifecycle(
+            gid, window_key, "terminal", state="TERMINAL",
+            outcome=outcome or "TERMINAL", terminal_reason=reason,
+            terminal_observed_at=time.time(), terminal_seq=seq)
+        writer = (getattr(self.recorder, "window_terminal", None)
+                  if self.recorder is not None else None)
+        if writer is not None:
+            try:
+                writer(gid, window_id=window_key.window_id.as_json(),
+                       window_attempt_key=window_key.as_json(),
+                       phase=phase or window_key.phase,
+                       terminal_reason=reason, terminal_observed_at=time.time(),
+                       terminal_seq=seq,
+                       outcome=outcome)
+            except Exception:
+                pass
+
+    def _remember_uncertain_recovery(self, gid, window_key, payload,
+                                     mirror):
+        if not isinstance(window_key, WindowAttemptKey):
+            return
+        with self._window_lifecycle_lock:
+            pending = self._uncertain_recoveries.setdefault(gid, [])
+            pending.append({
+                "window_key": window_key,
+                "payload": dict(payload or {}),
+                "meld_count_before": len(
+                    (getattr(mirror, "melds", None) or [])[getattr(
+                        mirror, "me", 0)])
+                if mirror is not None and getattr(mirror, "melds", None)
+                else None,
+            })
+
+    def _reconcile_uncertain_snapshot(self, gid, mirror, snap, seq=None):
+        """Close an uncertain POST with the first safe authoritative result."""
+        with self._window_lifecycle_lock:
+            pending = self._uncertain_recoveries.pop(gid, [])
+        for item in pending:
+            key = item["window_key"]
+            before = item.get("meld_count_before")
+            melds = getattr(mirror, "melds", None) or []
+            after = (len(melds[mirror.me]) if melds
+                     and 0 <= getattr(mirror, "me", -1) < len(melds)
+                     else None)
+            phase = (snap or {}).get("phase") if isinstance(snap, dict) else None
+            if before is not None and after is not None and after > before:
+                status = "uncertain_reconciled_applied"
+            elif phase not in (key.phase, "response_peng", "response_chi"):
+                status = "uncertain_reconciled_not_applied"
+            else:
+                status = "uncertain_reconcile_unknown"
+            self._record_window_lifecycle(
+                gid, key, "reconciliation", outcome=status,
+                reconciliation=status, reconciliation_seq=seq,
+                reconciliation_phase=phase,
+                reconciliation_observed_at=time.time())
 
     @classmethod
     def _epoch_from_mono(cls, mono):
@@ -944,6 +1178,10 @@ class BotClient:
         elif not current_legal:
             outcome, reason = "no_legal", "new_legal_set_empty"
         else:
+            authorization_key = self._window_key(
+                mirror, confirm.phase, snap=snap)
+            self._set_window_authorization(
+                mirror, authorization_key, snap, seq=seq)
             self._record_window_confirm(
                 gid, confirm, "open", reason="authoritative_open",
                 snap=snap, seq=seq, legal=current_legal)
@@ -1397,6 +1635,11 @@ class BotClient:
         self._claim_miss(gid, phase, legal,
                          chosen=None if decided == "unset" else decided,
                          reason=reason, mirror=mirror, seq=seq)
+        key = self._window_key(mirror, phase)
+        if isinstance(key, WindowAttemptKey):
+            self._record_window_terminal(
+                gid, key, reason, phase=phase, seq=seq,
+                outcome="SERVER_TERMINAL")
         return legal
 
     def _mark_window_decision(self, mirror, phase, act):
@@ -1863,6 +2106,8 @@ class BotClient:
                     if plan is not None and plan.mode == "FULL":
                         legacy_epoch += 1
                     mirror = self._mirror_from_snapshot(snap, gid=gid)
+                    self._reconcile_uncertain_snapshot(
+                        gid, mirror, snap, seq=res.get("seq", seq))
                     # seq=0 is only a request mode.  RESYNC is satisfied
                     # after the authoritative snapshot has actually rebuilt
                     # the mirror, not merely because the request was FULL.
@@ -1929,6 +2174,7 @@ class BotClient:
                         attempted_keys=attempted_windows,
                         pending_confirm=pending_confirm,
                         confirm_outcome=confirm_outcome,
+                        snapshot_seq=res.get("seq", seq),
                         # A phase transition during a chi confirmation is
                         # terminal for that old reason, but the same
                         # authoritative snapshot may be the first usable
@@ -2016,6 +2262,7 @@ class BotClient:
             trigger = None
             batch_seen = set()  # 同批内触发弃牌之后的其他家窗口响应
             window_event = None  # 当前 batch 最后一个仍可响应的弃牌
+            active_window_key = None
             peng_timeout = None  # 我方碰窗已由服务端关闭的事件
             chi_timeout = False
             for ev in batch:
@@ -2051,6 +2298,7 @@ class BotClient:
                     pending_source = None
                     pending_source_contiguous = False
                     self._set_source_identity(mirror, None)
+                    active_window_key = None
                 if t == "tile_drawn" and e["seat"] == mirror.me:
                     trigger = ("draw", e)
                     chi_pending = None  # 我方回合推进:旧窗作废
@@ -2069,6 +2317,8 @@ class BotClient:
                                       source_seq, source_origin)
                     pending_source_contiguous = source_seq is not None
                     self._set_source_identity(mirror, source_seq, source_origin)
+                    active_window_key = self._window_key(
+                        mirror, "response_peng", ev=ev)
                     window_responded = False  # 新弃牌开新窗:未响应态
                     chi_fetches = 0           # 新弃牌:吃窗抓取预算重置
                     if e["seat"] == mirror.me:
@@ -2098,9 +2348,24 @@ class BotClient:
                                 mirror, e["seat"], e["tile"]):
                             state_deadline = None
                 elif t in ("chi", "peng", "gang"):
+                    if (active_window_key is not None
+                            and e.get("seat") != mirror.me):
+                        # The opponent's accepted claim is a rule terminal
+                        # for both phases of this discard.  This is not a
+                        # client loss and must not be emitted as claim_miss.
+                        for claim_phase in ("response_peng", "response_chi"):
+                            preempt_key = WindowAttemptKey(
+                                active_window_key.window_id, claim_phase)
+                            self._record_window_lifecycle(
+                                gid, preempt_key, "terminal",
+                                state="PREEMPTED", outcome="RULE_PREEMPTED",
+                                terminal_reason="opponent_claim",
+                                terminal_observed_at=time.time(),
+                                terminal_seq=e.get("seq"))
                     pending_source = None
                     pending_source_contiguous = False
                     self._set_source_identity(mirror, None)
+                    active_window_key = None
                     chi_pending = None  # 有人吃/碰/杠:窗口被认领
                     window_event = None
                     if trigger is not None and trigger[0] == "window":
@@ -2146,6 +2411,7 @@ class BotClient:
                     pending_source = None
                     pending_source_contiguous = False
                     self._set_source_identity(mirror, None)
+                    active_window_key = None
                     # 本轮已结束(含服务端自动结算的杠开等):同批未消费的
                     # draw/window 触发一律作废,否则仍会按陈旧摸牌触发决策
                     # 并提交动作必 409(match 实测 2026-09-11,b5);批内
@@ -2401,22 +2667,69 @@ class BotClient:
         """decide 包装:记录合法集/所选动作/耗时/镜像摘要。"""
         legal = sorted(g.legal_actions())
         t0 = time.monotonic()
+        started_epoch = time.time()
+        key = (self._window_key(mirror, phase)
+               if phase in ("response_peng", "response_chi") else None)
+        authorization = self._window_authorization(mirror, key)
+        deadline_left_at_start_ms = self._deadline_left_ms(
+            authorization.get("exact_deadline_at"))
+        logical_request_id = None
+        attempt_index = None
+        if isinstance(key, WindowAttemptKey):
+            logical_request_id = f"window:{gid}:{repr(key.as_tuple())}"
+            with self._action_counter_lock:
+                attempt_index = self._window_attempt_counters.get(
+                    (gid, repr(key.as_tuple())), 0) + 1
+            self._record_window_lifecycle(
+                gid, key, "decision", state="DECIDING",
+                outcome="DECIDING", decision_started_at=started_epoch,
+                exact_deadline_at=authorization.get("exact_deadline_at"),
+                authorization_snapshot_seq=authorization.get(
+                    "authorization_snapshot_seq"))
         with self._decide_lock:
             act = self.decide(g, mirror.me)
+        finished_epoch = time.time()
+        decision_result = ("PASS" if act == -1 else "NON_PASS_ACTION")
+        if isinstance(key, WindowAttemptKey):
+            self._record_window_lifecycle(
+                gid, key, "decision", state=("DECIDED_PASS"
+                                              if act == -1
+                                              else "DECIDED_ACTION"),
+                outcome=decision_result, decision_finished_at=finished_epoch,
+                decision_action=act,
+                exact_deadline_at=authorization.get("exact_deadline_at"),
+                deadline_left_at_start_ms=deadline_left_at_start_ms,
+                deadline_left_at_finish_ms=self._deadline_left_ms(
+                    authorization.get("exact_deadline_at")))
         if self.recorder is not None:
             kwargs = {"digest": {
                 "hand": int(sum(mirror.my_hand)),
                 "wall": mirror.live_wall_left(),
                 "round_no": mirror.round_no}}
-            if phase in ("response_peng", "response_chi"):
-                key = self._window_key(mirror, phase)
-                if isinstance(key, WindowAttemptKey):
-                    kwargs.update({
-                        "window_id": key.window_id.as_json(),
-                        "window_attempt_key": key.as_json(),
-                        "identity_status": key.window_id.identity_status,
-                        "identity_origin": key.window_id.identity_origin,
-                    })
+            if isinstance(key, WindowAttemptKey):
+                kwargs.update({
+                    "window_id": key.window_id.as_json(),
+                    "window_attempt_key": key.as_json(),
+                    "identity_status": key.window_id.identity_status,
+                    "identity_origin": key.window_id.identity_origin,
+                    "first_seen_via": key.window_id.first_seen_via,
+                    "logical_request_id": logical_request_id,
+                    "attempt_index": attempt_index,
+                    "authorization_snapshot_seq": authorization.get(
+                        "authorization_snapshot_seq"),
+                    "authorization_phase": authorization.get(
+                        "authorization_phase"),
+                    "authorization_responding_seats": authorization.get(
+                        "authorization_responding_seats"),
+                    "exact_deadline_at": authorization.get(
+                        "exact_deadline_at"),
+                    "decision_started_at": started_epoch,
+                    "decision_finished_at": finished_epoch,
+                    "deadline_left_at_start_ms": deadline_left_at_start_ms,
+                    "deadline_left_at_finish_ms": self._deadline_left_ms(
+                        authorization.get("exact_deadline_at")),
+                    "decision_result": decision_result,
+                })
             try:
                 params = inspect.signature(self.recorder.decision).parameters
             except (TypeError, ValueError):
@@ -2427,8 +2740,12 @@ class BotClient:
             if not accepts_kwargs:
                 kwargs = {key: value for key, value in kwargs.items()
                           if key in params}
-            self.recorder.decision(
+            decision_id = self.recorder.decision(
                 gid, phase, legal, act, _ms(t0), **kwargs)
+            if isinstance(key, WindowAttemptKey):
+                mirror._window_decision_ids = getattr(
+                    mirror, "_window_decision_ids", {})
+                mirror._window_decision_ids[key] = decision_id
         return act
 
     def _attempts(self):
@@ -2444,6 +2761,13 @@ class BotClient:
         if isinstance(self.api, Api):
             return getattr(_TLS, "request_meta", None)
         return None
+
+    @staticmethod
+    def _last_transport_attempt(transport, kind="action"):
+        if not isinstance(transport, dict):
+            return {}
+        attempts = transport.get(f"{kind}_attempts") or []
+        return attempts[-1] if attempts else {}
 
     def _throttle_ticket(self):
         from .api import Api, _TLS
@@ -2684,9 +3008,10 @@ class BotClient:
     def _record_demand_metrics(self, demand, seen):
         """Accumulate coordinator counters without double counting games."""
         snapshot = demand.request_snapshot()
-        keys = ("logical_demands", "coalesced_demands",
+        keys = ("logical_demands", "logical_input_demands",
+                "coalesced_demands",
                 "successor_requests", "physical_state_requests",
-                "suppressed_duplicates")
+                "suppressed_duplicates", "coalesced_or_suppressed")
         with self._stats_lock:
             for key in keys:
                 current = int(snapshot.get(key) or 0)
@@ -2745,7 +3070,8 @@ class BotClient:
 
     def _act_on_snapshot(self, mirror, snap, gid, responded_keys=None,
                          attempted_keys=None, allow_peng=True,
-                         pending_confirm=None, confirm_outcome=None):
+                         pending_confirm=None, confirm_outcome=None,
+                         snapshot_seq=None):
         """快照驱动的决策兜底(开局直抽/409 重建后的窗口)。
 
         response_peng 快照不能直接丢弃：若本人只需过碰窗，返回吃窗等待态，
@@ -2769,6 +3095,8 @@ class BotClient:
                 # 快照缺少截止时不能把未完成的确认变成无界 POST。
                 return None
             key = self._window_key(mirror, "response_peng", snap=snap)
+            self._set_window_authorization(
+                mirror, key, snap, seq=snapshot_seq)
             if self._window_was_attempted(mirror, key, attempted_keys):
                 # 服务端 responding_seats 不保证只包含尚未响应者。
                 # 重复快照不得再决策 peng；后续 chi 仍须独立权威确认。
@@ -2792,6 +3120,9 @@ class BotClient:
                                     key, WindowAttemptKey)
                                 else (mirror.round_no, mirror.pending)))
                 return None
+            key = self._window_key(mirror, "response_chi", snap=snap)
+            self._set_window_authorization(
+                mirror, key, snap, seq=snapshot_seq)
             chi = self._make_chi_pending(
                 mirror, snap=snap, responded_keys=responded_keys,
                 attempted_keys=attempted_keys, phase_hint="response_chi")
@@ -3077,6 +3408,9 @@ class BotClient:
         if logical_action_id is None:
             counter = self._next_action_counter(gid)
             logical_action_id = f"action:{gid}:{counter}"
+        authorization = self._window_authorization(mirror, key)
+        decision_id = (getattr(mirror, "_window_decision_ids", {}) or {}
+                       ).get(key) if isinstance(key, WindowAttemptKey) else None
         window_log = {}
         if isinstance(key, WindowAttemptKey):
             window_log = {
@@ -3084,13 +3418,30 @@ class BotClient:
                 "window_attempt_key": key.as_json(),
                 "identity_status": key.window_id.identity_status,
                 "identity_origin": key.window_id.identity_origin,
+                "first_seen_via": key.window_id.first_seen_via,
             }
         payload = action_to_payload(
             act, mirror.pending[1] if mirror.pending else None)
         t0 = time.monotonic()
         start_epoch = time.time()
+        deadline_left_at_send_ms = (None if deadline is None else round(
+            (deadline - t0) * 1000.0, 1))
         deadline_epoch = (None if deadline is None else
                           start_epoch + deadline - t0)
+        authorization_age_ms = None
+        if authorization.get("authoritative_open_at") is not None:
+            try:
+                authorization_age_ms = round(
+                    (start_epoch - float(
+                        authorization["authoritative_open_at"])) * 1000.0, 1)
+            except (TypeError, ValueError):
+                authorization_age_ms = None
+        if isinstance(key, WindowAttemptKey):
+            self._record_window_lifecycle(
+                gid, key, "post", state="POSTING", outcome="POSTING",
+                decision_id=decision_id, post_started_at=start_epoch,
+                exact_deadline_at=authorization.get("exact_deadline_at"),
+                deadline_left_at_send_ms=deadline_left_at_send_ms)
         try:
             from .api import Api
             if isinstance(self.api, Api):
@@ -3098,6 +3449,19 @@ class BotClient:
             else:
                 self.api.game_action(gid, payload)
         except ApiError as e:
+            transport = self._transport()
+            last_attempt = self._last_transport_attempt(transport)
+            response_epoch = time.time()
+            deadline_left_at_response_ms = last_attempt.get(
+                "deadline_left_at_response_ms")
+            if deadline_left_at_response_ms is None:
+                deadline_left_at_response_ms = last_attempt.get(
+                    "deadline_left_at_response")
+            if deadline_left_at_response_ms is None:
+                deadline_left_at_response_ms = self._deadline_left_ms(
+                    authorization.get("exact_deadline_at"))
+            outcome = ("POST_UNCERTAIN" if getattr(e, "uncertain", False)
+                       else "POST_REJECTED")
             if (phase in ("response_peng", "response_chi")
                     and isinstance(key, WindowAttemptKey)
                     and not self._strong_window_key(key)):
@@ -3123,10 +3487,47 @@ class BotClient:
                                      deadline_at=deadline_epoch,
                                      message=getattr(e, "message", ""),
                                      attempts=self._attempts(),
-                                     transport=self._transport(),
+                                     transport=transport,
                                      logical_request_id=logical_action_id,
                                      attempt_index=action_attempt_index,
+                                     decision_id=decision_id,
+                                     authorization_snapshot_seq=authorization.get(
+                                         "authorization_snapshot_seq"),
+                                     authorization_phase=authorization.get(
+                                         "authorization_phase"),
+                                     authorization_responding_seats=
+                                     authorization.get(
+                                         "authorization_responding_seats"),
+                                     authorization_age_ms=authorization_age_ms,
+                                     exact_deadline_at=authorization.get(
+                                         "exact_deadline_at"),
+                                     deadline_left_at_send_ms=
+                                     deadline_left_at_send_ms,
+                                     deadline_left_at_response_ms=
+                                     deadline_left_at_response_ms,
+                                     post_started_at=start_epoch,
+                                     post_finished_at=response_epoch,
+                                     post_status=outcome,
+                                     response_epoch=response_epoch,
+                                     server_trace_id=last_attempt.get(
+                                         "server_trace_id"),
+                                     outcome=outcome,
                                      **window_log)
+            if isinstance(key, WindowAttemptKey):
+                self._record_window_lifecycle(
+                    gid, key, "post_result",
+                    state=outcome, outcome=outcome,
+                    decision_id=decision_id, post_started_at=start_epoch,
+                    post_finished_at=response_epoch,
+                    exact_deadline_at=authorization.get(
+                        "exact_deadline_at"),
+                    authorization_age_ms=authorization_age_ms,
+                    deadline_left_at_send_ms=deadline_left_at_send_ms,
+                    deadline_left_at_response_ms=deadline_left_at_response_ms,
+                    server_trace_id=last_attempt.get("server_trace_id"))
+                if getattr(e, "uncertain", False):
+                    self._remember_uncertain_recovery(
+                        gid, key, payload, mirror)
             if e.status == 409:
                 with self._stats_lock:
                     self.stats["err409"] += 1
@@ -3140,15 +3541,66 @@ class BotClient:
                 f"{type(e).__name__} status={e.status} code={e.code}",
                 status=e.status, uncertain=getattr(e, "uncertain", False))
         if self.recorder is not None:
+            transport = self._transport()
+            last_attempt = self._last_transport_attempt(transport)
+            response_epoch = time.time()
+            deadline_left_at_response_ms = last_attempt.get(
+                "deadline_left_at_response_ms")
+            if deadline_left_at_response_ms is None:
+                deadline_left_at_response_ms = last_attempt.get(
+                    "deadline_left_at_response")
+            outcome = "STRATEGY_PASS" if act == -1 else "SUCCESS"
             self.recorder.action(gid, phase, payload, ok=True,
                                  latency_ms=_ms(t0), started_at=t0,
                                  started_epoch=start_epoch,
                                  deadline_at=deadline_epoch,
                                  attempts=self._attempts(),
-                                 transport=self._transport(),
+                                 transport=transport,
                                  logical_request_id=logical_action_id,
                                  attempt_index=action_attempt_index,
+                                 decision_id=decision_id,
+                                 authorization_snapshot_seq=authorization.get(
+                                     "authorization_snapshot_seq"),
+                                 authorization_phase=authorization.get(
+                                     "authorization_phase"),
+                                 authorization_responding_seats=authorization.get(
+                                     "authorization_responding_seats"),
+                                 authorization_age_ms=authorization_age_ms,
+                                 exact_deadline_at=authorization.get(
+                                     "exact_deadline_at"),
+                                 deadline_left_at_send_ms=
+                                 deadline_left_at_send_ms,
+                                 deadline_left_at_response_ms=
+                                 deadline_left_at_response_ms,
+                                 post_started_at=start_epoch,
+                                 post_finished_at=response_epoch,
+                                 post_status="OK",
+                                 response_epoch=response_epoch,
+                                 server_trace_id=last_attempt.get(
+                                     "server_trace_id"),
+                                 outcome=outcome,
                                  **window_log)
+        else:
+            transport = self._transport()
+            last_attempt = self._last_transport_attempt(transport)
+            response_epoch = time.time()
+            deadline_left_at_response_ms = last_attempt.get(
+                "deadline_left_at_response_ms")
+            if deadline_left_at_response_ms is None:
+                deadline_left_at_response_ms = last_attempt.get(
+                    "deadline_left_at_response")
+            outcome = "STRATEGY_PASS" if act == -1 else "SUCCESS"
+        if isinstance(key, WindowAttemptKey):
+            self._record_window_lifecycle(
+                gid, key, "post_result",
+                state=("STRATEGY_PASS" if act == -1 else "SUCCESS"),
+                outcome=outcome, decision_id=decision_id,
+                post_started_at=start_epoch, post_finished_at=response_epoch,
+                exact_deadline_at=authorization.get("exact_deadline_at"),
+                authorization_age_ms=authorization_age_ms,
+                deadline_left_at_send_ms=deadline_left_at_send_ms,
+                deadline_left_at_response_ms=deadline_left_at_response_ms,
+                server_trace_id=last_attempt.get("server_trace_id"))
         with self._stats_lock:
             self.stats["actions"] += 1
             if payload["action"] == "hu":

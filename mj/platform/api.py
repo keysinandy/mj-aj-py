@@ -151,6 +151,7 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
                                   retry_after_raw=None,
                                   server_date_raw=None,
                                   server_date_epoch=None,
+                                  server_trace_id=None,
                                   throttle=None,
                                   deadline_left_at_send_ms=None,
                                   deadline_left_at_response_ms=None):
@@ -228,6 +229,12 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
             item["server_date_raw"] = server_date_raw
         if server_date_epoch is not None:
             item["server_date_epoch"] = round(server_date_epoch, 3)
+        # The protocol/gateway may expose a request trace in one of several
+        # conventional headers.  Keep only the opaque id, never headers or
+        # response bodies; absent trace evidence remains explicit as null at
+        # the action/acceptance layer rather than being fabricated.
+        if server_trace_id is not None:
+            item["server_trace_id"] = str(server_trace_id)
         diagnostic_attempts.append(item)
         # Keep the thread-local metadata current on every terminal outcome;
         # this matters for callers that inspect it after an ApiError.
@@ -243,6 +250,15 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
         if value is None:
             return None
         return str(value)
+
+    def trace_value(headers):
+        for name in ("Server-Trace-Id", "X-Server-Trace-Id",
+                     "X-Trace-Id", "Trace-Id", "X-Request-Id",
+                     "Request-Id"):
+            value = header_value(headers, name)
+            if value:
+                return value
+        return None
 
     def date_epoch(raw):
         if not raw:
@@ -384,6 +400,7 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
                     headers_received_mono=headers_received_mono,
                     read_started_mono=read_started_mono,
                     read_finished_mono=read_finished_mono,
+                    server_trace_id=trace_value(getattr(r, "headers", None)),
                     throttle=throttle_info,
                     deadline_left_at_send_ms=(
                         round((deadline - started_mono) * 1000.0, 1)
@@ -435,6 +452,7 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
                 retry_after_raw=retry_details["retry_after_raw"],
                 server_date_raw=retry_details["server_date_raw"],
                 server_date_epoch=retry_details["server_date_epoch"],
+                server_trace_id=trace_value(getattr(e, "headers", None)),
                 throttle=throttle_info,
                 deadline_left_at_send_ms=(
                     round((deadline - started_mono) * 1000.0, 1)

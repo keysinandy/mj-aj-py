@@ -223,6 +223,23 @@ def test_http_error_records_header_and_body_boundaries_and_http_date_headers():
     assert attempt["deadline_left_at_send"] is None
 
 
+def test_http_error_keeps_server_trace_id_without_exposing_headers():
+    error = urllib.error.HTTPError(
+        "https://state.example/api/games/g/action", 409, "race",
+        {"X-Request-Id": "trace-409"},
+        io.BytesIO(b'{"code":"STALE_ACTION"}'))
+    api = Api("https://state.example", "secret-token", state_rate=None)
+    with mock.patch("urllib.request.urlopen", side_effect=error):
+        with pytest.raises(ActionSubmissionError):
+            api.game_action("g", {"action": "peng"})
+
+    attempt = _TLS.request_meta["action_attempts"][0]
+    assert attempt["server_trace_id"] == "trace-409"
+    assert attempt["headers_received_mono"] is not None
+    assert attempt["body_finished_mono"] is not None
+    assert "X-Request-Id" not in json.dumps(_TLS.request_meta)
+
+
 def test_long_retry_after_is_capped_by_state_deadline():
     error = urllib.error.HTTPError(
         "https://state.example/api/games/g/state", 429, "busy",

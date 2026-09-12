@@ -379,3 +379,116 @@ def test_claim_miss_per_window_classification(tmp_path):
     assert report["games"][0]["claim_miss_classification"] == classification
     assert (report["layer_metrics"]["transport"]
             ["claim_miss_classification"] == classification)
+
+
+def test_canonical_resolution_success_beats_late_claim_miss(tmp_path):
+    window_id = {
+        "game_id": "g", "round_id": 1, "discard_owner": 2,
+        "source_discard_seq": 44, "tile": 5,
+        "identity_status": "authoritative",
+        "identity_origin": "tile_discard_event_seq",
+        "first_seen_via": "event",
+    }
+    attempt = {"window_id": window_id, "phase": "response_chi"}
+    records = [
+        {"type": "window_confirm", "outcome": "requested",
+         "phase": "response_chi", "window_id": window_id,
+         "window_attempt_key": attempt, "legal": [7]},
+        {"type": "window_confirm", "outcome": "open",
+         "phase": "response_chi", "window_id": window_id,
+         "window_attempt_key": attempt, "legal": [7],
+         "authorization_snapshot_seq": 45,
+         "exact_deadline_at": 1001.0},
+        {"type": "decision", "id": 3, "phase": "response_chi",
+         "window_id": window_id, "window_attempt_key": attempt,
+         "legal": [7], "action": 7},
+        {"type": "action", "phase": "response_chi", "decision": 3,
+         "window_id": window_id, "window_attempt_key": attempt,
+         "payload": {"action": "chi"}, "ok": True, "status": 200,
+         "outcome": "SUCCESS"},
+        {"type": "claim_miss", "phase": "response_chi",
+         "window_id": window_id, "window_attempt_key": attempt,
+         "reason": "server_timeout_chi", "chosen": 7},
+        {"type": "end", "reason": "finished"},
+    ]
+    path = tmp_path / "canonical-success.jsonl"
+    path.write_text("\n".join(json.dumps(row) for row in records))
+
+    report = summarize([path])
+
+    resolution = report["games"][0]["canonical_resolutions"][0]
+    assert resolution["outcome"] == "SUCCESS"
+    assert resolution["loss_stage"] == "NONE"
+    assert report["games"][0]["false_claim_miss_count"] == 1
+    assert report["window_attribution"]["canonical_client_loss_count"] == 0
+
+
+def test_canonical_resolution_distinguishes_decision_loss(tmp_path):
+    window_id = {
+        "game_id": "g", "round_id": 1, "discard_owner": 2,
+        "source_discard_seq": 9, "tile": 5,
+        "identity_status": "authoritative",
+    }
+    attempt = {"window_id": window_id, "phase": "response_peng"}
+    records = [
+        {"type": "window_confirm", "outcome": "open",
+         "phase": "response_peng", "window_id": window_id,
+         "window_attempt_key": attempt, "legal": [7],
+         "authorization_snapshot_seq": 10,
+         "exact_deadline_at": 1001.0},
+        {"type": "claim_miss", "phase": "response_peng",
+         "window_id": window_id, "window_attempt_key": attempt,
+         "reason": "server_timeout_peng", "chosen": None},
+        {"type": "end", "reason": "finished"},
+    ]
+    path = tmp_path / "canonical-decision-loss.jsonl"
+    path.write_text("\n".join(json.dumps(row) for row in records))
+
+    report = summarize([path])
+
+    resolution = report["games"][0]["canonical_resolutions"][0]
+    assert resolution["outcome"] == "CLIENT_LOSS"
+    assert resolution["loss_stage"] == "DECISION"
+    assert resolution["loss_reason"] == "decision_not_started_before_terminal"
+
+
+def test_legacy_identity_and_window_409_are_reported_as_weak_evidence(tmp_path):
+    legacy_id = {
+        "game_id": "g", "round_id": 1, "discard_owner": 2,
+        "source_discard_seq": None, "tile": 5,
+        "identity_status": "legacy_unresolved",
+        "identity_origin": "legacy_snapshot",
+        "fallback": [3, [13, 13, 13, 13]],
+    }
+    key = {"window_id": legacy_id, "phase": "response_peng"}
+    authoritative_id = dict(legacy_id, source_discard_seq=21,
+                            identity_status="authoritative")
+    authoritative_key = {"window_id": authoritative_id,
+                         "phase": "response_peng"}
+    records = [
+        {"type": "window_confirm", "outcome": "requested",
+         "phase": "response_peng", "window_id": legacy_id,
+         "window_attempt_key": key, "legal": [7]},
+        {"type": "action", "phase": "response_peng", "window_id": authoritative_id,
+         "window_attempt_key": authoritative_key, "payload": {"action": "peng"},
+         "ok": False, "status": 409, "outcome": "POST_REJECTED",
+         "transport": {"action_attempts": [{"status": 409,
+                                               "server_trace_id": "trace-1"}]}},
+        {"type": "req", "requested_seq": 0, "seq": 22,
+         "request_kind": "RESYNC", "status": 200,
+         "res": {"snapshot": True, "seq": 22}},
+        {"type": "snapshot", "seq": 22, "snap": _snapshot()},
+        {"type": "end", "reason": "finished"},
+    ]
+    path = tmp_path / "identity-409.jsonl"
+    path.write_text("\n".join(json.dumps(row) for row in records))
+
+    report = summarize([path])
+
+    game = report["games"][0]
+    assert game["legacy_eligible_windows"] == 1
+    assert game["window_evidence_status"] == "partial_identity"
+    assert game["status"]["window_status"] == "window_partial_identity"
+    assert report["window_409"]["window_409_count"] == 1
+    assert report["window_409"]["window_409_linked"] == 1
+    assert report["window_409"]["duplicate_post_after_409"] == 0

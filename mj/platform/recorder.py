@@ -6,6 +6,10 @@
 - sse_frame SSE 通知帧:payload/水位/closed/去重与唤醒结果
 - req       每次状态轮询:请求时游标 seq/响应耗时/状态码/尝试次数/响应摘要；
             transport 可带 state_attempts 的物理状态与分阶段耗时摘要
+- window_confirm 窗口权威确认过程:phase/window identity/seq/deadline/outcome
+- window_lifecycle 窗口生命周期状态转换:stage/state/outcome/归因字段
+- window_authorization 权威授权快照:phase/responding/deadline/时序证据
+- window_terminal 窗口终止事实:terminal reason/phase/server event
 - snapshot  快照原文(离线重建锚点:my_hand/公共状态/墙长)
 - events    事件批原文(离线重放数据源)
 - decision  决策点:phase/合法动作集/所选动作/decide 耗时/镜像摘要
@@ -220,6 +224,36 @@ class Recorder:
                     if value is not None})
         self.log_for(gid).write(rec)
 
+    def window_lifecycle(self, gid, stage=None, state=None, outcome=None,
+                         **fields):
+        """记录一个 WindowAttemptKey 的生命周期状态转换。
+
+        这是追加式事实记录；验收脚本按 attempt key 和记录时间重建最终
+        状态，因此运行时不需要持久化一个会阻断对弈的复杂状态机。
+        """
+        rec = {"type": "window_lifecycle"}
+        for key, value in (("stage", stage), ("state", state),
+                           ("outcome", outcome)):
+            if value is not None:
+                rec[key] = value
+        rec.update({key: value for key, value in fields.items()
+                    if value is not None})
+        self.log_for(gid).write(rec)
+
+    def window_authorization(self, gid, **fields):
+        """记录一次 authoritative_open 的快照授权证据。"""
+        rec = {"type": "window_authorization"}
+        rec.update({key: value for key, value in fields.items()
+                    if value is not None})
+        self.log_for(gid).write(rec)
+
+    def window_terminal(self, gid, **fields):
+        """记录窗口 phase 的终止事实，不把它直接当作客户端根因。"""
+        rec = {"type": "window_terminal"}
+        rec.update({key: value for key, value in fields.items()
+                    if value is not None})
+        self.log_for(gid).write(rec)
+
     def snapshot(self, gid, seq, snap):
         log = self.log_for(gid)
         if seq is not None:
@@ -237,7 +271,16 @@ class Recorder:
 
     def decision(self, gid, phase, legal, action, latency_ms, digest=None,
                  window_id=None, window_attempt_key=None,
-                 identity_status=None, identity_origin=None):
+                 identity_status=None, identity_origin=None,
+                 first_seen_via=None, logical_request_id=None,
+                 attempt_index=None, authorization_snapshot_seq=None,
+                 authorization_phase=None,
+                 authorization_responding_seats=None,
+                 exact_deadline_at=None,
+                 decision_started_at=None, decision_finished_at=None,
+                 deadline_left_at_start_ms=None,
+                 deadline_left_at_finish_ms=None,
+                 decision_result=None):
         """返回决策 id(action 记录据此配对)。"""
         log = self.log_for(gid)
         did = log.next_decision_id()
@@ -250,7 +293,23 @@ class Recorder:
         for key, value in (("window_id", window_id),
                            ("window_attempt_key", window_attempt_key),
                            ("identity_status", identity_status),
-                           ("identity_origin", identity_origin)):
+                           ("identity_origin", identity_origin),
+                           ("first_seen_via", first_seen_via),
+                           ("logical_request_id", logical_request_id),
+                           ("attempt_index", attempt_index),
+                           ("authorization_snapshot_seq",
+                            authorization_snapshot_seq),
+                           ("authorization_phase", authorization_phase),
+                           ("authorization_responding_seats",
+                            authorization_responding_seats),
+                           ("exact_deadline_at", exact_deadline_at),
+                           ("decision_started_at", decision_started_at),
+                           ("decision_finished_at", decision_finished_at),
+                           ("deadline_left_at_start_ms",
+                            deadline_left_at_start_ms),
+                           ("deadline_left_at_finish_ms",
+                            deadline_left_at_finish_ms),
+                           ("decision_result", decision_result)):
             if value is not None:
                 rec[key] = value
         log.write(rec)
@@ -260,7 +319,8 @@ class Recorder:
                    payload=None, status=None, code="", deadline_at=None,
                    seq=None, pending=None, window_id=None,
                    window_attempt_key=None, logical_request_id=None,
-                   exact_deadline_at=None, action_posted=None):
+                   exact_deadline_at=None, action_posted=None,
+                   decision_id=None):
         """记录规则允许的吃/碰/杠机会未成功，供离线对账归因。
 
         窗口关联字段（window_id/window_attempt_key/logical_request_id/
@@ -282,7 +342,8 @@ class Recorder:
                                   else "current_mirror")
         # 只读 pending_decision 与其配对，不清空：紧随其后的 action 记录
         # （POST 被拒/结果未知）仍要按同一 decision id 配对。
-        did = self.log_for(gid).pending_decision
+        did = (decision_id if decision_id is not None
+               else self.log_for(gid).pending_decision)
         if did is not None and chosen is not None:
             rec["decision"] = did
         observed_at = time.time()
@@ -309,7 +370,18 @@ class Recorder:
                started_epoch=None, deadline_at=None, message=None,
                transport=None, logical_request_id=None, attempt_index=None,
                window_id=None, window_attempt_key=None,
-               identity_status=None, identity_origin=None):
+               identity_status=None, identity_origin=None,
+               first_seen_via=None, decision_id=None,
+               authorization_snapshot_seq=None,
+               authorization_phase=None,
+               authorization_responding_seats=None,
+               authorization_age_ms=None,
+               exact_deadline_at=None,
+               deadline_left_at_send_ms=None,
+               deadline_left_at_response_ms=None,
+               post_started_at=None, post_finished_at=None,
+               post_status=None, response_epoch=None,
+               server_trace_id=None, outcome=None, reconciliation=None):
         log = self.log_for(gid)
         rec = {"type": "action", "phase": phase, "payload": payload,
                "ok": ok, "status": status, "code": code,
@@ -327,13 +399,42 @@ class Recorder:
                            ("window_id", window_id),
                            ("window_attempt_key", window_attempt_key),
                            ("identity_status", identity_status),
-                           ("identity_origin", identity_origin)):
+                           ("identity_origin", identity_origin),
+                           ("first_seen_via", first_seen_via),
+                           ("decision", decision_id),
+                           ("authorization_snapshot_seq",
+                            authorization_snapshot_seq),
+                           ("authorization_phase", authorization_phase),
+                           ("authorization_responding_seats",
+                            authorization_responding_seats),
+                           ("authorization_age_ms", authorization_age_ms),
+                           ("exact_deadline_at", exact_deadline_at),
+                           ("deadline_left_at_send_ms",
+                            deadline_left_at_send_ms),
+                           ("deadline_left_at_response_ms",
+                            deadline_left_at_response_ms),
+                           ("post_started_at", post_started_at),
+                           ("post_finished_at", post_finished_at),
+                           ("post_status", post_status),
+                           ("response_epoch", response_epoch),
+                           ("server_trace_id", server_trace_id),
+                           ("outcome", outcome),
+                           ("reconciliation", reconciliation)):
             if value is not None:
                 rec[key] = value
         did = log.pending_decision
-        if did is not None:
+        if decision_id is None and did is not None:
             rec["decision"] = did
             log.pending_decision = None
+        elif decision_id is not None and did == decision_id:
+            # An explicit id is authoritative for cross-window joins.  Clear
+            # only the matching compatibility slot.
+            log.pending_decision = None
+        if (server_trace_id is None
+                and (outcome is not None or post_status is not None)):
+            # For a response-attributed action, absence of a protocol trace is
+            # evidence and is therefore kept as JSON null rather than omitted.
+            rec["server_trace_id"] = None
         log.write(rec)
 
     def reset(self, gid, reason):

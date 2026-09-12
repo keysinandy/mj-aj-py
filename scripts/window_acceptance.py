@@ -19,8 +19,9 @@ from mj.platform.mirror import MirrorInconsistent
 
 
 _DEMAND_COUNTER_KEYS = (
-    "logical_demands", "coalesced_demands", "successor_requests",
-    "physical_state_requests", "suppressed_duplicates",
+    "logical_demands", "logical_input_demands", "coalesced_demands",
+    "successor_requests", "physical_state_requests",
+    "suppressed_duplicates", "coalesced_or_suppressed",
 )
 
 
@@ -256,6 +257,30 @@ def _authoritative_eligible_window_key(row):
         "tile"))
 
 
+def _eligible_window_identity(row):
+    """Return (phase-independent key, identity class) for a legal window."""
+    legal = row.get("legal")
+    if not isinstance(legal, (list, tuple)) \
+            or not any(action != -1 for action in legal):
+        return None, None
+    outcome = row.get("outcome", row.get("stage", "observed"))
+    if outcome not in ("requested", "open", "confirmed", "observed",
+                       "authoritative_open", "AUTHORIZED"):
+        return None, None
+    window_id = _window_id_from_row(row)
+    logical = _logical_window_key(row)
+    if logical is None:
+        return None, None
+    if isinstance(window_id, dict) \
+            and window_id.get("identity_status") == "authoritative" \
+            and window_id.get("source_discard_seq") is not None:
+        return logical, "authoritative"
+    if isinstance(window_id, dict) \
+            and window_id.get("identity_status") == "legacy_unresolved":
+        return logical, "legacy"
+    return None, None
+
+
 _PROTOCOL_HONORS = {"东": 27, "南": 28, "西": 29, "北": 30,
                     "中": 31, "发": 32, "白": 33}
 
@@ -287,12 +312,344 @@ def _claim_miss_attempt_key(row):
         phase = attempt.get("phase") or row.get("phase")
     if not isinstance(window_id, dict):
         return None
-    source_seq = window_id.get("source_discard_seq")
-    if source_seq is None:
+    if (window_id.get("identity_status") not in (None, "authoritative")
+            or window_id.get("source_discard_seq") is None):
         return None
+    source_seq = window_id.get("source_discard_seq")
     return (window_id.get("game_id"), window_id.get("round_id"),
             window_id.get("discard_owner"), source_seq,
             window_id.get("tile"), phase)
+
+
+def _window_id_from_row(row):
+    """Return the nested WindowId from either attempt or flat row shape."""
+    attempt = row.get("window_attempt_key")
+    if isinstance(attempt, dict) and isinstance(attempt.get("window_id"), dict):
+        return attempt["window_id"]
+    window_id = row.get("window_id")
+    return window_id if isinstance(window_id, dict) else None
+
+
+def _logical_window_key(row):
+    """Phase-independent key used for eligibility/identity coverage."""
+    window_id = _window_id_from_row(row)
+    if not isinstance(window_id, dict):
+        return None
+    fields = ("game_id", "round_id", "discard_owner",
+              "source_discard_seq", "tile")
+    if window_id.get("identity_status") == "authoritative" \
+            and window_id.get("source_discard_seq") is not None:
+        return tuple(window_id.get(field) for field in fields)
+    # Keep a separate weak key only for coverage diagnostics.  It must never
+    # be passed to the strong attempt resolver.
+    if window_id.get("identity_status") == "legacy_unresolved":
+        return ("legacy", window_id.get("game_id"),
+                window_id.get("round_id"), window_id.get("discard_owner"),
+                window_id.get("tile"),
+                repr(window_id.get("fallback")))
+    return None
+
+
+def _is_window_row(row):
+    return (row.get("phase") in ("response_peng", "response_chi")
+            or row.get("type") in ("window_confirm", "window_authorization",
+                                    "window_terminal", "window_lifecycle"))
+
+
+def _row_attempt_key(row):
+    """Return authoritative phase key for all lifecycle record variants."""
+    return _claim_miss_attempt_key(row)
+
+
+def _row_time(row, *names):
+    for name in names:
+        value = row.get(name)
+        if value is not None:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                continue
+    value = row.get("ts")
+    try:
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+CANONICAL_PRECEDENCE = (
+    "SUCCESS", "STRATEGY_PASS", "RULE_PREEMPTED", "POST_REJECTED",
+    "POST_UNCERTAIN", "SUBMIT", "DECISION", "CONFIRM", "UNKNOWN",
+)
+
+
+def _canonical_window_resolutions(records, claim_events=None, my_seat=None):
+    """Build one mutually-exclusive resolution per authoritative attempt.
+
+    The resolver intentionally prefers explicit lifecycle/action/decision
+    facts and only uses timeout/claim-miss rows as terminal evidence.  It does
+    not join rows that lack an authoritative WindowId by seq/phase guesses.
+    """
+    grouped = defaultdict(list)
+    identity_unverifiable = []
+    for index, row in enumerate(records):
+        if not _is_window_row(row):
+            continue
+        phase = row.get("phase")
+        if phase not in ("response_peng", "response_chi"):
+            attempt = row.get("window_attempt_key") or {}
+            phase = attempt.get("phase") if isinstance(attempt, dict) else None
+        if phase not in ("response_peng", "response_chi"):
+            continue
+        key = _row_attempt_key(row)
+        if key is None:
+            if row.get("type") in ("claim_miss", "action", "decision",
+                                    "window_confirm", "window_terminal",
+                                    "window_lifecycle"):
+                identity_unverifiable.append({"record_index": index,
+                                               "phase": phase,
+                                               "reason": row.get("reason")})
+            continue
+        grouped[key].append((index, row))
+
+    claim_events = claim_events or []
+    resolutions = []
+    for key, entries in grouped.items():
+        rows = [row for _index, row in entries]
+        first = rows[0]
+        wid = _window_id_from_row(first) or {}
+        phase = key[-1]
+        confirms = [row for row in rows if row.get("type") == "window_confirm"]
+        authorizations = [row for row in rows
+                          if row.get("type") == "window_authorization"]
+        lifecycle = [row for row in rows
+                     if row.get("type") == "window_lifecycle"]
+        decisions = [row for row in rows if row.get("type") == "decision"]
+        actions = [row for row in rows if row.get("type") == "action"]
+        misses = [row for row in rows if row.get("type") == "claim_miss"]
+        terminals = [row for row in rows if row.get("type") == "window_terminal"]
+
+        authoritative_open = bool(authorizations) or any(
+            row.get("outcome") in ("open", "confirmed",
+                                    "authoritative_open", "AUTHORIZED")
+            for row in confirms + lifecycle)
+        success = any(row.get("ok") is True
+                      or row.get("outcome") == "SUCCESS"
+                      for row in actions + lifecycle)
+        action_pass = any(row.get("action") == -1
+                          or row.get("decision_result") == "PASS"
+                          or row.get("outcome") == "STRATEGY_PASS"
+                          for row in decisions + lifecycle)
+        nonpass_decisions = [row for row in decisions
+                             if row.get("action") not in (None, -1)]
+        rejected = any(row.get("status") == 409
+                       or row.get("outcome") == "POST_REJECTED"
+                       or row.get("post_status") == "POST_REJECTED"
+                       for row in actions + lifecycle)
+        uncertain = any(row.get("outcome") == "POST_UNCERTAIN"
+                        or row.get("post_status") == "POST_UNCERTAIN"
+                        or (row.get("type") == "claim_miss"
+                            and str(row.get("reason") or "").startswith(
+                                "action_uncertain"))
+                        for row in actions + lifecycle + misses)
+        opponent = (_window_claim_evidence(claim_events, key, my_seat)
+                    == "opponent")
+        explicit_preempt = any(row.get("outcome") in (
+            "RULE_PREEMPTED", "PREEMPTED") for row in lifecycle + terminals)
+        opponent = opponent or explicit_preempt
+        terminal_reason = None
+        for row in reversed(terminals + lifecycle + confirms + misses):
+            if row.get("terminal_reason"):
+                terminal_reason = row.get("terminal_reason")
+                break
+            if row.get("reason") and row.get("outcome") in (
+                    "closed", "stale", "expired", "miss", "TERMINAL"):
+                terminal_reason = row.get("reason")
+                break
+        if terminal_reason is None:
+            for row in misses:
+                if row.get("reason"):
+                    terminal_reason = row.get("reason")
+                    break
+
+        exact_deadline = None
+        for row in authorizations + decisions + actions + confirms + lifecycle:
+            if row.get("exact_deadline_at") is not None:
+                exact_deadline = row.get("exact_deadline_at")
+                break
+        authorization_seq = None
+        for row in authorizations + confirms + decisions + actions:
+            if row.get("authorization_snapshot_seq") is not None:
+                authorization_seq = row.get("authorization_snapshot_seq")
+                break
+        decision_id = None
+        decision_action = None
+        decision_finished = None
+        for row in decisions:
+            decision_id = row.get("id", row.get("decision"))
+            decision_action = row.get("action")
+            decision_finished = _row_time(row, "decision_finished_at")
+            if decision_action is not None:
+                break
+
+        # A success/pass/preemption fact is stronger than any late miss or
+        # timeout.  Only after those are absent do we assign a loss stage.
+        if success:
+            outcome, loss_stage, loss_reason = "SUCCESS", "NONE", None
+        elif action_pass:
+            outcome, loss_stage, loss_reason = "STRATEGY_PASS", "NONE", None
+        elif opponent:
+            outcome, loss_stage, loss_reason = "RULE_PREEMPTED", "NONE", None
+        elif rejected:
+            outcome, loss_stage, loss_reason = (
+                "POST_REJECTED", "POST_RESULT", "post_rejected")
+        elif uncertain:
+            outcome, loss_stage, loss_reason = (
+                "POST_UNCERTAIN", "POST_RESULT", "post_uncertain")
+        elif nonpass_decisions:
+            explicit_submit = [row for row in rows
+                               if str(row.get("reason") or "").startswith(
+                                   "submit_")]
+            outcome, loss_stage = "CLIENT_LOSS", "SUBMIT"
+            loss_reason = (explicit_submit[-1].get("reason")
+                           if explicit_submit else "submit_result_missing")
+        elif authoritative_open:
+            outcome, loss_stage = "CLIENT_LOSS", "DECISION"
+            outcome_reason = "decision_not_started_before_terminal"
+            for row in decisions:
+                start = _row_time(row, "decision_started_at")
+                finish = _row_time(row, "decision_finished_at")
+                if exact_deadline is not None and start is not None \
+                        and finish is not None:
+                    if start < float(exact_deadline) <= finish:
+                        outcome_reason = "decision_deadline_expired_during_compute"
+                        break
+            loss_reason = outcome_reason
+        elif confirms or misses or terminals:
+            outcome, loss_stage = "CLIENT_LOSS", "CONFIRM"
+            loss_reason = "server_timeout_before_authoritative_confirm"
+            for row in reversed(confirms + terminals + misses):
+                reason = str(row.get("reason") or "")
+                if reason.startswith("confirm_"):
+                    loss_reason = reason
+                    break
+                if reason.startswith("server_timeout_"):
+                    loss_reason = "server_timeout_before_authoritative_confirm"
+                    break
+        else:
+            outcome, loss_stage, loss_reason = "UNKNOWN", "UNKNOWN", None
+
+        evidence_quality = "authoritative_identity"
+        if exact_deadline is not None and (authorizations or confirms):
+            evidence_quality = "authoritative_identity_full_timing"
+        elif not confirms and not authorizations:
+            evidence_quality = "authoritative_identity_partial_timing"
+        resolution = {
+            "window_id": wid,
+            "window_attempt_key": (first.get("window_attempt_key")
+                                    or {"window_id": wid, "phase": phase}),
+            "phase": phase,
+            "identity_status": wid.get("identity_status"),
+            "identity_origin": wid.get("identity_origin"),
+            "first_seen_via": wid.get("first_seen_via"),
+            "outcome": outcome,
+            "loss_stage": loss_stage,
+            "loss_reason": loss_reason,
+            "authoritative_open": authoritative_open,
+            "confirm_logical_request_id": next(
+                (row.get("logical_request_id") for row in confirms
+                 if row.get("logical_request_id") is not None), None),
+            "authorization_snapshot_seq": authorization_seq,
+            "decision_id": decision_id,
+            "decision_action": decision_action,
+            "action_posted": bool(actions),
+            "action_status": next((row.get("status") for row in actions
+                                    if row.get("status") is not None), None),
+            "exact_deadline_at": exact_deadline,
+            "terminal_reason": terminal_reason,
+            "evidence_quality": evidence_quality,
+            "record_indexes": [index for index, _row in entries],
+        }
+        resolutions.append(resolution)
+    return resolutions, identity_unverifiable
+
+
+def _recovery_chains(records, action_rows):
+    """Link response-action errors to the first following RESYNC evidence."""
+    chains = []
+    duplicate_post_after_409 = 0
+    duplicate_post_after_uncertain = 0
+    for index, row in action_rows:
+        status = row.get("status")
+        outcome = row.get("outcome") or row.get("post_status")
+        if status != 409 and outcome != "POST_UNCERTAIN":
+            continue
+        key = _row_attempt_key(row)
+        resync = None
+        terminal_snapshot = None
+        for later in records[index + 1:]:
+            if later.get("type") == "req":
+                requested = later.get("requested_seq", later.get("seq"))
+                if requested == 0 or later.get("request_kind") == "RESYNC":
+                    resync = later
+                    break
+            if later.get("type") == "end":
+                break
+        if resync is not None:
+            start = records.index(resync, index + 1)
+            for later in records[start + 1:]:
+                if later.get("type") == "snapshot":
+                    terminal_snapshot = later
+                    break
+                if later.get("type") == "end":
+                    break
+        duplicates = 0
+        if key is not None:
+            for later in records[index + 1:]:
+                if later.get("type") != "action" \
+                        or _row_attempt_key(later) != key:
+                    continue
+                payload = later.get("payload") or {}
+                if payload.get("action") != "pass":
+                    duplicates += 1
+        if status == 409:
+            duplicate_post_after_409 += duplicates
+        else:
+            duplicate_post_after_uncertain += duplicates
+        transport = row.get("transport") or {}
+        attempts = transport.get("action_attempts") or []
+        chain = {
+            "gid": row.get("gid"),
+            "status": status,
+            "outcome": outcome,
+            "window_id": _window_id_from_row(row),
+            "window_attempt_key": row.get("window_attempt_key"),
+            "phase": row.get("phase"),
+            "source_discard_seq": (_window_id_from_row(row) or {}).get(
+                "source_discard_seq"),
+            "authorization_snapshot_seq": row.get(
+                "authorization_snapshot_seq"),
+            "authorization_age_ms": row.get("authorization_age_ms"),
+            "deadline_left_at_send_ms": row.get(
+                "deadline_left_at_send_ms"),
+            "deadline_left_at_response_ms": row.get(
+                "deadline_left_at_response_ms"),
+            "action_http_ms": row.get("latency_ms"),
+            "queue_ms": [item.get("queue_wait_ms") for item in attempts
+                         if item.get("queue_wait_ms") is not None],
+            "backoff_ms": transport.get("backoff_ms"),
+            "server_trace_id": row.get("server_trace_id") or next(
+                (item.get("server_trace_id") for item in reversed(attempts)
+                 if item.get("server_trace_id") is not None), None),
+            "resync_seq": (resync.get("requested_seq", resync.get("seq"))
+                           if resync is not None else None),
+            "resync_phase": ((terminal_snapshot.get("snap") or {}).get(
+                "phase") if terminal_snapshot is not None else None),
+            "final_meld_observed": terminal_snapshot is not None,
+            "resync_linked": resync is not None,
+            "duplicate_old_action_posts": duplicates,
+        }
+        chains.append(chain)
+    return chains, duplicate_post_after_409, duplicate_post_after_uncertain
 
 
 CLAIM_MISS_CATEGORIES = (
@@ -442,6 +799,11 @@ def summarize(paths):
         room_decision_actions = {}
         room_claim_events = []
         my_seat = None
+        room_legacy_eligible_keys = set()
+        room_identity_origins = Counter()
+        room_first_seen_via = Counter()
+        room_409_rows = []
+        room_uncertain_rows = []
         for index, row in enumerate(records):
             kind = row["type"]
             types[kind] += 1
@@ -483,6 +845,15 @@ def summarize(paths):
                 eligible_key = _authoritative_eligible_window_key(row)
                 if eligible_key is not None:
                     room_eligible_keys.add(eligible_key)
+                eligible_key, identity_kind = _eligible_window_identity(row)
+                if eligible_key is not None:
+                    if identity_kind == "legacy":
+                        room_legacy_eligible_keys.add(eligible_key)
+                    window_id = _window_id_from_row(row) or {}
+                    room_identity_origins[window_id.get(
+                        "identity_origin", "unknown")] += 1
+                    room_first_seen_via[window_id.get(
+                        "first_seen_via", "unknown")] += 1
                 if mirror is None:
                     audit["decisions_without_mirror"] += 1
                     continue
@@ -567,6 +938,11 @@ def summarize(paths):
                         room_action_outcomes[attempt_key] = "ok"
                     else:
                         room_action_outcomes.setdefault(attempt_key, "failed")
+                if row.get("status") == 409:
+                    room_409_rows.append((index, row))
+                if (row.get("outcome") == "POST_UNCERTAIN"
+                        or row.get("post_status") == "POST_UNCERTAIN"):
+                    room_uncertain_rows.append((index, row))
                 if row.get("ok") and row.get("decision") in decision_keys:
                     successful_keys.add(decision_keys[row["decision"]])
             elif kind == "claim_miss":
@@ -583,15 +959,42 @@ def summarize(paths):
                 eligible_key = _authoritative_eligible_window_key(row)
                 if eligible_key is not None:
                     room_eligible_keys.add(eligible_key)
+                eligible_key, identity_kind = _eligible_window_identity(row)
+                if eligible_key is not None:
+                    if identity_kind == "legacy":
+                        room_legacy_eligible_keys.add(eligible_key)
+                    window_id = _window_id_from_row(row) or {}
+                    room_identity_origins[window_id.get(
+                        "identity_origin", "unknown")] += 1
+                    room_first_seen_via[window_id.get(
+                        "first_seen_via", "unknown")] += 1
                 if outcome == "requested":
                     room_confirm_keys.add((
                         row.get("logical_request_id"),
                         json.dumps(row.get("window_id"), sort_keys=True,
                                    ensure_ascii=False),
                         row.get("phase")))
+            elif kind in ("window_authorization", "window_lifecycle",
+                          "window_terminal"):
+                eligible_key, identity_kind = _eligible_window_identity(row)
+                if eligible_key is not None:
+                    if identity_kind == "legacy":
+                        room_legacy_eligible_keys.add(eligible_key)
+                    window_id = _window_id_from_row(row) or {}
+                    room_identity_origins[window_id.get(
+                        "identity_origin", "unknown")] += 1
+                    room_first_seen_via[window_id.get(
+                        "first_seen_via", "unknown")] += 1
             elif kind == "end":
                 end_row = row
                 demand_end = row.get("demand")
+        canonical_resolutions, identity_unverifiable = (
+            _canonical_window_resolutions(
+                records, claim_events=room_claim_events, my_seat=my_seat))
+        recovery_rows = room_409_rows + room_uncertain_rows
+        recovery_chains, duplicate_post_after_409, \
+            duplicate_post_after_uncertain = _recovery_chains(
+                records, recovery_rows)
         boundary_recovered += sum(key in successful_keys for key in boundary_keys)
         audit_totals.update(audit)
         if isinstance(end_row, dict) and "demand" in end_row \
@@ -603,6 +1006,21 @@ def summarize(paths):
             demand_source = end_row.get("demand_source") or "end"
         else:
             demand, demand_source = _demand_fallback(request_demands)
+        demand_reasons = (demand.get("reasons")
+                          if isinstance(demand, dict) else None)
+        dirty_reasons = []
+        if isinstance(demand_reasons, dict):
+            dirty_reasons = [reason for reason, data in demand_reasons.items()
+                             if isinstance(data, dict)
+                             and data.get("status") == "PENDING"]
+        demand_terminal_clean = (
+            bool(demand)
+            and not dirty_reasons
+            and not bool((demand or {}).get("in_flight"))
+            and (demand.get("reason_mask") in (0, None)))
+        demand_terminal_status = (
+            "clean" if demand_terminal_clean
+            else "dirty" if demand else "missing")
         replay = replay_game(records, want_samples=False)
         end_reason = (end_row or {}).get("reason")
         has_end = end_row is not None
@@ -611,9 +1029,25 @@ def summarize(paths):
         transport_status = explicit_status.get("transport_status") or (
             "complete" if terminal_end and not explicit_status.get("error")
             else "partial")
-        window_status = explicit_status.get("window_status") or (
-            "complete" if end_reason == "finished"
-            else "partial")
+        explicit_window_status = explicit_status.get("window_status")
+        legacy_windows = len(room_legacy_eligible_keys)
+        authoritative_windows = len(room_eligible_keys)
+        eligible_windows_total = authoritative_windows + legacy_windows
+        canonical_unknown = sum(
+            resolution.get("outcome") == "UNKNOWN"
+            for resolution in canonical_resolutions)
+        strong_gap_room = bool(room_gaps and any(
+            gap["reason"] == "event_discontinuity"
+            and gap["decision_impact"] is True for gap in room_gaps))
+        if legacy_windows:
+            window_status = "window_partial_identity"
+        elif demand_terminal_status == "dirty" or strong_gap_room \
+                or canonical_unknown:
+            window_status = "partial"
+        else:
+            window_status = explicit_window_status or (
+                "complete" if end_reason == "finished"
+                else "partial")
         reported_game_status = explicit_status.get("game_status")
         # One round_ended event is not enough to certify a multi-round game.
         # A marker-backed game is complete only when every observed round has
@@ -643,6 +1077,40 @@ def summarize(paths):
             "by_category": {category: claim_categories.get(category, 0)
                             for category in CLAIM_MISS_CATEGORIES},
         }
+        canonical_counts = Counter(
+            resolution.get("outcome") for resolution in canonical_resolutions)
+        false_claim_miss = 0
+        for miss_row in room_miss_rows:
+            key = _row_attempt_key(miss_row)
+            if key is None:
+                continue
+            matching = [item for item in canonical_resolutions
+                        if item.get("window_attempt_key", {}).get("phase")
+                        == key[-1]
+                        and _claim_miss_attempt_key(item) == key]
+            if matching and matching[0].get("outcome") in (
+                    "SUCCESS", "STRATEGY_PASS", "RULE_PREEMPTED"):
+                false_claim_miss += 1
+        canonical_client_loss = sum(
+            item.get("outcome") in ("CLIENT_LOSS", "POST_REJECTED",
+                                     "POST_UNCERTAIN")
+            for item in canonical_resolutions)
+        functional_failures = [item for item in canonical_resolutions
+                               if item.get("outcome") in (
+                                   "CLIENT_LOSS", "UNKNOWN")]
+        functional_status = (
+            "fail" if functional_failures or duplicate_post_after_409
+            else "explained_failures" if canonical_counts.get(
+                "POST_REJECTED", 0) or canonical_counts.get(
+                "POST_UNCERTAIN", 0)
+            else "pass")
+        window_evidence_status = (
+            "partial_identity" if legacy_windows
+            else "partial" if (canonical_unknown or strong_gap_room
+                                or demand_terminal_status == "dirty")
+            else "complete" if end_reason in ("finished", "inaccessible",
+                                               "closed", "void")
+            else "partial")
         room_request_rows.append(room_requests)
         room_miss_counts.append(room_misses)
         room_confirm_counts.append(room_confirms)
@@ -660,6 +1128,31 @@ def summarize(paths):
             "replay_clean": replay["clean"],
             "eligible_windows": len(room_eligible_keys),
             "eligible_windows_authoritative": len(room_eligible_keys),
+            "eligible_windows_total": eligible_windows_total,
+            "legacy_eligible_windows": legacy_windows,
+            "authoritative_identity_coverage": (
+                authoritative_windows / eligible_windows_total
+                if eligible_windows_total else None),
+            "identity_origins": dict(room_identity_origins),
+            "first_seen_via": dict(room_first_seen_via),
+            "canonical_resolutions": canonical_resolutions,
+            "canonical_outcomes": dict(canonical_counts),
+            "canonical_client_loss_count": canonical_client_loss,
+            "raw_claim_miss_count": len(room_miss_rows),
+            "false_claim_miss_count": false_claim_miss,
+            "identity_unverifiable_count": len(identity_unverifiable),
+            "identity_unverifiable": identity_unverifiable,
+            "window_evidence_status": window_evidence_status,
+            "window_functional_status": functional_status,
+            "window_409_count": len(room_409_rows),
+            "window_409_chains": [chain for chain in recovery_chains
+                                  if chain.get("phase") in (
+                                      "response_peng", "response_chi")],
+            "post_uncertain_count": len(room_uncertain_rows),
+            "duplicate_post_after_409": duplicate_post_after_409,
+            "duplicate_post_after_uncertain": duplicate_post_after_uncertain,
+            "demand_terminal_status": demand_terminal_status,
+            "demand_dirty_reasons": dirty_reasons,
             "window_confirm_seq0": room_confirm_seq0,
             "window_confirm_physical_attempts": room_confirm_physical,
             "demand": demand,
@@ -728,8 +1221,9 @@ def summarize(paths):
         for index in indexes:
             demand = games[index].get("demand") or {}
             for key in ("logical_demands", "coalesced_demands",
-                        "successor_requests", "physical_state_requests",
-                        "suppressed_duplicates"):
+                        "logical_input_demands", "successor_requests",
+                        "physical_state_requests", "suppressed_duplicates",
+                        "coalesced_or_suppressed"):
                 value = demand.get(key)
                 if value is None:
                     missing.add(key)
@@ -745,6 +1239,13 @@ def summarize(paths):
             if logical and not ({"logical_demands",
                                  "physical_state_requests"} & missing)
             else None)
+        logical_input = totals.get("logical_input_demands")
+        if logical_input:
+            totals["coalesced_or_suppressed_ratio"] = round(
+                (totals["coalesced_demands"]
+                 + totals["suppressed_duplicates"]) / logical_input, 6)
+        else:
+            totals["coalesced_or_suppressed_ratio"] = None
         if missing:
             totals["missing_counters"] = sorted(missing)
         return dict(totals)
@@ -783,6 +1284,13 @@ def summarize(paths):
         for index in indexes:
             layer_misses.update(room_miss_counts[index])
             layer_confirms.update(room_confirm_counts[index])
+        canonical_outcomes = Counter()
+        canonical_losses = 0
+        for index in indexes:
+            canonical_outcomes.update(
+                games[index].get("canonical_outcomes", {}))
+            canonical_losses += games[index].get(
+                "canonical_client_loss_count", 0)
         return {
             "rooms_complete": len(indexes),
             "rooms_excluded": len(games) - len(indexes),
@@ -802,7 +1310,54 @@ def summarize(paths):
             "window_confirm_records": dict(layer_confirms),
             "demand": demand_totals(indexes),
             "demand_source_counts": demand_source_counts(indexes),
+            "canonical_outcomes": dict(canonical_outcomes),
+            "canonical_client_loss_count": canonical_losses,
         }
+
+    all_canonical = Counter()
+    all_loss_stages = Counter()
+    all_409_chains = []
+    all_hard_fail = Counter()
+    all_identity_origins = Counter()
+    all_first_seen = Counter()
+    for game in games:
+        all_canonical.update(game.get("canonical_outcomes", {}))
+        for resolution in game.get("canonical_resolutions", []):
+            all_loss_stages[resolution.get("loss_stage", "UNKNOWN")] += 1
+        all_409_chains.extend(game.get("window_409_chains", []))
+        all_identity_origins.update(game.get("identity_origins", {}))
+        all_first_seen.update(game.get("first_seen_via", {}))
+        for name in ("duplicate_post_after_409",
+                     "duplicate_post_after_uncertain"):
+            if game.get(name, 0):
+                all_hard_fail[name] += game[name]
+    all_eligible = sum(game.get("eligible_windows_total", 0)
+                       for game in games)
+    all_authoritative = sum(game.get("eligible_windows_authoritative", 0)
+                            for game in games)
+    hard_fail_checks = {
+        "duplicate_old_action_post": sum(all_hard_fail.values()),
+        "pending_confirmation_claim_miss": sum(
+            1 for game in games
+            for resolution in game.get("canonical_resolutions", [])
+            if resolution.get("loss_reason") == "phase_not_reached"),
+        "success_or_pass_client_loss": sum(
+            1 for game in games
+            for resolution in game.get("canonical_resolutions", [])
+            if resolution.get("outcome") in ("SUCCESS", "STRATEGY_PASS")
+            and resolution.get("loss_stage") not in ("NONE", None)),
+        "dirty_demand": sum(game.get("demand_terminal_status") == "dirty"
+                             for game in games),
+        "gap_decision_impact_risk": strong_gap_risks,
+    }
+    window_409_chains = [chain for chain in all_409_chains
+                         if chain.get("status") == 409
+                         and chain.get("phase") in (
+                             "response_peng", "response_chi")]
+    normal_409_chains = [chain for chain in all_409_chains
+                         if chain.get("status") == 409
+                         and chain.get("phase") not in (
+                             "response_peng", "response_chi")]
 
     return {
         "files": len(paths), "record_counts": dict(types), "actions": dict(actions),
@@ -819,6 +1374,57 @@ def summarize(paths):
             "decision_impact": dict(gap_impacts),
             "strong_risk": strong_gap_risks,
         },
+        "window_identity_coverage": {
+            "eligible_windows_total": all_eligible,
+            "authoritative_eligible_windows": all_authoritative,
+            "legacy_eligible_windows": all_eligible - all_authoritative,
+            "authoritative_identity_coverage": (
+                all_authoritative / all_eligible if all_eligible else None),
+            "identity_origin": dict(all_identity_origins),
+            "first_seen_via": dict(all_first_seen),
+        },
+        "window_attribution": {
+            "canonical_outcomes": dict(all_canonical),
+            "loss_stage": dict(all_loss_stages),
+            "raw_claim_miss_count": sum(
+                game.get("raw_claim_miss_count", 0) for game in games),
+            "canonical_client_loss_count": sum(
+                game.get("canonical_client_loss_count", 0) for game in games),
+            "false_claim_miss_count": sum(
+                game.get("false_claim_miss_count", 0) for game in games),
+            "identity_unverifiable_count": sum(
+                game.get("identity_unverifiable_count", 0) for game in games),
+        },
+        "window_409": {
+            "all_action_409": sum(chain.get("status") == 409
+                                   for chain in all_409_chains),
+            "window_409_count": len(window_409_chains),
+            "normal_action_409": len(normal_409_chains),
+            "window_409_linked": sum(bool(chain.get("window_attempt_key"))
+                                      for chain in window_409_chains),
+            "window_409_unlinked": sum(
+                not bool(chain.get("window_attempt_key"))
+                for chain in window_409_chains),
+            "chains": all_409_chains,
+            "duplicate_post_after_409": sum(
+                game.get("duplicate_post_after_409", 0) for game in games),
+        },
+        "hard_fail_checks": hard_fail_checks,
+        "state_demand_terminal": {
+            "clean": sum(game.get("demand_terminal_status") == "clean"
+                          for game in games),
+            "dirty": sum(game.get("demand_terminal_status") == "dirty"
+                          for game in games),
+            "missing": sum(game.get("demand_terminal_status") == "missing"
+                            for game in games),
+        },
+        "acceptance_sections": [
+            "run_manifest", "transport", "window_identity",
+            "window_lifecycle", "confirm_decision_submit", "window_409",
+            "retry_contribution", "gap_classification",
+            "state_demand_terminal", "game_layer", "hard_fail",
+            "per_room", "cross_room",
+        ],
         "demand_source_counts": dict(Counter(
             game.get("demand_source", "missing") for game in games)),
         "transport": dict(transport),

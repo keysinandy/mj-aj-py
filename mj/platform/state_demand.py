@@ -182,6 +182,7 @@ class StateDemand(queue.Queue):
         # speculative successor that a later reason-specific resolver clears.
         self._successor_ready = False
         self.logical_demands = 0
+        self.logical_input_demands = 0
         self.coalesced_demands = 0
         self.successor_requests = 0
         self.physical_state_requests = 0
@@ -354,6 +355,7 @@ class StateDemand(queue.Queue):
                 incoming = previous.copy()
         if _count_logical:
             self.logical_demands += 1
+            self.logical_input_demands += 1
         if not changed:
             if _count_logical:
                 self.suppressed_duplicates += 1
@@ -579,10 +581,13 @@ class StateDemand(queue.Queue):
                 "generation": self.generation,
                 "in_flight": self.in_flight,
                 "logical_demands": self.logical_demands,
+                "logical_input_demands": self.logical_input_demands,
                 "coalesced_demands": self.coalesced_demands,
                 "successor_requests": self.successor_requests,
                 "physical_state_requests": self.physical_state_requests,
                 "suppressed_duplicates": self.suppressed_duplicates,
+                "coalesced_or_suppressed": (
+                    self.coalesced_demands + self.suppressed_duplicates),
             }
 
     def acknowledge(self, seq: Optional[int]) -> None:
