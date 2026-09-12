@@ -1029,6 +1029,11 @@ def summarize(paths):
         transport_status = explicit_status.get("transport_status") or (
             "complete" if terminal_end and not explicit_status.get("error")
             else "partial")
+        # A terminal marker alone does not prove that the state coordinator
+        # drained. A missing or dirty demand snapshot leaves transport
+        # evidence incomplete as well as window evidence incomplete.
+        if demand_terminal_status != "clean":
+            transport_status = "partial"
         explicit_window_status = explicit_status.get("window_status")
         legacy_windows = len(room_legacy_eligible_keys)
         authoritative_windows = len(room_eligible_keys)

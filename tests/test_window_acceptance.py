@@ -78,7 +78,8 @@ def test_partial_settlement_does_not_upgrade_multi_round_game(tmp_path):
          "events": [{"seq": 1, "type": "round_ended", "seat": None,
                       "tile": None, "data": {}}]},
         {"type": "snapshot", "seq": 2, "snap": _snapshot(round_no=2)},
-        {"type": "end", "reason": "finished", "game_status": "complete"},
+        {"type": "end", "reason": "finished", "game_status": "complete",
+         "demand": {"reason_mask": 0, "in_flight": False, "reasons": {}}},
     ]
     path = tmp_path / "partial-settlement.jsonl"
     path.write_text("\n".join(json.dumps(row) for row in records))
@@ -156,6 +157,25 @@ def test_error_end_does_not_make_all_layers_complete(tmp_path):
         "window_status": "partial",
         "game_status": "partial",
     }
+
+
+def test_dirty_demand_downgrades_transport_status(tmp_path):
+    records = [
+        {"type": "req", "seq": 4, "status": 200,
+         "demand": {"reason_mask": 1, "in_flight": True,
+                     "reasons": {"SSE_DELTA": {"status": "PENDING"}}}},
+        {"type": "end", "reason": "inaccessible",
+         "demand": {"reason_mask": 1, "in_flight": False,
+                     "reasons": {"SSE_DELTA": {"status": "PENDING"}}}},
+    ]
+    path = tmp_path / "dirty-demand.jsonl"
+    path.write_text("\n".join(json.dumps(row) for row in records))
+
+    report = summarize([path])
+
+    assert report["games"][0]["demand_terminal_status"] == "dirty"
+    assert report["games"][0]["status"]["transport_status"] == "partial"
+    assert report["games"][0]["status"]["window_status"] == "partial"
 
 
 def test_report_recovers_demand_from_req_when_end_snapshot_is_missing(tmp_path):
@@ -243,7 +263,8 @@ def test_report_classifies_gaps_and_marks_decision_impact(tmp_path):
          "events": [{"seq": 15, "type": "tile_drawn"}]},
         {"type": "decision", "id": 1, "seq": 15,
          "phase": "draw", "legal": [-1], "action": -1},
-        {"type": "end", "reason": "finished"},
+        {"type": "end", "reason": "finished",
+         "demand": {"reason_mask": 0, "in_flight": False, "reasons": {}}},
     ]
     path = tmp_path / "gaps.jsonl"
     path.write_text("\n".join(json.dumps(row) for row in records))
@@ -362,7 +383,8 @@ def test_claim_miss_per_window_classification(tmp_path):
         # unknown:无窗口身份(旧日志形态,无法关联证据)
         {"type": "claim_miss", "phase": "response_peng",
          "reason": "server_timeout_peng", "chosen": None},
-        {"type": "end", "reason": "finished"},
+        {"type": "end", "reason": "finished",
+         "demand": {"reason_mask": 0, "in_flight": False, "reasons": {}}},
     ]
     path = tmp_path / "classification.jsonl"
     path.write_text("\n".join(json.dumps(row) for row in records))
