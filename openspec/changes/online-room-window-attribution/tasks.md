@@ -31,5 +31,10 @@
 ## 5. Frozen online acceptance
 
 - [x] 5.1 Add or document run-manifest capture for clean commit, fixed BOT/15/s/SSE+incremental command and acceptance script version without secrets.
-- [ ] 5.2 Run 3--5 serial independent rooms with 10 games each on one clean commit and save per-room reports.
-- [ ] 5.3 Review hard-fail checks and cross-room aggregate; report transport/window/game completeness separately and leave OpenSpec 5.4 pending until the gate is satisfied.
+- [x] 5.2 Run 3--5 serial independent rooms with 10 games each on one clean commit and save per-room reports.
+- [x] 5.3 Review hard-fail checks and cross-room aggregate; report transport/window/game completeness separately and leave OpenSpec 5.4 pending until the gate is satisfied.
+
+Online acceptance was executed on clean commit `ab371b6` across rooms
+`a_eaf5bdd6d3ce`, `a_3f92fb92c35b`, and `a_8e01f00b8681`. The cross-room gate
+remains pending because five eligible windows are `legacy_unresolved`, and the
+observed authoritative confirm-stage losses are not a functional pass.
