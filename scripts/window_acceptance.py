@@ -1144,10 +1144,24 @@ def summarize(paths):
             "identity_unverifiable": identity_unverifiable,
             "window_evidence_status": window_evidence_status,
             "window_functional_status": functional_status,
-            "window_409_count": len(room_409_rows),
+            "all_action_409": sum(chain.get("status") == 409
+                                    for chain in recovery_chains),
+            "window_409_count": sum(
+                chain.get("status") == 409
+                and chain.get("phase") in ("response_peng", "response_chi")
+                for chain in recovery_chains),
+            "normal_action_409": sum(
+                chain.get("status") == 409
+                and chain.get("phase") not in ("response_peng", "response_chi")
+                for chain in recovery_chains),
             "window_409_chains": [chain for chain in recovery_chains
                                   if chain.get("phase") in (
                                       "response_peng", "response_chi")],
+            "normal_409_chains": [chain for chain in recovery_chains
+                                  if chain.get("status") == 409
+                                  and chain.get("phase") not in (
+                                      "response_peng", "response_chi")],
+            "recovery_chains": recovery_chains,
             "post_uncertain_count": len(room_uncertain_rows),
             "duplicate_post_after_409": duplicate_post_after_409,
             "duplicate_post_after_uncertain": duplicate_post_after_uncertain,
@@ -1316,7 +1330,7 @@ def summarize(paths):
 
     all_canonical = Counter()
     all_loss_stages = Counter()
-    all_409_chains = []
+    all_recovery_chains = []
     all_hard_fail = Counter()
     all_identity_origins = Counter()
     all_first_seen = Counter()
@@ -1324,7 +1338,7 @@ def summarize(paths):
         all_canonical.update(game.get("canonical_outcomes", {}))
         for resolution in game.get("canonical_resolutions", []):
             all_loss_stages[resolution.get("loss_stage", "UNKNOWN")] += 1
-        all_409_chains.extend(game.get("window_409_chains", []))
+        all_recovery_chains.extend(game.get("recovery_chains", []))
         all_identity_origins.update(game.get("identity_origins", {}))
         all_first_seen.update(game.get("first_seen_via", {}))
         for name in ("duplicate_post_after_409",
@@ -1350,14 +1364,16 @@ def summarize(paths):
                              for game in games),
         "gap_decision_impact_risk": strong_gap_risks,
     }
-    window_409_chains = [chain for chain in all_409_chains
+    window_409_chains = [chain for chain in all_recovery_chains
                          if chain.get("status") == 409
                          and chain.get("phase") in (
                              "response_peng", "response_chi")]
-    normal_409_chains = [chain for chain in all_409_chains
+    normal_409_chains = [chain for chain in all_recovery_chains
                          if chain.get("status") == 409
                          and chain.get("phase") not in (
                              "response_peng", "response_chi")]
+    uncertain_chains = [chain for chain in all_recovery_chains
+                        if chain.get("outcome") == "POST_UNCERTAIN"]
 
     return {
         "files": len(paths), "record_counts": dict(types), "actions": dict(actions),
@@ -1396,8 +1412,7 @@ def summarize(paths):
                 game.get("identity_unverifiable_count", 0) for game in games),
         },
         "window_409": {
-            "all_action_409": sum(chain.get("status") == 409
-                                   for chain in all_409_chains),
+            "all_action_409": len(window_409_chains) + len(normal_409_chains),
             "window_409_count": len(window_409_chains),
             "normal_action_409": len(normal_409_chains),
             "window_409_linked": sum(bool(chain.get("window_attempt_key"))
@@ -1405,9 +1420,14 @@ def summarize(paths):
             "window_409_unlinked": sum(
                 not bool(chain.get("window_attempt_key"))
                 for chain in window_409_chains),
-            "chains": all_409_chains,
+            "chains": window_409_chains,
+            "normal_chains": normal_409_chains,
+            "uncertain_chains": uncertain_chains,
             "duplicate_post_after_409": sum(
                 game.get("duplicate_post_after_409", 0) for game in games),
+            "duplicate_post_after_uncertain": sum(
+                game.get("duplicate_post_after_uncertain", 0)
+                for game in games),
         },
         "hard_fail_checks": hard_fail_checks,
         "state_demand_terminal": {

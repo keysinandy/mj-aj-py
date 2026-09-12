@@ -474,6 +474,8 @@ def test_legacy_identity_and_window_409_are_reported_as_weak_evidence(tmp_path):
          "ok": False, "status": 409, "outcome": "POST_REJECTED",
          "transport": {"action_attempts": [{"status": 409,
                                                "server_trace_id": "trace-1"}]}},
+        {"type": "action", "phase": "draw", "payload": {"action": "discard"},
+         "ok": False, "status": 409, "outcome": "POST_REJECTED"},
         {"type": "req", "requested_seq": 0, "seq": 22,
          "request_kind": "RESYNC", "status": 200,
          "res": {"snapshot": True, "seq": 22}},
@@ -490,5 +492,7 @@ def test_legacy_identity_and_window_409_are_reported_as_weak_evidence(tmp_path):
     assert game["window_evidence_status"] == "partial_identity"
     assert game["status"]["window_status"] == "window_partial_identity"
     assert report["window_409"]["window_409_count"] == 1
+    assert report["window_409"]["all_action_409"] == 2
+    assert report["window_409"]["normal_action_409"] == 1
     assert report["window_409"]["window_409_linked"] == 1
     assert report["window_409"]["duplicate_post_after_409"] == 0

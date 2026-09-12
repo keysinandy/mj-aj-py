@@ -17,6 +17,7 @@
 - [x] 3.2 Add authoritative/legacy identity coverage, identity origin, first-seen source and `identity_unverifiable` handling; block strong window completeness when legacy eligible windows remain.
 - [x] 3.3 Add 409 chain, physical retry/queue/backoff contribution, gap reason and decision-impact classification, plus demand terminal health to `scripts/window_acceptance.py`.
 - [x] 3.4 Emit independent transport/window/game statuses and fixed acceptance sections, retaining protocol-skipped settlement as a game-layer result only.
+- [x] 3.5 Keep normal action 409 chains separate from window 409 chains while reporting the all-action total and uncertain recovery chains.
 
 ## 4. Offline regression coverage
 
