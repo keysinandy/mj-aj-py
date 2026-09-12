@@ -106,6 +106,24 @@ class TestStaleTriggerCancel(unittest.TestCase):
         self.assertEqual(api.submitted, [])
         self.assertEqual(bot.stats["auto_played"], 0)
 
+    def test_round_ended_same_batch_cancels_draw_trigger(self):
+        """批内 我方摸牌+round_ended(服务端自动结算杠开)→ 不再按陈旧
+        摸牌触发提交动作(实测 2026-09-11 b5:hu 409 "hu only after draw")。"""
+        api = ScriptedApi(
+            [[_ev(1, "tile_drawn", 0, "4t",
+                  data={"gang_replenish": True}),
+              _ev(2, "round_ended", 0,
+                  data={"round_no": 1, "detail": ["平胡", "杠开"],
+                        "scores": [48, -16, -16, -16]})]],
+            [_snap(HAND, turn=1), _snap(HAND, turn=1)])
+        bot = BotClient(api, "bot0", _decide_drawn, log=lambda m: None,
+                        window_wait=0, idle_sleep=0)
+        bot.play_game("g1")
+        self.assertEqual(api.submitted, [])       # 轮已结算:不提交陈旧动作
+        self.assertEqual(bot.stats["auto_played"], 0)  # 自动结算非代打损失
+        self.assertEqual(bot.stats["err409"], 0)
+        self.assertEqual(bot.stats["games"], 1)
+
 
 class TestChiDeadline(unittest.TestCase):
     def test_chi_fires_at_deadline_without_all_responses(self):

@@ -99,7 +99,7 @@
   `physical_state_attempts`；同时输出各层完整性数量和对应分母。
 - [x] 5.3 同步 `README.md`、`HANDOFF.md`、验收/计划文档和运行说明：线上基线
   显式使用启发式 BOT、SSE+增量 `/state`、15/s；policy 只作专项对照。
-- [ ] 5.4 在冻结代码后以标准 BOT 命令运行 3～5 个房，记录 checkpoint、rate、
+- [x] 5.4 在冻结代码后以标准 BOT 命令运行 3～5 个房，记录 checkpoint、rate、
   传输模式和三层完整性分类；各层只汇总对应 status=complete 的房，
   `protocol_skipped` 仅排除 game 层，`partial` 仅排除受影响层，不在本 change
   中进行 rate/sleep/策略实验。

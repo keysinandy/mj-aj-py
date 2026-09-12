@@ -76,6 +76,23 @@ def test_window_confirm_has_priority_over_resync_and_keeps_deadline():
     assert plan.effective_deadline == 123.0
 
 
+def test_request_plan_contains_only_pending_reasons_not_terminal_history():
+    demand = StateDemand()
+    demand.submit_resync(cause="action_409")
+    demand.submit_sse(10)
+    first = demand.start_request()
+    assert set(first.reasons) == {RESYNC, SSE_DELTA}
+
+    demand.reconcile(10, response_mode="FULL", snapshot={"seq": 10})
+    demand.finish_resync(SATISFIED)
+    demand.submit_sse(11)
+    second = demand.start_request()
+
+    assert second is not None
+    assert set(second.reasons) == {SSE_DELTA}
+    assert second.reason_mask == 1
+
+
 def test_delta_uses_local_cursor_not_sse_wake_watermark():
     demand = StateDemand()
     demand.submit_sse(2)
@@ -109,6 +126,20 @@ def test_generation_change_only_successors_if_latest_reason_is_pending():
     assert successor.logical_request_id != second.logical_request_id
     assert demand.successor_requests == 1
     assert demand.logical_demands >= 3
+
+
+def test_resolved_reason_does_not_count_a_speculative_successor():
+    demand = StateDemand()
+    demand.submit_window_confirm(
+        WindowId("g", 1, 2, 7, 5), "response_chi", deadline=10.0)
+    first = demand.start_request()
+    assert first is not None
+
+    assert demand.reconcile(5, response_mode="FULL", snapshot={}) is True
+    demand.finish_window_confirm(SATISFIED)
+
+    assert demand.successor_requests == 0
+    assert demand.start_request() is None
 
 
 def test_duplicate_or_lower_watermark_does_not_advance_generation():

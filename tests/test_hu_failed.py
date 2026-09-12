@@ -133,6 +133,20 @@ def _hu_failed_snaps():
     ]
 
 
+def _hu_failed_reanchor_snaps():
+    """普通弃牌事件后的权威碰窗,以及 hu_failed 后的重锚快照。"""
+    peng = _snap(HAND0, turn=1, phase="response_peng")
+    peng["responding_seats"] = [0]
+    peng["discards"] = [["4t"], ["5b"], [], []]
+    peng["last_discard"] = "5b"
+    peng["window_deadline_ms"] = 4102444800000  # far-future exact deadline
+    meld0 = [{"kind": "peng", "tiles": ["5b", "5b", "5b"]}]
+    return [
+        peng,
+        _snap(HAND1, turn=2, melds=[meld0, [], [], []]),
+    ]
+
+
 def _decide(g, seat):
     if g.phase == "discard":
         assert g.drawn[seat] is not None
@@ -143,7 +157,9 @@ def _decide(g, seat):
 
 class TestHuFailed(unittest.TestCase):
     def test_hu_failed_skip_discard_and_survive(self):
-        api = ScriptedApi(_hu_failed_batches(), _hu_failed_snaps())
+        api = ScriptedApi(
+            _hu_failed_batches(), _hu_failed_snaps(),
+            reanchor_snaps=_hu_failed_reanchor_snaps())
         bot = BotClient(api, "bot0", _decide, log=lambda m: None,
                         window_wait=0, idle_sleep=0)
         bot.play_game("g1")

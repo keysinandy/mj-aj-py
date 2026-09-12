@@ -41,8 +41,7 @@ def play(tmp_path, snap, *, decide=None, epoch=1001.2, errors=None, repeat=False
     # terminal finished response.  This is distinct from a closed/expired
     # window, which terminates in the first confirmation.
     deadline_ms = snap.get("window_deadline_ms")
-    if (snap.get("phase") == "response_peng"
-            and (deadline_ms is None or deadline_ms > 1002000)):
+    if (snap.get("phase") == "response_peng" and deadline_ms is None):
         expected.append(0)
     expected.append(12)
     api = ScriptedServer(responses, clock, expected_seqs=expected,
@@ -88,16 +87,22 @@ def test_open_confirmation_beats_backlog_and_does_not_log_miss(tmp_path):
     (peng_snapshot(responding=[2, 3]), "not_responding", True),
     (peng_snapshot(window_deadline_ms=1001100), "expired", True),
     (peng_snapshot(window_deadline_ms=None), "unconfirmed", False),
-    (peng_snapshot(window_deadline_ms=1005000), "unconfirmed", False),
-    (_snapshot(HAND, phase="draw", turn=2, round_no=2), "stale", True),
+    # A precise future deadline is authoritative even when it is later than
+    # the whole-second event-ts + 2s estimate; source_ts is only a hint.
+    (peng_snapshot(window_deadline_ms=1005000), "confirmed", False),
+    (_snapshot(HAND, phase="draw", turn=2, round_no=2), "stale", False),
     (peng_snapshot(last_discard="9t", discards=[[], ["5b", "9t"], [], []]),
-     "stale", True),
+     "stale", False),
 ])
 def test_closed_or_changed_window_never_reuses_old_candidate(tmp_path, snap, outcome, miss):
     bot, api, rows, _ = play(tmp_path, snap)
-    assert not api.actions
+    if outcome == "confirmed":
+        assert len(api.actions) == 1
+    else:
+        assert not api.actions
     confirmations = [r for r in rows if r["type"] == "window_confirm"]
-    assert outcome in [r["outcome"] for r in confirmations]
+    observed_outcomes = [r["outcome"] for r in confirmations]
+    assert ("open" if outcome == "confirmed" else outcome) in observed_outcomes
     misses = [r for r in rows if r["type"] == "claim_miss"]
     assert len(misses) == int(miss) == bot.stats["window_confirm_miss"]
     if miss:
@@ -124,7 +129,10 @@ def test_decision_crossing_boundary_is_recomputed_after_confirmation(tmp_path):
         return next(a for a in game.legal_actions() if a != -1)
 
     bot, api, rows, _ = play(tmp_path, peng_snapshot(), epoch=1000.93, decide=choose)
-    assert len(calls) == 2 and len(api.actions) == 1
+    # The event is now only a wakeup; the first decision is made from the
+    # authoritative snapshot, so there is no speculative pre-confirmation
+    # decision to repeat.
+    assert len(calls) == 1 and len(api.actions) == 1
     assert not [r for r in rows if r["type"] == "claim_miss"]
     assert bot.stats["window_confirm_requests"] == 1
 

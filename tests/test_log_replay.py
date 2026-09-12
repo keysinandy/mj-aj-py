@@ -160,6 +160,20 @@ class TestRoundBoundarySkip(unittest.TestCase):
         path, _, _ = _record_game(self._tmp.name)
         recs = _load(path)
         self.assertTrue(self._drop_round_ended(recs, with_skip_marker=False))
+        # The current client may legitimately issue a seq=0 window-confirm
+        # re-anchor while recording this synthetic game.  Remove that
+        # response marker so this fixture tests the actual no-explanation
+        # branch rather than treating the client-generated re-anchor as
+        # evidence for the missing round boundary.
+        for row in recs:
+            if row["type"] != "req":
+                continue
+            res = row.get("res") or {}
+            row_seq = row.get("seq")
+            res_seq = res.get("seq")
+            if (res.get("snapshot") and row_seq is not None
+                    and res_seq is not None and res_seq > row_seq):
+                res["snapshot"] = False
         rep = replay_game(recs)
         self.assertFalse(rep["clean"])
         self.assertTrue(any("无快照跳过段解释" in i["msg"]

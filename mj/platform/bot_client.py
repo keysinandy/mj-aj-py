@@ -45,6 +45,7 @@ LAZY_POLL_WAIT = 1.2  # 懒轮询:预测无关事件的最长推迟(吃窗 T+2 �
 EAGER_CHI_LEAD = 0.25  # 吃窗快照提前量:临近开窗才抓,避免长时间空占 EDF
 EAGER_CHI_GAP = 0.12   # 同一吃窗两次快照抓取的最小间隔(限速 ~8/s)
 EAGER_CHI_MAX = 8      # 同一吃窗最多抓取次数(无截止/相位不推进时的兜底界)
+MAX_WINDOW_CONFIRM_PENDING_RETRIES = 8
 
 
 class _ActionResync(Exception):
@@ -74,6 +75,8 @@ class _WindowConfirm(Exception):
     def __init__(self, *, phase, pending, round_no, legal, source_seq=None,
                  source_ts=None, source_watermark=None, chosen=None,
                  schedule_deadline=None, window_key=None,
+                 source_origin=None,
+                 first_seen_via=None,
                  reason="quantized_deadline"):
         super().__init__(reason)
         self.phase = phase
@@ -86,6 +89,14 @@ class _WindowConfirm(Exception):
         self.source_ts = source_ts
         self.chosen = chosen
         self.schedule_deadline = schedule_deadline
+        self.source_origin = source_origin
+        self.first_seen_via = first_seen_via
+        # Unknown identity / missing exact deadline is retryable, but it must
+        # have a bounded lifetime.  A supplied schedule deadline remains the
+        # primary bound; the fallback is initialized lazily so fake clocks in
+        # tests and callers constructing this object early remain consistent.
+        self.retry_deadline = schedule_deadline
+        self.pending_retries = 0
         # A chi wait-state carries the same logical WindowAttemptKey as the
         # preceding peng phase.  Keeping it on the confirmation object lets
         # both phases use one identity/deadline resolver.
@@ -131,6 +142,11 @@ class BotClient:
         self._stats_lock = threading.Lock()
         self._done_games = set()
         self._game_fails = {}  # gid → 连续异常次数(超限放弃重派)
+        self._state_abandon_seen = set()
+        self._action_counter_lock = threading.Lock()
+        self._action_counters = {}
+        self._window_attempt_counters = {}
+        self._window_confirm_attempts = {}
         self.stats = {
             "games": 0, "actions": 0, "hu": 0, "err409": 0, "gaps": 0,
             "auto_played": 0, "mirror_resets": 0, "scores": [],
@@ -432,8 +448,16 @@ class BotClient:
 
     def _claim_miss(self, gid, phase, legal, chosen=None, reason="",
                     payload=None, status=None, code="", deadline=None,
-                    mirror=None, seq=None, pending=None):
-        """记录规则允许、但客户端未成功完成的吃/碰/杠机会。"""
+                    mirror=None, seq=None, pending=None, window_key=None,
+                    logical_request_id=None, exact_deadline_at=None,
+                    action_posted=None):
+        """记录规则允许、但客户端未成功完成的吃/碰/杠机会。
+
+        窗口关联字段按证据可得性落盘：调用方显式给出的 window_key/
+        logical_request_id 优先（确认链与动作链各有自己的逻辑 id），
+        否则从 mirror 派生；两者皆无（如确认作废路径传 mirror=None）
+        则不带窗口身份，离线归因只能落 unknown。
+        """
         # 已完成策略决策时 chosen 为非 pass；服务端 timeout 也记录“规则有
         # 合法动作但策略尚未完成决策”的窗口，供区分两类损失。
         undecided_timeout = (chosen is None
@@ -446,13 +470,33 @@ class BotClient:
         deadline_at = None
         if deadline is not None:
             deadline_at = time.time() + deadline - time.monotonic()
+        window_id_json = None
+        window_key_json = None
+        if window_key is None and mirror is not None:
+            window_key = self._window_key(mirror, phase)
+        if isinstance(window_key, WindowAttemptKey):
+            window_key_json = window_key.as_json()
+            window_id_json = self._window_id_for_demand(
+                gid, window_key=window_key).as_json()
+            if logical_request_id is None:
+                logical_request_id = (
+                    f"window:{gid}:{repr(window_key.as_tuple())}")
+            if action_posted is None and mirror is not None:
+                action_posted = self._window_was_attempted(
+                    mirror, window_key,
+                    getattr(mirror, "_attempted_windows", None))
         if self.recorder is not None:
             self.recorder.claim_miss(
                 gid, phase, sorted(legal), chosen=chosen, reason=reason,
                 payload=payload, status=status, code=code,
                 deadline_at=deadline_at, seq=seq,
                 pending=(pending if pending is not None else
-                         (None if mirror is None else mirror.pending)))
+                         (None if mirror is None else mirror.pending)),
+                window_id=window_id_json,
+                window_attempt_key=window_key_json,
+                logical_request_id=logical_request_id,
+                exact_deadline_at=exact_deadline_at,
+                action_posted=action_posted)
         self._log(f"规则可{phase}但未成功: legal={sorted(legal)} "
                   f"chosen={chosen} reason={reason}")
 
@@ -470,15 +514,7 @@ class BotClient:
             return
         phase = confirm.phase
         logical_confirm_id = getattr(confirm, "logical_request_id", None)
-        if logical_confirm_id is None:
-            logical_confirm_id = (
-                f"window-confirm:{gid}:{confirm.round_no}:"
-                f"{repr(confirm.pending)}:{phase}")
-            confirm.logical_request_id = logical_confirm_id
         confirm_attempt_index = getattr(confirm, "attempt_index", 0)
-        if outcome == "requested":
-            confirm_attempt_index += 1
-            confirm.attempt_index = confirm_attempt_index
         window_id = self._window_id_for_demand(
             gid, confirm=confirm,
             window_key=getattr(confirm, "window_key", None))
@@ -496,7 +532,26 @@ class BotClient:
                                  else "legacy_unresolved"),
                 fallback=(None if confirm.source_seq is not None
                           else ("confirm", confirm.round_no, confirm.pending)),
+                identity_origin=(getattr(confirm, "source_origin", None)
+                                 or ("explicit_source_field"
+                                     if confirm.source_seq is not None
+                                     else "legacy_snapshot")),
+                first_seen_via=(getattr(confirm, "first_seen_via", None)
+                                or "unknown"),
             )
+        if logical_confirm_id is None:
+            logical_confirm_id = (
+                f"window-confirm:{gid}:{confirm.round_no}:"
+                f"{repr(window_id.as_tuple())}:{phase}")
+            confirm.logical_request_id = logical_confirm_id
+        if outcome == "requested":
+            with self._action_counter_lock:
+                confirm_attempt_index = max(
+                    confirm_attempt_index,
+                    self._window_confirm_attempts.get(logical_confirm_id, 0)) + 1
+                self._window_confirm_attempts[logical_confirm_id] = (
+                    confirm_attempt_index)
+            confirm.attempt_index = confirm_attempt_index
         fields = {
             "phase": phase,
             "outcome": outcome,
@@ -509,6 +564,8 @@ class BotClient:
             "window_id": window_id.as_json(),
             "window_attempt_key": WindowAttemptKey(window_id, phase).as_json(),
             "identity_status": window_id.identity_status,
+            "identity_origin": window_id.identity_origin,
+            "first_seen_via": window_id.first_seen_via,
             "logical_request_id": logical_confirm_id,
             "attempt_index": confirm_attempt_index or None,
             "generation": getattr(confirm, "generation", None),
@@ -587,8 +644,39 @@ class BotClient:
             source_watermark=chi.get("source_watermark"),
             schedule_deadline=chi.get("deadline_mono"),
             window_key=key,
+            source_origin=(window_id.identity_origin
+                           if window_id is not None else None),
+            first_seen_via=(window_id.first_seen_via
+                            if window_id is not None else None),
             reason="chi_confirmation",
         )
+
+    @classmethod
+    def _carry_window_confirm_budget(cls, previous, current):
+        """Keep one bounded confirmation lifecycle across wait-state rebuilds."""
+
+        if not (isinstance(previous, _WindowConfirm)
+                and isinstance(current, _WindowConfirm)):
+            return current
+        if previous.phase != current.phase:
+            return current
+        if not cls._same_window_identity(
+                getattr(previous, "window_key", None),
+                getattr(current, "window_key", None)):
+            return current
+        current.pending_retries = max(
+            getattr(previous, "pending_retries", 0),
+            getattr(current, "pending_retries", 0))
+        old_deadline = getattr(previous, "retry_deadline", None)
+        new_deadline = getattr(current, "retry_deadline", None)
+        if old_deadline is not None and new_deadline is not None:
+            current.retry_deadline = min(old_deadline, new_deadline)
+        elif old_deadline is not None:
+            current.retry_deadline = old_deadline
+        if getattr(previous, "logical_request_id", None) is not None:
+            current.logical_request_id = previous.logical_request_id
+        current.attempt_index = getattr(previous, "attempt_index", 0)
+        return current
 
     @staticmethod
     def _window_confirm_from_reason(reason):
@@ -610,6 +698,10 @@ class BotClient:
                 identity_status=raw_window_id.get(
                     "identity_status", "legacy_unresolved"),
                 fallback=raw_window_id.get("fallback"),
+                identity_origin=raw_window_id.get(
+                    "identity_origin", "unknown"),
+                first_seen_via=raw_window_id.get(
+                    "first_seen_via", "unknown"),
             )
         else:
             window_id = None
@@ -629,67 +721,127 @@ class BotClient:
                         if window_id is not None else None),
             schedule_deadline=reason.get("deadline"),
             window_key=key,
+            source_origin=(window_id.identity_origin
+                           if window_id is not None else None),
+            first_seen_via=(window_id.first_seen_via
+                            if window_id is not None else None),
             reason="demand_confirmation",
         )
 
     @classmethod
     def _window_confirm_matches(cls, mirror, confirm, snap=None, seq=None):
-        """确认快照是否仍是同一逻辑窗口。
+        """比较确认快照身份，返回 ``MATCH``/``MISMATCH``/``UNKNOWN``。
 
         同局同家同牌可能再次出现，因此 authoritative source sequence
         是跨重锚的硬条件；legacy fallback 只允许作诊断，不能证明同窗。
+        ``UNKNOWN`` 不是窗口已经变化：缺少 source identity 时必须保持
+        pending，不能直接写 claim_miss 或把 phase-only 相等当成确认成功。
         """
         if mirror is None or confirm is None:
-            return False
+            return "MISMATCH"
         if mirror.round_no != confirm.round_no:
-            return False
+            return "MISMATCH"
         if mirror.pending is None or confirm.pending is None:
-            return False
+            return "MISMATCH"
         if tuple(mirror.pending) != tuple(confirm.pending):
-            return False
+            return "MISMATCH"
+        identity_unknown = False
         expected_key = getattr(confirm, "window_key", None)
         actual_key = cls._window_key(mirror, confirm.phase, snap=snap)
         if isinstance(expected_key, WindowAttemptKey):
             if actual_key is None:
-                return False
+                return "UNKNOWN"
             expected_id = expected_key.window_id
             actual_id = actual_key.window_id
             if (expected_id.round_id, expected_id.discard_owner,
                     expected_id.tile) != (
                         actual_id.round_id, actual_id.discard_owner,
                         actual_id.tile):
-                return False
+                return "MISMATCH"
             if (expected_id.game_id is not None
                     and actual_id.game_id is not None
                     and expected_id.game_id != actual_id.game_id):
-                return False
+                return "MISMATCH"
+            if (expected_id.game_id is not None
+                    and actual_id.game_id is None):
+                identity_unknown = True
             if expected_id.authoritative:
-                if (not actual_id.authoritative
-                        or str(expected_id.source_discard_seq)
-                        != str(actual_id.source_discard_seq)):
-                    return False
-            elif actual_id.authoritative:
-                # The old demand did not prove its source identity.  A new
-                # authoritative key after re-anchor cannot retroactively
-                # prove that it is the same window.
-                return False
+                if not actual_id.authoritative:
+                    identity_unknown = True
+                elif (str(expected_id.source_discard_seq)
+                      != str(actual_id.source_discard_seq)):
+                    return "MISMATCH"
+            else:
+                # A legacy expected key and a legacy actual key are both
+                # unresolved; an authoritative actual key cannot prove that
+                # it belongs to the old legacy window either.
+                identity_unknown = True
         elif confirm.source_seq is not None:
-            if (actual_key is None
-                    or not actual_key.window_id.authoritative
-                    or str(actual_key.window_id.source_discard_seq)
-                    != str(confirm.source_seq)):
-                return False
+            if actual_key is None or not actual_key.window_id.authoritative:
+                identity_unknown = True
+            elif (str(actual_key.window_id.source_discard_seq)
+                  != str(confirm.source_seq)):
+                return "MISMATCH"
+        else:
+            identity_unknown = True
         snap_source = cls._explicit_source_seq(snap)
         if (confirm.source_seq is not None and snap_source is not None
                 and str(snap_source) != str(confirm.source_seq)):
-            return False
+            return "MISMATCH"
         if isinstance(snap, dict) and snap.get("last_discard"):
             try:
                 if tidx(snap["last_discard"]) != confirm.pending[1]:
-                    return False
+                    return "MISMATCH"
             except (KeyError, TypeError, ValueError):
-                return False
-        return True
+                return "MISMATCH"
+        return "UNKNOWN" if identity_unknown else "MATCH"
+
+    @staticmethod
+    def _window_decision_for_key(mirror, key):
+        """Read the decision ledger without deriving identity from phase.
+
+        The ledger survives FULL snapshot replacement.  Exact key lookup is
+        intentional for authoritative windows; a legacy key is only useful
+        for same-epoch diagnostics and must not be promoted to cross-reanchor
+        identity.
+        """
+
+        if mirror is None or key is None:
+            return "unset"
+        decisions = getattr(mirror, "_window_decisions", None) or {}
+        return decisions.get(key, "unset")
+
+    @classmethod
+    def _window_confirm_completed(cls, mirror, confirm):
+        """Whether this confirmation already ended in a local decision.
+
+        A successful POST is represented by ``attempted_windows``; a chi
+        PASS has no POST but is represented by the decision ledger.  Checking
+        this before identity resolution prevents a later draw snapshot from
+        turning an already completed window into ``identity_changed`` and a
+        false claim miss.
+        """
+
+        if mirror is None or confirm is None:
+            return False
+        key = getattr(confirm, "window_key", None)
+        if not isinstance(key, WindowAttemptKey):
+            return False
+        attempted = getattr(mirror, "_attempted_windows", None) or set()
+        if cls._strong_window_key(key) and key in attempted:
+            return True
+        return cls._window_decision_for_key(mirror, key) == -1
+
+    def _window_confirm_retry_expired(self, confirm):
+        """Bound unresolved confirmation without claiming a server miss."""
+        confirm.pending_retries = getattr(confirm, "pending_retries", 0) + 1
+        retry_deadline = getattr(confirm, "retry_deadline", None)
+        if retry_deadline is None:
+            retry_deadline = time.monotonic() + max(
+                WINDOW_SEC * 2, self.window_wait * 2, 0.5)
+            confirm.retry_deadline = retry_deadline
+        return (confirm.pending_retries > MAX_WINDOW_CONFIRM_PENDING_RETRIES
+                or time.monotonic() >= retry_deadline)
 
     def _resolve_window_confirm(self, gid, mirror, snap, confirm, seq=None):
         """统一解析 peng/chi 窗口确认，返回 ``confirmed`` 或最终结果。
@@ -699,24 +851,55 @@ class BotClient:
         同时满足同一 WindowId、phase、responding seat、精确且未过期的
         deadline 和非空权威合法集。
         """
-        if not isinstance(snap, dict) or not self._window_confirm_matches(
-                mirror, confirm, snap=snap, seq=seq):
+        if self._window_confirm_completed(mirror, confirm):
+            self._record_window_confirm(
+                gid, confirm, "confirmed", reason="action_already_completed",
+                snap=snap, seq=seq)
+            return "confirmed"
+
+        identity = (self._window_confirm_matches(
+            mirror, confirm, snap=snap, seq=seq)
+            if isinstance(snap, dict) else "MISMATCH")
+        if identity == "MISMATCH":
             reason = "new_round" if (mirror is not None and confirm is not None
                                       and mirror.round_no != confirm.round_no) \
                 else "identity_changed"
             self._record_window_confirm(gid, confirm, "stale", reason=reason,
                                         snap=snap, seq=seq)
-            if confirm is not None and confirm.legal and confirm.chosen != -1:
+            if (confirm is not None and confirm.legal
+                    and confirm.chosen is not None
+                    and confirm.chosen != -1):
                 self._claim_miss(
                     gid, confirm.phase, confirm.legal, chosen=confirm.chosen,
                     reason="window_confirm_" + reason, mirror=None,
                     seq=(confirm.source_watermark
                          if confirm.source_watermark is not None
                          else (seq if seq is not None else confirm.source_seq)),
-                    pending=confirm.pending)
+                    pending=confirm.pending,
+                    window_key=getattr(confirm, "window_key", None),
+                    logical_request_id=getattr(
+                        confirm, "logical_request_id", None),
+                    exact_deadline_at=self._epoch_from_mono(
+                        getattr(confirm, "schedule_deadline", None)),
+                    action_posted=False)
                 self._record_window_confirm(gid, confirm, "miss",
                                             reason=reason, snap=snap, seq=seq)
             return "stale"
+        if identity == "UNKNOWN":
+            if self._window_confirm_retry_expired(confirm):
+                self._record_window_confirm(
+                    gid, confirm, "unconfirmed",
+                    reason="identity_confirmation_budget_exhausted",
+                    snap=snap, seq=seq)
+                # The uncertainty is not a server-side miss, but the bounded
+                # client confirmation lifecycle is terminal now; otherwise
+                # _demand_window_status() would keep this reason PENDING
+                # forever.
+                return "expired"
+            self._record_window_confirm(
+                gid, confirm, "unconfirmed", reason="identity_unknown",
+                snap=snap, seq=seq)
+            return "identity_unconfirmed"
 
         phase = snap.get("phase")
         seat = mirror.me
@@ -725,18 +908,37 @@ class BotClient:
         current_legal = (self._claim_legal(mirror, phase)
                          if phase in ("response_peng", "response_chi")
                          else [])
-        if phase != confirm.phase:
+        # response_peng -> response_chi is an ordered transition within the
+        # same WindowId.  Seeing the old peng phase in the first authoritative
+        # snapshot does not prove that the chi confirmation is closed.
+        if (confirm.phase == "response_chi"
+                and phase == "response_peng"):
+            pending_deadline = (confirm.schedule_deadline
+                                if confirm.schedule_deadline is not None
+                                else getattr(confirm, "retry_deadline", None))
+            retry_expired = self._window_confirm_retry_expired(confirm)
+            if pending_deadline is None:
+                pending_deadline = getattr(confirm, "retry_deadline", None)
+            if (pending_deadline is not None
+                    and time.monotonic() >= pending_deadline):
+                outcome, reason = "expired", "chi_schedule_deadline_expired"
+            elif retry_expired:
+                outcome, reason = "expired", "confirmation_retry_exhausted"
+            else:
+                self._record_window_confirm(
+                    gid, confirm, "unconfirmed",
+                    reason="phase_not_reached", snap=snap, seq=seq,
+                    legal=current_legal)
+                return "phase_pending"
+        elif (confirm.phase == "response_peng"
+              and phase == "response_chi"):
+            outcome, reason = "closed", "phase_changed"
+        elif phase != confirm.phase:
             outcome, reason = "closed", "phase_changed"
         elif not responding:
             outcome, reason = "not_responding", "seat_not_responding"
         elif exact is None:
             outcome, reason = "deadline_missing", "exact_deadline_missing"
-        elif (confirm.source_ts is not None
-              and exact > confirm.source_ts + WINDOW_SEC * 2):
-            # 秒级 ts+2 只能给调度器提供乐观上界；如果精确 deadline
-            # 已跳到它之后，当前快照身份无法确认，不能把新窗当旧窗，
-            # 也不能据此写最终 miss。
-            outcome, reason = "identity_unconfirmed", "deadline_outside_source_window"
         elif exact - time.time() <= SUBMIT_EPS:
             outcome, reason = "expired", "exact_deadline_expired"
         elif not current_legal:
@@ -750,30 +952,52 @@ class BotClient:
         # 缺少精确 deadline 只能说明无法授权动作，不能推断服务端已
         # 关闭窗口；这类结果保持 unconfirmed，不记最终 miss。
         if outcome in ("deadline_missing", "identity_unconfirmed"):
-            self._record_window_confirm(gid, confirm, "unconfirmed",
-                                        reason=reason, snap=snap, seq=seq,
-                                        legal=current_legal)
-            return "unconfirmed"
+            if not self._window_confirm_retry_expired(confirm):
+                self._record_window_confirm(gid, confirm, "unconfirmed",
+                                            reason=reason, snap=snap, seq=seq,
+                                            legal=current_legal)
+                return "unconfirmed"
+            outcome, reason = "expired", "confirmation_retry_exhausted"
 
         self._record_window_confirm(gid, confirm, outcome, reason=reason,
                                     snap=snap, seq=seq, legal=current_legal)
         # 新快照已证明原碰窗不能再安全提交；只有原镜像确实有候选时
         # 才落最终 miss。预确认阶段绝不写 claim_miss。
-        if outcome != "no_legal" and confirm.legal and confirm.chosen != -1:
+        uncertain_terminal = reason in (
+            "confirmation_retry_exhausted",
+            "identity_confirmation_budget_exhausted",
+            "exact_deadline_missing",
+            "identity_unknown",
+            "deadline_outside_source_window",
+            "chi_schedule_deadline_expired",
+            "phase_not_reached",
+        )
+        if (outcome != "no_legal" and not uncertain_terminal
+                and confirm.legal and confirm.chosen != -1):
             self._claim_miss(
                 gid, confirm.phase, confirm.legal, chosen=confirm.chosen,
                 reason="window_confirm_" + reason, mirror=None,
                 seq=(confirm.source_watermark
                      if confirm.source_watermark is not None
                      else (seq if seq is not None else confirm.source_seq)),
-                pending=confirm.pending)
+                pending=confirm.pending,
+                window_key=getattr(confirm, "window_key", None),
+                logical_request_id=getattr(
+                    confirm, "logical_request_id", None),
+                exact_deadline_at=self._epoch_from_mono(
+                    getattr(confirm, "schedule_deadline", None)),
+                action_posted=False)
             self._record_window_confirm(gid, confirm, "miss", reason=reason,
                                         snap=snap, seq=seq,
                                         legal=current_legal)
         return outcome
 
-    def _state_abandon(self, gid, phase, reason):
+    def _state_abandon(self, gid, phase, reason, dedupe_key=None):
         """镜像/手牌状态无法安全决策时的交接诊断。"""
+        if dedupe_key is not None:
+            if dedupe_key in self._state_abandon_seen:
+                return
+            self._state_abandon_seen.add(dedupe_key)
         self._log(f"我方{reason}({phase}),本回合交服务端代打")
         with self._stats_lock:
             self.stats["client_state_abandons"] += 1
@@ -855,13 +1079,20 @@ class BotClient:
         if mirror is None or mirror.pending is None:
             return None
         owner, tile = mirror.pending
-        source_seq = None
-
-        source_seq = cls._explicit_source_seq(ev)
+        source_seq, identity_origin = cls._source_identity(ev)
+        first_seen_via = "event" if source_seq is not None else None
         if source_seq is None:
-            source_seq = cls._explicit_source_seq(snap)
+            source_seq, identity_origin = cls._source_identity(snap)
+            if source_seq is not None:
+                first_seen_via = "snapshot"
         if source_seq is None:
             source_seq = getattr(mirror, "_source_discard_seq", None)
+            if source_seq is not None:
+                identity_origin = getattr(
+                    mirror, "_source_discard_origin", "carried_event_seq")
+                first_seen_via = ("reanchor"
+                                  if identity_origin == "carried_event_seq"
+                                  else "mirror")
         if source_seq is not None:
             try:
                 source_seq = int(source_seq)
@@ -875,6 +1106,8 @@ class BotClient:
             identity_status = "legacy_unresolved"
             fallback = (mirror.n_discards(),
                         tuple(len(m) for m in mirror.melds))
+            identity_origin = "legacy_snapshot"
+            first_seen_via = "snapshot" if snap is not None else "unknown"
         return WindowAttemptKey(
             WindowId(
                 game_id=getattr(mirror, "_game_id", None),
@@ -884,6 +1117,8 @@ class BotClient:
                 tile=tile,
                 identity_status=identity_status,
                 fallback=fallback,
+                identity_origin=identity_origin or "unknown",
+                first_seen_via=first_seen_via or "unknown",
             ),
             phase,
         )
@@ -896,19 +1131,49 @@ class BotClient:
         payload is a ``tile_discarded`` event.  A bare snapshot/response
         dictionary's ``seq`` remains only a state watermark.
         """
+        return BotClient._source_identity(value)[0]
+
+    @staticmethod
+    def _source_identity(value):
+        """Return ``(source_seq, origin)`` without using snapshot watermark.
+
+        The origin is intentionally diagnostic: acceptance can distinguish an
+        explicit protocol field, a tile event sequence, a sequence carried
+        through re-anchor, and a legacy snapshot-only window.
+        """
         if not isinstance(value, dict):
-            return None
+            return None, None
         for field in ("source_discard_seq", "last_discard_seq", "discard_seq"):
             if value.get(field) is not None:
-                return value[field]
+                return value[field], "explicit_source_field"
         data = value.get("data")
         if isinstance(data, dict):
             for field in ("source_discard_seq", "last_discard_seq", "discard_seq"):
                 if data.get(field) is not None:
-                    return data[field]
+                    return data[field], "explicit_source_field"
         if value.get("type") == "tile_discarded" and value.get("seq") is not None:
-            return value["seq"]
-        return None
+            return value["seq"], "tile_discard_event_seq"
+        return None, None
+
+    @staticmethod
+    def _set_source_identity(mirror, source_seq, source_origin=None):
+        """Keep the current discard identity on the live mirror as well.
+
+        ``pending_source`` is needed across a full re-anchor, but action and
+        decision paths run from the live Mirror.  Maintaining both through
+        this single helper prevents an event from being authoritative while
+        the immediately-following action silently falls back to an old
+        snapshot identity.
+        """
+        if mirror is None:
+            return
+        if source_seq is None:
+            for name in ("_source_discard_seq", "_source_discard_origin"):
+                if hasattr(mirror, name):
+                    delattr(mirror, name)
+            return
+        mirror._source_discard_seq = source_seq
+        mirror._source_discard_origin = source_origin or "carried_event_seq"
 
     @staticmethod
     def _same_window_identity(left, right):
@@ -984,6 +1249,11 @@ class BotClient:
         attempted_keys = attempted_keys or set()
         # 吃窗已成功响应或已经有一个未确定的 POST，不重复提交。
         if self._window_was_attempted(mirror, key, attempted_keys):
+            return None
+        # A chi PASS is a completed local decision even though it has no
+        # physical PASS POST.  Do not recreate the same decision after a
+        # later FULL snapshot.
+        if self._window_decision_for_key(mirror, key) != "unset":
             return None
 
         needed = {mirror.me}
@@ -1167,6 +1437,9 @@ class BotClient:
                 try:
                     sse["alive"] = True
                     delay = self.notify_retry_wait
+                    sse["connection_id"] = (
+                        int(sse.get("connection_id", 0) or 0) + 1)
+                    connection_id = sse["connection_id"]
                     for raw in resp:
                         if stop.is_set():
                             break
@@ -1177,15 +1450,32 @@ class BotClient:
                         try:
                             j = json.loads(line[len("data:"):].strip())
                         except ValueError:
+                            self._record_sse_frame(
+                                gid, connection_id=connection_id,
+                                raw_line=line, accepted=False,
+                                parse_error="invalid_json",
+                                received_monotonic=time.monotonic())
                             continue
                         seq = j.get("seq")
                         # 帧只是水位唤醒信号；重复/倒退水位不应制造额外
                         # /state 拉取，但绝不把它当作本地事件游标。
                         last = sse.get("last_wake_seq")
-                        if seq is None or last is None or seq > last or j.get("closed"):
+                        closed = bool(j.get("closed"))
+                        wake_enqueued = (
+                            seq is None or last is None or seq > last or closed)
+                        if wake_enqueued:
                             sse["last_wake_seq"] = seq
-                            wake.put((seq, bool(j.get("closed"))))
-                        if j.get("closed"):
+                            wake.put((seq, closed))
+                        self._record_sse_frame(
+                            gid, seq=seq, closed=closed, payload=j,
+                            raw_line=line, connection_id=connection_id,
+                            previous_wake_seq=last,
+                            last_wake_seq=sse.get("last_wake_seq"),
+                            accepted=True,
+                            wake_enqueued=wake_enqueued,
+                            deduplicated=not wake_enqueued,
+                            received_monotonic=time.monotonic())
+                        if closed:
                             break
                 except (OSError, TimeoutError):
                     pass  # 断流(keepalive 超时/对端关闭):退避重连
@@ -1198,6 +1488,19 @@ class BotClient:
             if self._sleep_stop(delay, stop):
                 return
             delay = min(delay * 2, 10.0)
+
+    def _record_sse_frame(self, gid, **fields):
+        """记录 SSE 帧；兼容尚未升级的外部/测试 Recorder。"""
+        recorder = self.recorder
+        method = getattr(recorder, "sse_frame", None) \
+            if recorder is not None else None
+        if method is None:
+            return
+        try:
+            method(gid, **fields)
+        except Exception:
+            # 观测不得阻断 SSE 监听或主循环。
+            return
 
     def _play_game_safe(self, gid):
         try:
@@ -1371,11 +1674,12 @@ class BotClient:
             return hand[tile] < 2
         if tile >= 27:
             return hand[tile] < 2
-        offset, pos = divmod(tile, 9)
+        suit_base, pos = tile - (tile % 9), tile % 9
         patterns = ((-2, -1), (-1, 1), (1, 2))
         for left, right in patterns:
             if 0 <= pos + left < 9 and 0 <= pos + right < 9:
-                if hand[offset + pos + left] > 0 and hand[offset + pos + right] > 0:
+                if (hand[suit_base + pos + left] > 0
+                        and hand[suit_base + pos + right] > 0):
                     return False
         return True
 
@@ -1399,6 +1703,10 @@ class BotClient:
         # 当前 pending 弃牌的来源身份：(round_no, owner, tile, event_seq)；
         # seq=0 重锚只在快照仍指向同一 pending 时沿用它。
         pending_source = None
+        # Carrying an event seq across FULL is safe only while the event
+        # stream has been continuous.  A gap means an unseen same-tile
+        # discard cannot be ruled out by round/owner/tile alone.
+        pending_source_contiguous = False
         state_deadline = None  # 下一次 /state 的本地窗口截止(monotonic)
         stale_dl_used = False  # 过期截止已用于一次追赶拉取
         next_seat = None       # 下一个动作者预测(懒轮询门;快照后重置)
@@ -1530,7 +1838,11 @@ class BotClient:
                         demand=demand.request_snapshot(),
                         transport_status="complete",
                         window_status="complete",
-                        game_status="complete")
+                        # The current protocol/log stream has no
+                        # round_ended settlement marker.  A finished client
+                        # loop proves transport/window shutdown only; do not
+                        # manufacture game-layer completeness here.
+                        game_status="protocol_skipped")
                 self._record_demand_metrics(demand, demand_seen)
                 return
             if res.get("pending"):
@@ -1538,6 +1850,7 @@ class BotClient:
             if res.get("gap"):
                 with self._stats_lock:
                     self.stats["gaps"] += 1
+                pending_source_contiguous = False
             batch = res.get("events") or []
             snap = res.get("snapshot")
 
@@ -1560,21 +1873,27 @@ class BotClient:
                     # describes that exact pending tile; otherwise start
                     # without a synthetic identity and let the snapshot's
                     # explicit source field (if any) win.
-                    source_seq = None
-                    for field in ("source_discard_seq", "last_discard_seq",
-                                  "discard_seq"):
-                        if isinstance(snap, dict) and snap.get(field) is not None:
-                            source_seq = snap[field]
-                            break
-                    if source_seq is None and pending_source is not None:
-                        source_round, source_owner, source_tile, source_seq = \
+                    source_seq, source_origin = self._source_identity(snap)
+                    if (source_seq is None and pending_source is not None
+                            and pending_source_contiguous):
+                        (source_round, source_owner, source_tile, source_seq,
+                         source_origin) = \
                             pending_source
                         if (source_round != mirror.round_no
                                 or mirror.pending != (source_owner,
                                                       source_tile)):
                             source_seq = None
+                            source_origin = None
+                        elif source_seq is not None:
+                            # The event identity survived a seq=0 re-anchor;
+                            # preserve an explicit protocol origin, but mark
+                            # a bare tile event sequence as carried.
+                            if source_origin == "tile_discard_event_seq":
+                                source_origin = "carried_event_seq"
                     if source_seq is not None:
                         mirror._source_discard_seq = source_seq
+                        mirror._source_discard_origin = (
+                            source_origin or "carried_event_seq")
                     mirror._attempted_windows = attempted_windows
                     mirror._window_decisions = window_decisions
                     mirror._legacy_attempts = legacy_attempts
@@ -1608,6 +1927,8 @@ class BotClient:
                         mirror, snap, gid,
                         responded_keys=responded_windows,
                         attempted_keys=attempted_windows,
+                        pending_confirm=pending_confirm,
+                        confirm_outcome=confirm_outcome,
                         # A phase transition during a chi confirmation is
                         # terminal for that old reason, but the same
                         # authoritative snapshot may be the first usable
@@ -1615,11 +1936,25 @@ class BotClient:
                         # normal action guards inspect it; they still require
                         # responding_seats and an exact deadline.
                         allow_peng=(confirm_outcome in (
-                            None, "confirmed", "stale", "closed")))
+                            None, "confirmed", "stale", "closed",
+                            "phase_pending")))
+                    # A confirmation is a request to make one decision, not
+                    # an independent lifecycle.  Once the current snapshot
+                    # produced a PASS or a successful physical action, close
+                    # the same WindowAttemptKey before the next loop can
+                    # create another FULL successor.  The resolver also
+                    # performs this check for a later draw snapshot.
+                    if (pending_confirm is not None
+                            and self._window_confirm_completed(
+                                mirror, pending_confirm)):
+                        demand.finish_window_confirm(SATISFIED)
+                        window_confirm = None
+                        confirm_outcome = "confirmed"
                     if chi_pending is not None:
                         next_chi = chi_pending
-                        window_confirm = self._window_confirm_from_chi(
-                            next_chi)
+                        next_confirm = self._window_confirm_from_chi(next_chi)
+                        window_confirm = self._carry_window_confirm_budget(
+                            pending_confirm, next_confirm)
                         chi_pending = None
                         state_deadline = next_chi.get("deadline_mono")
                         request_kind = "WINDOW_CHI"
@@ -1700,6 +2035,7 @@ class BotClient:
                         rec.reset(gid, str(ex))
                     seq, mirror, trigger = 0, None, None
                     pending_source = None
+                    pending_source_contiguous = False
                     chi_pending = None
                     state_deadline = None  # 重锚后旧窗截止作废(防滞留虚增 dm)
                     next_seat = None
@@ -1708,6 +2044,13 @@ class BotClient:
                 self._record_timeout(e, mirror.me)
                 t = e["type"]
                 next_seat = self._next_seat_step(next_seat, e)
+                if t == "tile_drawn":
+                    # A draw closes the previous discard response window;
+                    # retaining its source through a later FULL would allow
+                    # a same-tile discard to inherit an old identity.
+                    pending_source = None
+                    pending_source_contiguous = False
+                    self._set_source_identity(mirror, None)
                 if t == "tile_drawn" and e["seat"] == mirror.me:
                     trigger = ("draw", e)
                     chi_pending = None  # 我方回合推进:旧窗作废
@@ -1721,8 +2064,11 @@ class BotClient:
                     # seq=0 snapshot rebuild resets Mirror's local counters,
                     # while this identity must survive until the pending
                     # discard is claimed, timed out, or replaced.
+                    source_seq, source_origin = self._source_identity(e)
                     pending_source = (mirror.round_no, e["seat"], e["tile"],
-                                      self._explicit_source_seq(e))
+                                      source_seq, source_origin)
+                    pending_source_contiguous = source_seq is not None
+                    self._set_source_identity(mirror, source_seq, source_origin)
                     window_responded = False  # 新弃牌开新窗:未响应态
                     chi_fetches = 0           # 新弃牌:吃窗抓取预算重置
                     if e["seat"] == mirror.me:
@@ -1752,8 +2098,9 @@ class BotClient:
                                 mirror, e["seat"], e["tile"]):
                             state_deadline = None
                 elif t in ("chi", "peng", "gang"):
-                    if mirror.pending is None:
-                        pending_source = None
+                    pending_source = None
+                    pending_source_contiguous = False
+                    self._set_source_identity(mirror, None)
                     chi_pending = None  # 有人吃/碰/杠:窗口被认领
                     window_event = None
                     if trigger is not None and trigger[0] == "window":
@@ -1773,6 +2120,7 @@ class BotClient:
                         rec.reset(gid, "hu_failed:吃碰后弃牌被跳过")
                     seq, mirror, trigger = 0, None, None
                     pending_source = None
+                    pending_source_contiguous = False
                     chi_pending = None
                     state_deadline = None  # 重锚后旧窗截止作废(防滞留虚增 dm)
                     next_seat = None
@@ -1796,6 +2144,19 @@ class BotClient:
                         state_deadline = None  # 弃牌窗已死:截止滞留虚增 dm
                 elif t in ("round_ended", "game_ended"):
                     pending_source = None
+                    pending_source_contiguous = False
+                    self._set_source_identity(mirror, None)
+                    # 本轮已结束(含服务端自动结算的杠开等):同批未消费的
+                    # draw/window 触发一律作废,否则仍会按陈旧摸牌触发决策
+                    # 并提交动作必 409(match 实测 2026-09-11,b5);批内
+                    # round_ended 之后的后续事件仍可正常重建触发。
+                    if trigger is not None:
+                        self._log(f"轮局结束:作废未消费触发({trigger[0]})")
+                        trigger = None
+                    state_deadline = None  # 死窗截止滞留只虚增 dm
+                    chi_pending = None
+                    window_event = None
+                    window_responded = True
                 elif t in ("pass", "timeout"):
                     # 碰窗响应(pass 或 response 超时;discard 已上面处理)
                     if t == "pass" or e.get("kind") == "response":
@@ -1874,8 +2235,9 @@ class BotClient:
                         seq = 0
                         state_deadline = chi_deadline
                         request_kind = "WINDOW_CHI"
-                        window_confirm = self._window_confirm_from_chi(
-                            chi_pending)
+                        next_confirm = self._window_confirm_from_chi(chi_pending)
+                        window_confirm = self._carry_window_confirm_budget(
+                            window_confirm, next_confirm)
                         chi_pending = None
                         continue
                     # 有碰/杠选项:按原语义等响应观测齐/转换点,再抓快照确认
@@ -1896,7 +2258,9 @@ class BotClient:
                     seq = 0
                     state_deadline = chi_pending.get("deadline_mono")
                     request_kind = "WINDOW_CHI"
-                    window_confirm = self._window_confirm_from_chi(chi_pending)
+                    next_confirm = self._window_confirm_from_chi(chi_pending)
+                    window_confirm = self._carry_window_confirm_budget(
+                        window_confirm, next_confirm)
                     chi_pending = None
                     continue
                 elif self.long_poll:
@@ -1957,8 +2321,10 @@ class BotClient:
                             seq = 0
                             state_deadline = chi_deadline
                             request_kind = "WINDOW_CHI"
-                            window_confirm = self._window_confirm_from_chi(
+                            next_confirm = self._window_confirm_from_chi(
                                 chi_pending)
+                            window_confirm = self._carry_window_confirm_budget(
+                                window_confirm, next_confirm)
                             chi_pending = None
                         else:
                             state_deadline = (chi_pending["t0"]
@@ -2038,11 +2404,31 @@ class BotClient:
         with self._decide_lock:
             act = self.decide(g, mirror.me)
         if self.recorder is not None:
+            kwargs = {"digest": {
+                "hand": int(sum(mirror.my_hand)),
+                "wall": mirror.live_wall_left(),
+                "round_no": mirror.round_no}}
+            if phase in ("response_peng", "response_chi"):
+                key = self._window_key(mirror, phase)
+                if isinstance(key, WindowAttemptKey):
+                    kwargs.update({
+                        "window_id": key.window_id.as_json(),
+                        "window_attempt_key": key.as_json(),
+                        "identity_status": key.window_id.identity_status,
+                        "identity_origin": key.window_id.identity_origin,
+                    })
+            try:
+                params = inspect.signature(self.recorder.decision).parameters
+            except (TypeError, ValueError):
+                params = {}
+            accepts_kwargs = any(
+                p.kind == inspect.Parameter.VAR_KEYWORD
+                for p in params.values())
+            if not accepts_kwargs:
+                kwargs = {key: value for key, value in kwargs.items()
+                          if key in params}
             self.recorder.decision(
-                gid, phase, legal, act, _ms(t0),
-                digest={"hand": int(sum(mirror.my_hand)),
-                        "wall": mirror.live_wall_left(),
-                        "round_no": mirror.round_no})
+                gid, phase, legal, act, _ms(t0), **kwargs)
         return act
 
     def _attempts(self):
@@ -2087,6 +2473,8 @@ class BotClient:
                 tile=source.tile,
                 identity_status=source.identity_status,
                 fallback=source.fallback,
+                identity_origin=source.identity_origin,
+                first_seen_via=source.first_seen_via,
             )
         if confirm is None:
             return None
@@ -2101,9 +2489,12 @@ class BotClient:
                 source_seq = str(source_seq)
             identity_status = "authoritative"
             fallback = None
+            identity_origin = (getattr(confirm, "source_origin", None)
+                               or "unknown")
         else:
             identity_status = "legacy_unresolved"
             fallback = ("confirm", confirm.round_no, tuple(pending))
+            identity_origin = "legacy_snapshot"
         return WindowId(
             game_id=gid,
             round_id=confirm.round_no,
@@ -2112,6 +2503,9 @@ class BotClient:
             tile=pending[1],
             identity_status=identity_status,
             fallback=fallback,
+            identity_origin=identity_origin,
+            first_seen_via=(getattr(confirm, "first_seen_via", None)
+                            or "unknown"),
         )
 
     def _prepare_state_demand(self, demand, gid, seq, request_kind,
@@ -2163,7 +2557,8 @@ class BotClient:
         # Missing authoritative fields do not prove that the window closed.
         # Keep the exact expected WindowId/phase pending for one more
         # completion; phase/identity/deadline closure is terminal.
-        if outcome in ("unconfirmed", "identity_unconfirmed"):
+        if outcome in ("unconfirmed", "identity_unconfirmed",
+                       "phase_pending"):
             return PENDING
         return DEMAND_TERMINAL
 
@@ -2327,8 +2722,30 @@ class BotClient:
         mirror.apply_snapshot(snap)  # 全量锚定(手牌/公共状态/墙长)
         return mirror
 
+    @staticmethod
+    def _confirm_allows_snapshot_phase(confirm, outcome, phase):
+        """Gate snapshot actions by the confirmation that requested them."""
+
+        if confirm is None:
+            return True
+        if outcome == "confirmed" and phase == confirm.phase:
+            return True
+        # A chi confirmation may legitimately observe the preceding peng
+        # phase of the same WindowId; that is pending, not a new action grant.
+        if (confirm.phase == "response_chi" and phase == "response_peng"
+                and outcome == "phase_pending"):
+            return True
+        # A peng confirmation is terminal once the same window has advanced
+        # to chi, but that snapshot is the authoritative fact for the new
+        # phase and may be handled by the chi path.
+        if (confirm.phase == "response_peng" and phase == "response_chi"
+                and outcome == "closed"):
+            return True
+        return False
+
     def _act_on_snapshot(self, mirror, snap, gid, responded_keys=None,
-                         attempted_keys=None, allow_peng=True):
+                         attempted_keys=None, allow_peng=True,
+                         pending_confirm=None, confirm_outcome=None):
         """快照驱动的决策兜底(开局直抽/409 重建后的窗口)。
 
         response_peng 快照不能直接丢弃：若本人只需过碰窗，返回吃窗等待态，
@@ -2345,6 +2762,9 @@ class BotClient:
             return None
         if phase == "response_peng" and allow_peng \
                 and seat in (snap.get("responding_seats") or []):
+            if not self._confirm_allows_snapshot_phase(
+                    pending_confirm, confirm_outcome, phase):
+                return None
             if self._snapshot_deadline(snap) is None:
                 # 快照缺少截止时不能把未完成的确认变成无界 POST。
                 return None
@@ -2360,8 +2780,17 @@ class BotClient:
             return self._act_window(mirror, snap, gid)
         if phase == "response_chi" \
                 and seat in (snap.get("responding_seats") or []):
+            if not self._confirm_allows_snapshot_phase(
+                    pending_confirm, confirm_outcome, phase):
+                return None
             if self._snapshot_deadline(snap) is None:
-                self._state_abandon(gid, "response_chi", "快照缺少有效窗口截止")
+                key = self._window_key(mirror, "response_chi", snap=snap)
+                self._state_abandon(
+                    gid, "response_chi", "快照缺少有效窗口截止",
+                    dedupe_key=(gid, "response_chi",
+                                key.as_tuple() if isinstance(
+                                    key, WindowAttemptKey)
+                                else (mirror.round_no, mirror.pending)))
                 return None
             chi = self._make_chi_pending(
                 mirror, snap=snap, responded_keys=responded_keys,
@@ -2424,6 +2853,27 @@ class BotClient:
             return None
         passed_explicitly = False
         if claims:
+            confirm_key = self._window_key(
+                mirror, "response_peng", ev=ev,
+                snap=ev if isinstance(ev, dict) and "phase" in ev else None)
+            confirm_window = (confirm_key.window_id
+                              if isinstance(confirm_key, WindowAttemptKey)
+                              else None)
+            confirm_source_seq = (confirm_window.source_discard_seq
+                                  if confirm_window is not None else None)
+            confirm_source_origin = (confirm_window.identity_origin
+                                     if confirm_window is not None else
+                                     self._source_identity(ev)[1])
+            confirm_first_seen = (confirm_window.first_seen_via
+                                  if confirm_window is not None else
+                                  ("event" if self._source_identity(ev)[0]
+                                   is not None else "unknown"))
+            snapshot_authoritative = (
+                isinstance(ev, dict)
+                and ev.get("phase") in ("response_peng", "response_chi")
+                and self._snapshot_deadline(ev) is not None
+                and mirror.me in (ev.get("responding_seats") or [])
+                and self._strong_window_key(confirm_key))
             # A catch-play discard can arrive before the incremental mirror
             # knows which seat owns the freeze.  Do not infer that every
             # locally legal peng is currently actionable: ask for one
@@ -2437,10 +2887,28 @@ class BotClient:
                 raise _WindowConfirm(
                     phase="response_peng", pending=mirror.pending,
                     round_no=mirror.round_no, legal=claims,
-                    source_seq=self._explicit_source_seq(ev), source_ts=stamp,
+                    source_seq=confirm_source_seq, source_ts=stamp,
                     source_watermark=(ev or {}).get("seq"),
+                    source_origin=confirm_source_origin,
+                    first_seen_via=confirm_first_seen,
                     schedule_deadline=self._confirm_schedule_deadline(stamp),
+                    window_key=confirm_key,
                     reason="catch_play_confirmation")
+            # A discard event is a wakeup, not action authorization.  Any
+            # non-authoritative event path must obtain phase, responding seat,
+            # exact deadline and source identity from a snapshot first.
+            if not snapshot_authoritative:
+                stamp = self._epoch_seconds((ev or {}).get("ts"))
+                raise _WindowConfirm(
+                    phase="response_peng", pending=mirror.pending,
+                    round_no=mirror.round_no, legal=claims,
+                    source_seq=confirm_source_seq, source_ts=stamp,
+                    source_watermark=(ev or {}).get("seq"),
+                    source_origin=confirm_source_origin,
+                    first_seen_via=confirm_first_seen,
+                    schedule_deadline=self._confirm_schedule_deadline(stamp),
+                    window_key=confirm_key,
+                    reason="discard_event_confirmation")
             # 秒级 ts 的 T+1 只是最早可能关闭点：临界时确认快照，
             # 不把估计当成已超时，也不盲发迟到的动作。
             stamp = self._epoch_seconds((ev or {}).get("ts"))
@@ -2450,9 +2918,12 @@ class BotClient:
                 raise _WindowConfirm(
                     phase="response_peng", pending=mirror.pending,
                     round_no=mirror.round_no, legal=claims,
-                    source_seq=self._explicit_source_seq(ev), source_ts=stamp,
+                    source_seq=confirm_source_seq, source_ts=stamp,
                     source_watermark=(ev or {}).get("seq"),
-                    schedule_deadline=self._confirm_schedule_deadline(stamp))
+                    source_origin=confirm_source_origin,
+                    first_seen_via=confirm_first_seen,
+                    schedule_deadline=self._confirm_schedule_deadline(stamp),
+                    window_key=confirm_key)
             act = self._decide_logged(g, mirror, "response_peng", gid)
             self._mark_window_decision(mirror, "response_peng", act)
             if act != -1:  # 碰/明杠:窗口开启期间立即提交
@@ -2463,10 +2934,13 @@ class BotClient:
                     raise _WindowConfirm(
                         phase="response_peng", pending=mirror.pending,
                         round_no=mirror.round_no, legal=claims,
-                        source_seq=self._explicit_source_seq(ev), source_ts=stamp,
+                        source_seq=confirm_source_seq, source_ts=stamp,
                         source_watermark=(ev or {}).get("seq"),
+                        source_origin=confirm_source_origin,
+                        first_seen_via=confirm_first_seen,
                         chosen=act,
                         schedule_deadline=self._confirm_schedule_deadline(stamp),
+                        window_key=confirm_key,
                         reason="decision_boundary")
                 if deadline is not None and deadline - time.monotonic() <= SUBMIT_EPS:
                     self._deadline_abandon(
@@ -2475,9 +2949,11 @@ class BotClient:
                         deadline=deadline)
                     return None
                 self._submit(mirror, gid, act, "response_peng", deadline=deadline,
-                             legal=claims)
+                             window_key=confirm_key, legal=claims)
                 return None
-            self._submit(mirror, gid, -1, "response_peng")
+            deadline = self._mono_deadline(self._snapshot_deadline(ev))
+            self._submit(mirror, gid, -1, "response_peng", deadline=deadline,
+                         window_key=confirm_key, legal=claims)
             passed_explicitly = True
         # 吃窗:仅出牌者的下家;碰窗响应齐或截止到达后提交。
         # 使用统一构造器，快照中的 window_deadline_ms 优先于事件 ts。
@@ -2543,6 +3019,26 @@ class BotClient:
         self._submit(mirror, gid, act, "response_chi", deadline=deadline,
                      window_key=chi.get("key"), legal=chi_opts)
 
+    def _next_action_counter(self, gid):
+        """Return a session-scoped action attempt number.
+
+        Mirror objects are intentionally replaced after every FULL snapshot;
+        keeping this counter on Mirror therefore reuses ids after re-anchor.
+        """
+        with self._action_counter_lock:
+            value = self._action_counters.get(gid, 0) + 1
+            self._action_counters[gid] = value
+            return value
+
+    def _next_window_attempt_counter(self, gid, key):
+        """Return a physical attempt index for one logical window key."""
+        token = repr(key.as_tuple())
+        with self._action_counter_lock:
+            map_key = (gid, token)
+            value = self._window_attempt_counters.get(map_key, 0) + 1
+            self._window_attempt_counters[map_key] = value
+            return value
+
     def _submit(self, mirror, gid, act, phase, deadline=None, window_key=None,
                 legal=None):
         key = None
@@ -2563,7 +3059,8 @@ class BotClient:
                 self._claim_miss(
                     gid, phase, legal or self._claim_legal(mirror, phase),
                     chosen=act, reason="window_already_attempted",
-                    mirror=mirror, deadline=deadline)
+                    mirror=mirror, deadline=deadline, window_key=key,
+                    action_posted=True)
                 return False
             if attempted is not None and self._strong_window_key(key):
                 attempted.add(key)
@@ -2573,17 +3070,12 @@ class BotClient:
                     legacy_attempts[key] = getattr(
                         mirror, "_legacy_epoch", None)
             if isinstance(key, WindowAttemptKey):
-                indices = getattr(mirror, "_window_attempt_indices", None)
-                if indices is None:
-                    indices = {}
-                    mirror._window_attempt_indices = indices
-                action_attempt_index = indices.get(key, 0) + 1
-                indices[key] = action_attempt_index
+                action_attempt_index = self._next_window_attempt_counter(
+                    gid, key)
                 logical_action_id = (
                     f"window:{gid}:{repr(key.as_tuple())}")
         if logical_action_id is None:
-            counter = getattr(mirror, "_action_attempt_counter", 0) + 1
-            mirror._action_attempt_counter = counter
+            counter = self._next_action_counter(gid)
             logical_action_id = f"action:{gid}:{counter}"
         window_log = {}
         if isinstance(key, WindowAttemptKey):
@@ -2591,6 +3083,7 @@ class BotClient:
                 "window_id": key.window_id.as_json(),
                 "window_attempt_key": key.as_json(),
                 "identity_status": key.window_id.identity_status,
+                "identity_origin": key.window_id.identity_origin,
             }
         payload = action_to_payload(
             act, mirror.pending[1] if mirror.pending else None)
@@ -2619,7 +3112,9 @@ class BotClient:
                     reason="action_uncertain" if getattr(e, "uncertain", False)
                     else "action_rejected", payload=payload,
                     status=e.status, code=e.code, deadline=deadline,
-                    mirror=mirror)
+                    mirror=mirror, window_key=key,
+                    logical_request_id=logical_action_id,
+                    action_posted=True)
             if self.recorder is not None:
                 self.recorder.action(gid, phase, payload, ok=False,
                                      status=e.status, code=e.code,

@@ -71,6 +71,10 @@ class WindowId:
     tile: Any
     identity_status: str = "authoritative"
     fallback: Any = None
+    # Diagnostic provenance of the source identity; it is not authority
+    # semantics and therefore remains separate from identity_status.
+    identity_origin: str = field(default="unknown", compare=False)
+    first_seen_via: str = field(default="unknown", compare=False)
 
     @property
     def authoritative(self) -> bool:
@@ -94,6 +98,8 @@ class WindowId:
             "tile": _json_value(self.tile),
             "identity_status": self.identity_status,
             "fallback": _json_value(self.fallback),
+            "identity_origin": self.identity_origin,
+            "first_seen_via": self.first_seen_via,
         }
 
 
@@ -170,6 +176,11 @@ class StateDemand(queue.Queue):
         self.in_flight = False
         self._inflight: Optional[StateRequest] = None
         self._logical_counter = 0
+        # A completed physical request may still have pending reasons, but a
+        # successor is only counted when the next physical request is
+        # actually created.  Keeping this bit separate avoids counting a
+        # speculative successor that a later reason-specific resolver clears.
+        self._successor_ready = False
         self.logical_demands = 0
         self.coalesced_demands = 0
         self.successor_requests = 0
@@ -180,6 +191,24 @@ class StateDemand(queue.Queue):
     def reasons(self) -> dict[str, dict[str, Any]]:
         with self._demand_lock:
             return copy.deepcopy(self._reasons)
+
+    @property
+    def pending_reasons(self) -> dict[str, dict[str, Any]]:
+        """Return only active reasons for a new physical request.
+
+        ``reasons`` deliberately retains SATISFIED/TERMINAL entries for
+        diagnostics and post-completion reconciliation.  A request plan must
+        not expose that history as if it were still part of the physical
+        request, otherwise an ordinary SSE request is reported as carrying
+        stale RESYNC/WINDOW_CONFIRM work.
+        """
+
+        with self._demand_lock:
+            return copy.deepcopy({
+                reason: data
+                for reason, data in self._reasons.items()
+                if data.get("status") == PENDING
+            })
 
     @property
     def has_pending(self) -> bool:
@@ -443,8 +472,16 @@ class StateDemand(queue.Queue):
                 started_generation=self.generation,
                 effective_deadline=self.effective_deadline if self.effective_deadline is not None else deadline,
                 reason_mask=self.reason_mask,
-                reasons=self.reasons,
+                reasons={
+                    reason: copy.deepcopy(data)
+                    for reason, data in self._reasons.items()
+                    if data.get("status") == PENDING
+                },
             )
+            if self._successor_ready:
+                self.logical_demands += 1
+                self.successor_requests += 1
+                self._successor_ready = False
             self.in_flight = True
             self._inflight = request
             self.physical_state_requests += 1
@@ -497,11 +534,11 @@ class StateDemand(queue.Queue):
             self._recompute()
             pending = self.has_pending
             if pending and request is not None:
-                # A successor is a new logical intent for metrics, even when
-                # no new external submit arrived.  Count it once per
-                # completion, not once per physical retry.
-                self.logical_demands += 1
-                self.successor_requests += 1
+                # Defer successor accounting until start_request() actually
+                # creates the successor.  A caller may still resolve a
+                # WINDOW_CONFIRM after this reconciliation; counting here
+                # would report a request that was never sent.
+                self._successor_ready = True
             return pending
 
     def resolve_reason(self, reason: str, status: str) -> bool:
@@ -518,6 +555,8 @@ class StateDemand(queue.Queue):
             self._reasons[reason]["status"] = status
             self.generation += 1
             self._recompute()
+            if not self.has_pending:
+                self._successor_ready = False
             return True
 
     def finish_window_confirm(self, status: str) -> bool:

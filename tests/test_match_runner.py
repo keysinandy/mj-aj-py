@@ -282,6 +282,30 @@ class TestSseNotify(unittest.TestCase):
         self.assertEqual(stats["games"], 1)
         self.assertGreaterEqual(api.notify_opens, 2)
 
+    def test_sse_frames_are_recorded(self):
+        """每条 data 帧落盘,并保留连接编号与唤醒/去重结果。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            recorder = Recorder(root=tmp)
+            _, stats = _drive_match(1, use_notify=True, recorder=recorder)
+            self.assertEqual(stats["games"], 1)
+
+            paths = []
+            for root, _, names in os.walk(tmp):
+                paths.extend(os.path.join(root, name) for name in names)
+            self.assertEqual(len(paths), 1)
+            with open(paths[0], encoding="utf-8") as f:
+                records = [json.loads(line) for line in f if line.strip()]
+            frames = [r for r in records if r["type"] == "sse_frame"]
+            self.assertTrue(frames)
+            for frame in frames:
+                self.assertIn("gid", frame)
+                self.assertIn("seq", frame)
+                self.assertIn("closed", frame)
+                self.assertIn("connection_id", frame)
+                self.assertIn("wake_enqueued", frame)
+                self.assertIn("deduplicated", frame)
+                self.assertIn("payload", frame)
+
 
 if __name__ == "__main__":
     unittest.main()

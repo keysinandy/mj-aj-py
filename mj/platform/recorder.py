@@ -3,6 +3,7 @@
 每场对局一个文件 local/games/<YYYYMMDD>/<令牌>_<gid>.jsonl,一行一条
 记录。记录类型:
 - meta      开场:gid/令牌/锦标赛/YCBK/base
+- sse_frame SSE 通知帧:payload/水位/closed/去重与唤醒结果
 - req       每次状态轮询:请求时游标 seq/响应耗时/状态码/尝试次数/响应摘要；
             transport 可带 state_attempts 的物理状态与分阶段耗时摘要
 - snapshot  快照原文(离线重建锚点:my_hand/公共状态/墙长)
@@ -27,6 +28,7 @@ import json
 import os
 import threading
 import time
+import copy
 
 
 def _json_default(value):
@@ -47,6 +49,7 @@ class GameLog:
         self.path = path
         self.cursor = 0            # 当前事件游标(对齐用)
         self.pending_decision = None  # 最近一次未配对 action 的决策 id
+        self.last_demand = None       # 最近一次 req demand snapshot
         self._lock = threading.Lock()
         self._n_decisions = 0
         self._closed = False
@@ -135,6 +138,39 @@ class Recorder:
             rec["mode"] = mode
         self.log_for(gid, name).write(rec)
 
+    def sse_frame(self, gid, seq=None, closed=False, payload=None,
+                  raw_line=None, connection_id=None,
+                  previous_wake_seq=None, last_wake_seq=None,
+                  accepted=False, wake_enqueued=False, deduplicated=False,
+                  parse_error=None, received_monotonic=None):
+        """记录一条 SSE data 帧，不推进本地事件 cursor。
+
+        ``seq`` 是服务端包含式 watermark，不是本地 /state 游标。除帧本身
+        的 payload/raw_line 外，额外记录 listener 是否接受该帧并入队唤醒，
+        以及它是否因水位重复/倒退而被去重。日志失败不能影响对弈，和其他
+        Recorder 入口保持相同的 GameLog 写入语义。
+        """
+        rec = {
+            "type": "sse_frame",
+            "gid": gid,
+            "seq": seq,
+            "closed": bool(closed),
+            "accepted": bool(accepted),
+            "wake_enqueued": bool(wake_enqueued),
+            "deduplicated": bool(deduplicated),
+            "connection_id": connection_id,
+            "previous_wake_seq": previous_wake_seq,
+            "last_wake_seq": last_wake_seq,
+        }
+        for key, value in (
+                ("payload", payload),
+                ("raw_line", raw_line),
+                ("parse_error", parse_error),
+                ("received_monotonic", received_monotonic)):
+            if value is not None:
+                rec[key] = value
+        self.log_for(gid).write(rec)
+
     def req(self, gid, seq, status, latency_ms, attempts=None, summary=None,
             transport=None, throttle=None, request_kind=None,
             logical_request_id=None, attempt_index=None, reason=None,
@@ -163,6 +199,11 @@ class Recorder:
                            ("demand", demand), ("requested_seq", requested_seq)):
             if value is not None:
                 rec[key] = value
+        if demand is not None:
+            # Keep a copy because callers reuse the live StateDemand snapshot
+            # while the room continues; end() may need this as a compatibility
+            # fallback when no explicit terminal snapshot is available.
+            log.last_demand = copy.deepcopy(demand)
         log.write(rec)
 
     def window_confirm(self, gid, **fields):
@@ -194,7 +235,9 @@ class Recorder:
         log.write({"type": "events", "seq_to": seq_to,
                    "received_epoch": time.time(), "events": events})
 
-    def decision(self, gid, phase, legal, action, latency_ms, digest=None):
+    def decision(self, gid, phase, legal, action, latency_ms, digest=None,
+                 window_id=None, window_attempt_key=None,
+                 identity_status=None, identity_origin=None):
         """返回决策 id(action 记录据此配对)。"""
         log = self.log_for(gid)
         did = log.next_decision_id()
@@ -204,13 +247,26 @@ class Recorder:
                "latency_ms": latency_ms}
         if digest:
             rec["digest"] = digest
+        for key, value in (("window_id", window_id),
+                           ("window_attempt_key", window_attempt_key),
+                           ("identity_status", identity_status),
+                           ("identity_origin", identity_origin)):
+            if value is not None:
+                rec[key] = value
         log.write(rec)
         return did
 
     def claim_miss(self, gid, phase, legal, chosen=None, reason="",
                    payload=None, status=None, code="", deadline_at=None,
-                   seq=None, pending=None):
-        """记录规则允许的吃/碰/杠机会未成功，供离线对账归因。"""
+                   seq=None, pending=None, window_id=None,
+                   window_attempt_key=None, logical_request_id=None,
+                   exact_deadline_at=None, action_posted=None):
+        """记录规则允许的吃/碰/杠机会未成功，供离线对账归因。
+
+        窗口关联字段（window_id/window_attempt_key/logical_request_id/
+        exact_deadline_at/action_posted）只在调用方可评估时落盘；缺失时
+        离线分类只能归入 unknown，不参与强证据分母。
+        """
         rec = {"type": "claim_miss", "phase": phase,
                "legal": list(legal), "chosen": chosen,
                "client_decision": chosen is not None, "reason": reason}
@@ -229,9 +285,21 @@ class Recorder:
         did = self.log_for(gid).pending_decision
         if did is not None and chosen is not None:
             rec["decision"] = did
+        observed_at = time.time()
+        rec["observed_at"] = round(observed_at, 3)
+        effective_deadline = (exact_deadline_at if exact_deadline_at is not None
+                              else deadline_at)
+        if effective_deadline is not None:
+            rec["deadline_left_ms"] = round(
+                (effective_deadline - observed_at) * 1000, 1)
         for key, value in (("payload", payload), ("status", status),
                            ("code", code), ("deadline_at", deadline_at),
-                           ("seq", seq), ("pending", pending)):
+                           ("seq", seq), ("pending", pending),
+                           ("window_id", window_id),
+                           ("window_attempt_key", window_attempt_key),
+                           ("logical_request_id", logical_request_id),
+                           ("exact_deadline_at", exact_deadline_at),
+                           ("action_posted", action_posted)):
             if value is not None and value != "":
                 rec[key] = value
         self.log_for(gid).write(rec)
@@ -241,7 +309,7 @@ class Recorder:
                started_epoch=None, deadline_at=None, message=None,
                transport=None, logical_request_id=None, attempt_index=None,
                window_id=None, window_attempt_key=None,
-               identity_status=None):
+               identity_status=None, identity_origin=None):
         log = self.log_for(gid)
         rec = {"type": "action", "phase": phase, "payload": payload,
                "ok": ok, "status": status, "code": code,
@@ -258,7 +326,8 @@ class Recorder:
                            ("attempt_index", attempt_index),
                            ("window_id", window_id),
                            ("window_attempt_key", window_attempt_key),
-                           ("identity_status", identity_status)):
+                           ("identity_status", identity_status),
+                           ("identity_origin", identity_origin)):
             if value is not None:
                 rec[key] = value
         did = log.pending_decision
@@ -272,15 +341,22 @@ class Recorder:
 
     def end(self, gid, reason, scores=None, error=None, demand=None,
             transport_status=None, window_status=None, game_status=None):
+        log = self.log_for(gid)
         rec = {"type": "end", "reason": reason, "scores": scores}
         if error is not None:
             rec["error"] = error
         if demand is not None:
             rec["demand"] = demand
+            rec["demand_source"] = "end"
+        elif log.last_demand is not None:
+            rec["demand"] = copy.deepcopy(log.last_demand)
+            rec["demand_source"] = "req_fallback"
+        else:
+            rec["demand_source"] = "missing"
         for key, value in (("transport_status", transport_status),
                            ("window_status", window_status),
                            ("game_status", game_status)):
             if value is not None:
                 rec[key] = value
-        self.log_for(gid).write(rec)
+        log.write(rec)
         self.close(gid)

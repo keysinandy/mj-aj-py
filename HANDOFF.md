@@ -32,8 +32,30 @@ urgent。state/action 日志新增 throttle 与 HTTP 边界、Retry-After/Date r
 logical request/physical attempt 关联；验收报告按 transport/window/game 三层
 分类，并分别统计 logical、coalesced、successor、physical、suppressed demand。
 
-当前只完成离线实现与回归，尚未以这份工作树启动新的 3～5 房线上验收；线上结论
-仍沿用下方已有房间的历史证据，不能把 focused/full test 通过解释成线上窗口完整。
+当前工作树已完成离线实现与回归，并于 2026-09-11 完成一房新的 BOT/SSE/15/s
+线上 canary；尚未完成后续 2～4 个独立房，因此线上结论仍需以单房证据为边界，
+不能把 focused/full test 或这一房结果解释成多房稳定性证明。
+
+## 最新线上 canary（2026-09-11）
+
+- 房间 `a_0ed057e4ffed`，用户 `u_9812ba08fe2f`，工作树 `HEAD=13ee3fb` 加未提交修复；命令为 `python -m mj.platform.match_runner --games 10 --strategy bot --state-rate 15`。
+- `10/10` 场正常 `finished`；动作 `804` 成功、`409=6`、未知 POST=`1`、`auto_played=0`。`/state` 物理尝试 `8871`，`429=137`，启动峰值 `15/s`；queue p50/p95/max=`269.9/516.9/1203.2ms`，urgent queue p50/p95/max=`35.2/68.4/135.0ms`，deadline miss=`1`。
+- 归因更正：唯一 state deadline miss 是 `b8:377 state-173`，同窗 chi 已成功但旧确认仍携过期估算截止发 FULL；不是 `b6/r8` 的未知 POST。b6 动作在精确截止前 72.8ms 开始，77.5ms 后超时，无响应头/体。6 个 409 分布在 `b1/b2/b7/b9`（其中1个为 PASS），均未重发旧动作。
+- 逐窗复核 `claim_miss=25`：5条已成功、5条已选PASS的误报，4条他家peng优先级终止，5条未提交候选，5条非pass 409，1条未知POST。优先修确认/动作生命周期、粗时间与精确截止冲突、普通peng授权与PASS deadline，再修验收计数。完整证据与实施状态见 [线上验收归因与修复计划](docs/线上验收归因与修复计划_20260911.md)；该房是在本轮修复前运行的诊断基线。
+- 原始日志没有 `round_ended`，但 end 记录显式写了 `game_status=complete`；因此 transport/window 可作本房诊断，game complete 暂不作为完整结算证明，A12 需要先修正。
+
+## 修复实施状态（2026-09-11）
+
+已在当前工作树落地 R1–R5：统一窗口确认生命周期与精确 deadline、普通弃牌先权威确认、连续事件 carry/source-origin 安全边界、PENDING-only demand 日志、分层验收和旧日志 demand fallback。
+
+针对 `a_b85ff51c0958` 的审计（计划 §8）追加两项修复：
+
+- b5 409 "hu only after draw"：杠开自动结算时 `round_ended` 与杠补摸牌同批到达，未消费的 draw 触发未被作废，客户端仍按陈旧摸牌提交弃牌。事件循环现在在 `round_ended`/`game_ended` 处作废同批触发并清理死窗截止与 chi 等待（回归 `test_round_ended_same_batch_cancels_draw_trigger`，已验证修复前红、修复后绿）。
+- claim_miss 逐窗关联（计划 §8.8 第 1 项）：`Recorder.claim_miss`/`BotClient._claim_miss` 新增 `window_id`/`window_attempt_key`/`logical_request_id`/`exact_deadline_at`/`observed_at`/`deadline_left_ms`/`action_posted`；验收脚本按窗口把 claim_miss 关联 decision/action/吃碰杠回声，输出 `claim_miss_classification`（success/strategy_pass/opponent_preempted/unsubmitted_candidate/rejected/uncertain/unknown，附 raw_record_count/window_linked）。旧日志无窗口身份的记录仍归 unknown（本房 13 条全 unknown），不作确认/决策/提交阶段归因。
+
+相关回归已补齐，完整 `tests/` 为 `334 passed, 2 subtests passed`，`git diff --check` 通过。
+
+本轮没有用修复后的工作树重新启动线上房；OpenSpec 5.4 仍未完成。下一步是冻结 commit、生成 run manifest，再按同一 BOT/SSE/15/s 命令运行 3–5 个独立房；验收时 game 无 `round_ended` 证据应标 `protocol_skipped`，不影响 transport/window 层单独汇总。
 
 ## 最新：429 反馈平滑复测（2026-09-11）
 

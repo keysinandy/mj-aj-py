@@ -86,6 +86,12 @@ attempt id。同一个 `WindowAttemptKey` 可能因为重复确认而对应多�
 `WindowId`。窗口身份变化的判据是局号、出牌者、源序号或牌值变化，不能依赖
 牌河数量或快照 watermark。
 
+每个窗口记录另带诊断字段 `identity_origin`，取
+`explicit_source_field`、`tile_discard_event_seq`、`carried_event_seq` 或
+`legacy_snapshot`。它只说明身份来源，不改变 `identity_status` 的权威判断，且不
+参与 `WindowId` 的逻辑相等性；这样可以区分“协议没有提供身份”和“事件已收到但
+身份在 seq=0 重锚时沿用”的两类 legacy 证据。
+
 *替代方案*：继续以 `Mirror.window_key()` 的牌河/副露计数作为主键。该方案在
 增量 claim 移牌、seq=0 全量快照保留历史表示时会产生同窗不同键或新窗同键，
 因此只能保留为诊断字段。
@@ -184,7 +190,15 @@ watermark 尚未推进或缺少足够权威字段时记为 `PENDING`，不能用
 `unconfirmed` 无限重试。只有 `PENDING` reason 留在 active `StateDemand`；某个
 reason 完成或终止后，必须从剩余 PENDING reasons 重新计算
 `full_snapshot_required`、`kind_priority`、`effective_deadline` 和
-`reason_mask`。
+`reason_mask`。`UNKNOWN`/缺精确 deadline 的 PENDING 必须共享同一窗口的 retry
+deadline 或 bounded retry budget；预算耗尽时转为不记 claim_miss 的终态，不能在
+每个旧快照上重复 state abandon/auto-play 计数。
+
+窗口 phase 按有序转移解析，而不是简单相等比较：期望
+`response_chi` 但实际仍为同一 `WindowId` 的 `response_peng` 时，在 chi 的调度
+截止仍有效时返回 `PENDING`（不得写 `claim_miss`）；期望 `response_peng` 而实际
+已经是 `response_chi` 时才是旧 peng reason 的 `TERMINAL`。resolver 必须先比较
+`WindowId`，不能用包含 phase 的 `WindowAttemptKey` 判断 peng/chi 是否同窗。
 
 请求发出时保存 `started_generation`。若响应返回时当前 generation 已变化，
 先用响应事实对当前 demand 重新执行上述 reason-specific reconciliation；generation
@@ -279,17 +293,28 @@ suppressed_duplicates
 coalescing_ratio = 1 - physical_state_requests / logical_demands
 ```
 
-其中 `logical_demands` 是每次向协调器提交的逻辑需求事件；一次 completion 因仍有
-PENDING reason 而产生 successor 时，`successor_requests` 与 `logical_demands` 各
-增加一次，避免 successor 让 ratio 变成负数。
+其中 `logical_demands` 是每次向协调器提交的逻辑需求事件；一次 completion 只有在
+仍有 PENDING reason 且实际创建 successor physical request 时，`successor_requests`
+与 `logical_demands` 才各增加一次，避免在后续 reason-specific resolver 清除需求后
+把不存在的 successor 计入 ratio。
 `coalesced_demands` 是被合并进已有 pending/in-flight demand 且改变了其语义
 状态的事件，`suppressed_duplicates` 是相同或被更高 watermark 支配、未改变
 语义状态的重复事件。`physical_state_requests` 是协调器新启动物理 `/state`
 请求数，retry attempts 另行统计为 `physical_state_attempts`；
 `logical_demands=0` 时 `coalescing_ratio` 为 `null`。各字段按 gid/game 记录，避免把
 正常 reason 合并和重复通知混成一个数字。还需增加
-`WINDOW_CONFIRM seq=0 / eligible_windows`，并单独报告各层 complete/partial/
-protocol_skipped 数量。
+`WINDOW_CONFIRM seq=0 / eligible_windows`，其中 `eligible_windows` 必须来自有权威
+WindowId、存在非 pass 合法候选的 phase-independent 窗口账本，按 WindowId 去重；
+legacy/unresolved 单独报告，不得进入 authoritative 分母。并单独报告各层 complete/partial/
+protocol_skipped 数量。`end` 若没有显式 demand snapshot，记录器必须回退到该房
+最后一个 req demand，并标记 `demand_source=end|req_fallback|missing`；验收工具对
+旧日志也按同一优先级恢复，但 fallback 证据必须可区分于完整 end snapshot。
+
+验收工具还应把每个可观测 gap 分类为 `snapshot_reanchor`、
+`sse_batch_catchup`、`transport_retry_related` 或 `event_discontinuity`，无法判断时
+归入 `log_truncation_or_unknown`，并记录 gap 到下一次 authoritative snapshot 前
+是否已经产生决策。只有 `event_discontinuity` 且 `decision_impact=true` 才进入强风险
+汇总，不能把所有 `gap` 计数直接解释为丢窗口。
 
 ### D9. 先观测再实验，保持运行变量冻结
 

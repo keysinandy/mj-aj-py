@@ -11,6 +11,13 @@
 `attempt_index` 标识。重复确认同一 `WindowAttemptKey` 时，记录必须能区分不同
 的 `logical_request_id`/`attempt_index`。
 
+窗口记录 MUST 额外提供 `identity_origin` 诊断值：
+`explicit_source_field`、`tile_discard_event_seq`、`carried_event_seq` 或
+`legacy_snapshot`。该字段只表示来源，不改变 `identity_status` 的权威判断，也不
+参与 WindowId 的逻辑相等性。记录还应提供
+`first_seen_via=event|snapshot|reanchor|unknown`，区分首次从弃牌事件、快照或
+重锚继承来源；该字段同样不参与 WindowId 的逻辑相等性。
+
 #### Scenario: 同一弃牌从碰窗转入吃窗
 
 - **WHEN** 同一局、同一轮、同一出牌者、同一源弃牌序号和牌值先产生
@@ -170,6 +177,20 @@ reason。只有 PENDING reason 继续留在 active `StateDemand`；reason 终止
 - **THEN** `WINDOW_CONFIRM` 保持 `PENDING`，并可在下一次 completion 重新协调；
   不得标记 `TERMINAL` 后丢失确认机会，也不得因一次旧快照形成无限无条件重试
 
+#### Scenario: chi 确认遇到同窗旧 peng phase
+
+- **WHEN** `WINDOW_CONFIRM` 期望 `response_chi`，而同一 `WindowId` 的权威快照
+  暂时仍为 `response_peng`，且 chi 调度截止尚未过期
+- **THEN** resolver 返回 `PENDING`，保留该 reason，不写 `claim_miss`；随后同一
+  `WindowId` 的 `response_chi` 快照才可返回 `SATISFIED`
+
+#### Scenario: peng 确认遇到已推进的 chi phase
+
+- **WHEN** `WINDOW_CONFIRM` 期望 `response_peng`，而同一 `WindowId` 的权威快照
+  已为 `response_chi`
+- **THEN** 旧 peng reason 返回 `TERMINAL`，且不得把包含 phase 的
+  `WindowAttemptKey` 当作不同弃牌窗口
+
 ### Requirement: generation 防止在途需求竞态
 
 物理请求发出时 MUST 记录 `started_generation`。请求在途期间任何新 SSE、窗口
@@ -298,8 +319,13 @@ unavailable/null，不得从 `pre_read_ms` 拆猜。
 `logical_request_id`，每次物理 retry 在该逻辑请求内使用递增 `attempt_index`。
 每次物理 retry 都记录独立 throttle/HTTP 阶段，逻辑记录聚合 attempts、429、
 queue 和最终结果。新增 WindowId、WindowAttemptKey、logical_request_id、
-attempt_index、reason、generation、raw header 及阶段字段均为可选 JSON-safe
+attempt_index、reason、generation、identity_origin、raw header 及阶段字段均为可选 JSON-safe
 字段，旧日志缺失时读取为 unknown，不得破坏既有回放。
+
+每场 `end` 记录 MUST 优先使用调用方提供的 demand snapshot；调用方未提供时，
+记录器 MUST 回退到该房最后一次 req demand，并写入
+`demand_source=end|req_fallback|missing`。验收工具读取旧日志时也 MUST 优先
+使用 end demand，其次从 req demand 的累计 counter 恢复，并保留该来源标记。
 
 #### Scenario: 一个逻辑 state 经历 429 后重试
 
@@ -367,9 +393,10 @@ suppressed_duplicates
 coalescing_ratio = 1 - physical_state_requests / logical_demands
 ```
 
-`logical_demands` 统计每次提交给协调器的逻辑需求事件；一次 completion 因仍有
-PENDING reason 而产生 successor intent 时，`successor_requests` 与
-`logical_demands` 各增加一次，避免 successor 使 `coalescing_ratio` 变成负数；
+`logical_demands` 统计每次提交给协调器的逻辑需求事件；一次 completion 只有在仍有
+PENDING reason 且实际创建 successor physical request 时，`successor_requests` 与
+`logical_demands` 各增加一次，避免后续 reason-specific completion 清除需求后仍把
+不存在的 successor 计入 `coalescing_ratio`；
 `coalesced_demands` 统计被合并进已有 pending/in-flight demand 且改变语义状态的
 事件；`suppressed_duplicates` 统计相同或被更高 watermark 支配、未改变语义状态
 的重复事件；`physical_state_requests` 统计协调器新启动的物理 `/state` 请求，
@@ -377,6 +404,17 @@ retry 另计为 `physical_state_attempts`。当 `logical_demands=0` 时
 `coalescing_ratio` MUST 为 null。上述 demand 字段 MUST 按 gid/game 输出，不能再
 合并成单一的重复/合并指标。报告还 MUST 单独输出各层
 complete/partial/protocol_skipped 数量。
+
+`eligible_windows` MUST 使用有权威 `WindowId` 且存在非 pass 合法候选的窗口观察
+账本，按不含 phase 的 `WindowId` 去重；同一弃牌的 peng/chi 观察不得重复计数，
+`legacy_unresolved`/`UNKNOWN` 只作为诊断覆盖率，不得进入 authoritative 分母。
+
+验收工具 MUST 对 `res.gap` 提供原因分类：
+`snapshot_reanchor`、`sse_batch_catchup`、`transport_retry_related`、
+`event_discontinuity` 和 `log_truncation_or_unknown`，并按 gap 后到下一次
+authoritative snapshot 前是否已有 decision 输出 `decision_impact`。只有
+`event_discontinuity + decision_impact=true` 计入强风险；分类不改变原始 gap
+计数，也不得把 snapshot re-anchor 自动解释为窗口损失。
 
 #### Scenario: 三至五个房基线
 

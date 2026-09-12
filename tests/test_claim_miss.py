@@ -85,6 +85,15 @@ def test_undecided_server_timeout_records_null_chosen(tmp_path):
     assert miss[0]["client_decision"] is False
     assert miss[0]["legal_check"] == "not_decided"
     assert miss[0]["legal"] == [-2]  # 规则确实可吃
+    # 窗口关联字段:离线分类据此把 miss 关联到同窗 decision/action/echo
+    key = miss[0]["window_attempt_key"]
+    assert key["phase"] == "response_chi"
+    assert key["window_id"]["game_id"] == "gB"
+    assert key["window_id"]["round_id"] == 1
+    assert miss[0]["window_id"]["game_id"] == "gB"
+    assert miss[0]["logical_request_id"].startswith("window:gB:")
+    assert miss[0]["action_posted"] is False
+    assert "observed_at" in miss[0]
     assert bot.stats["my_timeout_chi"] == 1
     assert api.actions == []
 
@@ -108,6 +117,12 @@ def test_decided_pass_chi_timeout_writes_nothing(tmp_path):
 def test_decided_pass_peng_timeout_is_not_auto_played(tmp_path):
     """碰窗已决策为过 → 不写 claim_miss,也不计服务端代打。"""
     draw = _snapshot(HAND_PENG, phase="draw", turn=0)
+    # A discard event is only a wake-up.  The decision is made after the
+    # authoritative response_peng snapshot confirms the same window.
+    peng = _snapshot(
+        HAND_PENG, phase="response_peng", turn=1, responding=[0],
+        discards=[[], ["6b"], [], []], last_discard="6b",
+        window_deadline_ms=1001000)
     disc = _ev(5, "tile_discarded", 1, "6b", ts=1000.0)
     timeout = _ev(6, "timeout", 0, data={"kind": "response",
                                          "window": "peng"})
@@ -115,8 +130,9 @@ def test_decided_pass_peng_timeout_is_not_auto_played(tmp_path):
         tmp_path, HAND_PENG, lambda g, s: -1,
         [{"snapshot": draw, "seq": 4},
          {"events": [disc], "seq": 5},
+         {"snapshot": peng, "seq": 5},
          {"events": [timeout], "seq": 6}, _finished()],
-        [0, 4, 5, 6], gid="gD")
+        [0, 4, 0, 5, 6], gid="gD")
     assert [r for r in recs if r["type"] == "claim_miss"] == []
     assert bot.stats["auto_played"] == 0
     assert any(a[1].get("action") == "pass" for a in api.actions)

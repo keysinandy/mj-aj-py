@@ -137,6 +137,33 @@ class TestRecorderUnits(unittest.TestCase):
         self.assertEqual(day, __import__("time").strftime("%Y%m%d"))
         self.assertEqual(fname, "朱雀_gX.jsonl")
 
+    def test_sse_frame_records_payload_and_wake_result(self):
+        self.rec.meta("g", "b", "t")
+        self.rec.req("g", 7, 200, 1.0)
+        self.rec.sse_frame(
+            "g", seq=12, payload={"seq": 12},
+            raw_line='data: {"seq": 12}', connection_id=2,
+            previous_wake_seq=11, last_wake_seq=12, accepted=True,
+            wake_enqueued=True, received_monotonic=123.4)
+        self.rec.sse_frame(
+            "g", seq=12, payload={"seq": 12},
+            raw_line='data: {"seq": 12}', connection_id=2,
+            previous_wake_seq=12, last_wake_seq=12, accepted=True,
+            wake_enqueued=False, deduplicated=True,
+            received_monotonic=123.5)
+
+        recs = _read_all(self.rec, "g", "b")
+        frames = [r for r in recs if r["type"] == "sse_frame"]
+        self.assertEqual(len(frames), 2)
+        self.assertEqual(frames[0]["gid"], "g")
+        self.assertEqual(frames[0]["payload"], {"seq": 12})
+        self.assertTrue(frames[0]["wake_enqueued"])
+        self.assertFalse(frames[0]["deduplicated"])
+        self.assertFalse(frames[1]["wake_enqueued"])
+        self.assertTrue(frames[1]["deduplicated"])
+        # SSE watermark is diagnostic input, never the local event cursor.
+        self.assertEqual(self.rec.log_for("g").cursor, 7)
+
     def test_sequence_and_pairing(self):
         self.rec.meta("g", "b", "t")
         self.rec.req("g", 0, 200, 12.3, 1, {"n_events": 0})
@@ -206,6 +233,27 @@ class TestRecorderUnits(unittest.TestCase):
         self.assertEqual(recs[0]["attempt_index"], 1)
         self.assertEqual(recs[1]["logical_request_id"], "window:g:7")
         self.assertEqual(recs[1]["identity_status"], "authoritative")
+
+    def test_end_falls_back_to_latest_request_demand_snapshot(self):
+        demand = {"logical_demands": 3, "coalesced_demands": 1,
+                  "successor_requests": 0, "physical_state_requests": 2,
+                  "suppressed_duplicates": 1}
+        self.rec.req("g", 7, 200, 1.0, demand=demand)
+        self.rec.end("g", "inaccessible")
+
+        recs = _read_all(self.rec, "g", "bot")
+        assert recs[-1]["demand_source"] == "req_fallback"
+        assert recs[-1]["demand"] == demand
+
+    def test_explicit_end_demand_wins_over_request_fallback(self):
+        self.rec.req("g", 7, 200, 1.0,
+                     demand={"logical_demands": 1})
+        explicit = {"logical_demands": 2, "physical_state_requests": 2}
+        self.rec.end("g", "finished", demand=explicit)
+
+        recs = _read_all(self.rec, "g", "bot")
+        assert recs[-1]["demand_source"] == "end"
+        assert recs[-1]["demand"] == explicit
 
     def test_gamelog_thread_safe(self):
         with tempfile.TemporaryDirectory() as d:

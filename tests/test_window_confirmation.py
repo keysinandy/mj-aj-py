@@ -8,7 +8,7 @@ from mj.game import CHOW_LOW
 from mj.platform.api import Api, ApiError
 from mj.platform.throttle import ThrottleTicket
 from mj.platform.bot_client import BotClient
-from mj.platform.state_demand import WindowAttemptKey, WindowId
+from mj.platform.state_demand import PENDING, WindowAttemptKey, WindowId
 from mj.platform.proto import tidx
 import mj.platform.bot_client as module
 from test_window_recovery import (
@@ -22,6 +22,7 @@ def test_peng_snapshot_waits_for_authoritative_chi_and_does_not_replay():
     peng = _snapshot(phase="response_peng", turn=3, responding=[0],
                      discards=[[], [], [], ["6b"]], last_discard="6b",
                      window_deadline_ms=1001000)
+    peng["source_discard_seq"] = 42
     chi = dict(peng, phase="response_chi", window_deadline_ms=1002000)
     api = ScriptedServer([
         {"snapshot": peng, "seq": 5},
@@ -88,6 +89,7 @@ def test_legacy_window_identity_is_diagnostic_not_cross_reanchor_dedupe():
     mirror = bot._mirror_from_snapshot(snap)
     key = bot._window_key(mirror, "response_chi", snap=snap)
     assert key.window_id.identity_status == "legacy_unresolved"
+    assert key.window_id.identity_origin == "legacy_snapshot"
     assert bot._same_window_identity(key, key) is False
     assert bot._strong_window_key(key) is False
 
@@ -103,6 +105,49 @@ def test_tile_discard_event_seq_is_authoritative_source_identity():
 
     assert key.window_id.identity_status == "authoritative"
     assert key.window_id.source_discard_seq == 42
+    assert key.window_id.identity_origin == "tile_discard_event_seq"
+    assert key.window_id.first_seen_via == "event"
+
+
+def test_tile_discard_event_identity_reaches_immediate_action_key():
+    bot = BotClient(mock.Mock(), "b", lambda *_: -1, log=lambda _: None)
+    mirror = bot._mirror_from_snapshot(_snapshot(), gid="g1")
+    event = _ev(42, "tile_discarded", 1, "6b")
+    mirror.apply_event(event)
+    bot._set_source_identity(mirror, 42, "tile_discard_event_seq")
+
+    event_key = bot._window_key(mirror, "response_peng", ev=event)
+    action_key = bot._window_key(mirror, "response_peng")
+
+    assert event_key == action_key
+    assert action_key.window_id.source_discard_seq == 42
+
+
+def test_window_identity_origin_distinguishes_explicit_and_carried_sources():
+    bot = BotClient(mock.Mock(), "b", lambda *_: -1, log=lambda _: None)
+    snap = _snapshot(phase="response_chi", turn=3, responding=[0],
+                     discards=[[], [], [], ["6b"]], last_discard="6b")
+    mirror = bot._mirror_from_snapshot(snap, gid="g1")
+
+    explicit = bot._window_key(
+        mirror, "response_chi", ev={"source_discard_seq": 42})
+    assert explicit.window_id.identity_origin == "explicit_source_field"
+
+    mirror._source_discard_seq = 43
+    mirror._source_discard_origin = "carried_event_seq"
+    carried = bot._window_key(mirror, "response_chi")
+    assert carried.window_id.identity_origin == "carried_event_seq"
+    assert carried.window_id.first_seen_via == "reanchor"
+
+
+def test_structural_chi_proof_uses_the_selected_suit_base():
+    bot = BotClient(mock.Mock(), "b", lambda *_: -1, log=lambda _: None)
+    hand = ["7b", "8b", "1w", "1w", "1w", "2t", "2t", "2t",
+            "3t", "3t", "3t", "东", "南"]
+    mirror = bot._mirror_from_snapshot(
+        _snapshot(hand, discards=[[], [], [], ["6b"]], last_discard="6b"))
+
+    assert bot._structurally_no_nonpass_response(mirror, 3, tidx("6b")) is False
 
 
 def test_chi_confirmation_does_not_satisfy_on_phase_only():
@@ -132,6 +177,146 @@ def test_chi_confirmation_does_not_satisfy_on_phase_only():
     with mock.patch.object(module.time, "time", return_value=1000.0):
         assert bot._resolve_window_confirm(
             "g1", mirror, not_responding, confirm, seq=42) == "not_responding"
+
+
+def test_precise_deadline_is_not_rejected_by_second_resolution_event_ts():
+    bot = BotClient(mock.Mock(), "b", lambda *_: -1, log=lambda _: None)
+    snap = _snapshot(phase="response_chi", turn=3, responding=[0],
+                     discards=[[], [], [], ["6b"]], last_discard="6b",
+                     window_deadline_ms=1002500)
+    mirror = bot._mirror_from_snapshot(snap, gid="g1")
+    mirror._source_discard_seq = 42
+    key = WindowAttemptKey(
+        WindowId("g1", 1, 3, 42, tidx("6b")), "response_chi")
+    confirm = module._WindowConfirm(
+        phase="response_chi", pending=mirror.pending, round_no=1,
+        legal=[CHOW_LOW], source_seq=42, source_ts=1000.0,
+        window_key=key)
+
+    with mock.patch.object(module.time, "time", return_value=1000.0):
+        assert bot._resolve_window_confirm(
+            "g1", mirror, snap, confirm, seq=42) == "confirmed"
+    assert bot.stats["window_confirm_miss"] == 0
+
+
+def test_completed_window_confirmation_cannot_turn_into_later_identity_miss():
+    bot = BotClient(mock.Mock(), "b", lambda *_: -1, log=lambda _: None)
+    snap = _snapshot(phase="response_chi", turn=3, responding=[0],
+                     discards=[[], [], [], ["6b"]], last_discard="6b",
+                     window_deadline_ms=1002000)
+    mirror = bot._mirror_from_snapshot(snap, gid="g1")
+    mirror._source_discard_seq = 42
+    key = WindowAttemptKey(
+        WindowId("g1", 1, 3, 42, tidx("6b")), "response_chi")
+    mirror._attempted_windows = {key}
+    confirm = module._WindowConfirm(
+        phase="response_chi", pending=mirror.pending, round_no=1,
+        legal=[CHOW_LOW], source_seq=42, window_key=key)
+    later = dict(snap, phase="draw", responding_seats=[],
+                 window_deadline_ms=None, turn=1)
+
+    with mock.patch.object(module.time, "time", return_value=1000.0):
+        assert bot._resolve_window_confirm(
+            "g1", mirror, later, confirm, seq=43) == "confirmed"
+    assert bot.stats["window_confirm_miss"] == 0
+
+
+def test_window_confirmation_distinguishes_unknown_identity_from_mismatch():
+    bot = BotClient(mock.Mock(), "b", lambda *_: -1, log=lambda _: None)
+    snap = _snapshot(phase="response_chi", turn=3, responding=[0],
+                     discards=[[], [], [], ["6b"]], last_discard="6b",
+                     window_deadline_ms=1002000)
+    mirror = bot._mirror_from_snapshot(snap, gid="g1")
+    expected = WindowId("g1", 1, 3, 42, tidx("6b"))
+    confirm = module._WindowConfirm(
+        phase="response_chi", pending=mirror.pending, round_no=1,
+        legal=[CHOW_LOW], source_seq=42,
+        window_key=WindowAttemptKey(expected, "response_chi"))
+
+    with mock.patch.object(module.time, "time", return_value=1000.0):
+        outcome = bot._resolve_window_confirm(
+            "g1", mirror, snap, confirm, seq=42)
+
+    assert outcome == "identity_unconfirmed"
+    assert bot.stats["window_confirm_miss"] == 0
+
+    legacy_key = bot._window_key(mirror, "response_chi", snap=snap)
+    legacy_confirm = module._WindowConfirm(
+        phase="response_chi", pending=mirror.pending, round_no=1,
+        legal=[CHOW_LOW], window_key=legacy_key)
+    with mock.patch.object(module.time, "time", return_value=1000.0):
+        assert bot._resolve_window_confirm(
+            "g1", mirror, snap, legacy_confirm, seq=42) \
+            == "identity_unconfirmed"
+
+def test_chi_confirmation_keeps_old_peng_phase_pending_until_chi_opens():
+    clock = FakeClock(monotonic=100.0, epoch=1000.0)
+    bot = BotClient(mock.Mock(), "b", lambda *_: -1, log=lambda _: None)
+    peng = _snapshot(phase="response_peng", turn=3, responding=[0],
+                     discards=[[], [], [], ["6b"]], last_discard="6b",
+                     window_deadline_ms=1001000)
+    mirror = bot._mirror_from_snapshot(peng, gid="g1")
+    mirror._source_discard_seq = 42
+    mirror._source_discard_origin = "carried_event_seq"
+    window_id = WindowId("g1", 1, 3, 42, tidx("6b"))
+    confirm = module._WindowConfirm(
+        phase="response_chi", pending=mirror.pending, round_no=1,
+        legal=[CHOW_LOW], source_seq=42, schedule_deadline=101.5,
+        window_key=WindowAttemptKey(window_id, "response_chi"))
+
+    with mock.patch.object(module, "time", clock):
+        assert bot._resolve_window_confirm(
+            "g1", mirror, peng, confirm, seq=42) == "phase_pending"
+    assert bot._demand_window_status("phase_pending") == PENDING
+    assert bot.stats["window_confirm_miss"] == 0
+
+    chi = dict(peng, phase="response_chi", window_deadline_ms=1002000)
+    with mock.patch.object(module, "time", clock):
+        assert bot._resolve_window_confirm(
+            "g1", mirror, chi, confirm, seq=42) == "confirmed"
+
+    peng_confirm = module._WindowConfirm(
+        phase="response_peng", pending=mirror.pending, round_no=1,
+        legal=[CHOW_LOW], source_seq=42,
+        window_key=WindowAttemptKey(window_id, "response_peng"))
+    with mock.patch.object(module, "time", clock):
+        assert bot._resolve_window_confirm(
+            "g1", mirror, chi, peng_confirm, seq=42) == "closed"
+
+
+def test_missing_deadline_confirmation_has_bounded_pending_retries():
+    bot = BotClient(mock.Mock(), "b", lambda *_: -1, log=lambda _: None)
+    snap = _snapshot(phase="response_chi", turn=3, responding=[0],
+                     discards=[[], [], [], ["6b"]], last_discard="6b")
+    mirror = bot._mirror_from_snapshot(snap, gid="g1")
+    mirror._source_discard_seq = 42
+    key = WindowAttemptKey(
+        WindowId("g1", 1, 3, 42, tidx("6b")), "response_chi")
+    confirm = module._WindowConfirm(
+        phase="response_chi", pending=mirror.pending, round_no=1,
+        legal=[CHOW_LOW], source_seq=42, window_key=key)
+
+    outcomes = [bot._resolve_window_confirm(
+        "g1", mirror, snap, confirm, seq=42) for _ in range(9)]
+
+    assert outcomes[-1] == "expired"
+    assert bot.stats["window_confirm_miss"] == 0
+
+
+def test_action_ids_survive_mirror_reanchor():
+    api = mock.Mock()
+    recorder = mock.Mock()
+    bot = BotClient(api, "b", lambda *_: -1, recorder=recorder,
+                    log=lambda _: None)
+    first = bot._mirror_from_snapshot(_snapshot(), gid="g1")
+    second = bot._mirror_from_snapshot(_snapshot(), gid="g1")
+
+    bot._submit(first, "g1", 0, "draw")
+    bot._submit(second, "g1", 1, "draw")
+
+    ids = [call.kwargs["logical_request_id"]
+           for call in recorder.action.call_args_list]
+    assert ids == ["action:g1:1", "action:g1:2"]
 
 
 def test_snapshot_game_id_is_injected_from_worker_gid():

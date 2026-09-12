@@ -265,8 +265,8 @@ class ActionRecoveryTests(unittest.TestCase):
 
 
 class SnapshotWindowRecoveryTests(unittest.TestCase):
-    def test_peng_to_chi_snapshot_keeps_wait_and_posts_once_after_t_plus_one(self):
-        """碰窗后 gap 快照显示吃窗时，保留原等待态并越过碰窗再提交一次。"""
+    def test_gap_snapshot_without_source_identity_does_not_authorize_old_chi(self):
+        """gap 后 snapshot 没有 source identity 时不能沿用旧弃牌授权吃。"""
         clock = FakeClock()
         initial = _snapshot(turn=3)
         discard = _ev(1, "tile_discarded", 3, "6b", clock=clock)
@@ -287,12 +287,9 @@ class SnapshotWindowRecoveryTests(unittest.TestCase):
         with mock.patch.object(bot_client_module, "time", clock):
             bot.play_game("g1")
 
-        self.assertEqual(len(api.actions), 1)
-        self.assertEqual(api.actions[0][1],
-                         {"action": "chi", "tile": "6b",
-                          "tiles": ["7b", "8b"]})
-        self.assertGreaterEqual(api.actions[0][2], 101.0)
-        self.assertLess(api.actions[0][2], 102.0)
+        self.assertEqual(api.actions, [])
+        self.assertEqual(bot.stats["window_confirm_miss"], 0)
+        self.assertEqual(bot.stats["client_state_abandons"], 0)
 
     def test_gap_new_round_clears_old_chi_pending(self):
         """跨局 gap 快照不应让旧局吃窗继续调用吃决策。"""
