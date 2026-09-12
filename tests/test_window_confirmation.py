@@ -347,6 +347,23 @@ def test_urgent_downgrade_uses_card_structure_not_stale_local_phase():
     assert bot._structurally_no_nonpass_response(mirror, 1, 13) is False
 
 
+def test_snapshot_only_pass_does_not_create_authorized_window():
+    """A pass-only response must not become a false decision-stage loss."""
+    recorder = mock.Mock()
+    bot = BotClient(mock.Mock(), "b", lambda *_: -1,
+                    recorder=recorder, log=lambda _: None)
+    snap = _snapshot(
+        phase="response_peng", turn=1, responding=[0],
+        discards=[[], ["9b"], [], []], last_discard="9b",
+        window_deadline_ms=1001000)
+    mirror = bot._mirror_from_snapshot(snap, gid="g1")
+
+    bot._act_on_snapshot(mirror, snap, "g1", snapshot_seq=10)
+
+    assert recorder.window_authorization.called is False
+    assert recorder.window_lifecycle.called is False
+
+
 def test_chi_409_recovers_in_same_loop_without_reposting():
     clock = FakeClock()
     chi = _snapshot(phase="response_chi", turn=3, responding=[0],

@@ -729,11 +729,20 @@ class BotClient:
             except Exception:
                 pass
 
-    def _set_window_authorization(self, mirror, window_key, snap, seq=None):
+    def _set_window_authorization(self, mirror, window_key, snap, seq=None,
+                                  legal=None):
         """Attach and persist the exact authorization snapshot for an attempt."""
         if mirror is None or not isinstance(window_key, WindowAttemptKey):
             return None
         exact = self._snapshot_deadline(snap)
+        existing = (getattr(mirror, "_window_authorizations", None) or {}
+                    ).get(window_key)
+        if (existing is not None
+                and existing.get("authorization_snapshot_seq") == seq
+                and existing.get("authorization_phase") == snap.get("phase")):
+            if legal and not existing.get("legal"):
+                existing["legal"] = list(legal)
+            return existing
         context = {
             "window_id": window_key.window_id.as_json(),
             "window_attempt_key": window_key.as_json(),
@@ -748,6 +757,7 @@ class BotClient:
             "identity_status": window_key.window_id.identity_status,
             "identity_origin": window_key.window_id.identity_origin,
             "first_seen_via": window_key.window_id.first_seen_via,
+            "legal": (list(legal) if legal is not None else None),
         }
         contexts = getattr(mirror, "_window_authorizations", None)
         if contexts is None:
@@ -1181,7 +1191,8 @@ class BotClient:
             authorization_key = self._window_key(
                 mirror, confirm.phase, snap=snap)
             self._set_window_authorization(
-                mirror, authorization_key, snap, seq=seq)
+                mirror, authorization_key, snap, seq=seq,
+                legal=current_legal)
             self._record_window_confirm(
                 gid, confirm, "open", reason="authoritative_open",
                 snap=snap, seq=seq, legal=current_legal)
@@ -3095,8 +3106,6 @@ class BotClient:
                 # 快照缺少截止时不能把未完成的确认变成无界 POST。
                 return None
             key = self._window_key(mirror, "response_peng", snap=snap)
-            self._set_window_authorization(
-                mirror, key, snap, seq=snapshot_seq)
             if self._window_was_attempted(mirror, key, attempted_keys):
                 # 服务端 responding_seats 不保证只包含尚未响应者。
                 # 重复快照不得再决策 peng；后续 chi 仍须独立权威确认。
@@ -3105,7 +3114,8 @@ class BotClient:
                     passed_explicitly=(self._strong_window_key(key)
                                       and key in responded_keys),
                     responded_keys=responded_keys, attempted_keys=attempted_keys)
-            return self._act_window(mirror, snap, gid)
+            return self._act_window(mirror, snap, gid,
+                                    snapshot_seq=snapshot_seq)
         if phase == "response_chi" \
                 and seat in (snap.get("responding_seats") or []):
             if not self._confirm_allows_snapshot_phase(
@@ -3121,12 +3131,13 @@ class BotClient:
                                 else (mirror.round_no, mirror.pending)))
                 return None
             key = self._window_key(mirror, "response_chi", snap=snap)
-            self._set_window_authorization(
-                mirror, key, snap, seq=snapshot_seq)
             chi = self._make_chi_pending(
                 mirror, snap=snap, responded_keys=responded_keys,
                 attempted_keys=attempted_keys, phase_hint="response_chi")
             if chi is not None:
+                self._set_window_authorization(
+                    mirror, key, snap, seq=snapshot_seq,
+                    legal=chi.get("legal"))
                 self._act_chi(mirror, chi, gid)
             return None
         return None
@@ -3164,7 +3175,7 @@ class BotClient:
             return
         self._submit(mirror, gid, act, "draw")
 
-    def _act_window(self, mirror, ev, gid, phase=None):
+    def _act_window(self, mirror, ev, gid, phase=None, snapshot_seq=None):
         """他家弃牌的碰窗(含明杠);返回吃窗等待态(仅出牌者下家)。
 
         碰窗立即决策(有碰/明杠选项时);吃窗登记起始时刻与碰窗响应
@@ -3205,6 +3216,10 @@ class BotClient:
                 and self._snapshot_deadline(ev) is not None
                 and mirror.me in (ev.get("responding_seats") or [])
                 and self._strong_window_key(confirm_key))
+            if snapshot_authoritative:
+                self._set_window_authorization(
+                    mirror, confirm_key, ev, seq=snapshot_seq,
+                    legal=claims)
             # A catch-play discard can arrive before the incremental mirror
             # knows which seat owns the freeze.  Do not infer that every
             # locally legal peng is currently actionable: ask for one

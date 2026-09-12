@@ -35,7 +35,7 @@ The client SHALL use the authoritative source discard identity for WindowId and 
 
 ### Requirement: Authorization requires complete authoritative evidence
 
-An attempt SHALL enter `AUTHORIZED` only when WindowId is authoritative and unchanged, phase matches, the bot seat is in `responding_seats`, a phase-specific exact deadline exists and is still valid, and the authoritative legal set is non-empty. A phase mismatch, missing identity, missing deadline or expired deadline MUST remain distinguishable.
+An attempt SHALL enter `AUTHORIZED` only when WindowId is authoritative and unchanged, phase matches, the bot seat is in `responding_seats`, a phase-specific exact deadline exists and is still valid, and the authoritative legal set contains at least one non-PASS action. A pass-only response is not an actionable eligible window and MUST NOT be reported as an authorized window with a missing decision. A phase mismatch, missing identity, missing deadline or expired deadline MUST remain distinguishable.
 
 #### Scenario: Valid authoritative open
 
