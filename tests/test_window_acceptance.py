@@ -1,8 +1,198 @@
 import json
 
 from mj.platform.bot_client import BotClient
-from scripts.window_acceptance import summarize
+from scripts.window_acceptance import (_confirm_diagnostic, _transport_attribution,
+                                       summarize)
 from test_window_recovery import _snapshot
+
+
+def _diagnostic_window(phase="response_peng"):
+    window_id = {
+        "game_id": "g", "round_id": 1, "discard_owner": 2,
+        "source_discard_seq": 10, "tile": 5,
+        "identity_status": "authoritative",
+    }
+    return window_id, {
+        "window_id": window_id,
+        "phase": phase,
+        "loss_stage": "CONFIRM",
+        "window_attempt_key": {"window_id": window_id, "phase": phase},
+        "exact_deadline_at": 100.0,
+    }
+
+
+def _diagnostic_source(seq=10, timeout=False):
+    events = [{"seq": seq, "type": "tile_discarded", "seat": 2,
+               "tile": "6w"}]
+    if timeout:
+        events.append({"seq": seq + 1, "type": "timeout", "seat": 0,
+                       "tile": ""})
+    return {"type": "events", "ts": 90.0, "seq_to": events[-1]["seq"],
+            "events": events}
+
+
+def _diagnostic_terminal(seq=11):
+    return {"type": "events", "ts": 91.0, "seq_to": seq,
+            "events": [{"seq": seq, "type": "timeout", "seat": 0,
+                        "tile": ""}]}
+
+
+def _diagnostic_request(window_id, phase="response_peng", *, transport=None,
+                        response_seq=11):
+    return {
+        "type": "req", "ts": 90.5, "request_kind": "WINDOW_PENG",
+        "requested_seq": 0, "logical_request_id": "state-window",
+        "demand": {"reasons": {"WINDOW_CONFIRM": {
+            "status": "PENDING", "window_id": window_id,
+            "phase": phase, "deadline": 100.0}}},
+        "transport": transport or {"state_attempts": [{
+            "status": 200, "attempt_index": 1,
+            "deadline_left_at_send_ms": 50,
+            "deadline_left_at_response_ms": 40,
+            "throttle": {"queue_wait_ms": 1,
+                         "deadline_missed": False},
+            "timing": {"total_ms": 5}}]},
+        "res": {"snapshot": True, "seq": response_seq},
+    }
+
+
+def _diagnostic_confirm(window_id, phase="response_peng", *, snapshot_phase,
+                        outcome="closed", response_at=90.0,
+                        responding=(0,), legal=(5,)):
+    return {
+        "type": "window_confirm", "phase": phase, "outcome": outcome,
+        "reason": "phase_changed", "window_id": window_id,
+        "window_attempt_key": {"window_id": window_id, "phase": phase},
+        "snapshot_phase": snapshot_phase,
+        "responding_seats": list(responding), "legal": list(legal),
+        "confirm_response_at": response_at,
+        "exact_deadline_at": 100.0,
+    }
+
+
+def test_confirmation_diagnostic_categories_are_mutually_exclusive():
+    window_id, resolution = _diagnostic_window()
+
+    same_batch = [
+        _diagnostic_source(timeout=True),
+        {"type": "claim_miss", "phase": "response_peng",
+         "window_id": window_id,
+         "window_attempt_key": resolution["window_attempt_key"],
+         "reason": "server_timeout_peng"},
+    ]
+    assert _confirm_diagnostic(same_batch, resolution, my_seat=0)[
+        "category"] == "PROTOCOL_PHASE_UNOBSERVABLE"
+
+    c1 = [_diagnostic_source(), _diagnostic_terminal(),
+          {"type": "claim_miss", "phase": "response_peng",
+           "window_id": window_id,
+           "window_attempt_key": resolution["window_attempt_key"],
+           "reason": "server_timeout_peng"}]
+    assert _confirm_diagnostic(c1, resolution, my_seat=0)["category"] == \
+        "C1_CONFIRM_NOT_CREATED"
+
+    c2 = [_diagnostic_source(),
+          {"type": "window_lifecycle", "phase": "response_peng",
+           "state": "CONFIRM_PENDING", "outcome": "PENDING",
+           "window_id": window_id,
+           "window_attempt_key": resolution["window_attempt_key"]},
+          _diagnostic_terminal(),
+          {"type": "claim_miss", "phase": "response_peng",
+           "window_id": window_id,
+           "window_attempt_key": resolution["window_attempt_key"],
+           "reason": "server_timeout_peng"}]
+    assert _confirm_diagnostic(c2, resolution, my_seat=0)["category"] == \
+        "C2_CONFIRM_NOT_DISPATCHED"
+
+    queue_transport = {"state_attempts": [{
+        "status": 200, "deadline_left_at_send_ms": -1,
+        "deadline_left_at_response_ms": 10,
+        "throttle": {"queue_wait_ms": 100, "deadline_missed": True},
+        "timing": {"total_ms": 5}}]}
+    c3 = [_diagnostic_source(),
+          _diagnostic_request(window_id, transport=queue_transport),
+          _diagnostic_confirm(window_id, snapshot_phase="draw"),
+          _diagnostic_terminal()]
+    assert _confirm_diagnostic(c3, resolution, my_seat=0)["category"] == \
+        "C3_CONFIRM_QUEUE_LATE"
+
+    retry_transport = {"retry_429": 1, "backoff_ms": 500,
+                       "state_attempts": [
+                           {"attempt_index": 1, "status": 429,
+                            "timing": {"total_ms": 5}},
+                           {"attempt_index": 2, "status": 200,
+                            "timing": {"total_ms": 5}}]}
+    c4 = [_diagnostic_source(),
+          _diagnostic_request(window_id, transport=retry_transport),
+          _diagnostic_confirm(window_id, snapshot_phase="draw",
+                              response_at=110.0),
+          _diagnostic_terminal()]
+    assert _confirm_diagnostic(c4, resolution, my_seat=0)["category"] == \
+        "C4_CONFIRM_HTTP_LATE"
+    c4_diagnostic = _confirm_diagnostic(c4, resolution, my_seat=0)
+    assert c4_diagnostic["reason"] == \
+        "response_retry_or_backoff_after_window_boundary"
+    request_detail = c4_diagnostic["transport"]["request_details"][0]
+    assert request_detail["logical_request_id"] == "state-window"
+    assert request_detail["request_kind"] == "WINDOW_PENG"
+    assert request_detail["response_seq"] == 11
+    assert request_detail["has_snapshot"] is True
+    assert [attempt["status"] for attempt in request_detail["attempts"]] == [
+        429, 200]
+    assert request_detail["attempts"][0]["http_ms"] == 5
+
+    retry_without_boundary = [_diagnostic_source(),
+                               _diagnostic_request(
+                                   window_id, transport=retry_transport),
+                               _diagnostic_confirm(window_id,
+                                                   snapshot_phase="draw",
+                                                   response_at=90.0),
+                               _diagnostic_terminal()]
+    unresolved = _confirm_diagnostic(retry_without_boundary, resolution,
+                                     my_seat=0)
+    assert unresolved["category"] == "UNRESOLVED"
+    assert "response_after_deadline_boundary" in unresolved[
+        "missing_evidence"]
+
+    c5 = [_diagnostic_source(), _diagnostic_request(window_id),
+          _diagnostic_confirm(window_id, snapshot_phase="response_peng",
+                              response_at=90.0), _diagnostic_terminal()]
+    assert _confirm_diagnostic(c5, resolution, my_seat=0)["category"] == \
+        "C5_TIMELY_RESPONSE_NOT_AUTHORIZED"
+
+    http_late = [_diagnostic_source(), _diagnostic_request(window_id),
+                 _diagnostic_confirm(window_id, snapshot_phase="draw",
+                                     response_at=110.0),
+                 _diagnostic_terminal()]
+    http_late_diagnostic = _confirm_diagnostic(http_late, resolution,
+                                               my_seat=0)
+    assert http_late_diagnostic["category"] == "C4_CONFIRM_HTTP_LATE"
+    assert http_late_diagnostic["reason"] == \
+        "http_response_after_window_boundary"
+    assert http_late_diagnostic["transport"]["send_late"] is False
+
+    external = [{
+        "gid": "g",
+        "logical_request_id": "state-window",
+        "attempt_index": 1,
+        "source": "gateway",
+        "clock_domain": "epoch",
+        "clock_sync": "synchronized",
+        "response_body_finished_epoch": 101.0,
+    }]
+    server_attribution = _transport_attribution(c4_diagnostic, external)
+    assert server_attribution["primary_class"] == "SERVER_GATEWAY_LATE"
+    assert server_attribution["correlation_quality"] == "partial"
+    assert server_attribution["window_miss_proven"] is True
+
+    duplicate_attribution = _transport_attribution(
+        c4_diagnostic, external + [dict(external[0])])
+    assert duplicate_attribution["correlation_quality"] == "ambiguous"
+
+    retry_attribution = _transport_attribution(unresolved, [])
+    assert retry_attribution["primary_class"] == \
+        "RETRY_BACKOFF_CONTRIBUTED"
+    assert retry_attribution["window_miss_proven"] is False
 
 
 def test_report_distinguishes_recovered_boundary_from_final_miss(tmp_path):
@@ -39,6 +229,61 @@ def test_report_distinguishes_recovered_boundary_from_final_miss(tmp_path):
     assert report["games"][0]["replay_illegal"] == 0
     assert report["games"][0]["replay_clean"] is False
     assert "UNKNOWN_LEGACY" in report["state_by_kind"]
+
+
+def test_report_accepts_optional_external_transport_jsonl(tmp_path):
+    room = tmp_path / "room.jsonl"
+    room.write_text(json.dumps({"type": "meta", "gid": "g"}) + "\n"
+                    + json.dumps({"type": "end", "reason": "finished",
+                                  "demand": {"reason_mask": 0,
+                                              "in_flight": False}}) + "\n")
+    external = tmp_path / "gateway.jsonl"
+    external.write_text(json.dumps({
+        "gid": "g", "logical_request_id": "state-1",
+        "attempt_index": 1, "source": "gateway",
+        "clock_domain": "epoch", "clock_sync": "unknown",
+        "response_body_finished_epoch": 100.0,
+    }) + "\n")
+
+    report = summarize([room], transport_logs=[external])
+
+    assert report["transport_diagnostics"]["external_timing"] == {
+        "provided": True, "rows": 1, "invalid_rows": 0}
+
+
+def test_transport_external_clock_and_trace_gates_are_conservative():
+    window_id, resolution = _diagnostic_window()
+    gateway_transport = {
+        "retry_gateway": 1,
+        "state_attempts": [
+            {"attempt_index": 1, "status": 502,
+             "timing": {"total_ms": 10}},
+            {"attempt_index": 2, "status": 200,
+             "timing": {"total_ms": 20}},
+        ],
+    }
+    records = [_diagnostic_source(),
+               _diagnostic_request(window_id, transport=gateway_transport),
+               _diagnostic_confirm(window_id, snapshot_phase="draw",
+                                   response_at=110.0),
+               _diagnostic_terminal()]
+    diagnostic = _confirm_diagnostic(records, resolution, my_seat=0)
+    assert diagnostic["transport"]["statuses"] == {"502": 1, "200": 1}
+
+    unsynchronized = _transport_attribution(diagnostic, [{
+        "logical_request_id": "state-window", "attempt_index": 1,
+        "source": "gateway", "clock_domain": "epoch",
+        "clock_sync": "unsynchronized",
+        "response_body_finished_epoch": 101.0,
+    }])
+    assert unsynchronized["primary_class"] == "HTTP_RESPONSE_LATE"
+    assert unsynchronized["correlation_quality"] == "partial"
+
+    missing_trace = _transport_attribution(diagnostic, [{
+        "server_trace_id": "trace-only", "source": "gateway",
+        "clock_domain": "epoch", "clock_sync": "synchronized",
+    }])
+    assert missing_trace["correlation_quality"] == "missing"
 
 
 def test_report_keeps_physical_429_and_window_request_group(tmp_path):
@@ -443,6 +688,9 @@ def test_canonical_resolution_success_beats_late_claim_miss(tmp_path):
     assert resolution["loss_stage"] == "NONE"
     assert report["games"][0]["false_claim_miss_count"] == 1
     assert report["window_attribution"]["canonical_client_loss_count"] == 0
+    assert report["confirmation_diagnostics"]["counts"][
+        "C1_CONFIRM_NOT_CREATED"] == 0
+    assert report["acceptance_scope"]["eligible_for_final_denominator"] is False
 
 
 def test_canonical_resolution_distinguishes_decision_loss(tmp_path):

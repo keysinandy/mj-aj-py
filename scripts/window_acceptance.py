@@ -376,6 +376,479 @@ def _row_time(row, *names):
         return None
 
 
+CONFIRM_DIAGNOSTIC_CATEGORIES = (
+    "C1_CONFIRM_NOT_CREATED",
+    "C2_CONFIRM_NOT_DISPATCHED",
+    "C3_CONFIRM_QUEUE_LATE",
+    "C4_CONFIRM_HTTP_LATE",
+    "C5_TIMELY_RESPONSE_NOT_AUTHORIZED",
+    "PROTOCOL_PHASE_UNOBSERVABLE",
+    "UNRESOLVED",
+)
+
+
+def _window_key_from_id(window_id, phase=None):
+    """Return an exact authoritative WindowAttemptKey tuple, if available."""
+    if not isinstance(window_id, dict):
+        return None
+    if window_id.get("identity_status") not in (None, "authoritative"):
+        return None
+    if window_id.get("source_discard_seq") is None:
+        return None
+    return tuple(window_id.get(field) for field in (
+        "game_id", "round_id", "discard_owner", "source_discard_seq",
+        "tile")) + (phase,)
+
+
+def _request_window_key(row):
+    """Extract a request's explicit WINDOW_CONFIRM key without heuristics."""
+    demand = row.get("demand") or {}
+    reasons = demand.get("reasons") or {}
+    reason = reasons.get("WINDOW_CONFIRM")
+    if isinstance(reason, dict):
+        key = _window_key_from_id(reason.get("window_id"),
+                                  reason.get("phase"))
+        if key is not None:
+            return key
+    attempt = row.get("window_attempt_key")
+    if isinstance(attempt, dict):
+        key = _window_key_from_id(attempt.get("window_id"),
+                                  attempt.get("phase"))
+        if key is not None:
+            return key
+    return _window_key_from_id(row.get("window_id"), row.get("phase"))
+
+
+def _confirm_terminal_row(row):
+    """Whether a row is terminal evidence for a confirmation attempt."""
+    kind = row.get("type")
+    if kind == "window_terminal":
+        return True
+    if kind == "window_lifecycle":
+        return row.get("stage") == "terminal" or row.get("state") in (
+            "TERMINAL", "PREEMPTED", "POST_OK", "POST_REJECTED",
+            "POST_UNCERTAIN")
+    if kind == "window_confirm":
+        return row.get("outcome") in ("closed", "stale", "expired", "miss")
+    if kind == "claim_miss":
+        reason = str(row.get("reason") or "")
+        return reason.startswith(("window_confirm_", "server_timeout_"))
+    return False
+
+
+def _event_tile_int(event):
+    value = event.get("tile")
+    if isinstance(value, int):
+        return value
+    return _protocol_tile_int(value)
+
+
+def _confirm_source_evidence(records, key, my_seat):
+    """Find exact source-event/SSE boundaries for one authoritative window."""
+    game_id, _round_id, owner, source_seq, tile, _phase = key
+    source_events = []
+    source_batches = []
+    terminal_events = []
+    for index, row in enumerate(records):
+        if row.get("type") != "events":
+            continue
+        events = row.get("events") or []
+        has_source = any(
+            event.get("type") == "tile_discarded"
+            and event.get("seq") == source_seq
+            and event.get("seat") == owner
+            and _event_tile_int(event) == tile
+            for event in events)
+        if has_source:
+            source_events.append(index)
+            source_batches.append({
+                "record_index": index,
+                "observed_at": row.get("ts"),
+                "seq_to": row.get("seq_to"),
+            })
+        for event in events:
+            event_seq = event.get("seq")
+            if event_seq is None or source_seq is None:
+                continue
+            if event_seq <= source_seq:
+                continue
+            is_terminal = (
+                (event.get("type") == "timeout"
+                 and (my_seat is None or event.get("seat") == my_seat))
+                or event.get("type") in ("tile_discarded", "chi", "peng",
+                                            "gang"))
+            if is_terminal:
+                terminal_events.append({
+                    "record_index": index,
+                    "seq": event_seq,
+                    "type": event.get("type"),
+                    "seat": event.get("seat"),
+                })
+    sse_frames = []
+    for index, row in enumerate(records):
+        if row.get("type") != "sse_frame":
+            continue
+        if row.get("gid") not in (None, game_id):
+            continue
+        if row.get("seq") == source_seq:
+            sse_frames.append({
+                "record_index": index,
+                "seq": row.get("seq"),
+                "received_at": row.get("ts"),
+                "accepted": row.get("accepted"),
+                "wake_enqueued": row.get("wake_enqueued"),
+                "deduplicated": row.get("deduplicated"),
+            })
+    return {
+        "source_event_indexes": source_events,
+        "source_batches": source_batches,
+        "terminal_events": terminal_events,
+        # Only the first post-source terminal boundary is a lifecycle join.
+        # Later timeout/discard events belong to subsequent windows and must
+        # not inflate this window's evidence list.
+        "terminal_event_indexes": ([min(item["record_index"]
+                                        for item in terminal_events)]
+                                   if terminal_events else []),
+        "sse_frames": sse_frames,
+        "sse_frame_indexes": [item["record_index"] for item in sse_frames],
+    }
+
+
+def _confirm_transport_evidence(request_rows, gid=None):
+    """Summarize only physical WINDOW_CONFIRM transport boundaries."""
+    queue_values = []
+    http_values = []
+    backoff_values = []
+    deadline_send_values = []
+    deadline_response_values = []
+    statuses = Counter()
+    retry_429 = retry_gateway = retry_network = 0
+    queue_late = False
+    send_late = False
+    response_late = False
+    client_read_late = False
+    retry_or_backoff = False
+    attempt_indexes = []
+    request_details = []
+    for index, row in request_rows:
+        transport = row.get("transport") or {}
+        retry_429 += int(transport.get("retry_429") or 0)
+        retry_gateway += int(transport.get("retry_gateway") or 0)
+        retry_network += int(transport.get("retry_network") or 0)
+        try:
+            backoff = float(transport.get("backoff_ms"))
+        except (TypeError, ValueError):
+            backoff = None
+        if backoff is not None:
+            backoff_values.append(backoff)
+            retry_or_backoff = retry_or_backoff or backoff > 0
+        attempts = transport.get("state_attempts") or []
+        if not attempts:
+            attempts = [{}]
+        request_attempts = []
+        for attempt in attempts:
+            throttle = attempt.get("throttle") or {}
+            queue = throttle.get("queue_wait_ms", attempt.get(
+                "queue_wait_ms"))
+            send_left = attempt.get("deadline_left_at_send_ms")
+            if send_left is None:
+                send_left = throttle.get("deadline_left_ms")
+            response_left = attempt.get("deadline_left_at_response_ms")
+            if response_left is None:
+                response_left = attempt.get("deadline_left_at_response")
+            headers_left = attempt.get("deadline_left_at_headers_ms")
+            timing = attempt.get("timing") or {}
+            http_ms = timing.get("total_ms", attempt.get("latency_ms"))
+            request_attempts.append({
+                "attempt_index": attempt.get("attempt_index"),
+                "started_epoch": attempt.get("started_epoch"),
+                "status": attempt.get("status", row.get("status")),
+                "gid": row.get("gid") or gid,
+                "logical_request_id": (attempt.get("logical_request_id")
+                                        or row.get("logical_request_id")),
+                "reason": attempt.get("reason"),
+                "generation": attempt.get("generation"),
+                "server_trace_id": attempt.get("server_trace_id"),
+                "queue_ms": queue,
+                "throttle_status": throttle.get("status"),
+                "throttle_enter": throttle.get("throttle_enter"),
+                "throttle_granted": throttle.get("throttle_granted"),
+                "http_start_mono": attempt.get("http_start_mono"),
+                "headers_received_mono": attempt.get(
+                    "headers_received_mono"),
+                "body_finished_mono": attempt.get("body_finished_mono"),
+                "pre_read_ms": timing.get("pre_read_ms"),
+                "read_ms": timing.get("read_ms"),
+                "deadline_left_at_headers_ms": headers_left,
+                "deadline_left_at_send_ms": send_left,
+                "deadline_left_at_response_ms": response_left,
+                "deadline_missed": bool(throttle.get("deadline_missed")),
+                "http_ms": http_ms,
+                "retry_after_s": attempt.get("retry_after_s"),
+            })
+            attempt_indexes.append({
+                "record_index": index,
+                "attempt_index": attempt.get("attempt_index"),
+                "logical_request_id": (attempt.get("logical_request_id")
+                                        or row.get("logical_request_id")),
+                "status": attempt.get("status", row.get("status")),
+            })
+            status = attempt.get("status", row.get("status"))
+            statuses[str(status)] += 1
+            if queue is not None:
+                try:
+                    queue_values.append(float(queue))
+                except (TypeError, ValueError):
+                    pass
+            if send_left is not None:
+                try:
+                    send_left = float(send_left)
+                    deadline_send_values.append(send_left)
+                    send_late = send_late or send_left < 0
+                    queue_late = queue_late or send_left < 0
+                except (TypeError, ValueError):
+                    pass
+            queue_late = queue_late or bool(throttle.get("deadline_missed"))
+            if response_left is not None:
+                try:
+                    response_left = float(response_left)
+                    deadline_response_values.append(response_left)
+                    response_late = response_late or response_left < 0
+                    if headers_left is not None:
+                        headers_value = float(headers_left)
+                        client_read_late = client_read_late or (
+                            headers_value >= 0 and response_left < 0)
+                except (TypeError, ValueError):
+                    pass
+            total = timing.get("total_ms", attempt.get("latency_ms"))
+            if total is not None:
+                try:
+                    http_values.append(float(total))
+                except (TypeError, ValueError):
+                    pass
+            if status not in (None, 200, "200"):
+                retry_or_backoff = True
+        retry_or_backoff = retry_or_backoff or retry_429 > 0 \
+            or retry_gateway > 0 or retry_network > 0
+        response = row.get("res") or {}
+        request_details.append({
+            "record_index": index,
+            "gid": row.get("gid") or gid,
+            "ts": row.get("ts"),
+            "logical_request_id": row.get("logical_request_id"),
+            "request_kind": row.get("request_kind"),
+            "requested_seq": row.get("requested_seq"),
+            "status": row.get("status"),
+            "latency_ms": row.get("latency_ms"),
+            "response_seq": response.get("seq"),
+            "has_snapshot": bool(response.get("snapshot")),
+            "gap": response.get("gap"),
+            "retry_429": transport.get("retry_429", 0),
+            "retry_gateway": transport.get("retry_gateway", 0),
+            "retry_network": transport.get("retry_network", 0),
+            "backoff_ms": transport.get("backoff_ms"),
+            "attempts": request_attempts,
+        })
+    return {
+        "request_indexes": [index for index, _row in request_rows],
+        "logical_request_ids": [row.get("logical_request_id")
+                                for _index, row in request_rows
+                                if row.get("logical_request_id") is not None],
+        "request_details": request_details,
+        "attempts": attempt_indexes,
+        "statuses": dict(statuses),
+        "queue_ms": distribution(queue_values),
+        "http_ms": distribution(http_values),
+        "backoff_ms": distribution(backoff_values),
+        "retry_429": retry_429,
+        "retry_gateway": retry_gateway,
+        "retry_network": retry_network,
+        "deadline_left_at_send_ms": distribution(deadline_send_values),
+        "deadline_left_at_response_ms": distribution(deadline_response_values),
+        "queue_late": queue_late,
+        "send_late": send_late,
+        "response_late": response_late,
+        "client_read_late": client_read_late,
+        "retry_or_backoff": retry_or_backoff,
+    }
+
+
+def _confirm_diagnostic(records, resolution, my_seat=None):
+    """Build one conservative, mutually-exclusive confirmation diagnosis."""
+    if resolution.get("loss_stage") != "CONFIRM":
+        return None
+    key = _row_attempt_key(resolution)
+    if key is None:
+        return {
+            "category": "UNRESOLVED",
+            "evidence_quality": "identity_unverifiable",
+            "missing_evidence": ["authoritative_window_id"],
+            "window_attempt_key": resolution.get("window_attempt_key"),
+        }
+    confirm_indexes = []
+    terminal_row_indexes = []
+    demand_indexes = []
+    request_rows = []
+    confirm_rows = []
+    for index, row in enumerate(records):
+        if _row_attempt_key(row) == key:
+            if row.get("type") == "window_confirm":
+                confirm_indexes.append(index)
+                confirm_rows.append(row)
+            if _confirm_terminal_row(row):
+                terminal_row_indexes.append(index)
+            if row.get("type") == "window_lifecycle" and (
+                    row.get("state") == "CONFIRM_PENDING"
+                    or row.get("outcome") == "PENDING"):
+                demand_indexes.append(index)
+        if row.get("type") == "req" and _request_window_key(row) == key:
+            request_rows.append((index, row))
+            demand = row.get("demand") or {}
+            reason = (demand.get("reasons") or {}).get("WINDOW_CONFIRM")
+            if isinstance(reason, dict) and reason.get("status") == "PENDING":
+                demand_indexes.append(index)
+
+    source = _confirm_source_evidence(records, key, my_seat)
+    terminal_indexes = terminal_row_indexes + source["terminal_event_indexes"]
+    terminal_index = min(terminal_indexes) if terminal_indexes else None
+    bounded_requests = [(index, row) for index, row in request_rows
+                         if terminal_index is None or index <= terminal_index]
+    room_gid = next((row.get("gid") for row in records
+                     if row.get("type") == "meta"
+                     and row.get("gid") is not None), None)
+    transport = _confirm_transport_evidence(bounded_requests, gid=room_gid)
+    expected_phase = key[-1]
+    expected_rows = [row for row in confirm_rows
+                     if row.get("snapshot_phase") == expected_phase]
+    exact_deadline = resolution.get("exact_deadline_at")
+    if exact_deadline is None:
+        for row in confirm_rows:
+            if row.get("exact_deadline_at") is not None:
+                exact_deadline = row.get("exact_deadline_at")
+                break
+    response_after_deadline = False
+    response_before_deadline = False
+    for row in confirm_rows:
+        response_at = _row_time(row, "confirm_response_at", "observed_at")
+        if response_at is None or exact_deadline is None:
+            continue
+        try:
+            response_after_deadline |= response_at >= float(exact_deadline)
+            response_before_deadline |= response_at < float(exact_deadline)
+        except (TypeError, ValueError):
+            pass
+    transport["response_after_exact_deadline"] = response_after_deadline
+    transport["response_before_exact_deadline"] = response_before_deadline
+    # A retry/backoff is a contribution, not proof that the window was
+    # missed.  C4 requires a response/deadline boundary showing that the
+    # physical confirmation completed late; retry evidence is retained in
+    # the record for the separate transport analysis.
+    transport_late = (transport["response_late"]
+                      or response_after_deadline)
+    source_index = (min(source["source_event_indexes"])
+                    if source["source_event_indexes"] else None)
+    same_batch = bool(source_index is not None
+                       and source_index in source["terminal_event_indexes"])
+    source_separate = bool(source_index is not None and terminal_index is not None
+                           and source_index < terminal_index and not same_batch)
+    expected_authorized_predicate = False
+    for row in expected_rows:
+        responding = row.get("responding_seats")
+        legal = row.get("legal")
+        deadline_left = row.get("deadline_left_ms")
+        timely = response_before_deadline
+        if deadline_left is not None:
+            try:
+                timely = timely or float(deadline_left) >= 0
+            except (TypeError, ValueError):
+                pass
+        if (timely and isinstance(responding, list) and my_seat in responding
+                and isinstance(legal, (list, tuple))
+                and any(action != -1 for action in legal)):
+            expected_authorized_predicate = True
+            break
+
+    category = "UNRESOLVED"
+    reason = "insufficient_confirmation_boundary"
+    missing = []
+    if bounded_requests and transport["queue_late"] and not transport_late:
+        category = "C3_CONFIRM_QUEUE_LATE"
+        reason = "throttle_grant_after_deadline"
+    elif bounded_requests and transport_late:
+        category = "C4_CONFIRM_HTTP_LATE"
+        reason = ("response_retry_or_backoff_after_window_boundary"
+                  if transport["retry_or_backoff"]
+                  else "http_response_after_window_boundary")
+    elif bounded_requests and expected_authorized_predicate:
+        category = "C5_TIMELY_RESPONSE_NOT_AUTHORIZED"
+        reason = "expected_phase_and_authority_were_present_but_not_opened"
+    elif not bounded_requests:
+        if same_batch:
+            category = "PROTOCOL_PHASE_UNOBSERVABLE"
+            reason = "source_and_terminal_shared_one_events_batch"
+        elif source_index is None:
+            category = "PROTOCOL_PHASE_UNOBSERVABLE"
+            reason = "source_event_not_observable_in_recorded_stream"
+        elif demand_indexes:
+            category = "C2_CONFIRM_NOT_DISPATCHED"
+            reason = "pending_confirmation_without_physical_request"
+        elif source_separate:
+            category = "C1_CONFIRM_NOT_CREATED"
+            reason = "source_observed_before_terminal_without_confirmation_demand"
+        else:
+            category = "PROTOCOL_PHASE_UNOBSERVABLE"
+            reason = "no_separate_authoritative_confirmation_boundary"
+    elif not expected_rows:
+        if transport["retry_or_backoff"] and not transport_late:
+            category = "UNRESOLVED"
+            reason = "retry_without_missed_window_boundary"
+            missing.append("response_after_deadline_boundary")
+        else:
+            category = "PROTOCOL_PHASE_UNOBSERVABLE"
+            reason = "expected_phase_not_exposed_before_terminal"
+    else:
+        if transport["retry_or_backoff"]:
+            missing.append("response_after_deadline_boundary")
+        missing.extend(["authorization_predicate"])
+
+    if source_index is None:
+        missing.append("source_event")
+    if terminal_index is None:
+        missing.append("terminal_boundary")
+    if not bounded_requests:
+        missing.append("physical_window_confirm_request")
+    if not confirm_rows:
+        missing.append("window_confirm_resolver_record")
+    return {
+        "category": category,
+        "reason": reason,
+        "evidence_quality": ("complete" if category not in (
+            "UNRESOLVED", "PROTOCOL_PHASE_UNOBSERVABLE") else "partial"),
+        "missing_evidence": sorted(set(missing)),
+        "window_attempt_key": resolution.get("window_attempt_key"),
+        "window_id": resolution.get("window_id"),
+        "phase": expected_phase,
+        "source_event_indexes": source["source_event_indexes"],
+        "sse_frame_indexes": source["sse_frame_indexes"],
+        "demand_record_indexes": sorted(set(demand_indexes)),
+        "physical_request_indexes": transport["request_indexes"],
+        "resolver_record_indexes": sorted(set(confirm_indexes)),
+        "terminal_record_indexes": sorted(set(terminal_row_indexes)),
+        "terminal_event_indexes": source["terminal_event_indexes"],
+        "same_batch_source_terminal": same_batch,
+        "source_observed_before_terminal": source_separate,
+        "confirm_logical_request_ids": transport["logical_request_ids"],
+        "transport_contributed": bool(
+            transport["queue_late"] or transport["response_late"]
+            or transport["retry_or_backoff"] or response_after_deadline),
+        "transport": transport,
+        "snapshot_phases": sorted({row.get("snapshot_phase")
+                                    for row in confirm_rows
+                                    if row.get("snapshot_phase") is not None}),
+        "exact_deadline_at": exact_deadline,
+    }
+
+
 CANONICAL_PRECEDENCE = (
     "SUCCESS", "STRATEGY_PASS", "RULE_PREEMPTED", "POST_REJECTED",
     "POST_UNCERTAIN", "SUBMIT", "DECISION", "CONFIRM", "UNKNOWN",
@@ -762,7 +1235,285 @@ def _request_groups_by_kind(rows):
             for kind, items in sorted(grouped.items())}
 
 
-def summarize(paths):
+TRANSPORT_EVIDENCE_CLASSES = (
+    "QUEUE_LATE",
+    "HTTP_RESPONSE_LATE",
+    "RETRY_BACKOFF_CONTRIBUTED",
+    "SERVER_GATEWAY_LATE",
+    "CLIENT_TRANSPORT_LATE",
+    "UNRESOLVED",
+)
+
+
+def _load_external_transport_rows(paths):
+    """Load optional gateway/server JSONL evidence without guessing joins."""
+    rows = []
+    for path in paths or []:
+        path = Path(path)
+        with path.open(encoding="utf8") as stream:
+            for line_number, line in enumerate(stream, 1):
+                if not line.strip():
+                    continue
+                try:
+                    value = json.loads(line)
+                except json.JSONDecodeError:
+                    rows.append({
+                        "_source_file": str(path),
+                        "_source_line": line_number,
+                        "_input_error": "invalid_json",
+                    })
+                    continue
+                values = value if isinstance(value, list) else [value]
+                for item in values:
+                    if not isinstance(item, dict):
+                        rows.append({
+                            "_source_file": str(path),
+                            "_source_line": line_number,
+                            "_input_error": "record_not_object",
+                        })
+                        continue
+                    record = dict(item)
+                    record.setdefault("_source_file", str(path))
+                    record.setdefault("_source_line", line_number)
+                    rows.append(record)
+    return rows
+
+
+def _external_value(row, names):
+    for name in names:
+        value = row.get(name)
+        if value is not None and value != "":
+            return value
+    return None
+
+
+def _external_gid(row):
+    return _external_value(row, ("gid", "game_id"))
+
+
+def _external_logical_id(row):
+    return _external_value(row, (
+        "logical_request_id", "client_request_id", "request_id"))
+
+
+def _external_trace_id(row):
+    return _external_value(row, (
+        "server_trace_id", "trace_id", "request_trace_id"))
+
+
+def _same_external_gid(detail, row):
+    detail_gid = detail.get("gid")
+    row_gid = _external_gid(row)
+    return (detail_gid is None or row_gid is None or detail_gid == row_gid)
+
+
+def _external_join(detail, all_details, external_rows):
+    """Join one attempt by explicit id only; return ambiguity explicitly."""
+    if not external_rows:
+        return {"status": "not_provided", "rows": []}
+    logical_id = detail.get("logical_request_id")
+    attempt_index = detail.get("attempt_index")
+    trace_id = detail.get("server_trace_id")
+    local_logical_count = sum(
+        item.get("logical_request_id") == logical_id
+        and _same_external_gid(detail, item)
+        for item in all_details)
+    candidates = []
+    for row in external_rows:
+        if row.get("_input_error") or not _same_external_gid(detail, row):
+            continue
+        row_trace = _external_trace_id(row)
+        row_logical = _external_logical_id(row)
+        row_attempt = row.get("attempt_index")
+        matched_by = None
+        if trace_id is not None and row_trace == trace_id:
+            matched_by = "server_trace_id"
+        elif (logical_id is not None and row_logical == logical_id
+              and row_attempt is not None
+              and str(row_attempt) == str(attempt_index)):
+            matched_by = "logical_request_id+attempt_index"
+        elif (logical_id is not None and row_logical == logical_id
+              and row_attempt is None and local_logical_count == 1):
+            matched_by = "logical_request_id"
+        if matched_by is not None:
+            candidates.append((matched_by, row))
+    unique = []
+    seen = set()
+    for matched_by, row in candidates:
+        marker = id(row)
+        if marker not in seen:
+            seen.add(marker)
+            unique.append((matched_by, row))
+    if not unique:
+        return {
+            "status": ("missing_external" if logical_id is not None
+                       or trace_id is not None else "missing_local_correlation"),
+            "rows": [],
+        }
+    if len(unique) > 1:
+        return {
+            "status": "duplicate_match",
+            "rows": [row for _matched_by, row in unique],
+        }
+    matched_by, row = unique[0]
+    return {"status": "matched", "matched_by": matched_by, "rows": [row]}
+
+
+def _external_response_epoch(row):
+    value = _external_value(row, (
+        "response_body_finished_epoch", "response_finished_epoch",
+        "response_headers_epoch", "server_response_epoch"))
+    try:
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _external_server_late(row, exact_deadline_at):
+    if exact_deadline_at is None:
+        return False
+    clock_domain = str(row.get("clock_domain") or "unknown").lower()
+    clock_sync = str(row.get("clock_sync")
+                     or row.get("clock_quality") or "unknown").lower()
+    if clock_domain not in ("epoch", "wall_epoch", "unix_epoch") \
+            or clock_sync not in ("synchronized", "trusted"):
+        return False
+    response_epoch = _external_response_epoch(row)
+    try:
+        return response_epoch is not None and response_epoch >= float(
+            exact_deadline_at)
+    except (TypeError, ValueError):
+        return False
+
+
+def _transport_attribution(diagnostic, external_rows=None):
+    """Resolve transport evidence without inferring an external root cause."""
+    transport = diagnostic.get("transport") or {}
+    details = [
+        attempt
+        for request in transport.get("request_details", [])
+        for attempt in request.get("attempts", [])
+    ]
+    external_rows = external_rows or []
+    joins = []
+    server_late = False
+    for attempt in details:
+        joined = _external_join(attempt, details, external_rows)
+        row = (joined.get("rows") or [None])[0]
+        late = bool(row is not None and _external_server_late(
+            row, diagnostic.get("exact_deadline_at")))
+        server_late = server_late or late
+        joins.append({
+            "logical_request_id": attempt.get("logical_request_id"),
+            "attempt_index": attempt.get("attempt_index"),
+            "record_status": attempt.get("status"),
+            "join_status": joined.get("status"),
+            "matched_by": joined.get("matched_by"),
+            "server_trace_id": attempt.get("server_trace_id"),
+            "external_rows": [
+                {
+                    "source": item.get("source"),
+                    "source_file": item.get("_source_file"),
+                    "source_line": item.get("_source_line"),
+                    "clock_domain": item.get("clock_domain"),
+                    "clock_sync": item.get("clock_sync",
+                                         item.get("clock_quality")),
+                    "server_response_epoch": _external_response_epoch(item),
+                    "server_late_after_deadline": _external_server_late(
+                        item, diagnostic.get("exact_deadline_at")),
+                }
+                for item in joined.get("rows", [])
+            ],
+        })
+
+    secondary = []
+    if transport.get("retry_or_backoff"):
+        secondary.append("RETRY_BACKOFF_CONTRIBUTED")
+    if transport.get("queue_ms", {}).get("n"):
+        secondary.append("QUEUE_OBSERVED")
+    if transport.get("response_late"):
+        secondary.append("HTTP_RESPONSE_OBSERVED")
+    if server_late:
+        primary = "SERVER_GATEWAY_LATE"
+    elif transport.get("queue_late"):
+        primary = "QUEUE_LATE"
+    elif transport.get("client_read_late"):
+        primary = "CLIENT_TRANSPORT_LATE"
+    elif transport.get("response_late") \
+            or transport.get("response_after_exact_deadline"):
+        primary = "HTTP_RESPONSE_LATE"
+    elif transport.get("retry_or_backoff"):
+        primary = "RETRY_BACKOFF_CONTRIBUTED"
+    else:
+        primary = "UNRESOLVED"
+    join_statuses = Counter(join.get("join_status") for join in joins)
+    if not external_rows:
+        correlation_quality = "not_provided"
+    elif join_statuses.get("duplicate_match"):
+        correlation_quality = "ambiguous"
+    elif join_statuses.get("matched"):
+        correlation_quality = ("matched" if len(join_statuses) == 1
+                               else "partial")
+    else:
+        correlation_quality = "missing"
+    missing = []
+    if external_rows and not join_statuses.get("matched"):
+        missing.append("external_timing_join")
+    if diagnostic.get("exact_deadline_at") is None:
+        missing.append("exact_deadline_at")
+    return {
+        "primary_class": primary,
+        "secondary_contributors": sorted(set(secondary)),
+        "window_miss_proven": primary in (
+            "QUEUE_LATE", "HTTP_RESPONSE_LATE", "SERVER_GATEWAY_LATE",
+            "CLIENT_TRANSPORT_LATE"),
+        "correlation_quality": correlation_quality,
+        "join_status_counts": dict(join_statuses),
+        "missing_evidence": sorted(set(missing)),
+        "joins": joins,
+    }
+
+
+def _transport_diagnostic_summary(diagnostics, external_rows):
+    records = []
+    for diagnostic in diagnostics:
+        if diagnostic.get("category") not in (
+                "C4_CONFIRM_HTTP_LATE", "UNRESOLVED"):
+            continue
+        attribution = _transport_attribution(diagnostic, external_rows)
+        diagnostic["transport_attribution"] = attribution
+        record = {
+            "window_attempt_key": diagnostic.get("window_attempt_key"),
+            "category": diagnostic.get("category"),
+            "primary_class": attribution["primary_class"],
+            "window_miss_proven": attribution["window_miss_proven"],
+            "correlation_quality": attribution["correlation_quality"],
+            "secondary_contributors": attribution[
+                "secondary_contributors"],
+            "missing_evidence": attribution["missing_evidence"],
+        }
+        records.append(record)
+    joins = Counter()
+    classes = Counter()
+    for record in records:
+        classes[record["primary_class"]] += 1
+        joins[record["correlation_quality"]] += 1
+    return {
+        "classes": list(TRANSPORT_EVIDENCE_CLASSES),
+        "counts": dict(classes),
+        "correlation_quality": dict(joins),
+        "external_timing": {
+            "provided": bool(external_rows),
+            "rows": len(external_rows),
+            "invalid_rows": sum("_input_error" in row
+                                 for row in external_rows),
+        },
+        "records": records,
+    }
+
+
+def summarize(paths, *, acceptance_scope="unspecified", commit=None,
+              transport_logs=None):
     types, actions, misses, confirms, transport = (Counter() for _ in range(5))
     gap_reasons = Counter()
     gap_impacts = Counter()
@@ -776,6 +1527,7 @@ def summarize(paths):
     room_claim_classifications = []
     audit_totals = Counter()
     boundary_recovered = 0
+    external_transport_rows = _load_external_transport_rows(transport_logs)
     for path in paths:
         with path.open(encoding="utf8") as stream:
             records = [json.loads(line) for line in stream if line.strip()]
@@ -996,6 +1748,18 @@ def summarize(paths):
         canonical_resolutions, identity_unverifiable = (
             _canonical_window_resolutions(
                 records, claim_events=room_claim_events, my_seat=my_seat))
+        confirm_diagnostics = []
+        for resolution in canonical_resolutions:
+            diagnostic = _confirm_diagnostic(records, resolution, my_seat)
+            resolution["confirm_diagnostic"] = diagnostic
+            if diagnostic is not None:
+                confirm_diagnostics.append(diagnostic)
+        _transport_diagnostic_summary(confirm_diagnostics,
+                                      external_transport_rows)
+        confirm_diagnostic_counts = Counter(
+            {category: 0 for category in CONFIRM_DIAGNOSTIC_CATEGORIES})
+        confirm_diagnostic_counts.update(
+            item["category"] for item in confirm_diagnostics)
         recovery_rows = room_409_rows + room_uncertain_rows
         recovery_chains, duplicate_post_after_409, \
             duplicate_post_after_uncertain = _recovery_chains(
@@ -1146,6 +1910,8 @@ def summarize(paths):
             "identity_origins": dict(room_identity_origins),
             "first_seen_via": dict(room_first_seen_via),
             "canonical_resolutions": canonical_resolutions,
+            "confirm_diagnostics": confirm_diagnostics,
+            "confirm_diagnostic_counts": dict(confirm_diagnostic_counts),
             "canonical_outcomes": dict(canonical_counts),
             "canonical_client_loss_count": canonical_client_loss,
             "raw_claim_miss_count": len(room_miss_rows),
@@ -1344,6 +2110,9 @@ def summarize(paths):
     all_hard_fail = Counter()
     all_identity_origins = Counter()
     all_first_seen = Counter()
+    all_confirm_diagnostics = []
+    all_confirm_diagnostic_counts = Counter(
+        {category: 0 for category in CONFIRM_DIAGNOSTIC_CATEGORIES})
     for game in games:
         all_canonical.update(game.get("canonical_outcomes", {}))
         for resolution in game.get("canonical_resolutions", []):
@@ -1351,6 +2120,9 @@ def summarize(paths):
         all_recovery_chains.extend(game.get("recovery_chains", []))
         all_identity_origins.update(game.get("identity_origins", {}))
         all_first_seen.update(game.get("first_seen_via", {}))
+        all_confirm_diagnostics.extend(game.get("confirm_diagnostics", []))
+        all_confirm_diagnostic_counts.update(
+            game.get("confirm_diagnostic_counts", {}))
         for name in ("duplicate_post_after_409",
                      "duplicate_post_after_uncertain"):
             if game.get(name, 0):
@@ -1420,6 +2192,26 @@ def summarize(paths):
                 game.get("false_claim_miss_count", 0) for game in games),
             "identity_unverifiable_count": sum(
                 game.get("identity_unverifiable_count", 0) for game in games),
+            "confirm_diagnostic_counts": dict(all_confirm_diagnostic_counts),
+            "confirm_diagnostics": all_confirm_diagnostics,
+        },
+        "confirmation_diagnostics": {
+            "categories": list(CONFIRM_DIAGNOSTIC_CATEGORIES),
+            "counts": dict(all_confirm_diagnostic_counts),
+            "reasons": dict(Counter(item.get("reason")
+                                     for item in all_confirm_diagnostics)),
+            "transport_contributed": sum(
+                bool(item.get("transport_contributed"))
+                for item in all_confirm_diagnostics),
+            "records": all_confirm_diagnostics,
+        },
+        "transport_diagnostics": _transport_diagnostic_summary(
+            all_confirm_diagnostics, external_transport_rows),
+        "acceptance_scope": {
+            "kind": acceptance_scope,
+            "commit": commit,
+            "eligible_for_final_denominator": (
+                acceptance_scope == "fresh_acceptance"),
         },
         "window_409": {
             "all_action_409": len(window_409_chains) + len(normal_409_chains),
@@ -1498,11 +2290,21 @@ def main():
     parser.add_argument("room")
     parser.add_argument("--root", type=Path, default=Path("local/games"))
     parser.add_argument("--out", type=Path)
+    parser.add_argument("--scope", choices=("unspecified", "diagnostic_baseline",
+                                              "fresh_acceptance"),
+                        default="unspecified",
+                        help="Acceptance denominator scope for the report")
+    parser.add_argument("--commit",
+                        help="Commit recorded in the acceptance scope marker")
+    parser.add_argument("--transport-log", action="append", type=Path,
+                        default=[],
+                        help="Optional gateway/server timing JSONL; repeatable")
     args = parser.parse_args()
     paths = sorted(args.root.glob(f"**/*_{args.room}_r*_b*.jsonl"))
     if not paths:
         parser.error(f"No logs for room {args.room}")
-    report = summarize(paths)
+    report = summarize(paths, acceptance_scope=args.scope, commit=args.commit,
+                       transport_logs=args.transport_log)
     result = json.dumps(report, ensure_ascii=False, indent=2)
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)

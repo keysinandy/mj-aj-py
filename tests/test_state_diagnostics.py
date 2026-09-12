@@ -63,6 +63,7 @@ def test_state_attempts_keep_429_and_final_200_without_url_or_token():
     assert all("started_epoch" in a and "latency_ms" in a
                for a in meta["state_attempts"])
     first, final = meta["state_attempts"]
+    assert "deadline_left_at_headers_ms" in first
     assert first.get("retry_after_s") is None
     assert first["timed_out"] is False
     assert first["timing"]["dns_ms"] is None
@@ -77,6 +78,22 @@ def test_state_attempts_keep_429_and_final_200_without_url_or_token():
     encoded = json.dumps(meta)
     assert "secret-token" not in encoded
     assert "state.example" not in encoded
+
+
+def test_state_logical_request_id_is_sent_as_secret_free_correlation_header():
+    api = Api("https://state.example", "secret-token", state_rate=None)
+    seen = []
+
+    def capture(request, **_kwargs):
+        seen.append(request)
+        return _http_response({"seq": 7})
+
+    with mock.patch("urllib.request.urlopen", side_effect=capture):
+        assert api.game_state("g", 7,
+                              logical_request_id="state-7") == {"seq": 7}
+
+    assert seen[0].get_header("X-client-request-id") == "state-7"
+    assert seen[0].get_header("X-client-attempt-index") == "1"
 
 
 def test_state_429_notifies_shared_throttle_before_retry():

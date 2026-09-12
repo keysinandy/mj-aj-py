@@ -153,6 +153,7 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
                                   server_date_epoch=None,
                                   server_trace_id=None,
                                   throttle=None,
+                                  deadline_left_at_headers_ms=None,
                                   deadline_left_at_send_ms=None,
                                   deadline_left_at_response_ms=None):
         if not diagnostic_enabled:
@@ -193,6 +194,7 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
             "body_finished_mono": (
                 round(read_finished_mono, 6)
                 if read_finished_mono is not None else None),
+            "deadline_left_at_headers_ms": deadline_left_at_headers_ms,
             "deadline_left_at_send_ms": deadline_left_at_send_ms,
             "deadline_left_at_response_ms": deadline_left_at_response_ms,
             "deadline_left_at_send": deadline_left_at_send_ms,
@@ -368,6 +370,14 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
         req.add_header("Content-Type", "application/json")
         if token:
             req.add_header("Authorization", "Bearer " + token)
+        # This is an additive, secret-free correlation hint for gateway/server
+        # logs.  It identifies the logical state request and physical attempt
+        # without changing the request body or scheduling behavior.
+        if logical_request_id is not None:
+            correlation_id = str(logical_request_id)
+            if "\r" not in correlation_id and "\n" not in correlation_id:
+                req.add_header("X-Client-Request-Id", correlation_id)
+                req.add_header("X-Client-Attempt-Index", str(attempts))
         started_epoch = time.time()
         started_mono = time.monotonic()
         attempt_status = None
@@ -402,6 +412,10 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
                     read_finished_mono=read_finished_mono,
                     server_trace_id=trace_value(getattr(r, "headers", None)),
                     throttle=throttle_info,
+                    deadline_left_at_headers_ms=(
+                        round((deadline - headers_received_mono) * 1000.0, 1)
+                        if deadline is not None
+                        and headers_received_mono is not None else None),
                     deadline_left_at_send_ms=(
                         round((deadline - started_mono) * 1000.0, 1)
                         if deadline is not None else None),
@@ -454,6 +468,10 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
                 server_date_epoch=retry_details["server_date_epoch"],
                 server_trace_id=trace_value(getattr(e, "headers", None)),
                 throttle=throttle_info,
+                deadline_left_at_headers_ms=(
+                    round((deadline - headers_received_mono) * 1000.0, 1)
+                    if deadline is not None
+                    and headers_received_mono is not None else None),
                 deadline_left_at_send_ms=(
                     round((deadline - started_mono) * 1000.0, 1)
                     if deadline is not None else None),
