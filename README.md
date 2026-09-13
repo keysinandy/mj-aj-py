@@ -5,6 +5,13 @@
 - **[PROGRESS.md](PROGRESS.md)** — 权威进度与决策文档:规则口径、番型公式、训练结论、平台协议要点
 - **[CLAUDE.md](CLAUDE.md)** — 代码结构、常用命令、引擎约束(给 AI 辅助工具,同样适合人读)
 
+状态请求生命周期已按 gid 分成可升级候选、冻结 logical request、物理
+transport attempt 和响应应用阶段。`StateScheduler` 与
+`StateFetchCoordinator` 复用同一个 `StateThrottle` 队列；HTTP 重试保留
+logical ID、为每个物理 attempt 记录独立 ID，并在 JSONL/验收报告中区分
+logical_state_requests、physical_state_attempts、候选替代和发送前取消。
+旧日志缺字段时报告保持显式 missing/legacy，不倒造新指标。
+
 当前最优模型:`runs/bc0/best.pt`(BC,对启发式 bot 胜率 21.9%);引擎与平台行为已通过 replay 对账对齐(1125 动作 0 非法)。
 
 ## 环境

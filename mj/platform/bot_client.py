@@ -19,7 +19,7 @@ import random
 import threading
 import time
 
-from .api import ApiError
+from .api import Api, ApiError
 from .mirror import Mirror, MirrorInconsistent
 from .actions import action_to_payload
 from .proto import parse_event, tidx
@@ -35,6 +35,9 @@ from .state_demand import (
     WindowId,
     window_attempt_tuple,
 )
+from .state_fetch import StateFetchCoordinator
+from .state_scheduler import StateScheduler
+from .window_confirmation import WindowConfirmation, WindowTiming
 
 TERMINAL = ("finished", "closed", "void")
 WINDOW_SEC = 1.0  # 碰/吃窗口固定走满时长(提交吃牌须等碰窗结束)
@@ -77,6 +80,8 @@ class _WindowConfirm(Exception):
                  schedule_deadline=None, window_key=None,
                  source_origin=None,
                  first_seen_via=None,
+                 not_before=None,
+                 revision=None,
                  reason="quantized_deadline"):
         super().__init__(reason)
         self.phase = phase
@@ -97,12 +102,29 @@ class _WindowConfirm(Exception):
         # tests and callers constructing this object early remain consistent.
         self.retry_deadline = schedule_deadline
         self.pending_retries = 0
+        self.observation_budget_exhausted = False
         self.requested_at = None
         # A chi wait-state carries the same logical WindowAttemptKey as the
         # preceding peng phase.  Keeping it on the confirmation object lets
         # both phases use one identity/deadline resolver.
         self.window_key = window_key
         self.reason = reason
+        self.confirmation = WindowConfirmation(
+            window_key,
+            phase,
+            timing=WindowTiming(
+                not_before=not_before,
+                scheduler_deadline=schedule_deadline,
+                observation_budget_deadline=self.retry_deadline,
+                not_before_source=("chi_ready" if not_before is not None
+                                   else "unknown"),
+                scheduler_deadline_source="window_schedule",
+                observation_budget_source="legacy_retry_deadline",
+                exact_deadline_source="authoritative_snapshot"),
+            pending=self.pending,
+            revision=revision,
+            pending_retries=0,
+        )
 
 
 def _ms(t0):
@@ -155,6 +177,13 @@ class BotClient:
         self._window_lifecycle_lock = threading.RLock()
         self._window_lifecycles = {}
         self._uncertain_recoveries = {}
+        # A token's Api owns one StateThrottle.  Reuse one scheduler facade
+        # for every game worker so candidate admission and transport retries
+        # share that same physical permit queue.
+        self._state_scheduler = (
+            StateScheduler(api.state_throttle)
+            if isinstance(api, Api) and api.state_throttle is not None
+            else None)
         self.stats = {
             "games": 0, "actions": 0, "hu": 0, "err409": 0, "gaps": 0,
             "auto_played": 0, "mirror_resets": 0, "scores": [],
@@ -187,6 +216,7 @@ class BotClient:
             "window_confirm_stale": 0,
             "window_confirm_unconfirmed": 0,
             "window_confirm_miss": 0,
+            "confirmation_observation_budget_exhausted": 0,
             # /state 传输诊断在收到响应后立即累计，避免后续动作覆盖
             # Api TLS 上下文。
             "state_attempts": 0,
@@ -196,6 +226,10 @@ class BotClient:
             "coalesced_demands": 0,
             "successor_requests": 0,
             "physical_state_requests": 0,
+            "logical_state_requests": 0,
+            "physical_state_attempts": 0,
+            "substituted_candidates": 0,
+            "cancelled_before_send": 0,
             "suppressed_duplicates": 0,
             "coalesced_or_suppressed": 0,
             "coalescing_ratio": None,
@@ -404,7 +438,12 @@ class BotClient:
         idle_sleep 轮询节奏——帧只作唤醒,不当游标(游标纪律见 v12)。
         max_wait 给定时封顶等待(吃窗截止)。返回是否被唤醒( False=
         超时,懒轮询据此区分「有积压事件」与「纯空闲」)。"""
-        if wake is None:
+        # Polling mode still carries a StateDemand for lifecycle accounting,
+        # but it has no listener queue to wake the worker.  Preserve the old
+        # bounded sleep semantics (especially the deterministic fake-clock
+        # path when idle_sleep=0) instead of treating an empty demand queue as
+        # an immediate wake.
+        if wake is None or sse is None:
             if max_wait is None:
                 time.sleep(self.idle_sleep)
             elif self.idle_sleep:
@@ -412,8 +451,9 @@ class BotClient:
             else:
                 time.sleep(max_wait)  # idle_sleep=0(测试):睡满截止不热轮询
             return False
-        timeout = self.notify_fallback_wait if sse["alive"] \
-            else self.idle_sleep
+        timeout = (self.notify_fallback_wait
+                   if sse is not None and sse.get("alive")
+                   else self.idle_sleep)
         if max_wait is not None:
             timeout = min(timeout, max_wait)
         try:
@@ -571,6 +611,11 @@ class BotClient:
                 f"window-confirm:{gid}:{confirm.round_no}:"
                 f"{repr(window_id.as_tuple())}:{phase}")
             confirm.logical_request_id = logical_confirm_id
+        lifecycle_confirmation = getattr(confirm, "confirmation", None)
+        if lifecycle_confirmation is not None:
+            lifecycle_confirmation.window_attempt_key = WindowAttemptKey(
+                window_id, phase)
+            lifecycle_confirmation.observe(outcome)
         now_epoch = time.time()
         if outcome == "requested":
             confirm.requested_at = now_epoch
@@ -602,14 +647,26 @@ class BotClient:
             "confirm_response_at": now_epoch,
             "attempt_index": confirm_attempt_index or None,
             "generation": getattr(confirm, "generation", None),
+            "revision": (getattr(lifecycle_confirmation, "revision", None)
+                         if lifecycle_confirmation is not None else None),
             "source_watermark": confirm.source_watermark,
             "seq": seq,
             "source_observed_at": self._epoch_seconds(confirm.source_ts),
             "estimated_deadline_at": self._epoch_from_mono(
                 confirm.schedule_deadline),
         }
+        if lifecycle_confirmation is not None:
+            fields["timing"] = lifecycle_confirmation.timing.as_json()
+        if getattr(confirm, "observation_budget_exhausted", False):
+            fields["confirmation_observation_budget_exhausted"] = True
         if isinstance(snap, dict):
             fields["exact_deadline_at"] = self._snapshot_deadline(snap)
+            if lifecycle_confirmation is not None:
+                lifecycle_confirmation.timing.exact_window_deadline = (
+                    fields["exact_deadline_at"])
+                lifecycle_confirmation.timing.exact_deadline_source = (
+                    "authoritative_snapshot"
+                    if fields["exact_deadline_at"] is not None else "missing")
             fields["snapshot_phase"] = snap.get("phase")
             fields["responding_seats"] = snap.get("responding_seats") or []
             fields["deadline_left_ms"] = self._deadline_left_ms(
@@ -617,6 +674,8 @@ class BotClient:
             if outcome in ("open", "confirmed"):
                 fields["authorization_snapshot_seq"] = seq
                 fields["authoritative_open_at"] = now_epoch
+            if lifecycle_confirmation is not None:
+                fields["timing"] = lifecycle_confirmation.timing.as_json()
         # JSONL 记录不需要 null 字段，且旧 fake Recorder 可能只接收
         # 非空字段；保留 pending/round 等稳定字段，丢弃未提供项。
         fields = {key: value for key, value in fields.items()
@@ -887,6 +946,8 @@ class BotClient:
             source_ts=chi.get("source_ts"),
             source_watermark=chi.get("source_watermark"),
             schedule_deadline=chi.get("deadline_mono"),
+            not_before=chi.get("ready_mono"),
+            revision=chi.get("demand_revision"),
             window_key=key,
             source_origin=(window_id.identity_origin
                            if window_id is not None else None),
@@ -920,6 +981,12 @@ class BotClient:
         if getattr(previous, "logical_request_id", None) is not None:
             current.logical_request_id = previous.logical_request_id
         current.attempt_index = getattr(previous, "attempt_index", 0)
+        previous_state = getattr(previous, "confirmation", None)
+        current_state = getattr(current, "confirmation", None)
+        if previous_state is not None and current_state is not None:
+            current.confirmation = previous_state.carry_budget(current_state)
+            current.confirmation.timing.observation_budget_deadline = (
+                current.retry_deadline)
         return current
 
     @staticmethod
@@ -964,6 +1031,8 @@ class BotClient:
             source_seq=(window_id.source_discard_seq
                         if window_id is not None else None),
             schedule_deadline=reason.get("deadline"),
+            not_before=reason.get("not_before"),
+            revision=reason.get("revision"),
             window_key=key,
             source_origin=(window_id.identity_origin
                            if window_id is not None else None),
@@ -1084,8 +1153,22 @@ class BotClient:
             retry_deadline = time.monotonic() + max(
                 WINDOW_SEC * 2, self.window_wait * 2, 0.5)
             confirm.retry_deadline = retry_deadline
-        return (confirm.pending_retries > MAX_WINDOW_CONFIRM_PENDING_RETRIES
-                or time.monotonic() >= retry_deadline)
+        expired = (confirm.pending_retries > MAX_WINDOW_CONFIRM_PENDING_RETRIES
+                   or time.monotonic() >= retry_deadline)
+        lifecycle_confirmation = getattr(confirm, "confirmation", None)
+        if lifecycle_confirmation is not None:
+            lifecycle_confirmation.pending_retries = confirm.pending_retries
+            lifecycle_confirmation.timing.observation_budget_deadline = (
+                retry_deadline)
+        if expired and not getattr(confirm, "observation_budget_exhausted", False):
+            confirm.observation_budget_exhausted = True
+            with self._stats_lock:
+                self.stats["confirmation_observation_budget_exhausted"] += 1
+            if lifecycle_confirmation is not None:
+                lifecycle_confirmation.observation_budget_exhausted = True
+                lifecycle_confirmation.observe(
+                    "confirmation_observation_budget_exhausted")
+        return expired
 
     def _resolve_window_confirm(self, gid, mirror, snap, confirm, seq=None):
         """统一解析 peng/chi 窗口确认，返回 ``confirmed`` 或最终结果。
@@ -1811,9 +1894,9 @@ class BotClient:
             rec.meta(gid, self.name, self._tid,
                      self.you_cai_bi_kao, self.base, mode=self.mode)
         # SSE 通知流(v12):帧 = 状态已变信号,唤醒主循环立即拉 /state
-        wake = sse = stop_l = listener = None
+        wake = StateDemand(gid=gid)
+        sse = stop_l = listener = None
         if self.use_notify:
-            wake = StateDemand()
             sse = {"alive": False}
             stop_l = threading.Event()
             listener = threading.Thread(
@@ -1827,6 +1910,13 @@ class BotClient:
                 stop_l.set()
             if listener is not None:
                 listener.join(timeout=2)
+            # A worker can leave through an ApiError, stop event or a test
+            # fake before the normal ``finished`` branch has a chance to
+            # drain its demand.  Closing is idempotent and preserves the
+            # transport/window/game status distinction in the recorder.
+            if isinstance(wake, StateDemand) and not wake.closed:
+                wake.close("worker_exit")
+                wake.finalize_close("worker_exit")
 
     @staticmethod
     def _stale_deadline_step(state_deadline, stale_used, now):
@@ -1942,7 +2032,17 @@ class BotClient:
         # With SSE this is the same per-game object used by the listener; in
         # polling mode it still coordinates logical reasons and physical
         # requests locally.
-        demand = wake if isinstance(wake, StateDemand) else StateDemand()
+        demand = wake if isinstance(wake, StateDemand) else StateDemand(gid=gid)
+        def on_reconciled(request, snapshot, pending, error):
+            # The response application boundary is durable diagnostic data,
+            # separate from the frozen dispatch record.  Keep this callback
+            # outside StateFetchCoordinator's locks and tolerate legacy fake
+            # recorders that do not expose the additive method.
+            self._record_state_reconcile(
+                rec, gid, request, snapshot, pending, error)
+        fetch_coordinator = StateFetchCoordinator(
+            gid, demand, scheduler=self._state_scheduler,
+            on_reconciled=on_reconciled)
         seq = 0
         mirror = None
         chi_pending = None  # 吃窗等待态 {"t0","needed","seen"}(提交前保持)
@@ -1987,7 +2087,8 @@ class BotClient:
                     used_request_kind = "SSE_DELTA"
             plan = self._prepare_state_demand(
                 demand, gid, seq, used_request_kind, state_deadline,
-                window_confirm, chi_pending)
+                window_confirm, chi_pending,
+                coordinator=fetch_coordinator)
             self._record_demand_metrics(demand, demand_seen)
             physical_seq = seq if plan is None else plan.seq
             physical_deadline = (
@@ -2009,12 +2110,33 @@ class BotClient:
             request_kind = None
             state_attempts = None
             state_transport = None
+            transport_request_id = None
+            if plan is not None:
+                # The plan is frozen here.  The transport id is allocated at
+                # the physical attempt boundary, after which new reasons are
+                # reconciled as successor demand rather than mutating seq or
+                # mode for this request.
+                if fetch_coordinator.active is None:
+                    fetch_coordinator.adopt(plan)
+                transport_request_id = fetch_coordinator.mark_transport_started()
+            operation = fetch_coordinator.active
+            state_ticket = (operation.ticket
+                            if operation is not None else None)
+            candidate_id = (operation.candidate_id
+                            if operation is not None else None)
             try:
-                from .api import Api
                 if isinstance(self.api, Api):
                     res = self._state(gid, physical_seq, physical_deadline,
                                       request_kind=used_request_kind,
-                                      plan=plan)
+                                      plan=plan,
+                                      transport_request_id=transport_request_id,
+                                      state_ticket=state_ticket,
+                                      candidate_id=candidate_id,
+                                      state_throttle=(
+                                          self._state_scheduler.throttle
+                                          if self._state_scheduler is not None
+                                          else None),
+                                      cancel_check=fetch_coordinator.cancel_requested)
                 else:
                     # Keep the small fake/server adapter signature used by
                     # replay and unit tests.
@@ -2023,6 +2145,11 @@ class BotClient:
                 state_attempts = self._attempts()
                 state_transport = self._transport()
                 self._record_state_transport(state_attempts, state_transport)
+                if isinstance(demand, StateDemand):
+                    physical = (state_transport.get("state_physical_attempts")
+                                if isinstance(state_transport, dict) else
+                                state_attempts)
+                    fetch_coordinator.record_transport_result(physical)
                 if isinstance(wake, StateDemand):
                     wake.acknowledge(res.get("seq", seq))
                 status = 200
@@ -2033,22 +2160,46 @@ class BotClient:
                 state_attempts = self._attempts()
                 state_transport = self._transport()
                 self._record_state_transport(state_attempts, state_transport)
+                if isinstance(demand, StateDemand):
+                    physical = (state_transport.get("state_physical_attempts")
+                                if isinstance(state_transport, dict) else
+                                state_attempts)
+                    fetch_coordinator.record_transport_result(physical)
                 ticket = self._throttle_ticket()
                 self._record_throttle(ticket)
                 if rec is not None:
                     self._record_state_req(
                         rec, gid, seq, status, _ms(t0), state_attempts,
                         state_transport, ticket, used_request_kind,
-                        plan=plan, demand=demand, requested_seq=physical_seq)
+                        plan=plan, demand=demand, requested_seq=physical_seq,
+                        transport_request_id=transport_request_id)
                 if e.status == 404:
                     # 场次不可访问(轮次切换/房间回收):视作已结束计数
                     self._log(f"场次 {gid} 已不可访问")
                     with self._stats_lock:
                         self.stats["games"] += 1
-                    if rec is not None:
-                        self._record_end(rec, gid, "inaccessible")
+                    # Complete the coordinator and close the demand before
+                    # writing the terminal marker.  A 404 can arrive while
+                    # the final candidate is still reconciling; recording
+                    # the end row first would leave an in-flight/PENDING
+                    # snapshot as the only evidence and make a normal room
+                    # shutdown look like a dirty resource leak.
+                    fetch_coordinator.complete(
+                        response=None, response_seq=None, error=e)
+                    demand.close("inaccessible")
+                    demand.finalize_close("inaccessible")
                     self._record_demand_metrics(demand, demand_seen)
+                    if rec is not None:
+                        self._record_end(
+                            rec, gid, "inaccessible",
+                            demand=demand.request_snapshot(),
+                            demand_source="end",
+                            transport_status="partial",
+                            window_status="partial",
+                            game_status="protocol_skipped")
                     return
+                fetch_coordinator.complete(
+                    response=None, response_seq=None, error=e)
                 raise
             ticket = self._throttle_ticket()
             self._record_throttle(ticket)
@@ -2058,15 +2209,8 @@ class BotClient:
                     rec, gid, seq, status, _ms(t0), state_attempts,
                     state_transport, ticket, used_request_kind,
                     summary=self._state_summary(res), plan=plan, demand=demand,
-                    requested_seq=physical_seq)
-            if plan is not None:
-                # Only watermark/resync facts are settled here.  Window
-                # confirmation waits for the phase-specific resolver below.
-                demand.reconcile(
-                    res.get("seq"),
-                    response_mode=plan.mode,
-                    snapshot=res.get("snapshot"),
-                )
+                    requested_seq=physical_seq,
+                    transport_request_id=transport_request_id)
             if res.get("finished"):
                 if window_confirm is not None:
                     # A finished game is an authoritative terminal boundary,
@@ -2080,6 +2224,12 @@ class BotClient:
                     window_confirm = None
                 elif plan is not None and plan.kind == WINDOW_CONFIRM:
                     demand.finish_window_confirm(DEMAND_TERMINAL)
+                fetch_coordinator.complete(
+                    response=res, response_seq=res.get("seq"),
+                    response_mode=(plan.mode if plan is not None else None),
+                    snapshot=res.get("snapshot"))
+                demand.close("game_finished")
+                demand.finalize_close("game_finished")
                 snap = res.get("snapshot") or {}
                 with self._stats_lock:
                     self.stats["games"] += 1
@@ -2100,6 +2250,13 @@ class BotClient:
                 self._record_demand_metrics(demand, demand_seen)
                 return
             if res.get("pending"):
+                # A pending long-poll response has no mirror work to apply;
+                # its returned watermark is still a valid delta completion.
+                if plan is not None:
+                    fetch_coordinator.complete(
+                        response=res, response_seq=res.get("seq"),
+                        response_mode=plan.mode,
+                        snapshot=res.get("snapshot"))
                 continue
             if res.get("gap"):
                 with self._stats_lock:
@@ -2224,7 +2381,16 @@ class BotClient:
                         seq = 0  # 下一次拉取同时承担窗口确认，不另加请求
                     else:
                         state_deadline = None
+                    if plan is not None:
+                        fetch_coordinator.complete(
+                            response=res, response_seq=res.get("seq"),
+                            response_mode=plan.mode, snapshot=snap)
                 except Exception as ex:
+                    if plan is not None and demand.in_flight:
+                        fetch_coordinator.complete(
+                            response=res, response_seq=res.get("seq"),
+                            response_mode=plan.mode, snapshot=snap,
+                            error=ex)
                     if isinstance(ex, _WindowConfirm):
                         window_confirm = ex
                         seq, mirror = 0, None
@@ -2270,6 +2436,10 @@ class BotClient:
 
             if rec is not None and batch:
                 rec.events(gid, res.get("seq"), batch)
+            # The response has reached the event-application boundary.  Keep
+            # the logical request owner until this point; a later action or
+            # wake can now safely create a successor.
+            applied = mirror is not None
             trigger = None
             batch_seen = set()  # 同批内触发弃牌之后的其他家窗口响应
             window_event = None  # 当前 batch 最后一个仍可响应的弃牌
@@ -2286,6 +2456,7 @@ class BotClient:
                     e = parse_event(ev)
                     mirror.apply_event(ev)
                 except MirrorInconsistent as ex:
+                    applied = False
                     self._log(f"镜像失步({ex}),seq=0 重建")
                     with self._stats_lock:
                         self.stats["mirror_resets"] += 1
@@ -2468,6 +2639,12 @@ class BotClient:
                                 chi_pending["seen"].add(e["seat"])
                             if trigger is not None and trigger[0] == "window":
                                 batch_seen.add(e["seat"])
+            if plan is not None:
+                fetch_coordinator.complete(
+                    response=res, response_seq=res.get("seq"),
+                    response_mode=plan.mode, snapshot=None,
+                    error=None if applied else RuntimeError(
+                        "state response application incomplete"))
             # 同批 tile_discarded + 我方 peng timeout：旧实现到这里
             # 只有 trigger=None，直接丢掉 chi。保留最后一个仍在
             # pending 的弃牌，并在碰窗关闭后建立吃窗候选。
@@ -2844,7 +3021,8 @@ class BotClient:
         )
 
     def _prepare_state_demand(self, demand, gid, seq, request_kind,
-                              deadline, window_confirm, chi_pending):
+                              deadline, window_confirm, chi_pending,
+                              coordinator=None):
         """Merge the current loop intent and choose the physical request."""
         if window_confirm is not None:
             demand.submit_window_confirm(
@@ -2853,6 +3031,9 @@ class BotClient:
                 deadline=window_confirm.schedule_deadline,
             )
             window_confirm.generation = demand.generation
+            reason = demand.reasons.get(WINDOW_CONFIRM) or {}
+            if getattr(window_confirm, "confirmation", None) is not None:
+                window_confirm.confirmation.revision = reason.get("revision")
         elif chi_pending is not None:
             demand.submit_window_confirm(
                 self._window_id_for_demand(
@@ -2861,6 +3042,8 @@ class BotClient:
                 deadline=chi_pending.get("deadline_mono"),
             )
             chi_pending["demand_generation"] = demand.generation
+            reason = demand.reasons.get(WINDOW_CONFIRM) or {}
+            chi_pending["demand_revision"] = reason.get("revision")
         elif request_kind == "RESYNC":
             demand.submit_resync(cause="loop_resync")
         elif request_kind in ("WINDOW_PENG", "WINDOW_CHI"):
@@ -2875,15 +3058,20 @@ class BotClient:
             )
         else:
             demand.submit_sse(seq)
-        plan = demand.start_request(
-            default_seq=seq,
-            default_kind=(RESYNC if request_kind == "RESYNC"
-                          else WINDOW_CONFIRM
-                          if request_kind in ("WINDOW_PENG", "WINDOW_CHI")
-                          else SSE_DELTA),
-            deadline=deadline,
-        )
-        return plan
+        default_kind = (RESYNC if request_kind == "RESYNC"
+                        else WINDOW_CONFIRM
+                        if request_kind in ("WINDOW_PENG", "WINDOW_CHI")
+                        else SSE_DELTA)
+        # Keep the pre-admission candidate separate from the frozen request.
+        # A confirmation or RESYNC submitted above can still upgrade this
+        # candidate before the admission boundary; no throttle permit or HTTP
+        # attempt is consumed by this bookkeeping step.
+        if coordinator is not None:
+            return coordinator.begin(default_seq=seq, default_kind=default_kind,
+                                     deadline=deadline)
+        demand.queue_candidate(default_seq=seq, default_kind=default_kind,
+                               deadline=deadline)
+        return demand.admit_candidate()
 
     @staticmethod
     def _demand_window_status(outcome):
@@ -2914,7 +3102,9 @@ class BotClient:
         # phase-only shortcut would incorrectly satisfy chi confirmations.
         return demand.has_pending
 
-    def _state(self, gid, seq, deadline, request_kind=None, plan=None):
+    def _state(self, gid, seq, deadline, request_kind=None, plan=None,
+               transport_request_id=None, state_ticket=None,
+               candidate_id=None, state_throttle=None, cancel_check=None):
         """向真实 Api 传截止；request_kind 留在逻辑请求日志中。"""
         from .api import Api
         if isinstance(self.api, Api):
@@ -2924,6 +3114,11 @@ class BotClient:
                     "logical_request_id": plan.logical_request_id,
                     "reason": list(plan.reasons),
                     "generation": plan.started_generation,
+                    "transport_request_id": transport_request_id,
+                    "state_ticket": state_ticket,
+                    "candidate_id": candidate_id,
+                    "state_throttle": state_throttle,
+                    "cancel_check": cancel_check,
                 })
             return self.api.game_state(gid, seq, **kwargs)
         return self.api.game_state(gid, seq)
@@ -2955,7 +3150,8 @@ class BotClient:
     @staticmethod
     def _record_state_req(rec, gid, seq, status, latency_ms, attempts,
                           transport, throttle, request_kind, summary=None,
-                          plan=None, demand=None, requested_seq=None):
+                          plan=None, demand=None, requested_seq=None,
+                          transport_request_id=None):
         """调用新旧 Recorder.req，给旧 fake 保持可选字段兼容。"""
         kwargs = {"transport": transport, "throttle": throttle}
         if summary is not None:
@@ -2977,6 +3173,19 @@ class BotClient:
                 "attempt_index": plan.attempt_index,
                 "reason": list(plan.reasons),
                 "generation": plan.started_generation,
+                "candidate_id": plan.candidate_id,
+                "candidate_created_at": plan.candidate_created_at,
+                "queued_at": plan.queued_at,
+                "admitted_at": plan.admitted_at,
+                "successor_of": plan.successor_of,
+                "transport_request_id": transport_request_id,
+                "effective_deadline": plan.effective_deadline,
+                "deadline_source": getattr(
+                    plan, "deadline_source", "unknown"),
+                "reason_revisions": {
+                    reason: data.get("revision")
+                    for reason, data in plan.reasons.items()
+                },
             })
         if demand is not None and (
                 "demand" in params
@@ -2988,7 +3197,50 @@ class BotClient:
                 or any(p.kind == inspect.Parameter.VAR_KEYWORD
                        for p in params.values())):
             kwargs["requested_seq"] = requested_seq
+        accepts_kwargs = any(
+            p.kind == inspect.Parameter.VAR_KEYWORD
+            for p in params.values())
+        if not accepts_kwargs and params:
+            kwargs = {key: value for key, value in kwargs.items()
+                      if key in params}
         rec.req(gid, seq, status, latency_ms, attempts, **kwargs)
+
+    @staticmethod
+    def _record_state_reconcile(rec, gid, request, snapshot, pending,
+                                 error=None):
+        """Record facts known only after a state response was applied.
+
+        This is best effort and signature-filtered so old replay fakes remain
+        valid while the real Recorder can persist the full lifecycle view.
+        """
+        writer = getattr(rec, "state_reconcile", None) if rec is not None else None
+        if writer is None or request is None:
+            return
+        kwargs = {
+            "logical_request_id": getattr(request, "logical_request_id", None),
+            "evaluated_revisions": getattr(request, "evaluated_revisions", None),
+            "satisfied_reasons": list(
+                getattr(request, "satisfied_reasons", ()) or ()),
+            "response_applied_at": getattr(request, "response_applied_at", None),
+            "pending": pending,
+            "lifecycle": (snapshot.get("lifecycle")
+                           if isinstance(snapshot, dict) else None),
+            "error": error,
+        }
+        try:
+            params = inspect.signature(writer).parameters
+        except (TypeError, ValueError):
+            params = {}
+        accepts_kwargs = any(
+            p.kind == inspect.Parameter.VAR_KEYWORD
+            for p in params.values())
+        if not accepts_kwargs and params:
+            kwargs = {key: value for key, value in kwargs.items()
+                      if key in params}
+        try:
+            writer(gid, **kwargs)
+        except Exception:
+            pass
 
     @staticmethod
     def _record_end(rec, gid, reason, **kwargs):
@@ -3022,6 +3274,8 @@ class BotClient:
         keys = ("logical_demands", "logical_input_demands",
                 "coalesced_demands",
                 "successor_requests", "physical_state_requests",
+                "logical_state_requests", "physical_state_attempts",
+                "substituted_candidates", "cancelled_before_send",
                 "suppressed_duplicates", "coalesced_or_suppressed")
         with self._stats_lock:
             for key in keys:

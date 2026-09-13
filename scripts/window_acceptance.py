@@ -21,8 +21,101 @@ from mj.platform.mirror import MirrorInconsistent
 _DEMAND_COUNTER_KEYS = (
     "logical_demands", "logical_input_demands", "coalesced_demands",
     "successor_requests", "physical_state_requests",
+    "logical_state_requests", "physical_state_attempts",
+    "substituted_candidates", "cancelled_before_send",
     "suppressed_duplicates", "coalesced_or_suppressed",
 )
+
+
+def _request_count_metrics(rows):
+    """Count request/attempt IDs without double-counting repeated summaries.
+
+    New lifecycle logs carry opaque logical and physical IDs.  Legacy rows do
+    not, so their historical row/count interpretation remains the fallback
+    and the report explicitly marks that the counts are legacy-derived.
+    """
+    def is_lifecycle_id(value):
+        if not isinstance(value, str) or ":state:" not in value:
+            return False
+        suffix = value.rsplit(":", 1)[-1]
+        return suffix.isdigit()
+
+    logical_ids = set()
+    physical_ids = set()
+    logical = 0
+    physical = 0
+    duplicate_logical = duplicate_physical = 0
+    has_logical_ids = False
+    has_lifecycle_ids = False
+    has_physical_evidence = False
+    physical_id_evidence = False
+    physical_without_ids = 0
+    for row in rows:
+        logical_id = row.get("logical_request_id")
+        if logical_id is not None:
+            has_logical_ids = True
+            has_lifecycle_ids = has_lifecycle_ids or is_lifecycle_id(
+                logical_id)
+            if logical_id in logical_ids:
+                duplicate_logical += 1
+            else:
+                logical_ids.add(logical_id)
+                logical += 1
+        else:
+            logical += 1
+        transport = row.get("transport") or {}
+        attempts = transport.get("state_attempts") or []
+        if attempts:
+            has_physical_evidence = True
+            for attempt in attempts:
+                attempt_id = attempt.get("transport_request_id")
+                if attempt_id is None:
+                    physical_without_ids += 1
+                    physical += 1
+                    continue
+                physical_id_evidence = True
+                if attempt_id in physical_ids:
+                    duplicate_physical += 1
+                else:
+                    physical_ids.add(attempt_id)
+                    physical += 1
+        else:
+            count = transport.get("state_physical_attempts")
+            if count is not None:
+                has_physical_evidence = True
+                try:
+                    physical += int(count or 0)
+                except (TypeError, ValueError):
+                    has_physical_evidence = False
+    physical_value = physical if has_physical_evidence else None
+    if physical_id_evidence and physical_without_ids:
+        physical_source = "unique_ids_and_attempt_records"
+    elif physical_id_evidence:
+        physical_source = "unique_ids"
+    elif has_physical_evidence:
+        physical_source = "attempt_count"
+    else:
+        physical_source = "missing"
+    return {
+        "logical": logical,
+        "physical": physical_value,
+        "has_ids": has_logical_ids or physical_id_evidence,
+        "has_logical_ids": has_logical_ids,
+        "has_lifecycle_ids": has_lifecycle_ids,
+        "has_physical_id_evidence": physical_id_evidence,
+        "has_physical_evidence": has_physical_evidence,
+        "duplicate_logical": duplicate_logical,
+        "duplicate_physical": duplicate_physical,
+        "source": ("unique_ids" if has_lifecycle_ids and physical_id_evidence
+                   else "lifecycle_ids_without_attempt_ids"
+                   if has_lifecycle_ids and not has_physical_evidence
+                   else "legacy_ids_and_attempt_count"
+                   if has_logical_ids
+                   else physical_source
+                   if has_physical_evidence
+                   else "legacy_row_count"),
+        "physical_source": physical_source,
+    }
 
 
 def _demand_fallback(snapshots):
@@ -1775,6 +1868,19 @@ def summarize(paths, *, acceptance_scope="unspecified", commit=None,
             demand_source = end_row.get("demand_source") or "end"
         else:
             demand, demand_source = _demand_fallback(request_demands)
+        request_metrics = _request_count_metrics(room_requests)
+        if request_metrics["physical"] is not None:
+            room_physical_count = request_metrics["physical"]
+        lifecycle_logical = (demand.get("logical_state_requests")
+                             if isinstance(demand, dict) else None)
+        if lifecycle_logical is None and request_metrics["has_lifecycle_ids"]:
+            lifecycle_logical = request_metrics["logical"]
+        lifecycle_physical = (demand.get("physical_state_attempts")
+                              if isinstance(demand, dict) else None)
+        if (lifecycle_physical is None
+                and (request_metrics["has_lifecycle_ids"]
+                     or request_metrics["has_physical_id_evidence"])):
+            lifecycle_physical = request_metrics["physical"]
         demand_reasons = (demand.get("reasons")
                           if isinstance(demand, dict) else None)
         dirty_reasons = []
@@ -1952,8 +2058,17 @@ def summarize(paths, *, acceptance_scope="unspecified", commit=None,
                 gap["decision_impact"] is True for gap in room_gaps),
             "gap_decision_impact_unknown": sum(
                 gap["decision_impact"] is None for gap in room_gaps),
-            "transport_requests": len(room_requests),
+            "transport_requests": request_metrics["logical"],
             "transport_physical_attempts": room_physical_count,
+            "logical_state_requests": lifecycle_logical,
+            "physical_state_attempts": lifecycle_physical,
+            "substituted_candidates": (
+                demand.get("substituted_candidates")
+                if isinstance(demand, dict) else None),
+            "cancelled_before_send": (
+                demand.get("cancelled_before_send")
+                if isinstance(demand, dict) else None),
+            "request_id_metrics": request_metrics,
             "transport_summary": _request_group(room_requests),
             "state_by_kind": _request_groups_by_kind(room_requests),
             "claim_miss_classification": claim_classification})
@@ -2012,7 +2127,9 @@ def summarize(paths, *, acceptance_scope="unspecified", commit=None,
             demand = games[index].get("demand") or {}
             for key in ("logical_demands", "coalesced_demands",
                         "logical_input_demands", "successor_requests",
-                        "physical_state_requests", "suppressed_duplicates",
+                        "physical_state_requests", "logical_state_requests",
+                        "physical_state_attempts", "substituted_candidates",
+                        "cancelled_before_send", "suppressed_duplicates",
                         "coalesced_or_suppressed"):
                 value = demand.get(key)
                 if value is None:
@@ -2068,6 +2185,10 @@ def summarize(paths, *, acceptance_scope="unspecified", commit=None,
                                   for i in indexes)
         layer_physical = sum(games[i]["transport_physical_attempts"]
                              for i in indexes)
+        lifecycle_physical_values = [
+            games[i].get("physical_state_attempts")
+            for i in indexes
+            if games[i].get("physical_state_attempts") is not None]
         layer_rows = [row for index in indexes for row in room_request_rows[index]]
         layer_misses = Counter()
         layer_confirms = Counter()
@@ -2086,7 +2207,20 @@ def summarize(paths, *, acceptance_scope="unspecified", commit=None,
             "rooms_excluded": len(games) - len(indexes),
             "denominator": len(indexes),
             "requests": layer_request_count,
-            "physical_state_attempts": layer_physical,
+            "physical_state_attempts": (
+                sum(lifecycle_physical_values)
+                if lifecycle_physical_values else None),
+            "transport_physical_attempts": layer_physical,
+            "logical_state_requests": (
+                sum(games[i].get("logical_state_requests")
+                    for i in indexes
+                    if games[i].get("logical_state_requests") is not None)
+                if any(games[i].get("logical_state_requests") is not None
+                       for i in indexes) else None),
+            "request_id_sources": dict(Counter(
+                (games[i].get("request_id_metrics") or {}).get(
+                    "source", "missing")
+                for i in indexes)),
             "eligible_windows": sum(games[i]["eligible_windows"]
                                      for i in indexes),
             "window_confirm_seq0": sum(games[i]["window_confirm_seq0"]
@@ -2259,6 +2393,43 @@ def summarize(paths, *, acceptance_scope="unspecified", commit=None,
             "status": dict(Counter(str(item.get("status")) for item in physical)),
             "max_starts_per_rolling_second": peak if starts else None,
             "note": "Client start times; not server arrival times. Legacy logs lack these fields.",
+        },
+        "state_request_metrics": {
+            "logical_state_requests": (
+                sum(game.get("logical_state_requests")
+                    for game in games
+                    if game.get("logical_state_requests") is not None)
+                if any(game.get("logical_state_requests") is not None
+                       for game in games) else None),
+            "physical_state_attempts": (
+                sum(game.get("physical_state_attempts")
+                    for game in games
+                    if game.get("physical_state_attempts") is not None)
+                if any(game.get("physical_state_attempts") is not None
+                       for game in games) else None),
+            "substituted_candidates": (
+                sum(game.get("substituted_candidates")
+                    for game in games
+                    if game.get("substituted_candidates") is not None)
+                if any(game.get("substituted_candidates") is not None
+                       for game in games) else None),
+            "cancelled_before_send": (
+                sum(game.get("cancelled_before_send")
+                    for game in games
+                    if game.get("cancelled_before_send") is not None)
+                if any(game.get("cancelled_before_send") is not None
+                       for game in games) else None),
+            "metric_version": "state-request-lifecycle-v1",
+            "source": (
+                "recorder demand snapshots and unique request IDs"
+                if any(game.get("logical_state_requests") is not None
+                       or game.get("physical_state_attempts") is not None
+                       for game in games)
+                else "legacy_or_missing"),
+            "request_id_sources": dict(Counter(
+                (game.get("request_id_metrics") or {}).get(
+                    "source", "missing")
+                for game in games)),
         },
         "request_status": dict(Counter(r.get("status") for r in requests)),
         "state_all": _request_group(requests),

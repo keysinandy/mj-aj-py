@@ -14,6 +14,51 @@ python3 -m mj.platform.match_runner --games 10 \
 规则覆盖或故障排查，不作为线上调度基线。本文件后续新增的线上数据默认按上述
 BOT 命令执行，既有回放中的策略和 checkpoint 记录保持不变。
 
+## `state-request-lifecycle` 结构实现（2026-09-12）
+
+当前工作树已加入候选—冻结请求—物理 attempt—响应应用的生命周期边界。
+`StateDemand` 按 gid 保存可升级候选、独立 reason revision、`successor_of`、
+幂等 close/CLOSING/CLOSED 和带来源的终态计数；`StateScheduler` 复用唯一
+`StateThrottle` 等待队列，`StateFetchCoordinator` 在响应应用完成前保留
+获取所有权。Bot 主循环继续使用既有 SSE/增量与窗口授权算法，只有镜像应用或
+权威快照重建完成后才释放 state 请求。
+
+state 请求现在带跨 gid 的 `candidate_id`、`logical_request_id` 和每次物理
+attempt 的 `transport_request_id`。429/网络重试保持同一 logical ID、每次
+重新获取共享许可；HTTP 头和 JSONL 诊断不包含令牌、URL 或请求 body。旧日志
+缺少这些字段时，`scripts/window_acceptance.py` 保留显式 legacy/missing
+边界，不从旧计数倒造新指标。
+
+本地验收：`python3 -m pytest tests/ -q` 为 `371 passed, 2 subtests
+passed`；`openspec validate state-request-lifecycle --strict --no-interactive`
+通过。冻结 `ab371b6` 的三房/30 局离线回放保持 canonical outcomes 与
+C1/C2/C3/C5=0、C4=22、阶段不可观测=28、未决=4；这些旧版本房不计入新版本
+线上分母。修复后线上最终分母为下方 3 个独立房、30 局。
+
+## `state-request-lifecycle` 最终线上验收（2026-09-13）
+
+按固定命令 `PYTHONPATH=. python -m mj.platform.match_runner --games 10
+--strategy bot --state-rate 15` 串行运行 BOT、SSE + `/state` 增量模式：
+`a_d723b95f88cb`、`a_ec8438a01275`、`a_c5358758e3de`，每房 10 局。实现
+范围以无秘密 manifest 和实现文件指纹冻结；工作树中的既有 docs 删除/`docs/think.md`
+改动保留且不计入实现范围。
+
+- 三房均通过硬门槛：demand `clean=30/dirty=0/missing=0`，transport
+  `complete=30`，旧动作重发 `0`，409/未知结果后的重复 POST `0`，C3 调度晚排队
+  `0`，`gap_decision_impact_risk=0`。
+- `/state` 物理尝试 `24806`，客户端启动峰值 `15/s`，429 `145`；生命周期指标为
+  logical `18947`、physical `19067`、候选替代 `149`、发送前取消 `5712`，版本
+  `state-request-lifecycle-v1`。这些启动时间和 429 只说明客户端/HTTP 观测，不等价于
+  服务端到达时间或窗口损失。
+- 各房 state queue p50/p95/max（ms）分别为 `123.5/358.1/825.6`、
+  `74.3/310.6/689.3`、`82.4/344.3/868.6`；urgent queue 分别为
+  `30.8/71.3/369.6`、`21.3/70.1/450.8`、`46.8/69.8/73.1`。
+- 可确认窗口身份 `96/107`（89.72%，legacy `11`）；窗口状态 `complete=21`、
+  `partial_identity=9`。确认诊断 C1/C2/C3/C4/C5=`5/0/0/2/1`，阶段不可观测 `5`，
+  未决 `0`；身份、阶段和结算限制单列，不冒充结构层通过。
+- 逐房报告及跨房汇总见运行期间生成的 `/tmp/state_request_lifecycle_online_final.json`；
+  旧版本/修复前房不进入最终分母。
+
 ## `state-window-observability` 实现修订（2026-09-11）
 
 实现前最后一轮设计修订已落到工作树：`StateDemand` 将增量
@@ -32,9 +77,8 @@ urgent。state/action 日志新增 throttle 与 HTTP 边界、Retry-After/Date r
 logical request/physical attempt 关联；验收报告按 transport/window/game 三层
 分类，并分别统计 logical、coalesced、successor、physical、suppressed demand。
 
-当前工作树已完成离线实现与回归，并于 2026-09-11 完成一房新的 BOT/SSE/15/s
-线上 canary；尚未完成后续 2～4 个独立房，因此线上结论仍需以单房证据为边界，
-不能把 focused/full test 或这一房结果解释成多房稳定性证明。
+当前工作树已完成离线实现与回归，并已按同一 BOT/SSE/15/s 命令完成 3 个独立房、
+30 局线上分层验收；结论以本节列出的硬门槛和诊断边界为准。
 
 ## 最新线上 canary（2026-09-11）
 
@@ -55,7 +99,9 @@ logical request/physical attempt 关联；验收报告按 transport/window/game 
 
 相关回归已补齐，完整 `tests/` 为 `334 passed, 2 subtests passed`，`git diff --check` 通过。
 
-本轮没有用修复后的工作树重新启动线上房；OpenSpec 5.4 仍未完成。下一步是冻结 commit、生成 run manifest，再按同一 BOT/SSE/15/s 命令运行 3–5 个独立房；验收时 game 无 `round_ended` 证据应标 `protocol_skipped`，不影响 transport/window 层单独汇总。
+上述段落记录的是实施阶段尚未完成线上分层验收时的状态；随后已完成 manifest、3 个独立房和
+逐窗审核。验收时 game 无 `round_ended` 证据仍标 `protocol_skipped`，不影响
+transport/window 层单独汇总。
 
 ## 最新：429 反馈平滑复测（2026-09-11）
 

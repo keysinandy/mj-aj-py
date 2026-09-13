@@ -62,17 +62,37 @@ class StateThrottle:
             return (2, w["serial"], w["serial"])
         return min(self._waiters, key=key)
 
-    def acquire(self, gid=None, deadline=None):
+    def acquire(self, gid=None, deadline=None, *, candidate_id=None,
+                cancel_check=None):
         """等待一个许可；deadline 使用 monotonic 秒，None 表示普通刷新。"""
         arrived = self.clock()
+        if cancel_check is not None:
+            try:
+                if cancel_check():
+                    return None
+            except Exception:
+                pass
         with self._cv:
             waiter = {"gid": gid, "deadline": deadline, "arrived": arrived,
-                      "serial": self._serial}
+                      "serial": self._serial, "candidate_id": candidate_id,
+                      "cancelled": False}
             self._serial += 1
             self._waiters.append(waiter)
             self._cv.notify_all()
             while True:
                 now = self.clock()
+                if waiter.get("cancelled") or waiter not in self._waiters:
+                    return None
+                if cancel_check is not None:
+                    try:
+                        cancelled = bool(cancel_check())
+                    except Exception:
+                        cancelled = False
+                    if cancelled:
+                        waiter["cancelled"] = True
+                        self._waiters.remove(waiter)
+                        self._cv.notify_all()
+                        return None
                 head = self._head(now)
                 grant_at = max(self._next, now)
                 if head is waiter and now >= self._next:
@@ -102,6 +122,32 @@ class StateThrottle:
                     waits.append(max(0.0, waiter["arrived"] + self.max_normal_wait - now))
                 timeout = min(x for x in waits if x > 0) if any(waits) else self.interval
                 self._cv.wait(timeout=timeout)
+
+    def update_waiter(self, candidate_id, *, deadline=None):
+        """Update a queued candidate without creating a second wait queue."""
+        changed = False
+        with self._cv:
+            for waiter in self._waiters:
+                if waiter.get("candidate_id") != candidate_id:
+                    continue
+                if deadline is not None and waiter.get("deadline") != deadline:
+                    waiter["deadline"] = deadline
+                    changed = True
+                self._cv.notify_all()
+                return changed
+        return False
+
+    def withdraw_waiter(self, candidate_id):
+        """Remove a queued candidate before it consumes a permit."""
+        with self._cv:
+            for waiter in list(self._waiters):
+                if waiter.get("candidate_id") != candidate_id:
+                    continue
+                waiter["cancelled"] = True
+                self._waiters.remove(waiter)
+                self._cv.notify_all()
+                return True
+        return False
 
     def note_429(self, cooldown_intervals=1.0):
         """把服务端 429 反馈折算成下一许可的短暂冷却。

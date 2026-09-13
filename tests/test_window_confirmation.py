@@ -301,6 +301,9 @@ def test_missing_deadline_confirmation_has_bounded_pending_retries():
 
     assert outcomes[-1] == "expired"
     assert bot.stats["window_confirm_miss"] == 0
+    assert bot.stats["confirmation_observation_budget_exhausted"] == 1
+    assert confirm.confirmation.as_json()[
+        "confirmation_observation_budget_exhausted"] is True
 
 
 def test_action_ids_survive_mirror_reanchor():

@@ -58,19 +58,35 @@ class DumpingApi(Api):
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(payload, f, ensure_ascii=False, indent=1)
 
-    def game_state(self, gid, seq, deadline=None, request_timeout=None):
+    def game_state(self, gid, seq, deadline=None, request_timeout=None,
+                   logical_request_id=None, reason=None, generation=None,
+                   transport_request_id=None, state_ticket=None,
+                   candidate_id=None, state_throttle=None,
+                   cancel_check=None):
         try:
             r = super().game_state(gid, seq, deadline=deadline,
-                                   request_timeout=request_timeout)
+                                   request_timeout=request_timeout,
+                                   logical_request_id=logical_request_id,
+                                   reason=reason, generation=generation,
+                                   transport_request_id=transport_request_id,
+                                   state_ticket=state_ticket,
+                                   candidate_id=candidate_id,
+                                   state_throttle=state_throttle,
+                                   cancel_check=cancel_check)
         except Exception as e:
             self._dump("state", {"gid": gid, "seq": seq,
                                   "deadline": deadline,
                                   "request_timeout": request_timeout,
+                                  "logical_request_id": logical_request_id,
+                                  "transport_request_id": transport_request_id,
                                   "error": _dump_error(e)})
             raise
         self._dump("state", {"gid": gid, "seq": seq,
                               "deadline": deadline,
-                              "request_timeout": request_timeout, "res": r})
+                              "request_timeout": request_timeout,
+                              "logical_request_id": logical_request_id,
+                              "transport_request_id": transport_request_id,
+                              "res": r})
         return r
 
     def game_action(self, gid, payload, deadline=None):

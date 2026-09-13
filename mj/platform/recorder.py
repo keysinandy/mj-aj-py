@@ -6,6 +6,8 @@
 - sse_frame SSE 通知帧:payload/水位/closed/去重与唤醒结果
 - req       每次状态轮询:请求时游标 seq/响应耗时/状态码/尝试次数/响应摘要；
             transport 可带 state_attempts 的物理状态与分阶段耗时摘要
+- state_reconcile 状态响应应用完成:logical id/评估 revision/已满足原因/
+            应用边界；与 req 分开记录，避免把响应后事实伪装成发送时视图
 - window_confirm 窗口权威确认过程:phase/window identity/seq/deadline/outcome
 - window_lifecycle 窗口生命周期状态转换:stage/state/outcome/归因字段
 - window_authorization 权威授权快照:phase/responding/deadline/时序证据
@@ -178,7 +180,13 @@ class Recorder:
     def req(self, gid, seq, status, latency_ms, attempts=None, summary=None,
             transport=None, throttle=None, request_kind=None,
             logical_request_id=None, attempt_index=None, reason=None,
-            generation=None, demand=None, requested_seq=None):
+            generation=None, demand=None, requested_seq=None,
+            candidate_id=None, candidate_created_at=None, queued_at=None,
+            admitted_at=None, successor_of=None, transport_request_id=None,
+            reason_revisions=None, satisfied_reasons=None,
+            evaluated_revisions=None, metric_version=None,
+            metric_source=None, response_applied_at=None,
+            effective_deadline=None, deadline_source=None):
         """记录一次逻辑 /state 请求；新增诊断字段均为可选，兼容旧日志。
 
         ``request_kind`` 只描述调度诊断用途，例如 ``WINDOW_PENG``、
@@ -203,12 +211,54 @@ class Recorder:
                            ("demand", demand), ("requested_seq", requested_seq)):
             if value is not None:
                 rec[key] = value
+        for key, value in (
+                ("candidate_id", candidate_id),
+                ("candidate_created_at", candidate_created_at),
+                ("queued_at", queued_at),
+                ("admitted_at", admitted_at),
+                ("successor_of", successor_of),
+                ("transport_request_id", transport_request_id),
+                ("reason_revisions", reason_revisions),
+                ("satisfied_reasons", satisfied_reasons),
+                ("evaluated_revisions", evaluated_revisions),
+                ("metric_version", metric_version),
+                ("metric_source", metric_source),
+                ("response_applied_at", response_applied_at),
+                ("effective_deadline", effective_deadline),
+                ("deadline_source", deadline_source)):
+            if value is not None:
+                rec[key] = value
         if demand is not None:
             # Keep a copy because callers reuse the live StateDemand snapshot
             # while the room continues; end() may need this as a compatibility
             # fallback when no explicit terminal snapshot is available.
             log.last_demand = copy.deepcopy(demand)
         log.write(rec)
+
+    def state_reconcile(self, gid, logical_request_id=None,
+                        evaluated_revisions=None, satisfied_reasons=None,
+                        response_applied_at=None, pending=None,
+                        lifecycle=None, error=None):
+        """Record the post-transport response-application boundary.
+
+        ``req`` intentionally contains the frozen dispatch view.  This
+        additive record carries facts known only after the mirror/authoritative
+        snapshot has been applied, so request analysis can distinguish the two
+        phases without rewriting or duplicating the dispatch record.
+        """
+        fields = {
+            "type": "state_reconcile",
+            "logical_request_id": logical_request_id,
+            "evaluated_revisions": evaluated_revisions,
+            "satisfied_reasons": satisfied_reasons,
+            "response_applied_at": response_applied_at,
+            "pending": pending,
+            "lifecycle": lifecycle,
+        }
+        if error is not None:
+            fields["error"] = type(error).__name__
+        self.log_for(gid).write({key: value for key, value in fields.items()
+                                 if value is not None})
 
     def window_confirm(self, gid, **fields):
         """记录一次窗口权威确认过程。

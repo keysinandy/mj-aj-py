@@ -78,7 +78,8 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
              retry_transient=True, error_cls=ApiError, before_attempt=None,
              state_diagnostics=False, on_429=None, diagnostic_kind=None,
              logical_request_id=None, logical_reason=None,
-             logical_generation=None):
+             logical_generation=None, transport_request_id=None,
+             cancel_check=None):
     """执行 HTTP 请求并把本次传输明细留在线程局部供记录器读取。
 
     deadline 使用 monotonic 秒；/state 用它参与限速与退避调度，动作
@@ -139,7 +140,29 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
                                 "send_ms"],
                 "source": "urllib.request.urlopen + response.read",
             }
+        if logical_request_id is not None:
+            meta["logical_request_id"] = logical_request_id
+        if transport_request_id is not None:
+            meta["transport_request_id"] = transport_request_id
         _TLS.request_meta = meta
+
+    def transport_id_for_attempt(attempt_index):
+        """Return the opaque id for one physical HTTP attempt.
+
+        The coordinator allocates the first ``:attempt:1`` id before entering
+        HTTP.  Retries stay under the same logical request but receive their
+        own attempt id, so diagnostic rows and gateway headers can be joined
+        without treating a retry as a new logical demand.
+        """
+        base = transport_request_id or logical_request_id
+        if base is None:
+            return None
+        base = str(base)
+        marker = ":attempt:"
+        prefix, sep, suffix = base.rpartition(marker)
+        if sep and suffix.isdigit():
+            return f"{prefix}{marker}{attempt_index}"
+        return f"{base}{marker}{attempt_index}"
 
     def record_diagnostic_attempt(started_epoch, started_mono, status=None,
                                   error=None, timeout_s=None,
@@ -206,6 +229,9 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
             item["reason"] = logical_reason
         if logical_generation is not None:
             item["generation"] = logical_generation
+        physical_id = transport_id_for_attempt(item["attempt_index"])
+        if physical_id is not None:
+            item["transport_request_id"] = physical_id
         if throttle is None and diagnostic_kind == "action":
             item["throttle"] = {
                 "status": "not_applicable",
@@ -357,6 +383,15 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
         throttle_info = None
         if before_attempt is not None:
             throttle_info = before_attempt()
+        if cancel_check is not None:
+            try:
+                cancelled = bool(cancel_check())
+            except Exception:
+                cancelled = False
+            if cancelled:
+                set_meta()
+                raise make_error(0, "state request cancelled",
+                                 uncertain=False) from None
         if is_action and deadline is not None and time.monotonic() >= deadline:
             set_meta()
             raise ActionDeadlineExceeded(
@@ -378,6 +413,11 @@ def _request(method, url, body=None, token=None, timeout=35.0, max_retry=5,
             if "\r" not in correlation_id and "\n" not in correlation_id:
                 req.add_header("X-Client-Request-Id", correlation_id)
                 req.add_header("X-Client-Attempt-Index", str(attempts))
+                physical_id = transport_id_for_attempt(attempts)
+                if physical_id is not None and "\r" not in physical_id \
+                        and "\n" not in physical_id:
+                    req.add_header("X-Client-Transport-Request-Id",
+                                   physical_id)
         started_epoch = time.time()
         started_mono = time.monotonic()
         attempt_status = None
@@ -630,7 +670,10 @@ class Api:
         return self.post("/api/match")
 
     def game_state(self, gid, seq, deadline=None, request_timeout=None,
-                   logical_request_id=None, reason=None, generation=None):
+                   logical_request_id=None, reason=None, generation=None,
+                   transport_request_id=None, state_ticket=None,
+                   candidate_id=None, state_throttle=None,
+                   cancel_check=None):
         """拉取状态；只有该端点消耗每令牌共享的 /state 预算。
 
         服务端上限约为 16/s，客户端默认以 15/s 主动限速；收到真实
@@ -642,9 +685,23 @@ class Api:
         ``seq=0`` 的快照重锚。
         """
         _TLS.throttle_ticket = None
+        throttle = (state_throttle if state_throttle is not None
+                    else self.state_throttle)
+        first_ticket = [state_ticket]
         def acquire():
-            ticket = self.state_throttle.acquire(gid, deadline) \
-                if self.state_throttle is not None else None
+            if first_ticket[0] is not None:
+                ticket = first_ticket[0]
+                first_ticket[0] = None
+            else:
+                if throttle is None:
+                    ticket = None
+                else:
+                    try:
+                        ticket = throttle.acquire(
+                            gid, deadline, candidate_id=candidate_id,
+                            cancel_check=cancel_check)
+                    except TypeError:
+                        ticket = throttle.acquire(gid, deadline)
             _TLS.throttle_ticket = ticket
             if ticket is None:
                 return {"status": "not_applicable",
@@ -667,8 +724,8 @@ class Api:
         if request_timeout is not None:
             timeout = max(0.001, float(request_timeout))
             timeout = min(timeout, self.timeout)
-        on_429 = (getattr(self.state_throttle, "note_429", None)
-                  if self.state_throttle is not None else None)
+        on_429 = (getattr(throttle, "note_429", None)
+                  if throttle is not None else None)
         return _request("GET", self._url(f"/api/games/{gid}/state",
                                            {"seq": seq}), token=self.token,
                         timeout=timeout, deadline=deadline,
@@ -676,7 +733,9 @@ class Api:
                         on_429=on_429,
                         logical_request_id=logical_request_id,
                         logical_reason=reason,
-                        logical_generation=generation)
+                        logical_generation=generation,
+                        transport_request_id=transport_request_id,
+                        cancel_check=cancel_check)
 
     def game_snapshot(self, gid, deadline=None, timeout=0.5):
         """有界地请求 ``seq=0`` 全量快照。
