@@ -29,6 +29,9 @@ def run(games=200, seed_start=190000, evaluator="shape-v1"):
         warmup(evaluator)
     samples = {"discard": [], "react": []}
     fallbacks = {}
+    levels = {"discard": {}, "react": {}}
+    fallback_by_phase = {"discard": {}, "react": {}}
+    q_pruned = {"discard": 0, "react": 0}
     t0 = time.perf_counter()
     for i in range(games):
         g = Game(seed=seed_start + i, dealer=i % 4,
@@ -46,13 +49,31 @@ def run(games=200, seed_start=190000, evaluator="shape-v1"):
             reason = getattr(ev, "fallback_reason", None)
             if isinstance(ev, dict):
                 reason = ev.get("fallback_reason")
+                level = ev.get("level")
+            else:
+                level = getattr(ev, "level", None)
+            if level:
+                levels[phase][level] = levels[phase].get(level, 0) + 1
+            if isinstance(ev, dict):
+                q_pruned[phase] += sum(
+                    1 for item in ev.get("candidates", ())
+                    if item.get("q_pruned"))
+            elif ev is not None:
+                q_pruned[phase] += sum(
+                    1 for item in getattr(ev, "candidates", ())
+                    if item.get("q_pruned"))
             if reason:
                 fallbacks[reason] = fallbacks.get(reason, 0) + 1
+                phase_reasons = fallback_by_phase[phase]
+                phase_reasons[reason] = phase_reasons.get(reason, 0) + 1
             g.step(act)
     summary = {"games": games, "seed_start": seed_start,
                "evaluator": evaluator,
                "elapsed_s": time.perf_counter() - t0,
-               "fallbacks": fallbacks}
+               "fallbacks": fallbacks,
+               "fallbacks_by_phase": fallback_by_phase,
+               "levels": levels,
+               "q_pruned_candidates": q_pruned}
     for phase, values in samples.items():
         summary[phase] = {
             "n": len(values), "mean_ms": statistics.fmean(values) if values else None,

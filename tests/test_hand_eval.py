@@ -4,6 +4,7 @@ import json
 import os
 import random
 import unittest
+from unittest.mock import patch
 
 from mj.bot import choose_action, choose_discard
 from mj.game import Game, PASS, PONG
@@ -12,6 +13,7 @@ from mj.hand_eval import (
     enumerate_decompositions, evaluate_discard_candidates,
     evaluate_reaction, evaluate_standing,
 )
+import mj.hand_eval as hand_eval_module
 from mj.platform.bot_client import _compact_evaluation
 from mj.shanten import shanten
 from mj.tiles import counts
@@ -91,6 +93,40 @@ class TestHandEvaluation(unittest.TestCase):
         ev = evaluate_standing(EvalContext(hand=hand, visible=tuple(vis)),
                                "shape-v1", level="Q")
         self.assertEqual(ev.improvement, 0.0)
+
+    def test_batch_future_discard_matches_python_reference(self):
+        """The Rust batch shortcut must preserve the Python tie ordering."""
+        hand = counts("123m456m789m123p5p")
+        drawn = list(hand)
+        drawn[8] += 1
+        visible = tuple(drawn)
+        try:
+            kernel_probe = hand_eval_module._best_future_discard_kernel(
+                drawn, 0, list(visible))
+        except (ImportError, AttributeError):
+            kernel_probe = None
+        if kernel_probe is None:
+            self.skipTest("optimized Rust batch kernel is not installed")
+        ctx = EvalContext(hand=hand, visible=visible)
+        profile = EvalProfile.shape_v1(discard_time_budget_ms=1000,
+                                       discard_node_budget=100000)
+        fast = hand_eval_module._best_future_discard(
+            ctx, drawn, hand_eval_module._Budget(100000, 1000))
+        with patch.object(hand_eval_module, "_best_future_discard_kernel",
+                          lambda *_args: None):
+            reference = hand_eval_module._best_future_discard(
+                ctx, drawn, hand_eval_module._Budget(100000, 1000))
+        self.assertIsNotNone(fast)
+        self.assertIsNotNone(reference)
+        self.assertEqual((fast[1], fast[3], fast[5]),
+                         (reference[1], reference[3], reference[5]))
+        self.assertAlmostEqual(fast[4], reference[4])
+        scalar = hand_eval_module._best_future_discard(
+            ctx, drawn, hand_eval_module._Budget(100000, 1000),
+            include_tiles=False)
+        self.assertEqual((scalar[1], scalar[3], scalar[4]),
+                         (fast[1], fast[3], fast[4]))
+        self.assertEqual(scalar[5], ())
 
     def test_with_draw_updates_hand_and_visible_once(self):
         hand = counts("123m456m789m123p5p")

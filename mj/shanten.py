@@ -246,6 +246,16 @@ except ImportError:
     _rust_shanten = None
     _rust_ukeire = None
 
+try:
+    from mj_kernels import best_future_discard as _rust_best_future_discard
+except (ImportError, AttributeError):
+    _rust_best_future_discard = None
+
+
+FUTURE_DISCARD_KERNEL_VERSION = (
+    "rust-batch-v1" if _rust_best_future_discard is not None
+    else "python-fallback")
+
 _FORCE_PY = os.environ.get("MJ_KERNELS", "").lower() == "python"
 
 
@@ -261,6 +271,27 @@ def ukeire(counts, locked=0, visible=None):
     if _rust_ukeire is not None and not _FORCE_PY:
         return _rust_ukeire(counts, locked, visible)
     return ukeire_py(counts, locked, visible)
+
+
+def best_future_discard(counts, locked=0, visible=None, include_tiles=True):
+    """批量找出最低向听的立即弃牌(有 Rust 扩展时可用)。
+
+    返回 ``(tile, shanten, ukeire_tiles, u1)``；扩展未安装或被强制
+    使用 Python 时返回 ``None``，由上层保留可审计的 Python 路径。
+    """
+    if _rust_best_future_discard is None or _FORCE_PY:
+        return None
+    try:
+        return _rust_best_future_discard(counts, locked, visible,
+                                         include_tiles)
+    except TypeError:
+        # Keep an already-installed pre-include_tiles wheel usable during a
+        # rolling deploy; its extra tile list is harmless when the caller
+        # only requested the scalar total.
+        result = _rust_best_future_discard(counts, locked, visible)
+        if not include_tiles and result is not None:
+            return (result[0], result[1], [], result[3])
+        return result
 
 
 def _left(t, vis):

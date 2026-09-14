@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from dataclasses import dataclass, field
+from functools import lru_cache
 import hashlib
 import json
 import threading
@@ -24,13 +25,40 @@ from typing import Iterable, Optional, Sequence
 from .game import (
     PASS, PONG, CHOW_LOW, CHOW_MID, CHOW_HIGH, KONG_OPEN,
 )
-from .shanten import shanten, ukeire
+from .shanten import (
+    shanten, ukeire,
+    best_future_discard as _best_future_discard_kernel,
+    FUTURE_DISCARD_KERNEL_VERSION,
+)
 from .tiles import W
 from .win import is_baotou
 
 
 MODEL_ASSUMPTION = "uniform_unseen_no_opponent_actions"
 PROFILE_VERSION = "shape-v1"
+_MISSING = object()
+
+
+@lru_cache(maxsize=64)
+def _cached_profile_fingerprint(name, version, w_i, w_h, w_b, w_c,
+                                tau_pong, tau_chow, discard_nodes,
+                                react_nodes, discard_ms, react_ms,
+                                explanation, future_kernel):
+    payload = {
+        "name": name, "version": version,
+        "wI": w_i, "wH": w_h, "wB": w_b, "wC": w_c,
+        "tau_pong_multiplier": tau_pong,
+        "tau_chow_multiplier": tau_chow,
+        "discard_node_budget": discard_nodes,
+        "react_node_budget": react_nodes,
+        "discard_time_budget_ms": discard_ms,
+        "react_time_budget_ms": react_ms,
+        "explanation": explanation,
+        "future_discard_kernel": future_kernel,
+    }
+    return hashlib.sha256(json.dumps(
+        payload, sort_keys=True, separators=(",", ":")
+    ).encode()).hexdigest()[:16]
 
 
 class InvalidEvaluationInput(ValueError):
@@ -56,10 +84,11 @@ class EvalProfile:
     tau_chow_multiplier: float = 1.0
     discard_node_budget: int = 4096
     react_node_budget: int = 2048
-    # Leave a small Python/serialization margin below the external 20/10ms
-    # acceptance limits.  The profile still reports the actual budget and
-    # any uninterruptible kernel overrun.
-    discard_time_budget_ms: float = 16.0
+    # Leave a small margin below the external 20/10ms acceptance limits.  The
+    # Rust batched future-discard kernel and decision-local caches make 17.5ms
+    # a useful discard budget while retaining roughly 2.5ms for action plumbing;
+    # the profile still reports any uninterruptible kernel overrun.
+    discard_time_budget_ms: float = 17.5
     react_time_budget_ms: float = 7.0
     explanation: bool = True
 
@@ -76,15 +105,12 @@ class EvalProfile:
 
     @property
     def fingerprint(self) -> str:
-        payload = {
-            k: getattr(self, k) for k in (
-                "name", "version", "wI", "wH", "wB", "wC",
-                "tau_pong_multiplier", "tau_chow_multiplier",
-                "discard_node_budget", "react_node_budget",
-                "discard_time_budget_ms", "react_time_budget_ms",
-                "explanation")}
-        return hashlib.sha256(json.dumps(payload, sort_keys=True,
-                                         separators=(",", ":")).encode()).hexdigest()[:16]
+        return _cached_profile_fingerprint(
+            self.name, self.version, self.wI, self.wH, self.wB, self.wC,
+            self.tau_pong_multiplier, self.tau_chow_multiplier,
+            self.discard_node_budget, self.react_node_budget,
+            self.discard_time_budget_ms, self.react_time_budget_ms,
+            self.explanation, FUTURE_DISCARD_KERNEL_VERSION)
 
 
 def profile_for(value=None) -> EvalProfile:
@@ -173,6 +199,33 @@ class EvalContext:
         values = {name: getattr(self, name) for name in self.__dataclass_fields__}
         values.update(changes)
         return EvalContext(**values)
+
+    def fast_replace(self, *, hand=_MISSING, locked=_MISSING,
+                     visible=_MISSING, melds=_MISSING, chows=_MISSING,
+                     phase=_MISSING, you_cai_bi_kao=_MISSING,
+                     freeze=_MISSING, freezer=_MISSING, live_wall=_MISSING,
+                     drawn=_MISSING, kong_draw=_MISSING, seat=_MISSING,
+                     pending_owner=_MISSING, pending_tile=_MISSING):
+        """Create an internally trusted child context without validation.
+
+        All callers are derived from a validated context and only change
+        tile counts or the small set of rule fields shown above.  Public
+        constructors and :meth:`replace` retain full validation; the fast
+        path avoids rebuilding the dataclass field dictionary and scanning
+        two 34-element vectors for every hypothetical draw/discard node.
+        """
+        child = object.__new__(EvalContext)
+        for name, value in (
+            ("hand", hand), ("locked", locked), ("visible", visible),
+            ("melds", melds), ("chows", chows), ("phase", phase),
+            ("you_cai_bi_kao", you_cai_bi_kao), ("freeze", freeze),
+            ("freezer", freezer), ("live_wall", live_wall),
+            ("drawn", drawn), ("kong_draw", kong_draw), ("seat", seat),
+            ("pending_owner", pending_owner), ("pending_tile", pending_tile),
+        ):
+            object.__setattr__(child, name,
+                               getattr(self, name) if value is _MISSING else value)
+        return child
 
     def cache_key(self, profile: EvalProfile, level: str = "Q"):
         return (self.hand, self.locked, self.visible, self.melds,
@@ -265,6 +318,19 @@ class Decomposition:
             "pair_count": self.pair_count, "head_index": self.head_index,
             "implicit_wild": self.implicit_wild,
         }
+
+
+def _decomposition_marker(d: Decomposition):
+    """Cheap stable identity for bounded traversal and de-duplication.
+
+    The previous hot path repeatedly materialized nested JSON dictionaries
+    solely to sort or identify a decomposition.  The immutable tuple fields
+    already contain the same identity; their repr preserves deterministic
+    ordering without allocating the explanation payload.
+    """
+    return repr((d.kind, d.melds, d.pair, d.extra_pairs, d.taatsu,
+                 d.singles, d.wild_left, d.score, d.pair_count,
+                 d.head_index, d.implicit_wild))
 
 
 @dataclass(frozen=True)
@@ -422,6 +488,11 @@ class _Budget:
         self.nodes = 0
         self.kernel_calls = 0
         self.exceeded = None
+        # These caches live for one complete decision.  A Q0 pass and its Q
+        # continuation therefore share exact base features, while separate
+        # decisions cannot leak mutable evaluation state into one another.
+        self.base_cache = {}
+        self.future_cache = {}
 
     def tick(self, n=1):
         if self.exceeded:
@@ -603,7 +674,7 @@ def _enumerate_standard(counts, locked, limit=512, target=None,
                 # retained as far as the requested cap allows.
                 worst = max(range(len(out)),
                             key=lambda j: (out[j].score,
-                                           out[j].as_json().__repr__()))
+                                           _decomposition_marker(out[j])))
                 out.pop(worst)
 
     def walk(start, melds, pairs, taatsu, singles, wild, rem_natural):
@@ -713,7 +784,7 @@ def _enumerate_standard(counts, locked, limit=512, target=None,
                                   wild_left=wild_left,
                                   implicit_wild=implicit))
     out.sort(key=lambda d: (d.score, -len(d.melds), -d.pair_count,
-                            -len(d.taatsu), d.as_json().__repr__()))
+                            -len(d.taatsu), _decomposition_marker(d)))
     return tuple(out[:limit])
 
 
@@ -761,7 +832,7 @@ def enumerate_decompositions(counts: Sequence[int], locked=0, limit=512,
     if chi is not None:
         values.append(chi)
     values.sort(key=lambda d: (d.score, 0 if d.kind == "standard" else 1,
-                               d.as_json().__repr__()))
+                               _decomposition_marker(d)))
     result = tuple(values)
     with _DECOMP_LOCK:
         if len(_DECOMP_CACHE) >= _DECOMP_CAP:
@@ -808,10 +879,33 @@ def _hu_gate_allows(ctx: EvalContext, standing, completed):
                 and not is_baotou(standing, ctx.locked))
 
 
-def _base_features(ctx: EvalContext, budget: Optional[_Budget] = None):
-    rem, n_unknown = _remaining(ctx)
-    s = shanten(ctx.hand, ctx.locked)
-    if budget:
+def _base_features(ctx: EvalContext, budget: Optional[_Budget] = None,
+                   s_hint: Optional[int] = None,
+                   rem_hint=None):
+    cache = getattr(budget, "base_cache", None) if budget is not None else None
+    cache_key = None
+    if cache is not None:
+        # These are the only context values read by U1, including the
+        # white-tile HU gate for a tenpai hand.  Phase/structure fields are
+        # handled by the caller and do not belong in this key.
+        cache_key = (ctx.hand, ctx.locked, ctx.visible,
+                     ctx.you_cai_bi_kao, ctx.kong_draw)
+        cached = cache.get(cache_key)
+        # A hit remains one logical node so warm and cold runs keep the same
+        # node-budget semantics.
+        if budget.tick():
+            if cached is not None:
+                return cached
+        elif cached is not None:
+            # Keep diagnostic callers useful even when they inspect a result
+            # after the shared clock has expired.
+            return cached
+    if rem_hint is None:
+        rem, n_unknown = _remaining(ctx)
+    else:
+        rem, n_unknown = rem_hint
+    s = shanten(ctx.hand, ctx.locked) if s_hint is None else int(s_hint)
+    if budget and s_hint is None:
         budget.kernel()
     if s == 0:
         waits = _legal_waits(ctx, ctx.hand, ctx.visible)
@@ -828,7 +922,10 @@ def _base_features(ctx: EvalContext, budget: Optional[_Budget] = None):
     else:
         tiles, u1 = (), 0
     p1 = (u1 / n_unknown) if n_unknown else 0.0
-    return s, tiles, u1, p1, rem, n_unknown
+    result = (s, tuple(tiles), u1, p1, tuple(rem), n_unknown)
+    if cache is not None and cache_key is not None:
+        cache[cache_key] = result
+    return result
 
 
 def _taatsu_effective_tiles(unit):
@@ -875,7 +972,14 @@ def _structure_scores(ctx: EvalContext, s: int, rem,
                                     optimal=False)
     chi = _chiitoi_descriptor(ctx.hand, ctx.locked)
     optimal = ()
-    if not (chi is not None and chi.score == s):
+    # The bounded unpruned walk is ordered to discover complete/taatsu
+    # allocations first.  If it already exposes a minimum-score standard
+    # witness, a second target-only DFS can only duplicate that witness and
+    # needlessly consume the decision clock.  Keep the target DFS as a
+    # correctness fallback for the rare case where the bounded walk misses
+    # the minimum (and for chiitoi-leading hands no standard target is needed).
+    has_fast_target = any(d.score == s for d in fast)
+    if not (chi is not None and chi.score == s) and not has_fast_target:
         optimal = _enumerate_standard(
             ctx.hand, ctx.locked, limit=1, target=s,
             stop_after_target=True, prune=True)
@@ -884,7 +988,7 @@ def _structure_scores(ctx: EvalContext, s: int, rem,
     for d in tuple(optimal) + tuple(fast):
         if d.score != s:
             continue
-        marker = repr(d.as_json())
+        marker = _decomposition_marker(d)
         if marker not in seen:
             seen.add(marker)
             decomps.append(d)
@@ -934,7 +1038,46 @@ def _structure_scores(ctx: EvalContext, s: int, rem,
     return best[1], best[2], best[3]
 
 
-def _best_future_discard(ctx, drawn, budget: Optional[_Budget] = None):
+def _best_future_discard(ctx, drawn, budget: Optional[_Budget] = None,
+                         include_tiles=True):
+    future_cache = getattr(budget, "future_cache", None) if budget is not None else None
+    future_key = None
+    if future_cache is not None:
+        future_key = (tuple(drawn), ctx.locked, ctx.visible,
+                      ctx.you_cai_bi_kao, ctx.kong_draw, bool(include_tiles))
+        cached = future_cache.get(future_key)
+        if cached is not None:
+            # A cached child is still one logical hypothetical node, but no
+            # kernel call is charged because its result is already material.
+            if not budget.tick():
+                return None
+            return cached
+    # Batch the common, non-YCBK path in Rust.  The kernel computes all
+    # minimum-shanten discard ties and their U1 totals in one FFI call; YCBK
+    # still uses Python because its HU gate depends on the standing
+    # 爆头/财神 context, which the generic kernel intentionally does not know.
+    if not ctx.you_cai_bi_kao:
+        kernel = _best_future_discard_kernel(
+            list(drawn), ctx.locked, list(ctx.visible), include_tiles)
+        if kernel is not None:
+            discard, child_s, tiles, u1 = kernel
+            if discard >= 0:
+                child = list(drawn)
+                child[discard] -= 1
+                rem = tuple(max(0, 4 - n) for n in ctx.visible)
+                n_unknown = sum(rem)
+                p = (u1 / n_unknown) if n_unknown else 0.0
+                if budget:
+                    # One tick represents this batched hypothetical layer;
+                    # the Rust internals are accounted as kernel calls below.
+                    if not budget.tick():
+                        return None
+                    budget.kernel()
+                result = ((p, u1, -discard), discard, tuple(child),
+                          child_s, p, tuple(tiles))
+                if future_cache is not None:
+                    future_cache[future_key] = result
+                return result
     best_s = None
     choices = []
     for d in range(34):
@@ -955,114 +1098,152 @@ def _best_future_discard(ctx, drawn, budget: Optional[_Budget] = None):
         return None
     # Future Q0 uses direct p1 only.  The same post-draw visible denominator
     # is used for every alternative; discarding does not reduce visible.
-    vis = list(ctx.visible)
+    # Compute it once for all tied best discards and pass the known shanten to
+    # the base layer, avoiding a second 34-tile scan and Rust shanten call.
+    vis = ctx.visible
+    rem = tuple(max(0, 4 - n) for n in vis)
+    n_unknown = sum(rem)
     best = None
     for d, c in choices:
         s2, tiles, u, p, _r, _n = _base_features(
-            ctx.replace(hand=tuple(c), visible=tuple(vis)), budget)
+            ctx.fast_replace(hand=tuple(c), visible=vis), budget,
+            s_hint=best_s, rem_hint=(rem, n_unknown))
         key = (p, u, -d)
         if best is None or key > best[0]:
             best = (key, d, c, s2, p, tiles)
+    if best is not None and future_cache is not None and future_key is not None:
+        # Keep the cached child immutable; callers only inspect it while
+        # constructing the next H2 state.
+        best = (best[0], best[1], tuple(best[2]), best[3], best[4], best[5])
+        future_cache[future_key] = best
     return best
 
 
-def _future_improvement(ctx, s, p1, rem, n_unknown, budget):
-    if n_unknown <= 1:
-        return 0.0, (), True
-    total = 0.0
+def _future_lookahead(ctx, s, rem, n_unknown, budget, direct_tiles=None,
+                      base_u1=None):
+    """Compute I and H2 in one next-draw traversal.
+
+    The previous implementation walked the same direct draw states once for
+    I and again for H2.  A child draw and its best immediate discard are
+    independent of which feature consumes them, so sharing that work keeps
+    the feature definitions unchanged while cutting duplicate kernel calls.
+    """
+    need_i = n_unknown > 1
+    need_h2 = ctx.live_wall > 1 and n_unknown > 0
+    if not need_i and not need_h2:
+        return 0.0, 0.0, (), True
+    direct = (set(range(34)) if direct_tiles is None
+              else {int(t) for t in direct_tiles})
+    # For a fixed standing hand, the hold-after-draw baseline has the same
+    # legal ukeire/wait tile set as the original base evaluation.  Only the
+    # denominator and (when t itself is effective) one remaining copy change;
+    # recomputing ``_base_features`` for every draw needlessly repeats a Rust
+    # ukeire call and its 34-tile scan.  ``None`` keeps this helper useful to
+    # offline callers that do not have the original U1 handy.
+    base_tiles = direct
+    base_u1_value = base_u1
+    # I deliberately retains the full unseen-tile enumeration.  Replacing an
+    # isolated tile can still alter the standard/七对 allocation and its U1,
+    # so a structural-neighbour shortcut would change the exact feature.  The
+    # safe reductions below skip only branches whose shanten bound proves
+    # they cannot contribute.
+    draw_tiles = range(34)
+    total_i = 0.0
+    total_h2 = 0.0
     paths = []
-    complete = True
-    for t, weight in enumerate(rem):
-        if weight <= 0:
-            continue
-        if not budget.tick():
-            complete = False
-            break
-        drawn = list(ctx.hand)
-        drawn[t] += 1
-        vis2 = list(ctx.visible)
-        vis2[t] += 1
-        # A first-tile HU is a terminal branch, not a same-shanten
-        # improvement.  The Rust shanten kernel is a cheap win prefilter;
-        # avoid invoking the considerably heavier wildcard win DFS for every
-        # ordinary draw.
-        drawn_is_win = (shanten(drawn, ctx.locked) < 0
-                        and _hu_gate_allows(ctx, ctx.hand, drawn))
-        budget.kernel()
-        if drawn_is_win:
-            continue
-        post = _best_future_discard(ctx.replace(visible=tuple(vis2)), drawn,
-                                    budget)
-        if post is None:
-            complete = False
-            break
-        _key, d, child, child_s, child_p1, child_tiles = post
-        if child_s != s:
-            continue
-        # Baseline is the original hand held after the same draw, not the
-        # original p1/N.  This makes a shrinking unknown pool alone contribute
-        # zero improvement.
-        held_s, _held_tiles, held_u, held_p1, _r2, _n2 = _base_features(
-            ctx.replace(visible=tuple(vis2)), budget)
-        if held_s != s:
-            continue
-        gain = max(0.0, child_p1 - held_p1)
-        if gain:
-            contribution = (weight / n_unknown) * gain
-            total += contribution
-            paths.append({"draw": t, "remaining": weight,
-                          "best_discard": d, "p1": child_p1,
-                          "hold_p1": held_p1, "gain": gain,
-                          "contribution": contribution,
-                          "ukeire_tiles": list(child_tiles)})
-    return total, tuple(paths), complete
-
-
-def _future_h2(ctx, s, rem, n_unknown, budget, direct_tiles=None):
-    if ctx.live_wall <= 0 or n_unknown <= 0:
-        return 0.0, True
-    total = 0.0
-    complete = True
-    tile_iter = (direct_tiles if direct_tiles is not None
-                 else tuple(range(34)))
-    for t in tile_iter:
+    for t in draw_tiles:
         weight = rem[t]
         if weight <= 0:
             continue
         if not budget.tick():
-            complete = False
-            break
+            return total_i, total_h2, tuple(paths), False
         drawn = list(ctx.hand)
         drawn[t] += 1
         vis2 = list(ctx.visible)
         vis2[t] += 1
         first_prob = weight / n_unknown
-        drawn_is_win = (shanten(drawn, ctx.locked) < 0
+        drawn_s = shanten(drawn, ctx.locked)
+        drawn_is_win = (drawn_s < 0
                         and _hu_gate_allows(ctx, ctx.hand, drawn))
         budget.kernel()
         if drawn_is_win:
-            total += first_prob
+            # A direct winning draw is a terminal H2 branch.  It is never an
+            # I improvement, matching the two original feature functions.
+            if need_h2 and t in direct:
+                total_h2 += first_prob
             continue
-        post = _best_future_discard(ctx.replace(visible=tuple(vis2)), drawn,
-                                    budget)
+
+        # Adding one tile can lower shanten by at most one.  A direct
+        # improvement therefore cannot contribute to I (the best discard is
+        # strictly below the standing s).  H2 can only reach a tenpai child
+        # from s==1; for s>=2 these direct branches are provably irrelevant
+        # and are skipped before the expensive best-discard search.
+        if drawn_s < s and s >= 2:
+            continue
+
+        # I considers every remaining draw that can preserve s; H2 considers
+        # only its proven direct effective set.  Both features use the same
+        # post-draw child when a branch is relevant to either feature.
+        child_ctx = ctx.fast_replace(visible=tuple(vis2))
+        post = _best_future_discard(child_ctx, drawn, budget,
+                                    include_tiles=False)
         if post is None:
-            complete = False
-            break
-        _key, _d, child, child_s, _p, _tiles = post
-        if ctx.live_wall <= 1 or child_s != 0:
-            continue
-        waits = _legal_waits(ctx.replace(hand=tuple(child), visible=tuple(vis2),
-                                         kong_draw=False),
-                             child, vis2)
-        n2 = max(0, n_unknown - 1)
-        if n2:
-            total += first_prob * sum(max(0, 4 - vis2[w]) for w in waits) / n2
-    return min(1.0, max(0.0, total)), complete
+            return total_i, total_h2, tuple(paths), False
+        _key, d, child, child_s, child_p1, child_tiles = post
+
+        if need_i and child_s == s:
+            # Baseline is the original hand held after this same draw.  A
+            # shrinking unknown pool alone therefore contributes zero.
+            # Keep the original standing hand as the hold baseline while
+            # updating only the visible pool for the hypothetical draw.  This
+            # matches the established I definition and keeps the child at a
+            # valid standing tile count.
+            if base_u1_value is None:
+                held_s, _held_tiles, _held_u, held_p1, _r2, _n2 = _base_features(
+                    child_ctx, budget)
+            else:
+                held_s = s
+                n2 = max(0, n_unknown - 1)
+                held_u = base_u1_value - (1 if t in base_tiles else 0)
+                held_p1 = (held_u / n2) if n2 else 0.0
+            if held_s == s:
+                gain = max(0.0, child_p1 - held_p1)
+                if gain:
+                    if not child_tiles:
+                        _child_result = ukeire(child, ctx.locked, vis2)
+                        child_tiles = tuple(_child_result[1])
+                        budget.kernel()
+                    contribution = first_prob * gain
+                    total_i += contribution
+                    paths.append({"draw": t, "remaining": weight,
+                                  "best_discard": d, "p1": child_p1,
+                                  "hold_p1": held_p1, "gain": gain,
+                                  "contribution": contribution,
+                                  "ukeire_tiles": list(child_tiles)})
+
+        if need_h2 and t in direct and child_s == 0:
+            waits = _legal_waits(
+                child_ctx.fast_replace(hand=tuple(child), kong_draw=False),
+                child, vis2)
+            n2 = max(0, n_unknown - 1)
+            if n2:
+                total_h2 += first_prob * sum(
+                    max(0, 4 - vis2[w]) for w in waits) / n2
+    return (min(1.0, max(0.0, total_i)),
+            min(1.0, max(0.0, total_h2)), tuple(paths), True)
 
 
 def evaluate_standing(ctx: EvalContext, profile=None, level="Q0",
-                      budget: Optional[_Budget] = None) -> HandEvaluation:
-    """Evaluate one standing hand.  ``level=Q`` adds I/H2."""
+                      budget: Optional[_Budget] = None,
+                      base_evaluation: Optional[HandEvaluation] = None
+                      ) -> HandEvaluation:
+    """Evaluate one standing hand.  ``level=Q`` adds I/H2.
+
+    ``base_evaluation`` is an internal continuation supplied when the exact
+    Q0 result for this same context is already complete.  Reusing its U1 and
+    structure fields avoids a second decomposition/base pass before Q starts;
+    public callers can omit it and retain the original behavior.
+    """
     profile = profile_for(profile)
     expected = 13 - 3 * ctx.locked
     if sum(ctx.hand) != expected:
@@ -1072,36 +1253,41 @@ def evaluate_standing(ctx: EvalContext, profile=None, level="Q0",
     budget = budget or _Budget(
         profile.discard_node_budget,
         profile.discard_time_budget_ms)
-    s, tiles, u1, p1, rem, n_unknown = _base_features(ctx, budget)
-    # Reaction Q0 uses the same public evaluator and score fields, but its
-    # phase-specific structure feature is bounded by the short response
-    # window.  Full discard Q0 retains the material-safe decomposition DFS.
-    if level.upper() == "Q0" and ctx.phase == "react":
-        b, c = _reaction_q0_shape(ctx, s, rem)
-        d = None
+    reuse_base = (level.upper() == "Q"
+                  and base_evaluation is not None
+                  and base_evaluation.profile_fingerprint == profile.fingerprint
+                  and base_evaluation.complete)
+    if reuse_base:
+        s = base_evaluation.shanten
+        tiles = tuple(base_evaluation.ukeire_tiles)
+        u1 = base_evaluation.u1
+        rem, n_unknown = _remaining(ctx)
+        p1 = (u1 / n_unknown) if n_unknown else 0.0
+        b, c = base_evaluation.b, base_evaluation.c
+        decomposition = base_evaluation.decomposition
     else:
-        b, c, d = _structure_scores(ctx, s, rem, profile)
+        s, tiles, u1, p1, rem, n_unknown = _base_features(ctx, budget)
+        # Reaction Q0 uses the same public evaluator and score fields, but its
+        # phase-specific structure feature is bounded by the short response
+        # window.  Full discard Q0 retains the material-safe decomposition DFS.
+        if level.upper() == "Q0" and ctx.phase == "react":
+            b, c = _reaction_q0_shape(ctx, s, rem)
+            d = None
+        else:
+            b, c, d = _structure_scores(ctx, s, rem, profile)
+        decomposition = d.as_json() if d else None
     q0 = p1 + profile.wB * b + profile.wC * c
     improvement = h2 = None
     paths = ()
     complete = True
     fallback = None
     if level.upper() == "Q":
-        improvement, paths, ok_i = _future_improvement(
-            ctx, s, p1, rem, n_unknown, budget)
-        if not ok_i:
+        improvement, h2, paths, ok = _future_lookahead(
+            ctx, s, rem, n_unknown, budget, direct_tiles=tiles,
+            base_u1=u1)
+        if not ok:
             complete = False
             fallback = budget.exceeded or "future_budget"
-        # Reaching a two-move HU leaf requires the first draw to improve the
-        # current shanten (or be a legal wait when already tenpai).  U1's
-        # direct effective set is therefore a complete and deterministic
-        # first-layer set for H2; unlike the I layer this is a proved
-        # admissible reduction, not a candidate top-K cut.
-        h2, ok_h = _future_h2(ctx, s, rem, n_unknown, budget,
-                              direct_tiles=tiles)
-        if not ok_h:
-            complete = False
-            fallback = fallback or budget.exceeded or "future_budget"
         q = (p1 + profile.wI * improvement + profile.wH * h2
              + profile.wB * b + profile.wC * c) if complete else None
     else:
@@ -1111,7 +1297,7 @@ def evaluate_standing(ctx: EvalContext, profile=None, level="Q0",
         level=("Q" if level.upper() == "Q" and complete else "Q0"),
         shanten=s, ukeire_tiles=tuple(tiles), u1=u1, p1=p1,
         improvement=improvement, h2=h2, b=b, c=c, q0=q0, q=q,
-        decomposition=d.as_json() if d else None,
+        decomposition=decomposition,
         improvement_paths=paths,
         weighted_contributions={
             "p1": p1, "I": profile.wI * improvement if improvement is not None else None,
@@ -1193,7 +1379,7 @@ def evaluate_discard_candidates(g, seat, profile=None):
     q0_results = []
     legacy_best = None
     for t, c in cands:
-        ev_ctx = ctx.replace(hand=tuple(c))
+        ev_ctx = ctx.fast_replace(hand=tuple(c))
         ev = evaluate_standing(ev_ctx, profile, level="Q0", budget=budget)
         uke = ev.u1
         key = _legacy_key(t, uke, _shape_cost(ctx.hand, t),
@@ -1216,22 +1402,82 @@ def evaluate_discard_candidates(g, seat, profile=None):
             complete=False, nodes=budget.nodes,
             kernel_calls=budget.kernel_calls,
             elapsed_ms=round(budget.elapsed_ms, 3))
-    q_results = []
-    for t, c, q0 in q0_results:
+    def q_upper_bound(item):
+        """A conservative Q upper bound for proven candidate pruning.
+
+        ``I`` is an average of gains whose child p1 is at most one.  ``H2``
+        only visits direct effective draws, so it is bounded by the current
+        direct p1 when the standing hand is at most one shanten; for
+        shanten >=2 the combined lookahead proves H2 is zero.  The bound is
+        used only for the non-negative shape weights and never discards an
+        equal-valued candidate, preserving all declared tie-breaks.
+        """
+        _tile, _hand, ev = item
+        if profile.wI < 0 or profile.wH < 0:
+            return float("inf")
+        n = max(0, sum(max(0, 4 - x) for x in ctx.visible))
+        if n <= 1:
+            i_max = 0.0
+        else:
+            n2 = n - 1
+            direct = set(ev.ukeire_tiles)
+            i_max = 0.0
+            for draw, weight in enumerate(max(0, 4 - x)
+                                           for x in ctx.visible):
+                if weight <= 0:
+                    continue
+                hold_u = ev.u1 - (1 if draw in direct else 0)
+                hold_p = max(0.0, hold_u) / n2
+                i_max += (weight / n) * max(0.0, 1.0 - hold_p)
+            i_max = min(1.0, max(0.0, i_max))
+        h_max = ev.p1 if ev.shanten <= 1 else 0.0
+        return ev.q0 + profile.wI * i_max + profile.wH * h_max
+
+    # Evaluate the candidates with the largest possible Q first.  Once one
+    # complete Q is known, a strict upper-bound loser needs no expensive
+    # future traversal; it is retained in the result table as an explicit
+    # ``q_pruned`` Q0 entry rather than being silently dropped.
+    ordered_q0 = sorted(q0_results,
+                        key=lambda item: (-q_upper_bound(item), item[0]))
+    q_by_tile = {}
+    q_pruned = {}
+    for item in ordered_q0:
+        t, c, q0 = item
+        upper = q_upper_bound(item)
+        best_q_value = max((ev.q for ev in q_by_tile.values()
+                            if ev.q is not None), default=None)
+        if best_q_value is not None and upper < best_q_value:
+            q_pruned[t] = upper
+            continue
         # Q begins with another base/decomposition pass that is not
         # interruptible in the Rust/Python kernel.  Refuse to enter that pass
         # once the shared clock has already expired; otherwise a last
-        # candidate can overrun the reaction/discard budget by an entire
-        # decomposition traversal.
+        # candidate can overrun the discard budget by an entire traversal.
         if not budget.tick(0):
             break
-        q = evaluate_standing(ctx.replace(hand=tuple(c)), profile,
-                              level="Q", budget=budget)
-        q_results.append((t, c, q))
+        q = evaluate_standing(ctx.fast_replace(hand=tuple(c)), profile,
+                              level="Q", budget=budget,
+                              base_evaluation=q0)
+        if not q.complete:
+            break
+        q_by_tile[t] = q
         if budget.exceeded:
             break
-    complete_q = len(q_results) == len(cands) and all(ev.complete
-                                                       for _, _, ev in q_results)
+    complete_q = (not budget.exceeded
+                  and len(q_by_tile) + len(q_pruned) == len(cands))
+    # A single Rust/Python kernel call is not pre-emptible.  It can finish
+    # just after the last internal clock check, so perform one final check
+    # before advertising a complete Q result instead of hiding that overrun
+    # behind an upper-bound-pruned tail.
+    if complete_q and not budget.tick(0):
+        complete_q = False
+    if complete_q:
+        q_results = []
+        for t, c, q0 in q0_results:
+            q_results.append((t, c, q_by_tile.get(t, q0)))
+    else:
+        q_results = [(t, c, q_by_tile[t]) for t, c, _q0 in q0_results
+                     if t in q_by_tile]
     results = q_results if complete_q else q0_results
     level = "Q" if complete_q else "Q0"
     def score(item):
@@ -1250,6 +1496,9 @@ def evaluate_discard_candidates(g, seat, profile=None):
         item.update({"tile": t, "shape_cost": _shape_cost(ctx.hand, t),
                      "feed_risk": _feed_risk(g, seat, t),
                      "selected": t == selected_t})
+        if complete_q and t in q_pruned:
+            item.update({"q_pruned": True,
+                         "q_upper_bound": q_pruned[t]})
         serialized.append(item)
     reason = ("complete_Q" if complete_q else "complete_Q0_fallback")
     total_nodes = sum(ev.nodes for _, _, ev in results)
@@ -1391,20 +1640,23 @@ def evaluate_reaction(g, seat, profile=None):
         specs.append({"action": act, "post_items": items,
                       "locked": locked, "chow_inc": chow_inc})
 
-    def evaluate_spec(spec, level):
+    def evaluate_spec(spec, level, base_evaluations=None):
         """Evaluate one option and choose its best immediate discard."""
         results = []
         for discard, hand in spec["post_items"]:
             if not budget.tick(0):
                 return None
-            option_ctx = ctx.replace(
+            option_ctx = ctx.fast_replace(
                 hand=tuple(hand), locked=spec["locked"],
                 chows=ctx.chows + spec["chow_inc"],
                 pending_tile=None, pending_owner=None)
+            base_ev = (base_evaluations.get((discard, tuple(hand)))
+                       if base_evaluations is not None else None)
             ev = (_reaction_q0_evaluation(option_ctx, profile, budget)
                   if level == "Q0" else
                   evaluate_standing(option_ctx, profile, level=level,
-                                    budget=budget))
+                                    budget=budget,
+                                    base_evaluation=base_ev))
             # ``evaluate_standing(Q0)`` has no inner traversal to mark a
             # timeout, so check the shared clock after the call as well.
             if not budget.tick(0):
@@ -1417,16 +1669,22 @@ def evaluate_reaction(g, seat, profile=None):
         return max(results, key=lambda x: (
             x[2].q if level == "Q" and x[2].q is not None else x[2].q0,
             x[2].p1,
-            -(x[0] if x[0] is not None else -1)))
+            -(x[0] if x[0] is not None else -1))), results
 
     q0_options = []
+    q0_bases = {}
     if q0_complete:
         for spec in specs:
-            result = evaluate_spec(spec, "Q0")
-            if result is None:
+            evaluated = evaluate_spec(spec, "Q0")
+            if evaluated is None:
                 q0_complete = False
                 break
+            result, all_results = evaluated
             discard, hand, ev = result
+            q0_bases[spec["action"]] = {
+                (item_discard, tuple(item_hand)): item_ev
+                for item_discard, item_hand, item_ev in all_results
+            }
             q0_options.append((spec["action"], ev, discard,
                                spec["chow_inc"], spec, hand))
 
@@ -1460,10 +1718,12 @@ def evaluate_reaction(g, seat, profile=None):
                   >= q_min_remaining_ms)
     if q_complete:
         for action0, _ev0, _discard0, _ci, spec, _hand0 in q0_options:
-            result = evaluate_spec(spec, "Q")
-            if result is None:
+            evaluated = evaluate_spec(
+                spec, "Q", base_evaluations=q0_bases.get(action0))
+            if evaluated is None:
                 q_complete = False
                 break
+            result, _all_results = evaluated
             discard, hand, ev = result
             q_options.append((action0, ev, discard, spec["chow_inc"],
                               spec, hand))

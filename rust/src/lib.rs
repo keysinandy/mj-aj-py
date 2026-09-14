@@ -1,7 +1,8 @@
 //! 杭州麻将 AI 引擎热点内核的 Rust 实现(与 mj/shanten.py 逐行对拍移植)。
 //!
-//! 只移植纯函数热点:shanten(向听数)与 ukeire(进张枚举)。算法、
-//! 剪枝界、候选剪枝与 Python 版一一对应,语义由 scripts/rust_parity.py
+//! 只移植纯函数热点:shanten(向听数)、ukeire(进张枚举)与摸牌后
+//! 最佳弃牌批量评价。算法、剪枝界、候选剪枝与 Python 版一一对应,
+//! 语义由 scripts/rust_parity.py
 //! 随机差分验收(对拍口径见该脚本 docstring)。
 //!
 //! 与 Python 版的已知行为差异(差分脚本不覆盖、调用方不触达):
@@ -14,8 +15,18 @@
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use std::collections::HashMap;
 
 const W: usize = 33;
+type ShantenCacheKey = ([i32; 34], i32);
+
+#[derive(Clone)]
+struct FutureDiscard {
+    discard: usize,
+    shanten: i32,
+    tiles: Vec<usize>,
+    total: i64,
+}
 
 /// 未分配自然牌张数 → 该侧最多还能节省的向听数(保守下界,Python
 /// shanten.py 同表;rem ∈ [0,14])。
@@ -180,6 +191,23 @@ fn shanten_impl(counts: &[i32; 34], locked: i32) -> Result<i32, String> {
     Ok(s)
 }
 
+fn wildcard_shanten(
+    counts: &[i32; 34],
+    locked: i32,
+    cache: &mut HashMap<ShantenCacheKey, i32>,
+) -> Result<i32, String> {
+    if counts[W] == 0 {
+        return shanten_impl(counts, locked);
+    }
+    let key = (*counts, locked);
+    if let Some(value) = cache.get(&key).copied() {
+        return Ok(value);
+    }
+    let value = shanten_impl(counts, locked)?;
+    cache.insert(key, value);
+    Ok(value)
+}
+
 /// 无财神时可能降低向听数的摸牌候选(升序;与 shanten.py
 /// _ukeire_candidates 对应,数学依据见该处注释)。
 fn ukeire_candidates(counts: &[i32; 34]) -> Vec<usize> {
@@ -248,6 +276,153 @@ fn ukeire_impl(
     Ok((s, acc, total))
 }
 
+fn ukeire_total_impl(
+    counts: &[i32; 34],
+    locked: i32,
+    visible: &[i32; 34],
+    shanten_cache: &mut HashMap<ShantenCacheKey, i32>,
+) -> Result<(i32, i64), String> {
+    let s = wildcard_shanten(counts, locked, shanten_cache)?;
+    let left = |t: usize| (4 - visible[t]).max(0) as i64;
+    if s <= 0 {
+        if s == 0 {
+            let mut total = 0i64;
+            for t in 0..34 {
+                let mut c2 = *counts;
+                c2[t] += 1;
+                if wildcard_shanten(&c2, locked, shanten_cache)? == -1 {
+                    total += left(t);
+                }
+            }
+            return Ok((s, total));
+        }
+        return Ok((s, 0));
+    }
+    let cands: Vec<usize> = if counts[W] > 0 {
+        (0..34).collect()
+    } else {
+        ukeire_candidates(counts)
+    };
+    let mut total = 0i64;
+    for t in cands {
+        if counts[t] >= 4 {
+            continue;
+        }
+        let mut c2 = *counts;
+        c2[t] += 1;
+        if wildcard_shanten(&c2, locked, shanten_cache)? < s {
+            total += left(t);
+        }
+    }
+    Ok((s, total))
+}
+
+fn best_future_discard_impl_with_cache(
+    counts: &[i32; 34],
+    locked: i32,
+    visible: Option<&[i32; 34]>,
+    shanten_cache: &mut HashMap<ShantenCacheKey, i32>,
+    include_tiles: bool,
+) -> Result<Option<FutureDiscard>, String> {
+    let mut best_shanten = 99;
+    let mut children: Vec<(usize, [i32; 34])> = Vec::new();
+    // First find the minimum shanten for every legal discard.  Computing an
+    // ukeire total before this minimum is known wastes the expensive inner
+    // draw loop whenever a later tile lowers shanten.
+    for d in 0..34 {
+        if counts[d] <= 0 {
+            continue;
+        }
+        let mut child = *counts;
+        child[d] -= 1;
+        let child_s = wildcard_shanten(&child, locked, shanten_cache)?;
+        if child_s < best_shanten {
+            best_shanten = child_s;
+            children.clear();
+            children.push((d, child));
+        } else if child_s == best_shanten {
+            children.push((d, child));
+        }
+    }
+    if children.is_empty() {
+        return Ok(None);
+    }
+    let mut best_discard: Option<usize> = None;
+    let mut best_total = -1i64;
+    let mut best_child = [0i32; 34];
+    for (d, child) in children {
+        let total = if let Some(view) = visible {
+            ukeire_total_impl(&child, locked, view, shanten_cache)?.1
+        } else {
+            ukeire_impl(&child, locked, None)?.2
+        };
+        if total > best_total
+            || (total == best_total
+                && (best_discard.is_none() || d < best_discard.unwrap()))
+        {
+            best_discard = Some(d);
+            best_total = total;
+            best_child = child;
+        }
+    }
+    let discard = match best_discard {
+        Some(value) => value,
+        None => return Ok(None),
+    };
+    let tiles = if include_tiles {
+        if let Some(view) = visible {
+            ukeire_impl(&best_child, locked, Some(view))?.1
+        } else {
+            ukeire_impl(&best_child, locked, None)?.1
+        }
+    } else {
+        Vec::new()
+    };
+    Ok(Some(FutureDiscard {
+        discard,
+        shanten: best_shanten,
+        tiles,
+        total: best_total.max(0),
+    }))
+}
+
+/// 在一张摸牌后的手牌中，找出最低向听的立即弃牌及其 p1。
+///
+/// Python 前瞻原先先在 Python 侧枚举每张可弃牌，再逐个跨 FFI 调用
+/// `ukeire`。这个批量入口把同一层的枚举、向听和进张统计放在一次
+/// Rust 调用里；调用方仍负责规则门禁（例如有财必拷）和构造解释用
+/// 的子手牌，因此不会改变动作授权语义。
+#[pyfunction(signature = (counts, locked=0, visible=None, include_tiles=true))]
+fn best_future_discard(
+    counts: Vec<i32>,
+    locked: i32,
+    visible: Option<Vec<i32>>,
+    include_tiles: bool,
+) -> PyResult<(i32, i32, Vec<i32>, i64)> {
+    let arr = to_arr(counts)?;
+    let vis = match visible {
+        Some(v) => Some(to_arr(v)?),
+        None => None,
+    };
+    let mut shanten_cache = HashMap::new();
+    let best = best_future_discard_impl_with_cache(
+        &arr, locked, vis.as_ref(), &mut shanten_cache, include_tiles)
+        .map_err(PyValueError::new_err)?;
+    match best {
+        Some(value) => Ok((
+            value.discard as i32,
+            value.shanten,
+            if include_tiles {
+                value.tiles.into_iter().map(|t| t as i32).collect()
+            } else {
+                Vec::new()
+            },
+            value.total,
+        )),
+        None => Ok((-1, 99, Vec::new(), 0)),
+    }
+}
+
 fn to_arr(counts: Vec<i32>) -> PyResult<[i32; 34]> {
     counts
         .try_into()
@@ -279,5 +454,6 @@ fn ukeire(counts: Vec<i32>, locked: i32, visible: Option<Vec<i32>>) -> PyResult<
 fn mj_kernels(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(shanten, m)?)?;
     m.add_function(wrap_pyfunction!(ukeire, m)?)?;
+    m.add_function(wrap_pyfunction!(best_future_discard, m)?)?;
     Ok(())
 }
