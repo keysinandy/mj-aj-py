@@ -483,8 +483,13 @@ class StateDemand(queue.Queue):
             # present, while direct BotClient users still get accurate
             # candidate diagnostics here.
             self._candidate.default_kind = self.kind_priority or self._candidate.default_kind
-            if self.kind_priority == SSE_DELTA and self.watermark_target is not None:
-                self._candidate.default_seq = self.watermark_target
+            # An SSE watermark is a wake-up target, not the caller's applied
+            # cursor.  The candidate may already be waiting for the shared
+            # throttle while the stream advances; replacing its local
+            # ``default_seq`` here would skip every event between the old
+            # cursor and the newest wake.  Keep the cursor frozen until
+            # admission and expose the newer target only through the reason
+            # ledger/diagnostics.
             self._candidate.deadline = self.effective_deadline
         return True
 

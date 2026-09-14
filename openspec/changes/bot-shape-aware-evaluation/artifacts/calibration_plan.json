@@ -1,0 +1,8 @@
+{
+  "schema": "bot-shape-aware-evaluation/calibration-plan-v1",
+  "calibration": {"seed_start": 180000, "games": 1024, "dealer": "rotate", "ycbk": [false, true]},
+  "validation": {"seed_start": 181024, "games": 1024, "dealer": "rotate", "ycbk": [false, true]},
+  "held_out": {"seed_start": 182048, "games": 4096, "seat_dealer_balance": 16, "opponent": "frozen legacy"},
+  "grid": {"wI": [0, 0.25, 0.5], "wH": [0, 0.5, 1], "wB": [0, 0.05, 0.1], "wC": [0, 0.025, 0.05], "tau_multiplier": [0, 0.5, 1, 2]},
+  "expansion_rule": "increase each split by 1024 only before inspecting results; never reuse validation seeds"
+}

@@ -1,0 +1,10 @@
+{
+  "captured_at": "2026-09-13",
+  "full_tests": {"command": "python3 -m pytest -q", "passed": 387, "subtests": 2, "elapsed_s": 48.20},
+  "openspec": {"command": "DO_NOT_TRACK=1 openspec validate bot-shape-aware-evaluation --strict --no-interactive", "result": "valid"},
+  "rust_parity": {"command": "python3 scripts/rust_parity.py --n 20 --bench 20 --e2e", "shanten_cases": 600, "ukeire_cases": 600, "e2e_games": 30, "trajectory_equal": true, "rust_ukeire_speedup": 91.6},
+  "decomposition_parity": {"command": "inline PYTHONPATH=. parity probe (500 seeds x locked 0-3)", "cases": 2000, "result": "min(decomposition.score) == shanten for natural/财神 hands and locked 0-3"},
+  "exploratory_pair": {"command": "python3 scripts/bot_shape_eval.py --games 16 --seed-start 182048", "games": 16, "shape_wins": 2, "legacy_wins": 2, "shape_draws": 0, "legacy_draws": 0, "score_delta_mean": 0.0, "note": "Smoke test only; does not satisfy the 4096-game release gate."},
+  "timing_smoke": {"command": "python3 scripts/bot_shape_perf.py --games 20 --seed-start 190000", "discard_p95_ms": 17.18, "react_p95_ms": 7.25, "fallbacks": 804, "note": "Latest single-thread smoke after target-level decomposition witness, explicit wildcard accounting, warmup, and the 16ms/7ms internal budgets; p95 is below the external 20ms/10ms targets, but this is still a smoke run rather than the full release gate."},
+  "default": {"evaluator": "legacy", "release_gates_7_to_9": "not_claimed"}
+}

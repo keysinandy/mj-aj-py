@@ -1,0 +1,75 @@
+{
+  "captured_at": "2026-09-14",
+  "room_id": "a_0b3ed63c88ae",
+  "command": "PYTHONPATH=. python -m mj.platform.match_runner --games 10 --strategy bot --state-rate 15 --bot-evaluator shape-v1",
+  "mode": "BOT/shape-v1/SSE+incremental-state/15-per-second",
+  "room_lifecycle": {
+    "games_requested": 10,
+    "games_closed_by_room": 10,
+    "end_reason": "inaccessible",
+    "transport_status": "partial",
+    "window_status": "partial",
+    "game_status": "protocol_skipped",
+    "note": "The room closed at a common room-level lifecycle boundary before game-finished snapshots; this run is a reliability canary, not a completed-game acceptance denominator."
+  },
+  "runner_summary": {
+    "games": 10,
+    "actions": 604,
+    "hu": 11,
+    "err409": 0,
+    "gaps": 56,
+    "auto_played": 0,
+    "mirror_resets": 0,
+    "mirror_drift_resets": 0,
+    "state_drift_auto_played": 0,
+    "client_deadline_abandons": 0,
+    "client_state_abandons": 0,
+    "response_409": 0,
+    "post_uncertain": 0,
+    "deadline_missed": 1,
+    "timeout_discard": 0,
+    "timeout_response": 5730,
+    "my_timeout_peng": 1373,
+    "my_timeout_chi": 427,
+    "window_confirm_requests": 46,
+    "window_confirm_open": 111,
+    "window_confirm_stale": 3,
+    "window_confirm_unconfirmed": 116,
+    "state_attempts": 6539,
+    "state_retry_429": 12,
+    "physical_state_requests": 5437,
+    "physical_state_attempts": 5449
+  },
+  "decision_levels": {
+    "Q": 6,
+    "Q0": 605,
+    "legacy": 16,
+    "q_to_q0_fallback": 605,
+    "q_fallback_rate_among_q_attempts": 0.9902
+  },
+  "cursor_and_window_audit": {
+    "cursor_ahead_of_applied": 0,
+    "raw_claim_miss_records": 0,
+    "canonical_client_loss": 1,
+    "eligible_windows": 110,
+    "authoritative_identity_windows": 110,
+    "identity_unverifiable_observations": 36,
+    "window_409": 0,
+    "hard_fail_checks": {
+      "duplicate_old_action_post": 0,
+      "pending_confirmation_claim_miss": 0,
+      "success_or_pass_client_loss": 0,
+      "dirty_demand": 0,
+      "gap_decision_impact_risk": 0
+    },
+    "state_demand_terminal": {
+      "clean": 10,
+      "dirty": 0,
+      "missing": 0
+    },
+    "limitations": [
+      "All ten game records ended at the room 404 boundary, so scores and game-finished settlement are unavailable.",
+      "One protocol-phase-unobservable canonical loss remains; no client-side 409 or mirror drift was observed."
+    ]
+  }
+}

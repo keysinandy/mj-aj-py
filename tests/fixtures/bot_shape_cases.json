@@ -1,0 +1,80 @@
+{
+  "schema": "bot-shape-aware-evaluation/fixture-v1",
+  "tile_encoding": "mj.tiles: 0-8=wan, 9-17=tong, 18-26=tiao, 33=white-wild",
+  "cases": [
+    {
+      "id": "A",
+      "room": "a_b85ff51c0958_r1_b0_t0",
+      "round": 2,
+      "decision_id": 8,
+      "source_seq": 161,
+      "phase": "draw",
+      "hand": "689m13p12389sB",
+      "locked": 1,
+      "melds": [["chow", 0]],
+      "visible": [2, 2, 2, 0, 3, 1, 0, 1, 1, 1, 0, 1, 0, 0, 1, 1, 0, 2, 2, 1, 1, 0, 0, 1, 0, 2, 1, 4, 2, 1, 2, 2, 2, 1],
+      "visible_extra": {"melds": [[0, 1, 2]], "public_river_counts": {"5m": 3}},
+      "actual_action": 5,
+      "legacy_candidates": [5, 8],
+      "evidence": "actual discard 6m succeeded; 68/89 improvement must be evaluated with visible 5m"
+    },
+    {
+      "id": "B",
+      "room": "a_b85ff51c0958_r1_b0_t0",
+      "round": 2,
+      "decision_id": 9,
+      "source_seq": 185,
+      "phase": "draw",
+      "hand": "89m13p123489sB",
+      "locked": 1,
+      "melds": [["chow", 0]],
+      "visible": [3, 3, 2, 0, 3, 1, 0, 1, 1, 1, 0, 1, 0, 0, 1, 1, 0, 2, 2, 1, 1, 1, 0, 1, 0, 2, 1, 4, 2, 2, 2, 2, 2, 1],
+      "actual_action": 18,
+      "legacy_candidates": [7, 8, 9, 18, 19, 20, 21],
+      "evidence": "actual discard 1s; preserve complete 234s rather than hard-code an edge discard"
+    },
+    {
+      "id": "C",
+      "room": "a_b85ff51c0958_r1_b0_t0",
+      "round": 4,
+      "source_seq": 395,
+      "phase": "response_peng",
+      "hand": "49m3688p11568sEB",
+      "locked": 0,
+      "pending": [1, 16],
+      "visible": [0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 3, 0, 2, 0, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1],
+      "actual_action": null,
+      "counterfactual_action": -5,
+      "evidence": "window_confirm unconfirmed/identity_unknown; no online decision/action, offline legal snapshot chooses PONG"
+    },
+    {
+      "id": "D",
+      "room": "a_b85ff51c0958_r1_b0_t0",
+      "round": 4,
+      "source_seq": 472,
+      "phase": "draw",
+      "hand": "4m346688p115688sB",
+      "locked": 0,
+      "drawn": 12,
+      "visible": [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 2, 0, 2, 0, 2, 0, 0, 0, 1, 1, 0, 2, 0, 0, 0, 0, 0, 0, 0, 1],
+      "actual_action": 12,
+      "counterfactual_action": 3,
+      "evidence": "state request/decision missed and server timeout discarded 4p; portal step 49 is not independently aligned"
+    },
+    {
+      "id": "E",
+      "room": "a_b85ff51c0958_r1_b0_t0",
+      "round": 5,
+      "decision_id": 28,
+      "source_seq": 596,
+      "phase": "draw",
+      "hand": "8m7p1255899sBB",
+      "locked": 1,
+      "melds": [["chow", 0]],
+      "visible": [2, 2, 1, 1, 0, 0, 0, 1, 1, 2, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 0, 0, 2, 0, 0, 2, 2, 2, 4, 4, 0, 1, 1, 2],
+      "actual_action": 26,
+      "legacy_candidates": [7, 15, 18, 19, 22, 25, 26, 33],
+      "evidence": "actual discard 9s succeeded; pair/white value is context-dependent, not a hard keep-pair rule"
+    }
+  ]
+}

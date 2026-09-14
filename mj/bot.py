@@ -201,8 +201,54 @@ def _should_piao(g, seat):
     return g.live_wall_left() >= 5
 
 
-def choose_action(g, seat):
-    """统一入口:返回该 seat 的动作。"""
+def choose_shape_action(g, seat):
+    """Opt-in shape-v1 action plus a serialisable evaluation explanation."""
+    from .hand_eval import (evaluate_discard_candidates, evaluate_reaction,
+                            EvalProfile)
+
+    acts = g.legal_actions()
+    if len(acts) == 1:
+        return acts[0], {
+            "version": "shape-v1", "profile": "shape-v1",
+            "profile_fingerprint": EvalProfile.shape_v1().fingerprint,
+            "level": "legacy", "selected": acts[0],
+            "reason": "only_legal_action", "candidates": [],
+        }
+    if g.phase == "discard":
+        # HU/财飘 and KONG decisions are deliberately frozen to the legacy
+        # rule entry points.  Shape-v1 only ranks ordinary discards.
+        if HU in acts:
+            action = W if _should_piao(g, seat) else HU
+            return action, {
+                "version": "shape-v1", "profile": "shape-v1",
+                "profile_fingerprint": EvalProfile.shape_v1().fingerprint,
+                "level": "legacy", "selected": action,
+                "reason": "hu_or_piao_legacy", "candidates": [],
+            }
+        if any(a < 0 for a in acts):
+            action = choose_discard(g, seat)
+            return action, {
+                "version": "shape-v1", "profile": "shape-v1",
+                "profile_fingerprint": EvalProfile.shape_v1().fingerprint,
+                "level": "legacy", "selected": action,
+                "reason": "kong_branch_legacy", "candidates": [],
+            }
+        return evaluate_discard_candidates(g, seat)
+    return evaluate_reaction(g, seat)
+
+
+def choose_action(g, seat, evaluator="legacy", return_evaluation=False):
+    """统一入口:返回该 seat 的动作。
+
+    Existing callers keep the two-argument legacy behaviour.  Passing
+    ``evaluator='shape-v1'`` opts into the shared shape evaluator; callers
+    that need an explanation can additionally request ``return_evaluation``.
+    """
+    if evaluator not in (None, "legacy", "shape-v1", "shape_v1", "shape"):
+        raise ValueError(f"unknown evaluator profile: {evaluator}")
+    if evaluator not in (None, "legacy"):
+        action, evaluation = choose_shape_action(g, seat)
+        return (action, evaluation) if return_evaluation else action
     acts = g.legal_actions()
     if len(acts) == 1:
         return acts[0]

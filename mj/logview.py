@@ -69,9 +69,10 @@ def render(rec, t0):
     t = rec["type"]
     pre = _t(rec, t0)
     if t == "meta":
+        evaluator = rec.get("evaluator") or "legacy_unrecorded"
         return (f"{pre} meta   令牌={rec.get('name')} tid={rec.get('tid')} "
                 f"YCBK={int(bool(rec.get('you_cai_bi_kao')))} "
-                f"base={rec.get('base')}")
+                f"base={rec.get('base')} evaluator={evaluator}")
     if t == "req":
         res = rec.get("res") or {}
         flags = "".join(
@@ -104,10 +105,26 @@ def render(rec, t0):
         legal = rec.get("legal") or []
         lsum = (f"{len(legal)}项" if len(legal) > 8
                 else "[" + ",".join(action_name(a) for a in legal) + "]")
+        ev = rec.get("evaluation") or {}
+        if ev:
+            profile = ev.get("profile") or ev.get("version", "?")
+            level = ev.get("level", "?")
+            q = ev.get("Q")
+            evtxt = f" eval={profile}/{level}"
+            if q is not None:
+                evtxt += f" Q={q:.4f}"
+            if ev.get("fallback_reason"):
+                evtxt += f" fallback={ev['fallback_reason']}"
+        else:
+            evtxt = " eval=legacy_unrecorded"
         return (f"{pre} DECIDE #{rec.get('id')} {rec.get('phase')} "
                 f"seq={rec.get('seq')} 合法={lsum} → "
                 f"{action_name(rec.get('action'))} ({rec.get('latency_ms')}ms"
-                f",手{dg.get('hand')}张/墙{dg.get('wall')})")
+                f",手{dg.get('hand')}张/墙{dg.get('wall')}){evtxt}")
+    if t == "counterfactual_evaluation":
+        return (f"{pre} COUNTERFACTUAL window={rec.get('window_id')} "
+                f"action={action_name(rec.get('action'))} "
+                f"reason={rec.get('reason')}")
     if t == "action":
         p = rec.get("payload") or {}
         if rec.get("ok"):

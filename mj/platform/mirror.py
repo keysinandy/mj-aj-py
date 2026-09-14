@@ -405,6 +405,15 @@ class Mirror:
                 # 状态构建出"吃自己弃牌"的假合法集)
                 raise MirrorInconsistent(
                     f"{phase} pending 属于自家(陈旧/失效窗口)")
+            if (phase == "response_chi"
+                    and (self.pending[0] + 1) % 4 != self.me):
+                # 吃牌只属于出牌者的下家。  A stale/full snapshot can
+                # still carry the previous discard while the protocol has
+                # already advanced to another seat; constructing a local
+                # Game for that phase would manufacture a false legal chi
+                # opportunity and inflate claim-miss/timeout diagnostics.
+                raise MirrorInconsistent(
+                    f"{phase} pending 非下家(陈旧/失效窗口)")
             g.phase = "react"
             g.pending = self.pending
             g.react_seq = [self.me]

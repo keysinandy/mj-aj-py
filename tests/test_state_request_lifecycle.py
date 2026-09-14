@@ -48,6 +48,22 @@ def test_queued_delta_is_upgraded_before_admission():
     assert set(request.reasons) == {SSE_DELTA, WINDOW_CONFIRM}
 
 
+def test_queued_delta_keeps_local_cursor_when_sse_watermark_advances():
+    """A later SSE wake must not turn a queued cursor into a skip-ahead seq."""
+    demand = StateDemand(run_id="run-cursor-race", gid="g")
+    candidate = demand.queue_candidate(default_seq=31, default_kind=SSE_DELTA)
+    demand.submit_sse(34)
+
+    snapshot = demand.candidate_snapshot()
+    assert snapshot["default_seq"] == 31
+    assert demand.watermark_target == 34
+    request = demand.admit_candidate()
+    assert request is not None
+    assert request.seq == 31
+    assert request.reasons[SSE_DELTA]["wanted_seq"] == 34
+    assert request.candidate_id == candidate.candidate_id
+
+
 def test_request_ids_are_unique_across_games_and_restart_scope():
     left = StateDemand(run_id="run-test")
     right = StateDemand(run_id="run-test")

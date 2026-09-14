@@ -75,7 +75,7 @@ def replay_game(recs, want_samples=True):
     ok_ids = _ok_action_ids(recs)
     rep = {"meta": None, "my_seat": None, "n_rounds": 0, "round_scores": [],
            "end_scores": None, "illegal": [], "warnings": [],
-           "samples": [], "clean": False, "skipped": []}
+           "samples": [], "evaluations": [], "clean": False, "skipped": []}
     skips = _skipped_ranges(recs)
     rep["skipped"] = skips
     mirror = None
@@ -194,6 +194,10 @@ def _settle_own_hu_round_ended(rep, mirror, ev):
 
 
 def _on_decision(rep, mirror, r, want_samples, ok_ids):
+    if r.get("evaluation") is not None:
+        rep["evaluations"].append({
+            "decision_id": r.get("id"), "seq": r.get("seq"),
+            "phase": r.get("phase"), "evaluation": r.get("evaluation")})
     try:
         g = mirror.build_game(r["phase"])
     except MirrorInconsistent as e:

@@ -46,6 +46,9 @@ def main(argv=None):
     ap.add_argument("--config", default="local/platform.json")
     ap.add_argument("--strategy", default="policy",
                     choices=("policy", "bot", "random"))
+    ap.add_argument("--bot-evaluator", default="legacy",
+                    choices=("legacy", "shape-v1"),
+                    help="strategy=bot 时的评价器(默认 legacy)")
     ap.add_argument("--ckpt", default="runs/ppo4/ckpt_350000.pt",
                     help="policy 策略 checkpoint(BC best.pt 或 PPO ckpt)")
     ap.add_argument("--games", type=int, default=10,
@@ -63,7 +66,10 @@ def main(argv=None):
     args = ap.parse_args(argv)
 
     cfg = load_match_config(args.config)
-    decide = make_decide(args.strategy, args.ckpt)
+    decide = (make_decide(args.strategy, args.ckpt)
+              if args.bot_evaluator == "legacy"
+              else make_decide(args.strategy, args.ckpt,
+                               evaluator=args.bot_evaluator))
     state_rate = None if args.no_state_throttle else args.state_rate
     api = Api(cfg["server"], cfg["match_token"], state_rate=state_rate)
     name = api.me().get("user_id") or "match"

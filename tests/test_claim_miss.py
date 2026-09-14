@@ -14,10 +14,13 @@ import sys
 import time
 from unittest import mock
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from mj.platform.bot_client import BotClient
+from mj.platform.bot_client import BotClient, _ActionResync
 from mj.platform.recorder import Recorder
+from mj.platform.mirror import Mirror
 import mj.platform.bot_client as module
 from test_window_recovery import (
     FakeClock, ScriptedServer, _snapshot, _ev, _finished, _choose_chi_or_draw,
@@ -136,3 +139,24 @@ def test_decided_pass_peng_timeout_is_not_auto_played(tmp_path):
     assert [r for r in recs if r["type"] == "claim_miss"] == []
     assert bot.stats["auto_played"] == 0
     assert any(a[1].get("action") == "pass" for a in api.actions)
+
+
+def test_match_mirror_drift_reanchors_without_inferred_auto_play(tmp_path):
+    """Production drift is a state handoff, not proof of a server timeout."""
+    bot = BotClient(None, "bot", lambda g, s: -1, mode="match")
+    mirror = Mirror(my_seat=0, dealer=0)
+    with pytest.raises(_ActionResync):
+        bot._skip_drifted(mirror, "g-drift", "draw")
+    assert bot.stats["auto_played"] == 0
+    assert bot.stats["client_state_abandons"] == 1
+    assert bot.stats["mirror_drift_resets"] == 1
+    assert bot.stats["state_drift_auto_played"] == 1
+    assert bot._lost_claim(mirror) is False
+
+
+def test_match_state_abandon_is_not_inferred_server_auto_play():
+    """Production deadline uncertainty is a client handoff, not a timeout."""
+    bot = BotClient(None, "bot", lambda g, s: -1, mode="match")
+    bot._state_abandon("g-state", "response_chi", "快照缺少有效窗口截止")
+    assert bot.stats["client_state_abandons"] == 1
+    assert bot.stats["auto_played"] == 0

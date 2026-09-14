@@ -14,20 +14,21 @@ from mj.game import Game, HU
 from mj.bot import choose_action
 
 
-def _pick(player, g, seat):
+def _pick(player, g, seat, evaluator="legacy"):
     if player is True:
-        return choose_action(g, seat)
+        return choose_action(g, seat, evaluator=evaluator)
     if callable(player):
         return player(g, seat)
     acts = g.legal_actions()
     return HU if HU in acts else random.choice(acts)
 
 
-def _play_game(players, seed, dealer=0, you_cai_bi_kao=False):
+def _play_game(players, seed, dealer=0, you_cai_bi_kao=False,
+               evaluator="legacy"):
     g = Game(seed=seed, dealer=dealer, you_cai_bi_kao=you_cai_bi_kao)
     while not g.done:
         seat = g.current_seat()
-        act = _pick(players[seat], g, seat)
+        act = _pick(players[seat], g, seat, evaluator=evaluator)
         acts = g.legal_actions()
         if act not in acts:
             act = random.choice(acts)
@@ -35,7 +36,8 @@ def _play_game(players, seed, dealer=0, you_cai_bi_kao=False):
     return g
 
 
-def run_games(players, n=200, seed0=0, dealer="rotate", you_cai_bi_kao=False):
+def run_games(players, n=200, seed0=0, dealer="rotate", you_cai_bi_kao=False,
+              evaluator="legacy"):
     """players: 长度 4 的玩家列表(见模块 docstring)。
     dealer: "rotate" 逐局轮转庄家(默认,消除庄家 ×8 收付偏置),
     或指定固定座位;you_cai_bi_kao: 有财必拷响开关。"""
@@ -49,7 +51,8 @@ def run_games(players, n=200, seed0=0, dealer="rotate", you_cai_bi_kao=False):
     for i in range(n):
         d = i % 4 if dealer == "rotate" else int(dealer)
         g = _play_game(players, seed0 + i, dealer=d,
-                       you_cai_bi_kao=you_cai_bi_kao)
+                       you_cai_bi_kao=you_cai_bi_kao,
+                       evaluator=evaluator)
         if g.result:
             seat, mult, _parts = g.result
             stats["wins"][seat] += 1
@@ -62,7 +65,8 @@ def run_games(players, n=200, seed0=0, dealer="rotate", you_cai_bi_kao=False):
     return stats
 
 
-def fair_match(player, n=192, seed0=0, you_cai_bi_kao=False):
+def fair_match(player, n=192, seed0=0, you_cai_bi_kao=False,
+               evaluator="legacy"):
     """player 轮转四座位、庄家独立轮转((座位,庄家) 16 组合均衡)
     对抗启发式 bot,返回 player 视角统计。
 
@@ -80,7 +84,8 @@ def fair_match(player, n=192, seed0=0, you_cai_bi_kao=False):
         players = [True] * 4
         players[seat] = player
         g = _play_game(players, seed0 + i, dealer=dealer,
-                       you_cai_bi_kao=you_cai_bi_kao)
+                       you_cai_bi_kao=you_cai_bi_kao,
+                       evaluator=evaluator)
         if g.result:
             w, mult, _parts = g.result
             wins[w] += 1
@@ -192,8 +197,18 @@ def policy_player(ckpt, device="cpu", temperature=0.0):
 
 
 if __name__ == "__main__":
-    n = int(sys.argv[1]) if len(sys.argv) > 1 else 200
+    import argparse
+    ap = argparse.ArgumentParser(description="离线麻将策略评估")
+    ap.add_argument("n", nargs="?", type=int, default=200,
+                    help="对局数(兼容旧的第一个位置参数)")
+    ap.add_argument("--bot-evaluator", choices=("legacy", "shape-v1"),
+                    default="legacy")
+    args = ap.parse_args()
+    n = args.n
     # 座位 0 = 启发式 bot,其余随机
-    report("1 bot vs 3 random", run_games([True, False, False, False], n=n), n)
+    report("1 bot vs 3 random",
+           run_games([True, False, False, False], n=n,
+                     evaluator=args.bot_evaluator), n)
     # 四家全 bot(自博弈基线,和牌率应显著高于随机)
-    report("4 bots", run_games([True, True, True, True], n=n), n)
+    report("4 bots", run_games([True, True, True, True], n=n,
+                                evaluator=args.bot_evaluator), n)

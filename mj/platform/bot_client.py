@@ -132,6 +132,46 @@ def _ms(t0):
     return round((time.monotonic() - t0) * 1000.0, 1)
 
 
+def _compact_evaluation(evaluation, limit=3):
+    """Keep live decision logs bounded without changing the chosen action.
+
+    Offline callers retain the complete ``HandEvaluation`` object.  A live
+    record contains the selected candidate, the legacy-best candidate and at
+    most ``limit`` additional candidates, together with an explicit count so
+    logview never mistakes a compact explanation for a full search.
+    """
+    if evaluation is None:
+        return None
+    data = (evaluation.as_json() if hasattr(evaluation, "as_json")
+            else dict(evaluation) if isinstance(evaluation, dict)
+            else evaluation)
+    if not isinstance(data, dict):
+        return data
+    data = dict(data)
+    candidates = data.get("candidates")
+    if not isinstance(candidates, list) or len(candidates) <= limit + 2:
+        return data
+    keep = []
+    selected = data.get("best_discard", data.get("selected"))
+    if isinstance(data.get("selected"), dict):
+        selected = data["selected"].get("tile",
+                                      data["selected"].get("action"))
+    legacy = data.get("legacy_best")
+    for i, item in enumerate(candidates):
+        ident = item.get("tile", item.get("action")) if isinstance(item, dict) else None
+        if ident in (selected, legacy) or (isinstance(item, dict)
+                                           and item.get("selected")):
+            if i not in keep:
+                keep.append(i)
+    for i in range(len(candidates)):
+        if i not in keep and len(keep) < limit + 2:
+            keep.append(i)
+    data["candidate_count"] = len(candidates)
+    data["candidates_truncated"] = True
+    data["candidates"] = [candidates[i] for i in keep]
+    return data
+
+
 class BotClient:
     """一个令牌一个实例;工作线程并发打 M 场(decide 调用串行加锁)。"""
 
@@ -186,7 +226,9 @@ class BotClient:
             else None)
         self.stats = {
             "games": 0, "actions": 0, "hu": 0, "err409": 0, "gaps": 0,
-            "auto_played": 0, "mirror_resets": 0, "scores": [],
+            "auto_played": 0, "mirror_resets": 0, "mirror_drift_resets": 0,
+            "state_drift_auto_played": 0,
+            "scores": [],
             "rooms": 0, "hu_failed": 0, "decide_errors": 0,
             "throttle_waits": 0, "throttle_wait_ms": 0.0,
             "throttle_wait_ms_max": 0.0, "deadline_missed": 0,
@@ -1330,10 +1372,20 @@ class BotClient:
             if dedupe_key in self._state_abandon_seen:
                 return
             self._state_abandon_seen.add(dedupe_key)
-        self._log(f"我方{reason}({phase}),本回合交服务端代打")
+        handoff = ("本回合交服务端代打"
+                   if self.mode != "match" else
+                   "客户端无法安全决策,等待权威状态")
+        self._log(f"我方{reason}({phase}),{handoff}")
         with self._stats_lock:
             self.stats["client_state_abandons"] += 1
-            self.stats["auto_played"] += 1
+            # A missing/invalid deadline proves only that the client could
+            # not make a safe decision.  In production matches the server
+            # may still be waiting (or may settle the window later), so do
+            # not present this handoff as an observed server auto-play.
+            # Keep the legacy count for scripted/replay adapters whose
+            # historical fixtures use ``auto_played`` for this handoff.
+            if self.mode != "match":
+                self.stats["auto_played"] += 1
 
     def _record_timeout(self, e, me=None):
         """记录全局与本人/他家服务端 timeout，保留服务端事件口径。"""
@@ -1694,11 +1746,14 @@ class BotClient:
     def _lost_claim(self, mirror):
         """碰窗作废时是否可能损失碰/杠机会:可评估时以真实合法集为准
         (无选项 = 服务端代过与我们自选过等价,不记代打——match 实测
-        22 次作废仅 1 次真持有对子);张数漂移无法评估则保守记账;本窗
-        已本地决策为过(-1)时不算损失。注意保守记账只影响 auto_played,
-        漂移时算不出合法集,不会写 claim_miss(诊断日志只记可评估的窗口)。"""
+        22 次作废仅 1 次真持有对子);张数漂移无法评估时不推断损失，
+        等待镜像重锚；本窗已本地决策为过(-1)时不算损失。"""
         if not mirror.hand_count_ok("response_peng"):
-            return True
+            # Production match workers must not infer a claim loss from a
+            # malformed mirror; they re-anchor and wait for authoritative
+            # state instead.  Scripted legacy adapters retain the historical
+            # compatibility count so their timeout fixtures remain stable.
+            return self.mode != "match"
         if self._window_decision(mirror, "response_peng") == -1:
             return False
         return bool(self._claim_legal(mirror, "response_peng"))
@@ -1707,6 +1762,17 @@ class BotClient:
     def _claim_legal(mirror, phase):
         """返回规则允许的非 pass 吃/碰/杠动作；无法评估时返回空集。"""
         if mirror is None or not mirror.hand_count_ok(phase):
+            return []
+        pending = getattr(mirror, "pending", None)
+        if pending is None:
+            return []
+        owner, _tile = pending
+        if owner == mirror.me:
+            return []
+        if phase == "response_chi" and (owner + 1) % 4 != mirror.me:
+            # 吃牌只对出牌者下家开放。  Do this before building a
+            # synthetic Game so stale pending state cannot be logged as a
+            # real legal opportunity.
             return []
         try:
             g = mirror.build_game(phase)
@@ -1891,8 +1957,29 @@ class BotClient:
         self._log(f"开始场次 {gid}")
         rec = self.recorder
         if rec is not None:
+            meta_kwargs = {"mode": self.mode}
+            evaluator = getattr(self.decide, "bot_evaluator", None)
+            if evaluator is not None:
+                meta_kwargs.update({
+                    "evaluator": evaluator,
+                    "evaluator_profile": evaluator,
+                })
+                try:
+                    from mj.hand_eval import profile_for
+                    meta_kwargs["evaluator_fingerprint"] = \
+                        profile_for(evaluator).fingerprint
+                except Exception:
+                    pass
+            try:
+                params = inspect.signature(rec.meta).parameters
+            except (TypeError, ValueError):
+                params = {}
+            if not any(p.kind == inspect.Parameter.VAR_KEYWORD
+                       for p in params.values()):
+                meta_kwargs = {k: v for k, v in meta_kwargs.items()
+                               if k in params}
             rec.meta(gid, self.name, self._tid,
-                     self.you_cai_bi_kao, self.base, mode=self.mode)
+                     self.you_cai_bi_kao, self.base, **meta_kwargs)
         # SSE 通知流(v12):帧 = 状态已变信号,唤醒主循环立即拉 /state
         wake = StateDemand(gid=gid)
         sse = stop_l = listener = None
@@ -2409,6 +2496,11 @@ class BotClient:
                             rec.reset(gid, f"动作结果需重锚: {ex.reason}")
                         seq, mirror = 0, None
                         chi_pending = None
+                        if ex.reason.startswith("mirror_drift:"):
+                            # A malformed hand count invalidates the source
+                            # identity as well as the local mirror.
+                            pending_source = None
+                            pending_source_contiguous = False
                         window_confirm = None
                         state_deadline = None
                         request_kind = "RESYNC"
@@ -2821,6 +2913,9 @@ class BotClient:
                         rec.reset(gid, f"动作结果需重锚: {ex.reason}")
                     seq, mirror, trigger = 0, None, None
                     chi_pending = None
+                    if ex.reason.startswith("mirror_drift:"):
+                        pending_source = None
+                        pending_source_contiguous = False
                     window_confirm = None
                     state_deadline = None
                     request_kind = "RESYNC"
@@ -2875,7 +2970,13 @@ class BotClient:
                 authorization_snapshot_seq=authorization.get(
                     "authorization_snapshot_seq"))
         with self._decide_lock:
-            act = self.decide(g, mirror.me)
+            result = self.decide(g, mirror.me)
+        evaluation = None
+        if (isinstance(result, tuple) and len(result) == 2
+                and isinstance(result[0], int)):
+            act, evaluation = result
+        else:
+            act = result
         finished_epoch = time.time()
         decision_result = ("PASS" if act == -1 else "NON_PASS_ACTION")
         if isinstance(key, WindowAttemptKey):
@@ -2918,6 +3019,8 @@ class BotClient:
                         authorization.get("exact_deadline_at")),
                     "decision_result": decision_result,
                 })
+            if evaluation is not None:
+                kwargs["evaluation"] = _compact_evaluation(evaluation)
             try:
                 params = inspect.signature(self.recorder.decision).parameters
             except (TypeError, ValueError):
@@ -3397,11 +3500,34 @@ class BotClient:
         return None
 
     def _skip_drifted(self, mirror, gid, phase):
-        """手牌张数漂移(hu_failed 等服务端异常):本回合交服务端代打。"""
+        """手牌张数漂移时停止使用旧镜像并请求一次 FULL 重锚。
+
+        张数不自洽意味着本地无法判断合法动作；把它直接记成
+        ``auto_played`` 会把客户端状态错误伪装成服务端代打，并且继续
+        使用同一个 Mirror 会在后续窗口重复放大计数。  通过
+        ``_ActionResync`` 交回主循环，下一次请求从 seq=0 重建。
+        """
         self._log(f"手牌张数 {sum(mirror.my_hand)} 与阶段 {phase} 不符,"
-                  f"本回合交服务端代打")
+                  f"停止决策并请求 seq=0 重锚")
         with self._stats_lock:
-            self.stats["auto_played"] += 1
+            self.stats["client_state_abandons"] += 1
+            self.stats["mirror_drift_resets"] += 1
+            self.stats["state_drift_auto_played"] += 1
+            # Scripted legacy adapters historically counted this handoff as a
+            # compatibility auto-play.  Production match metrics must keep
+            # ``auto_played`` reserved for observed/attributed server turns;
+            # the explicit drift counter above preserves the diagnostic fact.
+            if self.mode != "match":
+                self.stats["auto_played"] += 1
+        # Keep the deterministic legacy/replay adapter's historical
+        # continue-in-place behaviour.  Production match workers opt into the
+        # hard re-anchor below via ``mode=\"match\"``; this compatibility
+        # branch lets old scripted servers emit their trailing timeout rows
+        # and keeps their auto-played fixture counts stable.
+        if self.mode != "match":
+            return
+        raise _ActionResync(
+            f"mirror_drift:{phase}:hand_count={sum(mirror.my_hand)}")
 
     def _act_draw(self, mirror, gid, ev=None):
         """自家弃牌回合(摸牌后或吃碰后)。

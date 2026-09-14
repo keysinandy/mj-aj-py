@@ -154,6 +154,16 @@ class TestMirrorProperties(unittest.TestCase):
             with self.assertRaises(MirrorInconsistent):
                 mir.build_game(phase)
 
+    def test_chi_requires_discarders_next_seat(self):
+        """A stale pending discard cannot manufacture a chi window."""
+        mir = Mirror(my_seat=0, dealer=0)
+        mir.my_hand = [0] * 34
+        mir.my_hand[tidx("3w")] = 1
+        mir.my_hand[tidx("4w")] = 1
+        mir.pending = (2, tidx("2w"))  # seat 0 is not seat 2's下家
+        with self.assertRaises(MirrorInconsistent):
+            mir.build_game("response_chi")
+
 
 if __name__ == "__main__":
     unittest.main()

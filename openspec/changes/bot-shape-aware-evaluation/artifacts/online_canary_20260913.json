@@ -1,0 +1,32 @@
+{
+  "captured_at": "2026-09-13",
+  "command": "PYTHONPATH=. python -m mj.platform.match_runner --games 10 --strategy bot --state-rate 15 --bot-evaluator shape-v1",
+  "intended_mode": "BOT/shape-v1/SSE+incremental-state/15-per-second",
+  "result": "not_started",
+  "room_id": null,
+  "actions_posted": 0,
+  "attempts": [
+    {
+      "environment": "sandbox",
+      "stage": "GET /api/me",
+      "error": "PermissionError: Operation not permitted"
+    },
+    {
+      "environment": "controlled_network",
+      "stage": "GET /api/me",
+      "error": "SSL: UNEXPECTED_EOF_WHILE_READING"
+    },
+    {
+      "environment": "controlled_network",
+      "stage": "final GET /api/me retry",
+      "error": "SSL: UNEXPECTED_EOF_WHILE_READING"
+    },
+    {
+      "environment": "controlled_network",
+      "stage": "read-only curl probe",
+      "error": "connection timed out after 10 seconds"
+    }
+  ],
+  "release_gate": "9.1-9.4 not_claimed",
+  "note": "No room was joined and no strategy/window evidence was produced; this is an external connectivity blocker, not a strategy result."
+}

@@ -22,7 +22,7 @@ from .config import load_config
 from .recorder import Recorder
 
 
-def make_decide(strategy, ckpt=None):
+def make_decide(strategy, ckpt=None, evaluator="legacy"):
     if strategy == "policy":
         from mj.evaluate import policy_player
         if not ckpt or not os.path.exists(ckpt):
@@ -30,7 +30,21 @@ def make_decide(strategy, ckpt=None):
         return policy_player(ckpt)
     if strategy == "bot":
         from mj.bot import choose_action
-        return choose_action
+        profile = evaluator or "legacy"
+        if profile in ("shape-v1", "shape_v1", "shape"):
+            from mj.hand_eval import warmup
+            warmup("shape-v1")
+        def play(g, seat):
+            if profile in ("shape-v1", "shape_v1", "shape"):
+                return choose_action(g, seat, evaluator="shape-v1",
+                                     return_evaluation=True)
+            action = choose_action(g, seat)
+            return action, {"version": "legacy", "profile": "legacy",
+                            "level": "legacy", "selected": action,
+                            "reason": "legacy_evaluator", "candidates": []}
+        # BotClient uses this immutable marker only for recorder metadata.
+        play.bot_evaluator = profile
+        return play
     if strategy == "random":
         rng = random.Random()
         return lambda g, seat: rng.choice(g.legal_actions())
@@ -119,7 +133,8 @@ def _dump_error(exc):
 
 
 def run_room(cfg, strategy="policy", ckpt=None, games=1, dump=False,
-             dump_dir="local/logs", record=True, state_rate=15.0):
+             dump_dir="local/logs", record=True, state_rate=15.0,
+             evaluator="legacy"):
     tokens = cfg["tokens"]
     stop = threading.Event()
     results = {}
@@ -127,7 +142,8 @@ def run_room(cfg, strategy="policy", ckpt=None, games=1, dump=False,
     recorder = Recorder() if record else None
 
     def worker(name, token):
-        decide = make_decide(strategy, ckpt)
+        decide = (make_decide(strategy, ckpt) if evaluator == "legacy"
+                  else make_decide(strategy, ckpt, evaluator=evaluator))
         api = DumpingApi(cfg["server"], token, name, dump_dir,
                          state_rate=state_rate) if dump \
             else Api(cfg["server"], token, state_rate=state_rate)
@@ -164,6 +180,9 @@ def main(argv=None):
     ap.add_argument("--config", default="local/platform.json")
     ap.add_argument("--strategy", default="policy",
                     choices=("policy", "bot", "random"))
+    ap.add_argument("--bot-evaluator", default="legacy",
+                    choices=("legacy", "shape-v1"),
+                    help="strategy=bot 时的评价器(默认 legacy)")
     ap.add_argument("--ckpt", default="runs/bc0/best.pt")
     ap.add_argument("--games", type=int, default=1, help="打满场数(跨轮复用)")
     ap.add_argument("--dump", action="store_true",
@@ -181,7 +200,8 @@ def main(argv=None):
                        games=args.games, dump=args.dump,
                        record=not args.no_recorder,
                        state_rate=None if args.no_state_throttle
-                       else args.state_rate)
+                       else args.state_rate,
+                       evaluator=args.bot_evaluator)
     print("\n===== 汇总 =====")
     for name, st in results.items():
         print(f"{name}: {json.dumps(st, ensure_ascii=False)}")

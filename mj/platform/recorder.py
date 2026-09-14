@@ -135,13 +135,20 @@ class Recorder:
     # ---------- 记录类型 ----------
 
     def meta(self, gid, name, tid=None, you_cai_bi_kao=False, base=1,
-             mode=None):
+             mode=None, evaluator=None, evaluator_profile=None,
+             evaluator_fingerprint=None, evaluator_kernel=None):
         """mode 标记对局来源(match=自由对战;测试房/正式赛缺省不写,
         log2data 按 mode 过滤时缺省视作非 match)。"""
         rec = {"type": "meta", "gid": gid, "name": name, "tid": tid,
                "you_cai_bi_kao": bool(you_cai_bi_kao), "base": base}
         if mode:
             rec["mode"] = mode
+        for key, value in (("evaluator", evaluator),
+                           ("evaluator_profile", evaluator_profile),
+                           ("evaluator_fingerprint", evaluator_fingerprint),
+                           ("evaluator_kernel", evaluator_kernel)):
+            if value is not None:
+                rec[key] = value
         self.log_for(gid, name).write(rec)
 
     def sse_frame(self, gid, seq=None, closed=False, payload=None,
@@ -330,7 +337,7 @@ class Recorder:
                  decision_started_at=None, decision_finished_at=None,
                  deadline_left_at_start_ms=None,
                  deadline_left_at_finish_ms=None,
-                 decision_result=None):
+                 decision_result=None, evaluation=None):
         """返回决策 id(action 记录据此配对)。"""
         log = self.log_for(gid)
         did = log.next_decision_id()
@@ -340,6 +347,8 @@ class Recorder:
                "latency_ms": latency_ms}
         if digest:
             rec["digest"] = digest
+        if evaluation is not None:
+            rec["evaluation"] = evaluation
         for key, value in (("window_id", window_id),
                            ("window_attempt_key", window_attempt_key),
                            ("identity_status", identity_status),
@@ -364,6 +373,23 @@ class Recorder:
                 rec[key] = value
         log.write(rec)
         return did
+
+    def counterfactual_evaluation(self, gid, phase, action, evaluation,
+                                  window_id=None, source_seq=None,
+                                  reason="offline_only"):
+        """Append an explicitly offline counterfactual record.
+
+        This additive entry is intentionally never emitted by BotClient's
+        live decision path.  It lets replay/diagnostic tools show a PONG or a
+        preferred discard for a window that had no strategy call without
+        manufacturing an online ``decision`` or upgrading window identity.
+        """
+        rec = {"type": "counterfactual_evaluation", "phase": phase,
+               "action": action, "evaluation": evaluation,
+               "reason": reason, "source_seq": source_seq,
+               "window_id": window_id}
+        self.log_for(gid).write({k: v for k, v in rec.items()
+                                 if v is not None})
 
     def claim_miss(self, gid, phase, legal, chosen=None, reason="",
                    payload=None, status=None, code="", deadline_at=None,

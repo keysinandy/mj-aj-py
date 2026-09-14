@@ -1,0 +1,27 @@
+{
+  "schema": "bot-shape-aware-evaluation/baseline-v1",
+  "captured_at": "2026-09-13",
+  "repository_head": "5f4ce169ef401fe3755dc623b68edd038d3f0322",
+  "python": "3.11.14",
+  "kernel": {
+    "name": "mj_kernels",
+    "path": "/Users/shenzeqi/.pyenv/versions/3.11.14/lib/python3.11/site-packages/mj_kernels/__init__.py",
+    "forced_python": false
+  },
+  "rules": {
+    "guide": "PROGRESS.md",
+    "dead_wall": 20,
+    "chow_limit": 2,
+    "default_you_cai_bi_kao": false,
+    "legacy_callable": "mj.bot.choose_action(g, seat)"
+  },
+  "source_sha256": {
+    "mj/bot.py": "d05770f9924719611f7d4dd9b085cf56aba3bf756af46d8db3fc33614f9ff32a",
+    "mj/shanten.py": "97e6be852dcaf1ef5e5b278405fd060d661ee2debf71efde12a3d26d08199f8c"
+  },
+  "evaluation": {
+    "strategy": "legacy",
+    "opponent_binding": "frozen legacy callable",
+    "note": "Existing user docs worktree changes are intentionally outside this baseline artifact."
+  }
+}
