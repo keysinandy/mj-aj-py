@@ -45,9 +45,9 @@ class ProfileSpec:
     schema: str = PROFILE_SCHEMA
     reward_units: str = "base-score points"
     reward_name: str = "hero_round_settlement_delta"
-    rules_version: str = "hangzhou-platform-guide-v21"
+    rules_version: str = "hangzhou-platform-guide-v34"
     belief_version: str = "uniform_unseen-v1"
-    continuation_version: str = "frozen_shape_v1"
+    continuation_version: str = "frozen_shape_v1_self_kong_v1"
     kernel_version: str = "python-frontier-v1"
     tail_version: str = "zero-v1"
     horizon: int = 2

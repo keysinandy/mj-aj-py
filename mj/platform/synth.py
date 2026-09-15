@@ -1,7 +1,8 @@
 """引擎自博弈 → 平台格式事件流(离线测试夹具 + 协议 spec-of-record)。
 
 通过继承 Game 挂钩内部转移函数,把一局自博弈转写为平台事件序列
-(字段名与 replay.js / 指南 v22 对齐:type/seat/tile/data/seq)。两种
+(字段名与 replay.js / 平台指南 v34 对齐;事件 schema 沿用 v22:
+type/seat/tile/data/seq)。两种
 消费形态:
 - 全量流(含四家摸牌 + start_hands 庄家 14 张含首摸)→ replay 校验
   与 mirror 属性测试的 ground truth;

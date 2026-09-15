@@ -31,6 +31,14 @@ class MirrorInconsistent(Exception):
     """事件流与镜像状态不符——上层应 seq=0 重建并告警。"""
 
 
+# The current v34 snapshot does not expose this field, but keeping the origin
+# explicit prevents a FULL/gap rebuild from silently turning a kong
+# replacement draw into an ordinary draw. ``kong_draw`` remains the
+# compatibility projection consumed by Game and older callers.
+DRAW_ORIGIN_NORMAL = "NORMAL"
+DRAW_ORIGIN_KONG_REPLACEMENT = "KONG_REPLACEMENT"
+
+
 class Mirror:
     """单局(round)、单座位的事件源镜像。一局一个实例。"""
 
@@ -51,7 +59,9 @@ class Mirror:
         self.freezer = None
         self.chain = 0               # 自家动作链(其他家不跟踪,决策无关)
         self.chain_piao = 0
-        self.kong_draw = False       # 自家当前 drawn 是否杠后补牌
+        self.baotou = None            # 当前 standing hand 是否爆头
+        self.draw_origin = None       # NORMAL | KONG_REPLACEMENT | None
+        self.kong_draw = False       # draw_origin 的兼容布尔投影
         self.round_ended = None      # round_ended 事件 data(结算对账)
         self.game_ended = False
         # 墙长:_pops 含庄家直抽(=1 起步)
@@ -78,7 +88,8 @@ class Mirror:
         实测快照字段:seat/phase/turn/responding_seats/drawn_tile/my_hand/
         god{baotou,chain_count,catch_play}/round_no/dealer/wall_remaining/
         discards(四家牌河,含 pending 牌)/melds[{kind,tiles}]/hand_counts/
-        last_discard/scores。公共状态按快照全量重建(自愈);响应阶段
+        last_discard/scores。公共状态按快照全量重建(自愈);draw_origin 优先
+        使用未来显式字段,当前 v34 无该字段时按规则安全推导;响应阶段
         turn = 出牌者(实测),pending = (turn, last_discard)。
         """
         if snap.get("round_no") is not None:
@@ -109,11 +120,18 @@ class Mirror:
             self._pops = 84 - snap["wall_remaining"]
         # 响应窗:pending = (出牌者, last_discard);turn 实测为出牌者
         phase = snap.get("phase")
+        self._restore_draw_origin(snap, god, phase)
         ld = snap.get("last_discard")
         if phase in ("response_peng", "response_chi") and ld:
             owner = snap.get("turn")
             if owner is not None and 0 <= owner <= 3:
                 self.pending = (owner, tidx(ld))
+            else:
+                self.pending = None
+        else:
+            # A FULL snapshot is authoritative. Do not let a previous
+            # response window survive a settled/draw rebuild.
+            self.pending = None
         # 抓打圈:gap 快照必须恢复发起者与剩余冻结弃牌数。catch_play 是
         # 本人视角（发起者自己会是 false），故以 god_discarder_seat 为准。
         freezer = god.get("god_discarder_seat")
@@ -130,6 +148,66 @@ class Mirror:
                 self.freeze, self.freezer = 3, -1
         elif self.freezer == -1 and self.freeze > 0:
             self.freeze = 0
+
+    def _restore_draw_origin(self, snap, god, phase):
+        """Restore the current draw source across FULL/gap snapshots.
+
+        v34 snapshots observed in the platform do not carry a dedicated
+        ``kong_draw`` field. For a snapshot at our actionable draw, a
+        positive action chain plus a non-baotou standing hand is the safe
+        rule-backed inference for a kong replacement. A piao chain keeps a
+        baotou standing hand and therefore does not get misclassified. If a
+        future protocol exposes an explicit origin, it wins over inference.
+        """
+        self._own_gang_replacement = False
+        self.draw_origin = None
+        self.kong_draw = False
+
+        baotou = god.get("baotou")
+        if isinstance(baotou, bool):
+            self.baotou = baotou
+        elif self.drawn is not None and self.drawn < len(self.my_hand):
+            standing = list(self.my_hand)
+            if standing[self.drawn] > 0:
+                standing[self.drawn] -= 1
+            self.baotou = is_baotou(standing, len(self.melds[self.me]))
+        else:
+            self.baotou = None
+
+        missing = object()
+        raw = snap.get("draw_origin", missing)
+        if raw is missing:
+            raw = god.get("draw_origin", missing)
+        if raw is missing:
+            raw = snap.get("kong_draw", missing)
+        if raw is missing:
+            raw = god.get("kong_draw", missing)
+
+        origin = None
+        if raw is not missing:
+            if isinstance(raw, bool):
+                origin = (DRAW_ORIGIN_KONG_REPLACEMENT if raw
+                          else DRAW_ORIGIN_NORMAL)
+            elif isinstance(raw, str):
+                normalized = raw.strip().upper().replace("-", "_")
+                if normalized in ("NORMAL", "NORMAL_DRAW"):
+                    origin = DRAW_ORIGIN_NORMAL
+                elif normalized in ("KONG_REPLACEMENT", "KONG_DRAW",
+                                    "GANG_DRAW"):
+                    origin = DRAW_ORIGIN_KONG_REPLACEMENT
+
+        actionable_draw = (self.drawn is not None and phase == "draw"
+                           and snap.get("turn") == self.me)
+        if origin is None and actionable_draw and self.chain > 0 \
+                and self.baotou is False:
+            # v33/v34 rule path: non-baotou chain draw is the kong
+            # replacement window, including after an seq=0/gap rebuild.
+            origin = DRAW_ORIGIN_KONG_REPLACEMENT
+        elif origin is None and self.drawn is not None:
+            origin = DRAW_ORIGIN_NORMAL
+
+        self.draw_origin = origin
+        self.kong_draw = origin == DRAW_ORIGIN_KONG_REPLACEMENT
 
     def _rebuild_freeze(self, snap, freezer):
         """用快照牌河+phase 精确还原抓打圈，失败时保守降级。
@@ -212,7 +290,13 @@ class Mirror:
         self.my_hand[t] += 1
         self.drawn = t
         self._pops += 1
-        self.kong_draw = self._own_gang_replacement
+        self.draw_origin = (DRAW_ORIGIN_KONG_REPLACEMENT
+                            if self._own_gang_replacement
+                            else DRAW_ORIGIN_NORMAL)
+        self.kong_draw = self.draw_origin == DRAW_ORIGIN_KONG_REPLACEMENT
+        standing = list(self.my_hand)
+        standing[t] -= 1
+        self.baotou = is_baotou(standing, len(self.melds[self.me]))
         self._own_gang_replacement = False
 
     def _on_tile_discarded(self, e):
@@ -223,7 +307,9 @@ class Mirror:
             self._check(self.my_hand[t] > 0, f"自家打牌不在手: {e}")
             self.my_hand[t] -= 1
             self.drawn = None
+            self.draw_origin = None
             self.kong_draw = False
+            self.baotou = None
             # 自家断链/飘(chain 供 god 对账;决策不依赖)
             if t == W:
                 after = list(self.my_hand)
@@ -277,6 +363,9 @@ class Mirror:
                 self.my_hand[t] -= 2
         if s == self.me:
             self.drawn = None
+            self.draw_origin = None
+            self.kong_draw = False
+            self.baotou = None
         self.pending = None
         self._expects_draw[s] = False
 
@@ -318,6 +407,9 @@ class Mirror:
             self.chain += 1
             self._own_gang_replacement = True  # 补牌将以自家 tile_drawn 到达
             self.drawn = None
+            self.draw_origin = None
+            self.kong_draw = False
+            self.baotou = None
         else:
             if kind in ("an", "bu") and self._expects_draw[s]:
                 # 暗杠/加杠前必有一次原始摸牌(drawn 门禁),该回合

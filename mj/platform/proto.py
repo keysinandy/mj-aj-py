@@ -1,7 +1,8 @@
 """平台协议常量:牌名映射与事件 schema 解析。
 
-事件字段名以门户回放引擎 docs/杭州麻将对战平台_files/replay.js 与指南
-v22 为准:type/seat/tile/data{tiles,kind,draw}/seq。真实平台首跑探针
+事件字段名以门户回放引擎 docs/杭州麻将对战平台_files/replay.js 与平台
+指南 v34 为准(事件 schema 沿用 v22):type/seat/tile/data{tiles,kind,draw}/seq。
+真实平台首跑探针
 (probe.py)后如有出入,只改本文件——所有事件消费方(mirror/synth/
 replay/bot_client)都经由 parse_event 归一化,不直接摸原始键名。
 """

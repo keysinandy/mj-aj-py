@@ -9,7 +9,7 @@
 - 新增 `rollout-v1` 离线 teacher：从公开信息采样隐藏世界，共享随机世界进行候选成对比较，以完整局末积分为收益，输出不确定性、歧义和 regret 数据。
 - 用独立 teacher 数据校准版本化 LUT/受约束线性模型，保留全候选完整层级回退，并记录实际运行层级、候选贡献和模型假设。
 - 按 P0–P7 分阶段交付基线验收、全舍牌 frontier、EV2、teacher、校准发布、HU/财飘、KONG/反应动作和 BC 数据接入；每次扩大动作范围重新验收。
-- 将既有反应决策规范限定到适用 evaluator/action scope，保留 legacy 和 shape-v1 的既有行为；上线显式 opt-in，发布闸门通过后才具备调整默认值的条件。
+- 将既有反应决策规范限定到适用 evaluator/action scope，保留 legacy 和 shape-v1 的普通舍牌/反应语义，并把 v33 摸后暗杠/补杠策略作为单独版本化的委托路径；上线显式 opt-in，发布闸门通过后才具备调整默认值的条件。
 
 ## Capabilities
 
@@ -23,7 +23,7 @@
 
 ### Modified Capabilities
 
-- `bot-react-decision`: 为现有向听门槛、财神保护和 HU/财飘/KONG 冻结行为增加明确的版本与阶段适用范围；完整动作阶段使用同单位积分 EV 比较。
+- `bot-react-decision`: 为现有向听门槛、财神保护和 HU/财飘/KONG 委托行为增加明确的版本与阶段适用范围；完整动作阶段使用同单位积分 EV 比较。
 
 ## Impact
 

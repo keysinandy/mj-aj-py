@@ -2,7 +2,9 @@
 
 `shape-v2` 是当前默认保持关闭的 opt-in 评价器。它只在 `discard` scope
 中枚举所有合法的普通舍牌，使用公开信息、规则计分适配器和最多两次本家
-未来摸牌的 EV2 特征；HU/财飘、KONG 和反应窗口记录为委托并沿用冻结策略。
+未来摸牌的 EV2 特征；HU/财飘、KONG 和反应窗口仍由 legacy 委托路径处理。
+其中 v33 杠后补牌的暗杠/补杠会在公开信息下比较下一张补牌的积分期望，
+shape-v2 本身仍只评价普通舍牌，不把该策略升级宣称为 EV2 全动作评价。
 
 ```python
 from mj.bot import choose_action

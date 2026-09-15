@@ -2,11 +2,11 @@
 
 ### Requirement: 评价版本明确声明动作范围
 
-shape-v2 SHALL 显式选择并携带 `discard`、`hu-piao` 或 `all-root` scope；版本和 scope MUST 进入配置指纹。discard scope 仅优化无 HU/KONG 分支的合法舍牌；hu-piao 再覆盖无 KONG 分支的 HU 与舍牌；all-root 覆盖当前阶段全部合法动作。范围外行为 MUST 委托冻结策略并记录 delegated_reason，不能伪装成 v2 已完成评价。legacy 与 shape-v1 的显式调用 MUST 保持原语义。
+shape-v2 SHALL 显式选择并携带 `discard`、`hu-piao` 或 `all-root` scope；版本和 scope MUST 进入配置指纹。discard scope 仅优化无 HU/KONG 分支的合法舍牌；hu-piao 再覆盖无 KONG 分支的 HU 与舍牌；all-root 覆盖当前阶段全部合法动作。范围外行为 MUST 委托版本化 legacy 策略并记录 delegated_reason，不能伪装成 v2 已完成评价。legacy 与 shape-v1 的普通舍牌/反应语义保持既有口径；v33 摸后暗杠/补杠使用单独版本化的 legacy draw-window 策略。
 
 #### Scenario: 首版遇到可 HU 状态
 - **WHEN** profile 为 discard scope 且 HU 合法
-- **THEN** 委托冻结 HU/财飘分支，记录范围外原因，不生成虚构的 HU EV
+- **THEN** 委托版本化 HU/财飘分支，记录范围外原因，不生成虚构的 HU EV
 
 #### Scenario: 只有一个合法动作
 - **WHEN** 抓打圈等规则使合法集只有一个动作

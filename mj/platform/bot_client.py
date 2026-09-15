@@ -2401,6 +2401,12 @@ class BotClient:
                        "liveWallLeft": {"status": "KNOWN", "evidence": "RECORDED",
                                          "source": "LOCAL_TRACE",
                                          "value": mirror.live_wall_left()},
+                       "drawOrigin": (
+                           {"status": "KNOWN", "evidence": "RECORDED",
+                            "source": "LOCAL_TRACE",
+                            "value": mirror.draw_origin}
+                           if mirror.draw_origin else
+                           {"status": "UNKNOWN", "evidence": "UNKNOWN"}),
                        "pending": ({"status": "KNOWN", "evidence": "RECORDED",
                                     "source": "LOCAL_TRACE", "value": list(mirror.pending)}
                                    if mirror.pending else

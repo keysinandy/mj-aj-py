@@ -7,9 +7,9 @@
     "schema": "bot-ev-discard/profile-v1",
     "reward_units": "base-score points",
     "reward_name": "hero_round_settlement_delta",
-    "rules_version": "hangzhou-platform-guide-v21",
+    "rules_version": "hangzhou-platform-guide-v34",
     "belief_version": "uniform_unseen-v1",
-    "continuation_version": "frozen_shape_v1",
+    "continuation_version": "frozen_shape_v1_self_kong_v1",
     "kernel_version": "python-frontier-v1",
     "tail_version": "zero-v1",
     "horizon": 2,
@@ -30,7 +30,7 @@
     "calibration_fingerprint": "",
     "calibration_kind": "none",
     "calibration_intercept": 0.0,
-    "fingerprint": "b21192d917d128cd"
+    "fingerprint": "f1ae51545bea9b5b"
   },
   "fingerprint_algorithm": "sha256-canonical-json-truncated-16",
   "scope_contract": {

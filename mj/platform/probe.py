@@ -17,6 +17,7 @@ from .config import load_config
 import mj.replay as replay_mod
 
 SERVER_DEFAULT = "https://10.240.169.190:18080"
+SUPPORTED_GUIDE_VERSION = 34
 
 
 def probe(args):
@@ -30,11 +31,13 @@ def probe(args):
     with urllib.request.urlopen(server + "/portal/api/guide/version",
                                 timeout=10, context=ctx) as r:
         meta = _json.load(r)
+    guide_version = int(meta["version"])
     print(f"version={meta['version']} updated_at={meta['updated_at']}"
-          f"(本 bot 按 v22 开发)")
-    if meta["version"] > 22:
+          f"(本 bot 按 v{SUPPORTED_GUIDE_VERSION} 开发)")
+    if guide_version > SUPPORTED_GUIDE_VERSION:
         breaking = [c for c in meta["changes"]
-                    if c["type"] == "breaking" and c["version"] > 22]
+                    if c["type"] == "breaking"
+                    and int(c["version"]) > SUPPORTED_GUIDE_VERSION]
         print(f"⚠️ 有 BREAKING 变更: {[b['summary'] for b in breaking]}")
 
     print("\n== 2) 4 令牌 /api/me ==")

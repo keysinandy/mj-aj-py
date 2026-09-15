@@ -125,7 +125,7 @@ class FastEvaluation:
     kernel_calls: int = 0
     elapsed_ms: float = 0.0
     budget: Optional[dict] = None
-    rule_version: str = "hangzhou-platform-guide-v21"
+    rule_version: str = "hangzhou-platform-guide-v34"
     reward_units: str = "base-score points"
     kernel_version: str = "python-frontier-v1"
     belief_version: str = "uniform_unseen-v1"
@@ -524,7 +524,7 @@ def choose_game_action(game, seat, profile=None):
                                      legacy_action=choose_action(
                                          game, seat, evaluator="legacy"))
         return root.selected, root.as_json()
-    # Keep the actual frozen legacy choice beside the v2 result.  This is an
+    # Keep the actual legacy choice beside the v2 result.  This is an
     # explanation field only; it does not alter the v2 candidate ordering.
     from ..bot import choose_action
     legacy_action = choose_action(game, seat, evaluator="legacy")

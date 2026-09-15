@@ -8,7 +8,12 @@
 
 import unittest
 
-from mj.platform.mirror import Mirror, MirrorInconsistent
+from mj.game import HU
+from mj.platform.mirror import (
+    DRAW_ORIGIN_KONG_REPLACEMENT,
+    Mirror,
+    MirrorInconsistent,
+)
 from mj.platform.proto import tname, tidx, EV_DISCARDED
 from mj.platform.synth import synth_game, view_for
 
@@ -142,6 +147,40 @@ class TestMirrorProperties(unittest.TestCase):
             "god": {"catch_play": True},
         })
         self.assertEqual((mir.freeze, mir.freezer), (3, -1))
+
+    def test_full_snapshot_restores_kong_draw_for_ycbk(self):
+        """v33 杠后补牌的 FULL 快照仍须保留有财必拷响资格。
+
+        v34 快照没有专门的 kong_draw 字段；这手牌杠后非爆头但补牌成
+        胡。若 seq=0/gap 重建把补牌当普通摸牌，HU 会被本地门禁误删。
+        """
+        snap = {
+            "seat": 0,
+            "phase": "draw",
+            "turn": 0,
+            "drawn_tile": "7t",
+            "my_hand": [
+                "4w", "5w", "6w", "7w", "8w", "9w",
+                "1b", "1b", "5t", "白", "7t",
+            ],
+            "god": {"baotou": False, "chain_count": 1,
+                    "catch_play": False},
+            "dealer": 0,
+            "round_no": 1,
+            "wall_remaining": 60,
+            "discards": [[], [], [], []],
+            "melds": [[{"kind": "gang_an",
+                        "tiles": ["1w", "1w", "1w", "1w"]}],
+                      [], [], []],
+            "last_discard": None,
+        }
+        mir = Mirror(my_seat=0, dealer=0, you_cai_bi_kao=True)
+        mir.apply_snapshot(snap)
+
+        self.assertEqual(mir.draw_origin, DRAW_ORIGIN_KONG_REPLACEMENT)
+        self.assertTrue(mir.kong_draw)
+        self.assertFalse(mir.baotou)
+        self.assertIn(HU, mir.build_game("draw").legal_actions())
 
     def test_react_on_own_pending_rejected(self):
         """自家打出的牌没有自家反应窗:build_game 拒绝(防陈旧窗口

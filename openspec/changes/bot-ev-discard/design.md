@@ -6,7 +6,7 @@
 
 | 当前位置 | 已有能力 | 本次需要补足 |
 | --- | --- | --- |
-| `mj/bot.py::choose_action/choose_shape_action` | legacy 默认、shape-v1 显式选择；HU/财飘与 KONG 分支冻结 | 显式 shape-v2 与 action scope，逐阶段接入 |
+| `mj/bot.py::choose_action/choose_shape_action` | legacy 默认、shape-v1 显式选择；HU/财飘与 KONG 分支走 legacy 委托 | 显式 shape-v2 与 action scope，逐阶段接入 |
 | `mj/hand_eval.py::EvalContext` | 本家手牌/visible、规则、摸牌门禁、墙长；不可变上下文 | 庄家、底分、四家公开状态、动作链、轮次/来源/完整性 |
 | `evaluate_discard_candidates` | 最低向听候选、非财神优先、Q0/Q 完整层级与上界剪枝 | 全合法舍牌、全层级积分比较、新模型的独立上界 |
 | `_best_future_discard` / Rust `best_future_discard` | 内部仍过滤最低向听；非有财必拷响路径批处理 | EV2 的未来节点也需全合法候选，不能直接沿用原内核的选择语义 |
@@ -71,8 +71,8 @@ Mirror 当前只跟踪本家 chain/chain_piao；`apply_snapshot()` 的现有字�
 
 | scope | 优化范围 | 其他分支 |
 | --- | --- | --- |
-| `discard`（P1–P4） | 无 HU、无 KONG 可选分支中的全部合法弃牌，含吃碰后立即弃牌与普通打白 | HU/财飘、KONG、反应侧明确委托冻结 shape-v1/legacy |
-| `hu-piao`（P5） | 再覆盖无 KONG 分支中的 HU 与全部合法弃牌；财飘是打 W 的规则效果 | 有 KONG 和反应侧仍委托冻结策略 |
+| `discard`（P1–P4） | 无 HU、无 KONG 可选分支中的全部合法弃牌，含吃碰后立即弃牌与普通打白 | HU/财飘、KONG、反应侧明确委托 shape-v1/legacy |
+| `hu-piao`（P5） | 再覆盖无 KONG 分支中的 HU 与全部合法弃牌；财飘是打 W 的规则效果 | 有 KONG 和反应侧仍委托 legacy 策略 |
 | `all-root`（P6） | 当前阶段所有合法动作：弃牌、HU、暗杠/加杠或 PASS/CHOW/PONG/明杠 | 单一合法动作直接返回 |
 
 scope 进入 profile 和所有数据/运行 manifest。P1/P2 可离线诊断，P4 才可发布 `discard` 版本。P5/P6 分别生成新 profile 与 teacher 数据并重做闸门。不能将 `discard` 的通过报告描述成全动作 EV 已通过。
@@ -135,7 +135,7 @@ P5 的模型增加合法 HU 与继续动作价值比较；P6 补充不同 action
 
 ### 8. Rollout、共享世界与统计边界
 
-每个 sample_id 下，所有根候选克隆同一初始可能世界。根强制应用对应合法动作，然后各玩家使用冻结 continuation；初版本家和对手均可选固定 shape-v1，后续本家可改固定 shape-v2-fast。任何后续策略都不能调用 rollout、读取别人的样本暗牌或未来墙序。
+每个 sample_id 下，所有根候选克隆同一初始可能世界。根强制应用对应合法动作，然后各玩家使用版本化的冻结 continuation；当前 shape-v1 continuation 包含 v33 摸后暗杠/补杠的公开信息期望策略，后续本家可改固定 shape-v2-fast。任何后续策略都不能调用 rollout、读取别人的样本暗牌或未来墙序。
 
 随机 tie 使用按 sample/actor/该 actor 决策序号分流的随机流；候选枚举和 worker 调度不改变 sample_id。不同根动作会导致不同后续轨迹，不承诺每个后续节点牌面相同。跑到 Game.done 才计分；非法动作、超限、异常不得偷偷以 legacy 修复、零分或临时截断分计入样本。整组 world 标为失败并报告，发布数据不接受未解释失败。
 

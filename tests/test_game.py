@@ -418,6 +418,21 @@ class TestScenarios(unittest.TestCase):
         self.assertEqual(g.result[1], 2)
         self.assertEqual(g.result[2], ["平胡", "杠开"])
 
+    def test_kong_closed_rechecks_post_kong_baotou(self):
+        """v32:杠后站立手听任意牌时，补牌胡为杠爆 ×4。"""
+        # 暗杠前摸 3p 补成 123p；杠后 standing 为
+        # 456m+789m+123p+白，听任意牌(爆头)。
+        g = setup(
+            ["1111m456m789m12pw", FA, FB, FC],
+            [11, 24],
+            you_cai_bi_kao=True,
+        )
+        g.step(KONG_CLOSED_BASE)
+        self.assertIn(HU, g.legal_actions())
+        g.step(HU)
+        self.assertEqual(g.result[1], 4)
+        self.assertEqual(g.result[2], ["平胡", "杠开", "爆头"])
+
     def test_no_kong_in_dead_wall(self):
         g = setup(
             ["111m456m789m11p55s", FA, FB, FC],

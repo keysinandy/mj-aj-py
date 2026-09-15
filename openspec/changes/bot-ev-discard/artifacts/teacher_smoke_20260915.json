@@ -1,9 +1,9 @@
 {
   "status": "ambiguous",
   "context_hash": "c30a3c7aabb63434",
-  "profile_fingerprint": "b21192d917d128cd",
+  "profile_fingerprint": "f1ae51545bea9b5b",
   "belief_version": "uniform_unseen-v1",
-  "continuation_version": "frozen_shape-v1",
+  "continuation_version": "frozen_shape_v1_self_kong_v1",
   "actions": [
     4,
     6,
@@ -312,7 +312,7 @@
           "reward": -8.0,
           "sample_id": 0,
           "world_fingerprint": "93db97fbd851e281605aee57",
-          "steps": 134,
+          "steps": 182,
           "winner": 2,
           "multiplier": 1,
           "draw": false,
@@ -334,7 +334,7 @@
           "reward": 24.0,
           "sample_id": 0,
           "world_fingerprint": "93db97fbd851e281605aee57",
-          "steps": 195,
+          "steps": 192,
           "winner": 0,
           "multiplier": 1,
           "draw": false,
@@ -454,7 +454,7 @@
             "reward": -8.0,
             "sample_id": 0,
             "world_fingerprint": "93db97fbd851e281605aee57",
-            "steps": 134,
+            "steps": 182,
             "winner": 2,
             "multiplier": 1,
             "draw": false,
@@ -476,7 +476,7 @@
             "reward": 24.0,
             "sample_id": 0,
             "world_fingerprint": "93db97fbd851e281605aee57",
-            "steps": 195,
+            "steps": 192,
             "winner": 0,
             "multiplier": 1,
             "draw": false,
@@ -564,7 +564,7 @@
       }
     ],
     "next_sample_id": 1,
-    "config_fingerprint": "8d09216bf32bb46f",
+    "config_fingerprint": "323a120849dfba22",
     "terminal": true,
     "stop_reason": "nmax",
     "ambiguous": true
@@ -576,7 +576,7 @@
       "delta": 0.0
     }
   ],
-  "fingerprint": "8d09216bf32bb46f",
+  "fingerprint": "323a120849dfba22",
   "alpha": 0.05,
   "max_looks": 1,
   "reward_bound": 1.1333679558887149e+23,
@@ -755,9 +755,9 @@
     "schema": "bot-ev-discard/profile-v1",
     "reward_units": "base-score points",
     "reward_name": "hero_round_settlement_delta",
-    "rules_version": "hangzhou-platform-guide-v21",
+    "rules_version": "hangzhou-platform-guide-v34",
     "belief_version": "uniform_unseen-v1",
-    "continuation_version": "frozen_shape_v1",
+    "continuation_version": "frozen_shape_v1_self_kong_v1",
     "kernel_version": "python-frontier-v1",
     "tail_version": "zero-v1",
     "horizon": 2,
@@ -777,7 +777,7 @@
     "tau": {},
     "lut_buckets": [],
     "min_bucket_samples": 64,
-    "fingerprint": "b21192d917d128cd"
+    "fingerprint": "f1ae51545bea9b5b"
   },
-  "artifact_fingerprint": "6ad8f4c97e7b6a70c1452c69"
+  "artifact_fingerprint": "fb94361fe551a858e39214da"
 }

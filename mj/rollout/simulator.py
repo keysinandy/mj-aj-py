@@ -164,7 +164,11 @@ class FixedContinuation:
         if evaluator not in ("legacy", "shape-v1"):
             raise ValueError("continuation must be legacy or shape-v1")
         self.evaluator = evaluator
-        self.version = f"frozen_{evaluator}"
+        # v33 exposes self-kong choices after a replacement draw. Keep the
+        # continuation snapshot versioned so teacher EV is not confused with
+        # artifacts generated before that policy branch existed.
+        self.version = (f"frozen_{evaluator.replace('-', '_')}_"
+                        "self_kong_v1")
 
     def action(self, game, actor):
         view = actor_view(game, actor)

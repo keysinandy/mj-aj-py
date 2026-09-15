@@ -3,6 +3,8 @@
 决策原则(按优先级):
 0. 摸牌/杠补牌成胡默认提交 HU;爆头态打白板仍听任意牌(财飘)时,
    墙内活牌足够轮回到自己再摸则弃胡打白飘(×4 起,下次摸牌必胡)。
+   v33 起杠后补牌仍是普通 draw 决策窗口;暗杠/补杠与 HU/弃牌按
+   公开信息下一张摸牌的积分期望比较。
 1. 摸牌阶段弃牌:最小化向听数 → 保护财神 → 最大化进张数 →
    最小化牌型结构损失 → 少喂下家 → tile 编号(仅稳定排序)。
    同向听候选**全部**参与进张比较,不再按编号预截断。
@@ -17,7 +19,8 @@
 
 from .tiles import W
 from .shanten import shanten, ukeire
-from .win import is_baotou
+from .win import is_baotou, is_win
+from .scoring import hand_multiplier, settle
 from .game import (
     PASS, HU, PONG, KONG_OPEN, KONG_CLOSED_BASE, KONG_ADD_BASE,
     CHOW_LOW, CHOW_MID, CHOW_HIGH,
@@ -60,6 +63,232 @@ def choose_discard(g, seat):
         if best_key is None or key < best_key:
             best, best_key = t, key
     return best
+
+
+def _kong_action_tile(action):
+    """Return ``(kind, tile)`` for a self-draw kong action."""
+    if KONG_CLOSED_BASE - 33 <= action <= KONG_CLOSED_BASE:
+        return "closed", KONG_CLOSED_BASE - action
+    if KONG_ADD_BASE - 33 <= action <= KONG_ADD_BASE:
+        return "add", KONG_ADD_BASE - action
+    return None
+
+
+def _kong_actions(actions):
+    """Return the legal self-draw KONG actions in stable engine order."""
+    return tuple(action for action in actions
+                 if _kong_action_tile(action) is not None)
+
+
+def _seat_value(value, seat):
+    """Read a per-seat Game field while accepting Mirror's scalar fields."""
+    if isinstance(value, (list, tuple)):
+        return value[seat]
+    return value
+
+
+def _public_visible_counts(g, seat):
+    """Return visible tile counts without reading opponent concealed hands.
+
+    A full local ``Game`` contains hidden hands for simulation, while an
+    online Mirror zeroes them. This policy helper intentionally uses only
+    the hero hand, all rivers, and all exposed melds in both cases.
+    """
+    visible = list(g.hands[seat])
+    for river in g.discards:
+        for tile in river:
+            visible[tile] += 1
+    for melds in g.melds:
+        for kind, tile in melds:
+            if kind == "chow":
+                for value in (tile, tile + 1, tile + 2):
+                    visible[value] += 1
+            elif kind.startswith("kong"):
+                visible[tile] += 4
+            else:
+                visible[tile] += 3
+    return visible
+
+
+def _expected_next_draw_reward(g, seat, standing, locked, chain,
+                               chain_piao, kong_draw, remaining=None,
+                               draw_delay=1):
+    """Estimate one next draw using only public unseen-tile mass.
+
+    This is deliberately a small policy helper, not a second settlement
+    implementation or a hidden-wall simulation. It reuses ``is_win``,
+    ``hand_multiplier`` and ``settle`` so the comparison is in the same
+    score units as an immediate HU. ``kong_draw`` applies the v33 YCBK
+    legality exception to the replacement draw.
+    """
+    live_wall = g.live_wall_left()
+    if live_wall < draw_delay:
+        return {"value": 0.0, "win_probability": 0.0,
+                "winning_tiles": (), "wall_left": max(0, live_wall)}
+    if remaining is None:
+        visible = _public_visible_counts(g, seat)
+        remaining = [max(0, 4 - count) for count in visible]
+    total_unseen = sum(remaining)
+    if total_unseen <= 0:
+        return {"value": 0.0, "win_probability": 0.0,
+                "winning_tiles": (), "wall_left": max(0, live_wall - draw_delay)}
+
+    ycbk = bool(getattr(g, "you_cai_bi_kao", False))
+    total_reward = 0.0
+    winning_mass = 0
+    winning_tiles = []
+    for tile, mass in enumerate(remaining):
+        if mass <= 0:
+            continue
+        final = list(standing)
+        final[tile] += 1
+        if not is_win(final, locked):
+            continue
+        if (ycbk and final[W] > 0 and not kong_draw
+                and not is_baotou(standing, locked)):
+            continue
+        multiplier, _parts = hand_multiplier(
+            final, standing, locked, chain, chain_piao)
+        reward = settle(
+            seat, getattr(g, "dealer", 0), multiplier,
+            getattr(g, "base", 1),
+        )[seat]
+        total_reward += mass * reward
+        winning_mass += mass
+        winning_tiles.append(tile)
+    return {
+        "value": total_reward / total_unseen,
+        "win_probability": winning_mass / total_unseen,
+        "winning_tiles": tuple(winning_tiles),
+        "wall_left": max(0, live_wall - draw_delay),
+    }
+
+
+def _immediate_hu_reward(g, seat):
+    """Return the existing settlement-unit reward for the current HU."""
+    drawn = g.drawn[seat]
+    standing = list(g.hands[seat])
+    standing[drawn] -= 1
+    multiplier, _parts = hand_multiplier(
+        g.hands[seat], standing, len(g.melds[seat]),
+        _seat_value(g.chain, seat), _seat_value(g.chain_piao, seat),
+    )
+    return float(settle(
+        seat, getattr(g, "dealer", 0), multiplier,
+        getattr(g, "base", 1),
+    )[seat])
+
+
+def _post_discard_chain(g, seat, tile, standing):
+    """Apply the existing chain reset/piao rule to a baseline discard."""
+    if tile == W and is_baotou(standing, len(g.melds[seat])):
+        return (_seat_value(g.chain, seat) + 1,
+                _seat_value(g.chain_piao, seat) + 1)
+    return 0, 0
+
+
+def _evaluate_kong_next_draw(g, seat, action, remaining):
+    """Evaluate one legal closed/add-kong replacement draw."""
+    decoded = _kong_action_tile(action)
+    if decoded is None:
+        return None
+    kind, tile = decoded
+    standing = list(g.hands[seat])
+    remove = 4 if kind == "closed" else 1
+    if standing[tile] < remove:
+        return None
+    standing[tile] -= remove
+    # A closed kong creates a new locked meld; an add-kong upgrades the
+    # existing pong in place, so its locked count stays unchanged.
+    locked = len(g.melds[seat]) + (1 if kind == "closed" else 0)
+    result = _expected_next_draw_reward(
+        g, seat, standing, locked,
+        _seat_value(g.chain, seat) + 1,
+        _seat_value(g.chain_piao, seat),
+        True, remaining, draw_delay=1,
+    )
+    result.update({"action": action, "kind": kind, "tile": tile})
+    return result
+
+
+def _choose_draw_action(g, seat, actions=None):
+    """Choose HU/piao, self-kong, or discard at a draw decision point.
+
+    KONG is accepted only when its public next-replacement score expectation
+    strictly exceeds the current baseline: an immediate HU, or the best
+    legacy discard's next-draw expectation. This keeps the v33 action
+    window useful without reducing the policy to ``if kong: return kong``.
+    """
+    actions = tuple(g.legal_actions() if actions is None else actions)
+    kongs = _kong_actions(actions)
+    if not kongs:
+        if HU in actions:
+            return (W if _should_piao(g, seat) else HU), {
+                "reason": "hu_or_piao_legacy",
+            }
+        return choose_discard(g, seat), {"reason": "discard_legacy"}
+
+    if HU in actions:
+        if _should_piao(g, seat):
+            baseline = W
+            standing = list(g.hands[seat])
+            standing[W] -= 1
+            chain, chain_piao = _post_discard_chain(
+                g, seat, W, standing)
+            visible = _public_visible_counts(g, seat)
+            remaining = [max(0, 4 - count) for count in visible]
+            baseline_eval = _expected_next_draw_reward(
+                g, seat, standing, len(g.melds[seat]), chain, chain_piao,
+                False, remaining, draw_delay=4,
+            )
+            baseline_value = baseline_eval["value"]
+            baseline_reason = "piao_expected_value"
+        else:
+            baseline = HU
+            baseline_value = _immediate_hu_reward(g, seat)
+            baseline_reason = "hu_legacy"
+    else:
+        baseline = choose_discard(g, seat)
+        standing = list(g.hands[seat])
+        standing[baseline] -= 1
+        chain, chain_piao = _post_discard_chain(
+            g, seat, baseline, standing)
+        visible = _public_visible_counts(g, seat)
+        remaining = [max(0, 4 - count) for count in visible]
+        baseline_eval = _expected_next_draw_reward(
+            g, seat, standing, len(g.melds[seat]), chain, chain_piao,
+            False, remaining, draw_delay=4,
+        )
+        baseline_value = baseline_eval["value"]
+        baseline_reason = "discard_expected_value"
+
+    visible = _public_visible_counts(g, seat)
+    remaining = [max(0, 4 - count) for count in visible]
+    evaluations = [
+        result for result in (_evaluate_kong_next_draw(
+            g, seat, action, remaining) for action in kongs)
+        if result is not None
+    ]
+    best = max(
+        evaluations,
+        key=lambda result: (result["value"], result["win_probability"],
+                            -result["tile"]),
+        default=None,
+    )
+    if best is not None and best["value"] > baseline_value + 1e-9:
+        return best["action"], {
+            "reason": "kong_expected_value",
+            "baseline": baseline,
+            "baseline_value": baseline_value,
+            "selected_value": best["value"],
+            "selected_win_probability": best["win_probability"],
+            "selected_kind": best["kind"],
+            "selected_tile": best["tile"],
+            "wall_left": best["wall_left"],
+        }
+    return baseline, {"reason": baseline_reason,
+                      "baseline_value": baseline_value,
+                      "kong_candidates": len(evaluations)}
 
 
 def _discard_shape_cost(hand, t):
@@ -215,23 +444,17 @@ def choose_shape_action(g, seat):
             "reason": "only_legal_action", "candidates": [],
         }
     if g.phase == "discard":
-        # HU/财飘 and KONG decisions are deliberately frozen to the legacy
-        # rule entry points.  Shape-v1 only ranks ordinary discards.
-        if HU in acts:
-            action = W if _should_piao(g, seat) else HU
+        # Shape-v1 still ranks ordinary discards, but v33 made self-kong a
+        # real draw-window choice.  Keep that choice on the shared legacy
+        # policy helper so it can compare HU/KONG/discard in score units.
+        if HU in acts or _kong_actions(acts):
+            action, choice = _choose_draw_action(g, seat, acts)
             return action, {
                 "version": "shape-v1", "profile": "shape-v1",
                 "profile_fingerprint": EvalProfile.shape_v1().fingerprint,
                 "level": "legacy", "selected": action,
-                "reason": "hu_or_piao_legacy", "candidates": [],
-            }
-        if any(a < 0 for a in acts):
-            action = choose_discard(g, seat)
-            return action, {
-                "version": "shape-v1", "profile": "shape-v1",
-                "profile_fingerprint": EvalProfile.shape_v1().fingerprint,
-                "level": "legacy", "selected": action,
-                "reason": "kong_branch_legacy", "candidates": [],
+                "reason": choice["reason"], "candidates": [],
+                "kong_evaluation": choice,
             }
         return evaluate_discard_candidates(g, seat)
     return evaluate_reaction(g, seat)
@@ -241,8 +464,9 @@ def choose_shape_v2_action(g, seat):
     """Opt-in shape-v2 ordinary-discard evaluator.
 
     The v2 scope is deliberately narrow in this first release.  HU/piao,
-    KONG, and reaction actions are delegated to the frozen legacy path and the
-    returned explanation records that delegation explicitly.
+    KONG, and reaction actions are delegated to the legacy path (which now
+    evaluates self-kong choices using the v33 draw-window helper); the returned
+    explanation records that delegation explicitly.
     """
     from .decision.fast_ev import choose_game_action
     from .decision.profile import ProfileSpec
@@ -269,11 +493,7 @@ def choose_action(g, seat, evaluator="legacy", return_evaluation=False):
     if len(acts) == 1:
         return acts[0]
     if g.phase == "discard":
-        if HU in acts:
-            if _should_piao(g, seat):
-                return W  # 弃胡打白飘(财飘)
-            return HU
-        return choose_discard(g, seat)
+        return _choose_draw_action(g, seat, acts)[0]
     # react 阶段:吃碰杠决策
     return _choose_react(g, seat, acts)
 

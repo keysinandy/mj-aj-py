@@ -60,3 +60,14 @@
 - [ ] 8.4 逐窗审计 legal candidate、decision/action、deadline、身份、transport、server outcome、strategy PASS、未提交和代打；确认无 evaluator 导致窗口损失。
 - [ ] 8.5 仅在对应 scope 的离线收益、regret、性能、BC/信息安全和线上闸门全部满足后切换默认；保留 legacy 开关，否则保持 opt-in。
 - [x] 8.6 更新使用文档、profile/teacher/对手分布和证据索引；完成前不归档本变更或把未完成 P5–P7 标记为通过。
+
+## 9. 平台指南 v34 对齐（2026-09-15）
+
+- [x] 9.1 修复 FULL/seq=0/gap 快照的杠后补牌来源恢复；无显式字段时按
+  `draw + chain>0 + 非爆头` 安全推导，并保留 `kong_draw` 兼容投影。
+- [x] 9.2 增加 v31 `settled` 局间暂停、v32 杠后爆头重算 ×4、v33 YCBK
+  杠后补牌窗口的专项回归；不改写 `settle()` 或历史落库分数。
+- [x] 9.3 在 legacy/shape-v1 摸后决策中比较暗杠/补杠与 HU/弃牌的公开信息
+  下一张摸牌积分期望；不读取隐藏牌墙，不宣称 shape-v2/discard 已覆盖全动作。
+- [x] 9.4 更新 v34 规则/continuation/profile 指纹和离线 smoke 证据，并在
+  replay trace 中记录 `drawOrigin`。

@@ -5,7 +5,8 @@
   python3 -m mj.platform.match_runner --strategy policy \
       --ckpt runs/ppo4/ckpt_350000.pt --games 100 [--dump] [--no-recorder]
 
-语义(指南 v13/v15/v24,详见 PROGRESS.md P4):
+语义(历史指南 v13/v15/v24;当前平台指南 v34 的协议变更见
+PROGRESS.md P4):
 - POST /api/match 入席 auto 房(满 4 人开 M=10 场 × Rounds=8 局,座次
   逐场重洗),打完整房 ~60s 宽限关停后自动 re-match,直至打满
   --games 场(以整房为退出粒度,不中途弃房)或 Ctrl+C;

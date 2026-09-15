@@ -228,6 +228,39 @@ class WindowRecoveryTests(unittest.TestCase):
         self.assertEqual(api.actions, [])
         self.assertEqual(bot.stats["decide_errors"], 0)
 
+    def test_settled_snapshot_waits_for_next_round(self):
+        """v31 settled 是局间暂停，不是 worker 的终局。"""
+        clock = FakeClock()
+        initial = _snapshot(turn=1, round_no=1)
+        settled = _snapshot(turn=0, round_no=1, phase="settled")
+        next_hand = HAND + ["9b"]
+        next_draw = _snapshot(next_hand, turn=0, round_no=2,
+                              drawn="9b", phase="draw")
+        decisions = []
+
+        def decide(game, seat):
+            decisions.append(game.phase)
+            return game.drawn[seat]
+
+        api = ScriptedServer(
+            [{"snapshot": initial, "seq": 0},
+             {"snapshot": settled, "seq": 5},
+             {"snapshot": next_draw, "seq": 6},
+             _finished()],
+            clock,
+        )
+        bot = BotClient(api, "bot0", decide, log=lambda _: None,
+                        window_wait=0, idle_sleep=0)
+
+        with mock.patch.object(bot_client_module, "time", clock):
+            bot.play_game("g1")
+
+        self.assertEqual(decisions, ["discard"])
+        self.assertEqual(len(api.actions), 1)
+        self.assertEqual(api.actions[0][1],
+                         {"action": "discard", "tile": "9b"})
+        self.assertEqual(bot.stats["games"], 1)
+
 
 class ActionRecoveryTests(unittest.TestCase):
     def test_409_forces_seq_zero_resync_without_retry_or_decide_error(self):

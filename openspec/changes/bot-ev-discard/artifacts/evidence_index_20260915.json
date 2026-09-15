@@ -13,7 +13,7 @@
       "artifact": "artifacts/profile_manifest.json",
       "profile": "shape-v2",
       "scope": "discard",
-      "fingerprint": "b21192d917d128cd",
+      "fingerprint": "f1ae51545bea9b5b",
       "status": "versioned_opt_in"
     }
   ],
@@ -29,7 +29,7 @@
   ],
   "opponent_distribution": {
     "paired_online_opponent": "legacy",
-    "rollout_continuation": "frozen_shape_v1",
+    "rollout_continuation": "frozen_shape_v1_self_kong_v1",
     "belief": "uniform_unseen-v1",
     "oracle": false
   },

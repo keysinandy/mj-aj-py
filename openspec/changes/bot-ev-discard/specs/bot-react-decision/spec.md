@@ -2,7 +2,7 @@
 
 ### Requirement: 吃/碰按"副露 + 最佳弃牌后站立牌面"完整评价
 
-启发式 BOT 对 CHOW_LOW/MID/HIGH、PONG 的反应评价 SHALL 根据 evaluator 版本选择旧 `(shanten, ukeire)` 或同单位积分 EV。legacy/shape-v1 保留既有副露后枚举立即弃牌、最低向听/财神保护和 KONG_OPEN 冻结语义；all-root v2 在已支持且完整的 scope 中才可比较积分 EV。所有候选仍须来自当前 react mode 合法集，吃碰后的 locked、吃额度、七对资格和 visible 快照必须正确更新。
+启发式 BOT 对 CHOW_LOW/MID/HIGH、PONG 的反应评价 SHALL 根据 evaluator 版本选择旧 `(shanten, ukeire)` 或同单位积分 EV。legacy/shape-v1 保留既有副露后枚举立即弃牌、最低向听/财神保护和 KONG_OPEN 冻结语义；v33 摸后暗杠/补杠属于独立的 draw-window legacy 策略，不改变 react 窗口语义；all-root v2 在已支持且完整的 scope 中才可比较积分 EV。所有候选仍须来自当前 react mode 合法集，吃碰后的 locked、吃额度、七对资格和 visible 快照必须正确更新。
 
 #### Scenario: legacy 吃碰回归
 - **WHEN** evaluator 为 legacy 或 shape-v1 且某吃碰达到既有向听/进张门槛
@@ -58,7 +58,7 @@ legacy/shape-v1 SHALL 继续依赖 shanten 的标准形/七对双分支，副露
 
 ### Requirement: 弃牌侧与胡/飘路径行为保持不变
 
-legacy/shape-v1 的 `choose_action()` HU 优先、`_should_piao` 和 `choose_discard()` 语义 MUST 保持。discard scope v2 仅在明确覆盖的普通合法舍牌分支接管；hu-piao/all-root 只有独立 scope 完整、计分和发布闸门通过后才可改变 HU/财飘选择。
+legacy/shape-v1 的 `choose_action()` HU 优先、`_should_piao` 和普通 `choose_discard()` 语义 MUST 保持；摸后存在暗杠/补杠时，使用单独版本化的 draw-window 期望比较。discard scope v2 仅在明确覆盖的普通合法舍牌分支接管；hu-piao/all-root 只有独立 scope 完整、计分和发布闸门通过后才可改变 HU/财飘选择。
 
 #### Scenario: 范围外 HU 委托
 - **WHEN** v2 为 discard scope 且 HU 合法
@@ -70,7 +70,7 @@ legacy/shape-v1 的 `choose_action()` HU 优先、`_should_piao` 和 `choose_dis
 
 ### Requirement: 反应侧决策性能受闸门约束
 
-legacy/shape-v1 SHALL 保持既有 ukeire 调用与动作性能基线。all-root v2 的上下文、frontier、积分、解释和回退开销 MUST 纳入完整决策预算，并按 scope 单独验证反应 p95 ≤10ms、全调用链 elapsed 增长 ≤15% 和十场并发回退率；不能以 legacy KONG 冻结或高回退率掩盖 v2 未完成。
+legacy/shape-v1 SHALL 保持既有 ukeire 调用与动作性能基线；新增 draw-window 自摸杠比较的版本与开销须单独报告。all-root v2 的上下文、frontier、积分、解释和回退开销 MUST 纳入完整决策预算，并按 scope 单独验证反应 p95 ≤10ms、全调用链 elapsed 增长 ≤15% 和十场并发回退率；不能以 legacy 委托或高回退率掩盖 v2 未完成。
 
 #### Scenario: scope 性能报告
 - **WHEN** 运行 all-root 反应压测

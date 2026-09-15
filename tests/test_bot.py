@@ -29,6 +29,9 @@ from mj.game import (
     CHOW_LOW,
     CHOW_MID,
     Game,
+    HU,
+    KONG_ADD_BASE,
+    KONG_CLOSED_BASE,
     KONG_OPEN,
     PASS,
     PONG,
@@ -45,6 +48,36 @@ def _game(spec):
     g.hands = [hand, [0] * 34, [0] * 34, [0] * 34]
     g.melds = [[] for _ in range(4)]
     g.discards = [[] for _ in range(4)]
+    return g
+
+
+def _draw_game(spec, drawn, *, you_cai_bi_kao=False, melds=None):
+    """Construct a complete draw-phase Game for self-kong policy tests."""
+    melds = list(melds or [])
+    g = Game.__new__(Game)
+    hand = counts(spec)
+    assert sum(hand) == 14 - 3 * len(melds), (spec, sum(hand), melds)
+    g.hands = [hand, [0] * 34, [0] * 34, [0] * 34]
+    g.melds = [melds, [], [], []]
+    g.discards = [[] for _ in range(4)]
+    g.dealer = 0
+    g.base = 1
+    g.you_cai_bi_kao = you_cai_bi_kao
+    g.wall = [0] * 60
+    g.drawn = [None] * 4
+    g.drawn[0] = drawn
+    g.chows = [0] * 4
+    g.turn = 0
+    g.phase = "discard"
+    g.pending = None
+    g.freeze = 0
+    g.freezer = None
+    g.chain = [0] * 4
+    g.chain_piao = [0] * 4
+    g.scores = [0] * 4
+    g.done = False
+    g.result = None
+    g._kong_draw = False
     return g
 
 
@@ -129,6 +162,47 @@ class TestDiscardInvariants(unittest.TestCase):
             if not alts:
                 continue
             self.assertNotEqual(choose_discard(g, 0), W)
+
+
+class TestSelfKongDecision(unittest.TestCase):
+    def test_self_kong_uses_public_replacement_expectation(self):
+        """v33:暗杠在摸后窗与普通弃牌竞争,不是无条件忽略或强制杠。"""
+        g = _draw_game("1111m456m789m11pw5s", 22)
+        acts = g.legal_actions()
+        self.assertIn(KONG_CLOSED_BASE, acts)
+
+        action, detail = bot_mod._choose_draw_action(g, 0, acts)
+        self.assertEqual(action, KONG_CLOSED_BASE)
+        self.assertEqual(detail["reason"], "kong_expected_value")
+        self.assertGreater(detail["selected_value"], detail["baseline_value"])
+        self.assertEqual(detail["wall_left"], 39)
+
+        # shape-v1 shares the same out-of-scope legacy branch, so it also
+        # exposes the v33 self-kong choice rather than falling to discard.
+        action, evaluation = bot_mod.choose_action(
+            g, 0, evaluator="shape-v1", return_evaluation=True)
+        self.assertEqual(action, KONG_CLOSED_BASE)
+        self.assertEqual(evaluation["reason"], "kong_expected_value")
+
+    def test_self_add_kong_keeps_existing_locked_meld_count(self):
+        """v33:补杠替换碰,不能把 locked 错算成新增两个副露。"""
+        g = _draw_game("1m456m789m123pw", 0,
+                       melds=[("pong", 0)])
+        acts = g.legal_actions()
+        self.assertIn(KONG_ADD_BASE, acts)
+
+        action, detail = bot_mod._choose_draw_action(g, 0, acts)
+        self.assertEqual(action, KONG_ADD_BASE)
+        self.assertEqual(detail["reason"], "kong_expected_value")
+        self.assertEqual(detail["selected_kind"], "add")
+
+    def test_immediate_hu_beats_lower_value_self_kong(self):
+        """杠后期望不足时仍保留确定 HU,避免写成 if-kong-return-kong。"""
+        g = _draw_game("1111m22m33m44m55m66m", 5)
+        acts = g.legal_actions()
+        self.assertIn(HU, acts)
+        self.assertIn(KONG_CLOSED_BASE, acts)
+        self.assertEqual(bot_mod.choose_action(g, 0), HU)
 
 
 def _react_game(spec, owner, tile, mode="claim", melds=None, river=None, seat=1):
