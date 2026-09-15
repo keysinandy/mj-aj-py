@@ -169,6 +169,26 @@ class TestContractsAndConfig(unittest.TestCase):
                 with self.assertRaises(TournamentConfigError):
                     load_tournament_config(path)
 
+    def test_dedicated_tournament_token_takes_precedence_over_room_tokens(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = os.path.join(root, "tournament.json")
+            with open(path, "w", encoding="utf-8") as stream:
+                json.dump({
+                    "server": "https://server",
+                    "tournament_token": "formal-secret",
+                    "tokens": {"青龙": "test-room-secret"},
+                }, stream)
+
+            cfg = load_tournament_config(path)
+            self.assertEqual(cfg["tokens"], {"tournament": "formal-secret"})
+
+            for invalid in ("", "   ", None, 123):
+                with open(path, "w", encoding="utf-8") as stream:
+                    json.dump({"server": "https://server",
+                               "tournament_token": invalid}, stream)
+                with self.assertRaises(TournamentConfigError):
+                    load_tournament_config(path)
+
     def test_legacy_config_loaders_are_not_replaced(self):
         from mj.platform.config import load_config, load_match_config
         self.assertTrue(callable(load_config))
@@ -532,6 +552,34 @@ class TestWorkerAndIsolation(unittest.TestCase):
         self.assertEqual(len(FakeTournamentApi.instances), 2)
         self.assertIsNot(FakeTournamentApi.instances[0].state_throttle,
                          FakeTournamentApi.instances[1].state_throttle)
+
+    def test_run_tournament_uses_dedicated_token_mapping(self):
+        FakeTournamentApi.plans = {
+            "formal-secret": {"tournament_id": "tid-formal",
+                              "user_id": "u-formal"},
+            "test-room-secret": {"tournament_id": "tid-room",
+                                  "user_id": "u-room"},
+        }
+        seen = {}
+
+        class FakeBot:
+            def __init__(self, api, name, decide, **kwargs):
+                seen[name] = api.token
+
+            def configure_tournament(self, context):
+                pass
+
+            def run(self, max_games=None, stop=None):
+                return {"termination_reason": "ELIMINATED"}
+
+        results = run_tournament(
+            {"server": "https://server",
+             "tournament_token": "formal-secret",
+             "tokens": {"room": "test-room-secret"}},
+            strategy="random", no_recorder=True,
+            api_factory=FakeTournamentApi, bot_factory=FakeBot)
+        self.assertEqual(seen, {"tournament": "formal-secret"})
+        self.assertEqual(list(results), ["tournament"])
 
     def test_unbound_and_auth_fail_without_starting_bot(self):
         class NeverBot:

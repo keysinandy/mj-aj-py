@@ -36,6 +36,7 @@ python3 -m pytest tests/ -q
 {
   "server": "https://10.240.169.190:18080",
   "match_token": "<门户『我的 AI 身份』签发的绑定全局令牌>",
+  "tournament_token": "<门户签发的当前正式锦标赛报名令牌>",
   "tokens": {
     "青龙": "<令牌1>",
     "白虎": "<令牌2>",
@@ -46,6 +47,8 @@ python3 -m pytest tests/ -q
 ```
 
 `match_token` 供自由对战用(门户测试房间 Tab 顶部「我的 AI 身份」区块领取,明文仅显示一次,可轮换);v24 后旧匿名全局令牌调 `/api/match` 会被永久 403,测试房的 4 个 scoped 令牌也不行(400 TOKEN_NOT_SCOPED)。
+
+`tournament_token` 仅供正式锦标赛入口使用；正式锦标赛 runner 会优先使用它，不会把测试房的 `tokens` 当作报名令牌。
 
 ### 2. 一键脚本(推荐)
 
@@ -80,9 +83,19 @@ python3 -m mj.platform.runner --strategy random --games 10 --dump
 - **窗口时序**:碰/吃窗固定走满 1s,不响应=隐式过(无惩罚);吃窗在碰窗结束后开启,客户端自动处理
 - **动作 409**:用 seq=0 快照重建后继续；需结合窗口与服务端错误信息归因，不能仅按次数少就忽略。响应丢失时也先重建，不自动重发旧动作
 - **跨轮批次重号**:每轮 batch 从 0 重号,`mj.replay` 默认只校验**最新轮**;历史轮复盘走门户 `GET /portal/api/games/{id}/events`(需登录态)
-- **正式锦标赛**:使用专用 `mj.platform.tournament_runner`（无正常局数上限、默认 Recorder），
-  令牌换成报名令牌即可；线上验收和回滚门槛见
+- **正式锦标赛**:使用专用 `mj.platform.tournament_runner` 读取
+  `tournament_token`（无正常局数上限、默认 Recorder）；线上验收和回滚门槛见
   [正式锦标赛参与与线上验收](docs/formal-tournament-participation.md)
+
+正式锦标赛启动命令：
+
+```bash
+python3 -m mj.platform.tournament_runner \
+    --config local/platform.json \
+    --strategy policy \
+    --ckpt runs/bc0/best.pt \
+    --state-rate 15
+```
 
 ## 自由对战(自动匹配,攒真实对手数据)
 

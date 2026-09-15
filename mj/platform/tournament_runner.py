@@ -87,6 +87,13 @@ def _make_bot(factory, api, label, decide, recorder, log):
     return _call_factory(factory, api, label, decide, **kwargs)
 
 
+def _configured_tokens(cfg):
+    """Return the formal-run token mapping, preferring its dedicated token."""
+    if "tournament_token" in cfg:
+        return {"tournament": cfg["tournament_token"]}
+    return cfg["tokens"]
+
+
 class TournamentWorker:
     """Run one scoped registration token until its tournament outcome."""
 
@@ -311,6 +318,7 @@ def run_tournament(cfg, *, strategy="policy", ckpt=None, evaluator="legacy",
     results = {}
     lock = threading.Lock()
     workers = []
+    tokens = _configured_tokens(cfg)
 
     def run_one(label, token):
         worker = TournamentWorker(
@@ -323,7 +331,7 @@ def run_tournament(cfg, *, strategy="policy", ckpt=None, evaluator="legacy",
             results[label] = result.as_dict()
 
     try:
-        for label, token in cfg["tokens"].items():
+        for label, token in tokens.items():
             thread = threading.Thread(target=run_one, args=(label, token),
                                       name=f"tournament:{label}")
             thread.start()
@@ -334,12 +342,12 @@ def run_tournament(cfg, *, strategy="policy", ckpt=None, evaluator="legacy",
         shared_stop.set()
         for thread in workers:
             thread.join(timeout=5)
-        for label in cfg["tokens"]:
+        for label in tokens:
             results.setdefault(label, TournamentResult(
                 token_label=label,
                 termination_reason="INTERRUPTED").as_dict())
 
-    return redact_value(results, [token for token in cfg["tokens"].values()])
+    return redact_value(results, [token for token in tokens.values()])
 
 
 def build_parser():
@@ -391,7 +399,7 @@ def main(argv=None):
         stop.set()
         results = {label: TournamentResult(
             token_label=label, termination_reason="INTERRUPTED").as_dict()
-            for label in cfg["tokens"]}
+            for label in _configured_tokens(cfg)}
     print("\n===== 正式锦标赛汇总 =====")
     print(json.dumps(results, ensure_ascii=False, sort_keys=True))
     fatal = any(result.get("termination_reason") in {

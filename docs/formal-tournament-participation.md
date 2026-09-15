@@ -6,14 +6,18 @@
 
 ## 启动
 
-最小配置可以只有一个 token：
+正式锦标赛使用独立的 `tournament_token`，不要复用测试房的 `tokens` 或自由对战的
+`match_token`：
 
 ```json
 {
   "server": "https://<platform>",
-  "tokens": {"main": "<registration-token>"}
+  "tournament_token": "<registration-token>"
 }
 ```
+
+兼容旧配置时仍可使用 `tokens` 映射；一旦配置了 `tournament_token`，runner 只会使用
+这个专用 token。
 
 标准命令没有正常局数上限，正式运行默认每 token 使用 `--state-rate 15`，并默认
 开启 Recorder：

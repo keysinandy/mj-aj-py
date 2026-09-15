@@ -33,15 +33,27 @@ def _validate_token_label(label):
 def load_tournament_config(path=None):
     """Load a scoped-token configuration for formal tournaments.
 
-    Unlike the test-room loader this function deliberately accepts one token;
-    it never infers tournament size from the number of configured identities.
+    ``tournament_token`` is the preferred dedicated credential.  The legacy
+    ``tokens`` mapping remains accepted for compatibility with the original
+    one-or-more-token contract, but a configured dedicated token always wins
+    and is exposed to the runner as one canonical worker.
     """
     p = path or DEFAULT_PATH
-    cfg = _read_json(p, "正式锦标赛需含 server 与 tokens")
+    cfg = _read_json(p, "正式锦标赛需含 server 与 tournament_token/tokens")
     if not isinstance(cfg, dict):
         raise TournamentConfigError("config 顶层必须是对象")
     if not isinstance(cfg.get("server"), str) or not cfg["server"].strip():
         raise TournamentConfigError("config 需含非空 server")
+
+    if "tournament_token" in cfg:
+        token = cfg["tournament_token"]
+        if not isinstance(token, str) or not token.strip():
+            raise TournamentConfigError(
+                "正式锦标赛的 tournament_token 必须是非空字符串")
+        normalized = dict(cfg)
+        normalized["tokens"] = {"tournament": token}
+        return normalized
+
     tokens = cfg.get("tokens")
     if not isinstance(tokens, dict) or not tokens:
         raise TournamentConfigError("正式锦标赛需含一个或多个 tokens")

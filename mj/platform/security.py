@@ -5,7 +5,7 @@ from collections.abc import Mapping
 
 _SECRET_KEYS = frozenset({
     "authorization", "token", "access_token", "bearer", "credential",
-    "registration_token", "match_token",
+    "registration_token", "match_token", "tournament_token",
 })
 
 
