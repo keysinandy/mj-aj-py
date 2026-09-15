@@ -36,6 +36,8 @@ import threading
 import time
 import copy
 
+from ..replay_debugger.trace import ReplayTraceWriter
+
 
 def _json_default(value):
     if hasattr(value, "as_json"):
@@ -50,7 +52,7 @@ def _json_default(value):
 class GameLog:
     """单场对局 JSONL;写失败降级为静默丢弃(不影响对弈)。"""
 
-    def __init__(self, path, gid):
+    def __init__(self, path, gid, tracer=None):
         self.gid = gid
         self.path = path
         self.cursor = 0            # 当前事件游标(对齐用)
@@ -59,6 +61,7 @@ class GameLog:
         self._lock = threading.Lock()
         self._n_decisions = 0
         self._closed = False
+        self._tracer = tracer
         self._f = open(path, "a", encoding="utf-8")
 
     def next_decision_id(self):
@@ -70,16 +73,63 @@ class GameLog:
         """追加一条记录;关闭后或写失败静默丢弃(日志永不打断对弈)。"""
         if self._closed:
             return
-        line = json.dumps({"ts": round(time.time(), 3), **rec},
+        record = {"ts": round(time.time(), 3), **rec}
+        line = json.dumps(record,
                           ensure_ascii=False, default=_json_default)
+        tracer = None
         try:
             with self._lock:
                 if self._closed:
                     return
                 self._f.write(line + "\n")
                 self._f.flush()
+                tracer = self._tracer
         except OSError:
-            pass
+            return
+        if tracer is not None:
+            # Trace persistence is deliberately outside the recorder lock.
+            # The legacy record remains the source line, while these typed
+            # boundaries let the offline importer distinguish input,
+            # request, response, merge, and execution observations.
+            record_type = str(record.get("type", "")).lower()
+            if record_type == "meta":
+                return
+            kind = {
+                "sse_frame": "sse_closed" if record.get("closed") else "sse_received",
+                "snapshot": "checkpoint",
+                "events": "input",
+                "req": "state_request",
+                "state_reconcile": "state_merge",
+                "reset": "reset",
+                "decision": "decision",
+                "action": "action_post",
+                "end": "round_boundary",
+            }.get(record_type, "legacy_record")
+            trace_fields = {
+                "gid": self.gid,
+                "round_no": record.get("round_no"),
+                "seq_no": record.get("seq", record.get("seq_to")),
+                "request_id": record.get("logical_request_id"),
+            }
+            tracer.capture(kind, record, **trace_fields)
+            if record_type == "req" and isinstance(record.get("res"), dict):
+                response = record["res"]
+                response_fields = dict(trace_fields)
+                response_fields["seq_no"] = response.get(
+                    "seq", response_fields["seq_no"])
+                tracer.capture(
+                    "state_response", response, **response_fields)
+            if record_type == "req" and isinstance(record.get("transport"), dict):
+                attempts = record["transport"].get("state_attempts")
+                if not isinstance(attempts, list):
+                    attempts = record["transport"].get("attempts")
+                for attempt in attempts or []:
+                    if not isinstance(attempt, dict):
+                        continue
+                    tracer.capture(
+                        "state_attempt", attempt, **trace_fields,
+                        transport_request_id=attempt.get("transport_request_id"),
+                        attempt_index=attempt.get("attempt_index"))
 
     def close(self):
         with self._lock:
@@ -89,6 +139,8 @@ class GameLog:
                     self._f.close()
                 except OSError:
                     pass
+                if self._tracer is not None:
+                    self._tracer.close()
 
 
 class Recorder:
@@ -98,11 +150,16 @@ class Recorder:
     default_name 兜底创建)。
     """
 
-    def __init__(self, root="local/games", default_name="bot"):
+    def __init__(self, root="local/games", default_name="bot", *,
+                 replay_trace=False, trace_root=None, trace_queue_size=512):
         self.root = root
         self.default_name = default_name
         self._logs = {}
         self._lock = threading.Lock()
+        self.replay_trace = bool(replay_trace)
+        self.trace_root = trace_root
+        self.trace_queue_size = trace_queue_size
+        self._tracers = {}
 
     # ---------- 文件管理 ----------
 
@@ -113,9 +170,16 @@ class Recorder:
                 day = time.strftime("%Y%m%d")
                 d = os.path.join(self.root, day)
                 os.makedirs(d, exist_ok=True)
+                tracer = None
+                if self.replay_trace:
+                    td = os.path.join(self.trace_root or self.root, day)
+                    tracer = ReplayTraceWriter(
+                        os.path.join(td, f"{name or self.default_name}_{gid}.trace.jsonl"),
+                        gid=gid, queue_size=self.trace_queue_size)
+                    self._tracers[gid] = tracer
                 log = GameLog(
                     os.path.join(d, f"{name or self.default_name}_{gid}.jsonl"),
-                    gid)
+                    gid, tracer=tracer)
                 self._logs[gid] = log
             return log
 
@@ -124,6 +188,7 @@ class Recorder:
             log = self._logs.pop(gid, None)
         if log is not None:
             log.close()
+        self._tracers.pop(gid, None)
 
     def close_all(self):
         with self._lock:
@@ -131,6 +196,14 @@ class Recorder:
             self._logs.clear()
         for log in logs:
             log.close()
+        self._tracers.clear()
+
+    def trace(self, gid, kind, payload=None, **fields):
+        """Best-effort explicit trace boundary; disabled mode is a no-op."""
+        tracer = self._tracers.get(gid)
+        if tracer is None:
+            return None
+        return tracer.capture(kind, payload, gid=gid, **fields)
 
     # ---------- 记录类型 ----------
 

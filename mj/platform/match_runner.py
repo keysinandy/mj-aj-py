@@ -63,6 +63,10 @@ def main(argv=None):
                     help="兼容旧参数；当前默认已使用 SSE + /state 增量")
     ap.add_argument("--dump", action="store_true",
                     help="原始 state/action JSON dump 到 local/logs/")
+    ap.add_argument("--replay-trace", action="store_true",
+                    help="启用本地 replay trace 侧车(默认关闭，不改变对局行为)")
+    ap.add_argument("--trace-root", default=None,
+                    help="trace 侧车目录(默认跟随 local/games)")
     args = ap.parse_args(argv)
 
     cfg = load_match_config(args.config)
@@ -78,7 +82,8 @@ def main(argv=None):
                          "local/logs", state_rate=state_rate)
     transport = bot_transport_options(no_long_poll=args.no_long_poll,
                                       no_notify=args.no_notify)
-    recorder = Recorder()
+    recorder = Recorder(replay_trace=args.replay_trace,
+                        trace_root=args.trace_root)
     bot = BotClient(api, name, decide,
                     log=lambda m: (print(f"[{name}] {m}", flush=True)),
                     recorder=recorder, mode="match",

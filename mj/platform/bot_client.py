@@ -22,7 +22,7 @@ import time
 from .api import Api, ApiError
 from .mirror import Mirror, MirrorInconsistent
 from .actions import action_to_payload
-from .proto import parse_event, tidx
+from .proto import API_NAME, parse_event, tidx
 from .state_demand import (
     PENDING,
     RESYNC,
@@ -38,6 +38,7 @@ from .state_demand import (
 from .state_fetch import StateFetchCoordinator
 from .state_scheduler import StateScheduler
 from .window_confirmation import WindowConfirmation, WindowTiming
+from ..replay_debugger.model import stable_id
 
 TERMINAL = ("finished", "closed", "void")
 WINDOW_SEC = 1.0  # 碰/吃窗口固定走满时长(提交吃牌须等碰窗结束)
@@ -1843,6 +1844,9 @@ class BotClient:
                     sse["connection_id"] = (
                         int(sse.get("connection_id", 0) or 0) + 1)
                     connection_id = sse["connection_id"]
+                    self._record_replay_trace(
+                        gid, "sse_connect", {"connectionId": connection_id},
+                        causal_parents=(), precision="recorded")
                     for raw in resp:
                         if stop.is_set():
                             break
@@ -1887,6 +1891,10 @@ class BotClient:
                         resp.close()
                     except OSError:
                         pass
+                    self._record_replay_trace(
+                        gid, "sse_disconnect",
+                        {"connectionId": sse.get("connection_id"),
+                         "reason": "unknown"}, precision="recorded")
             sse["alive"] = False
             if self._sleep_stop(delay, stop):
                 return
@@ -1897,13 +1905,94 @@ class BotClient:
         recorder = self.recorder
         method = getattr(recorder, "sse_frame", None) \
             if recorder is not None else None
-        if method is None:
-            return
+        if method is not None:
+            try:
+                method(gid, **fields)
+            except Exception:
+                # 观测不得阻断 SSE 监听或主循环。
+                pass
+        kind = ("sse_parse_error" if fields.get("parse_error") else
+                "sse_closed" if fields.get("closed") else "sse_received")
+        self._record_replay_trace(
+            gid, kind, dict(fields), seq_no=fields.get("seq"),
+            clock_domain="monotonic", precision="recorded")
+
+    def _record_replay_trace(self, gid, kind, payload=None, **fields):
+        """Best-effort opt-in execution boundary for the offline trace."""
+        recorder = self.recorder
+        writer = getattr(recorder, "trace", None) if recorder is not None else None
+        if writer is None:
+            return None
         try:
-            method(gid, **fields)
+            return writer(gid, kind, payload, **fields)
         except Exception:
-            # 观测不得阻断 SSE 监听或主循环。
-            return
+            # Trace persistence must never change request or action behavior.
+            return None
+
+    def _record_reset_boundary(self, rec, gid, reason, mirror):
+        if rec is not None:
+            rec.reset(gid, reason)
+        self._record_replay_trace(
+            gid, "reset", {"reason": reason},
+            state_before=self._trace_mirror_state(mirror), outcome="RESET")
+
+    @staticmethod
+    def _trace_mirror_state(mirror):
+        """Serialize supported live Mirror fields with private seats hidden."""
+        if mirror is None:
+            return None
+        players = []
+        meld_names = {
+            "chow": "CHI", "pong": "PON", "kong_open": "KAN_OPEN",
+            "kong_closed": "KAN_CLOSED", "kong_add": "KAN_ADDED",
+        }
+        for seat in range(4):
+            if seat == mirror.me:
+                hand = [API_NAME[index] for index, count in enumerate(mirror.my_hand)
+                        for _ in range(max(0, int(count)))]
+                hand_value = {"status": "KNOWN", "evidence": "RECORDED",
+                               "source": "LOCAL_TRACE", "value": hand}
+                hand_count = {"status": "KNOWN", "evidence": "RECORDED",
+                              "source": "LOCAL_TRACE", "value": len(hand)}
+            else:
+                hand_value = {"status": "HIDDEN", "evidence": "RECORDED"}
+                hand_count = {"status": "UNKNOWN", "evidence": "UNKNOWN"}
+            river = [{"tile": API_NAME[tile], "called": False,
+                      "discardSeqNo": None, "calledBy": None, "callType": None,
+                      "sourceEventId": None, "rawRefs": []}
+                     for tile in mirror.discards[seat]]
+            melds = [{"meldId": stable_id("mirror-meld", seat, index, kind, tile),
+                      "type": meld_names.get(kind, str(kind).upper()),
+                      "ownerSeat": seat, "fromSeat": None,
+                      "tiles": [API_NAME[tile]], "sourceDiscardEventId": None,
+                      "createdSeqNo": None, "updatedSeqNo": None,
+                      "rawRefs": [], "parentMeldId": None}
+                     for index, (kind, tile) in enumerate(mirror.melds[seat])]
+            players.append({"seat": seat, "hand": hand_value,
+                            "handCount": hand_count, "river": river,
+                            "melds": melds, "flags": {}})
+        return {
+            "round": {"roundId": getattr(mirror, "_game_id", None),
+                       "roundNo": mirror.round_no, "dealerSeat": mirror.dealer,
+                       "currentTurn": None, "nextSeat": None,
+                       "phase": "RESPONSE" if mirror.pending else None,
+                       "remainingTiles": {"status": "KNOWN", "evidence": "RECORDED",
+                                           "source": "LOCAL_TRACE",
+                                           "value": mirror.live_wall_left()},
+                       "liveWallLeft": {"status": "KNOWN", "evidence": "RECORDED",
+                                         "source": "LOCAL_TRACE",
+                                         "value": mirror.live_wall_left()},
+                       "pending": ({"status": "KNOWN", "evidence": "RECORDED",
+                                    "source": "LOCAL_TRACE", "value": list(mirror.pending)}
+                                   if mirror.pending else
+                                   {"status": "UNKNOWN", "evidence": "UNKNOWN"}),
+                       "respondingSeats": {"status": "UNKNOWN", "evidence": "UNKNOWN"},
+                       "deadline": {"status": "UNKNOWN", "evidence": "UNKNOWN"},
+                       "frozen": {"status": "KNOWN", "evidence": "RECORDED",
+                                  "source": "LOCAL_TRACE", "value": mirror.freeze > 0}},
+            "players": players, "lastAction": None, "flags": {},
+            "evidence": "RECORDED", "rawRefs": [],
+        }
 
     def _play_game_safe(self, gid):
         try:
@@ -2361,6 +2450,11 @@ class BotClient:
                     if plan is not None and plan.mode == "FULL":
                         legacy_epoch += 1
                     mirror = self._mirror_from_snapshot(snap, gid=gid)
+                    self._record_replay_trace(
+                        gid, "checkpoint", {"snapshot": snap},
+                        round_no=mirror.round_no, seq_no=res.get("seq", seq),
+                        state_after=self._trace_mirror_state(mirror),
+                        outcome="SNAPSHOT")
                     self._reconcile_uncertain_snapshot(
                         gid, mirror, snap, seq=res.get("seq", seq))
                     # seq=0 is only a request mode.  RESYNC is satisfied
@@ -2492,8 +2586,8 @@ class BotClient:
                         continue
                     if isinstance(ex, _ActionResync):
                         self._log(f"动作结果需重锚: {ex.reason}")
-                        if rec is not None:
-                            rec.reset(gid, f"动作结果需重锚: {ex.reason}")
+                        self._record_reset_boundary(
+                            rec, gid, f"动作结果需重锚: {ex.reason}", mirror)
                         seq, mirror = 0, None
                         chi_pending = None
                         if ex.reason.startswith("mirror_drift:"):
@@ -2514,9 +2608,9 @@ class BotClient:
                               f"重拉快照({decide_fails}/3)")
                     with self._stats_lock:
                         self.stats["decide_errors"] += 1
-                    if rec is not None:
-                        rec.reset(gid,
-                                  f"快照决策异常: {type(ex).__name__}: {ex}")
+                    self._record_reset_boundary(
+                        rec, gid,
+                        f"快照决策异常: {type(ex).__name__}: {ex}", mirror)
                     seq, mirror = 0, None
                     chi_pending = None
                     window_confirm = None
@@ -2544,16 +2638,29 @@ class BotClient:
                     seq = max(seq, e_seq)
                 if mirror is None:
                     continue  # 首快照未到,事件留待快照重建
+                trace_before = self._trace_mirror_state(mirror)
+                trace_payload = {
+                    "eventType": ev.get("type"),
+                    "seat": ev.get("seat"),
+                    "tile": ev.get("tile"),
+                    "tiles": (ev.get("data", {}) or {}).get("tiles", []),
+                    "input": ev,
+                }
                 try:
                     e = parse_event(ev)
                     mirror.apply_event(ev)
                 except MirrorInconsistent as ex:
+                    self._record_replay_trace(
+                        gid, "transition", trace_payload,
+                        seq_no=e_seq, round_no=mirror.round_no,
+                        state_before=trace_before,
+                        state_after=self._trace_mirror_state(mirror),
+                        outcome="ERROR")
                     applied = False
                     self._log(f"镜像失步({ex}),seq=0 重建")
                     with self._stats_lock:
                         self.stats["mirror_resets"] += 1
-                    if rec is not None:
-                        rec.reset(gid, str(ex))
+                    self._record_reset_boundary(rec, gid, str(ex), mirror)
                     seq, mirror, trigger = 0, None, None
                     pending_source = None
                     pending_source_contiguous = False
@@ -2562,6 +2669,18 @@ class BotClient:
                     next_seat = None
                     window_responded = True
                     break
+                self._record_replay_trace(
+                    gid, "transition", trace_payload,
+                    seq_no=e_seq, round_no=mirror.round_no,
+                    state_before=trace_before,
+                    state_after=self._trace_mirror_state(mirror),
+                    outcome="COMPLETED")
+                self._record_replay_trace(
+                    gid, "processing_complete", trace_payload,
+                    seq_no=e_seq, round_no=mirror.round_no,
+                    state_before=trace_before,
+                    state_after=self._trace_mirror_state(mirror),
+                    outcome="COMPLETED")
                 self._record_timeout(e, mirror.me)
                 t = e["type"]
                 next_seat = self._next_seat_step(next_seat, e)
@@ -2655,8 +2774,8 @@ class BotClient:
                     self._log("我方吃碰后 hu_failed:弃牌被跳过,快照重锚")
                     with self._stats_lock:
                         self.stats["hu_failed"] += 1
-                    if rec is not None:
-                        rec.reset(gid, "hu_failed:吃碰后弃牌被跳过")
+                    self._record_reset_boundary(
+                        rec, gid, "hu_failed:吃碰后弃牌被跳过", mirror)
                     seq, mirror, trigger = 0, None, None
                     pending_source = None
                     pending_source_contiguous = False
@@ -2909,8 +3028,8 @@ class BotClient:
                     continue
                 if isinstance(ex, _ActionResync):
                     self._log(f"动作结果需重锚: {ex.reason}")
-                    if rec is not None:
-                        rec.reset(gid, f"动作结果需重锚: {ex.reason}")
+                    self._record_reset_boundary(
+                        rec, gid, f"动作结果需重锚: {ex.reason}", mirror)
                     seq, mirror, trigger = 0, None, None
                     chi_pending = None
                     if ex.reason.startswith("mirror_drift:"):
@@ -2932,9 +3051,8 @@ class BotClient:
                           f"快照重锚({decide_fails}/3)")
                 with self._stats_lock:
                     self.stats["decide_errors"] += 1
-                if rec is not None:
-                    rec.reset(gid,
-                              f"决策异常: {type(ex).__name__}: {ex}")
+                self._record_reset_boundary(
+                    rec, gid, f"决策异常: {type(ex).__name__}: {ex}", mirror)
                 seq, mirror, trigger = 0, None, None
                 chi_pending = None
                 window_confirm = None

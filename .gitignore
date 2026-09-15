@@ -7,4 +7,5 @@ local/
 .DS_Store
 .codemap
 .venv
+web/replay_debugger/node_modules/
 rust/target/

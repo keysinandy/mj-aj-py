@@ -134,12 +134,13 @@ def _dump_error(exc):
 
 def run_room(cfg, strategy="policy", ckpt=None, games=1, dump=False,
              dump_dir="local/logs", record=True, state_rate=15.0,
-             evaluator="legacy"):
+             evaluator="legacy", replay_trace=False, trace_root=None):
     tokens = cfg["tokens"]
     stop = threading.Event()
     results = {}
     lock = threading.Lock()
-    recorder = Recorder() if record else None
+    recorder = (Recorder(replay_trace=replay_trace, trace_root=trace_root)
+                if record else None)
 
     def worker(name, token):
         decide = (make_decide(strategy, ckpt) if evaluator == "legacy"
@@ -194,6 +195,10 @@ def main(argv=None):
                     help="每令牌 /state 主动限速(默认 15/s)")
     ap.add_argument("--no-state-throttle", action="store_true",
                     help="关闭 /state 主动限速(仅排障/回滚)")
+    ap.add_argument("--replay-trace", action="store_true",
+                    help="启用本地 replay trace 侧车(默认关闭，不改变对局行为)")
+    ap.add_argument("--trace-root", default=None,
+                    help="trace 侧车目录(默认跟随 local/games)")
     args = ap.parse_args(argv)
     cfg = load_config(args.config)
     results = run_room(cfg, strategy=args.strategy, ckpt=args.ckpt,
@@ -201,7 +206,9 @@ def main(argv=None):
                        record=not args.no_recorder,
                        state_rate=None if args.no_state_throttle
                        else args.state_rate,
-                       evaluator=args.bot_evaluator)
+                       evaluator=args.bot_evaluator,
+                       replay_trace=args.replay_trace,
+                       trace_root=args.trace_root)
     print("\n===== 汇总 =====")
     for name, st in results.items():
         print(f"{name}: {json.dumps(st, ensure_ascii=False)}")

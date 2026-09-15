@@ -14,6 +14,8 @@ logical_state_requests、physical_state_attempts、候选替代和发送前取�
 
 当前最优模型:`runs/bc0/best.pt`(BC,对启发式 bot 胜率 21.9%);引擎与平台行为已通过 replay 对账对齐(1125 动作 0 非法)。
 
+离线麻将复盘调试器见 [docs/replay-debugger.md](docs/replay-debugger.md)。它将本地日志、独立服务端时间线和可选执行 trace 编译为只读 JSON 与单文件 React + shadcn/ui 页面；trace 默认关闭，使用 `python3 -m mj.replay_debugger <gid-or-jsonl> --out replay-output/<gid>` 导出。
+
 ## 环境
 
 ```bash
