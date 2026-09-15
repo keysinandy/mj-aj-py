@@ -127,9 +127,11 @@ class BotEvDiscardTests(unittest.TestCase):
         profile = ProfileSpec.shape_v2_discard(node_budget=0,
                                                 time_budget_ms=1000)
         result = evaluate_discard_context(context, profile, level="EV2",
-                                          budget=DecisionBudget(0, 1000))
+                                          budget=DecisionBudget(0, 1000),
+                                          legacy_best=context.legal_actions[0])
         self.assertEqual(result.level, "legacy")
         self.assertEqual(result.reason, "q0_node_budget")
+        self.assertEqual(result.selected, context.legal_actions[0])
 
     def test_online_explanation_keeps_actual_legacy_choice_and_horizon(self):
         game = Game(seed=41)

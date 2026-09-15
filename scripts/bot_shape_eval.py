@@ -40,10 +40,17 @@ def _play(seed, seat, dealer, ycbk, evaluator):
     g = Game(seed=seed, dealer=dealer, you_cai_bi_kao=ycbk)
     while not g.done:
         current = g.current_seat()
+        legal = tuple(g.legal_actions())
+        current_profile = evaluator if current == seat else "legacy"
         action = players[current](g, current)
-        if action not in g.legal_actions():
+        if action not in legal:
             raise RuntimeError(
-                f"{evaluator} produced illegal action {action} at seed={seed}")
+                f"{evaluator} produced illegal action {action} at seed={seed} "
+                f"seat={seat} dealer={dealer} current={current} "
+                f"profile={current_profile} "
+                f"phase={g.phase} legal={legal} "
+                f"drawn={g.drawn[current]} hand_count={sum(g.hands[current])} "
+                f"locked={len(g.melds[current])} wall={g.live_wall_left()}")
         g.step(action)
     score = float(g.scores[seat])
     win = bool(g.result and g.result[0] == seat)

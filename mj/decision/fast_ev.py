@@ -349,10 +349,12 @@ def evaluate_discard_context(context: PublicDecisionContext,
                 risk=max(0, item.visible_unknown - item.u1)))
     except BudgetExceeded as exc:
         return _legacy_fallback_result(context, profile, "q0_" + exc.reason,
+                                       selected=legacy_best,
                                        budget=started,
                                        legacy_best=legacy_best)
     if not candidates:
         return _legacy_fallback_result(context, profile, "no_legal_discard",
+                                       selected=legacy_best,
                                        budget=started,
                                        legacy_best=legacy_best)
 
