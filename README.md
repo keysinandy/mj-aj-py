@@ -80,7 +80,9 @@ python3 -m mj.platform.runner --strategy random --games 10 --dump
 - **窗口时序**:碰/吃窗固定走满 1s,不响应=隐式过(无惩罚);吃窗在碰窗结束后开启,客户端自动处理
 - **动作 409**:用 seq=0 快照重建后继续；需结合窗口与服务端错误信息归因，不能仅按次数少就忽略。响应丢失时也先重建，不自动重发旧动作
 - **跨轮批次重号**:每轮 batch 从 0 重号,`mj.replay` 默认只校验**最新轮**;历史轮复盘走门户 `GET /portal/api/games/{id}/events`(需登录态)
-- **正式锦标赛**:同一客户端支持多阶段赛制(status 循环/stage_open 确认),`runner` 同款命令,令牌换成报名令牌即可
+- **正式锦标赛**:使用专用 `mj.platform.tournament_runner`（无正常局数上限、默认 Recorder），
+  令牌换成报名令牌即可；线上验收和回滚门槛见
+  [正式锦标赛参与与线上验收](docs/formal-tournament-participation.md)
 
 ## 自由对战(自动匹配,攒真实对手数据)
 

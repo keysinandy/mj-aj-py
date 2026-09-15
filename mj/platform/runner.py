@@ -20,6 +20,7 @@ from .api import Api
 from .bot_client import BotClient
 from .config import load_config
 from .recorder import Recorder
+from .security import redact_exception, redact_value
 
 
 def make_decide(strategy, ckpt=None, evaluator="legacy"):
@@ -55,6 +56,7 @@ class DumpingApi(Api):
     """原始请求/响应 dump 到目录(首跑探针用)。"""
 
     def __init__(self, server, token, name, dump_dir, **api_kwargs):
+        self._redact_secrets = api_kwargs.pop("redact_secrets", (token,))
         super().__init__(server, token, **api_kwargs)
         self.name = name
         self.dump_dir = dump_dir
@@ -70,7 +72,8 @@ class DumpingApi(Api):
             path = os.path.join(self.dump_dir,
                                 f"{self.name}_{self._n:04d}_{kind}.json")
             with open(path, "w", encoding="utf-8") as f:
-                json.dump(payload, f, ensure_ascii=False, indent=1)
+                json.dump(redact_value(payload, self._redact_secrets), f,
+                          ensure_ascii=False, indent=1)
 
     def game_state(self, gid, seq, deadline=None, request_timeout=None,
                    logical_request_id=None, reason=None, generation=None,
@@ -93,7 +96,8 @@ class DumpingApi(Api):
                                   "request_timeout": request_timeout,
                                   "logical_request_id": logical_request_id,
                                   "transport_request_id": transport_request_id,
-                                  "error": _dump_error(e)})
+                                  "error": _dump_error(
+                                      e, self._redact_secrets)})
             raise
         self._dump("state", {"gid": gid, "seq": seq,
                               "deadline": deadline,
@@ -111,25 +115,17 @@ class DumpingApi(Api):
             # 能和客户端随后的 seq=0 重锚在日志中对应起来。
             self._dump("action", {"gid": gid, "payload": payload,
                                    "deadline": deadline,
-                                   "error": _dump_error(e)})
+                                   "error": _dump_error(
+                                       e, self._redact_secrets)})
             raise
         self._dump("action", {"gid": gid, "payload": payload,
                                "deadline": deadline, "res": r})
         return r
 
 
-def _dump_error(exc):
+def _dump_error(exc, secrets=()):
     """把异常转成稳定、可 JSON 序列化的传输诊断。"""
-    return {
-        "type": type(exc).__name__,
-        "message": str(exc),
-        "status": getattr(exc, "status", None),
-        "code": getattr(exc, "code", ""),
-        "uncertain": bool(getattr(exc, "uncertain", False)),
-        "timed_out": bool(getattr(exc, "timed_out", False)),
-        "deadline_exceeded": bool(getattr(exc, "deadline_exceeded", False)),
-        "attempts": getattr(exc, "attempts", None),
-    }
+    return redact_exception(exc, secrets)
 
 
 def run_room(cfg, strategy="policy", ckpt=None, games=1, dump=False,

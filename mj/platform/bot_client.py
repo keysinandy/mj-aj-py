@@ -37,10 +37,17 @@ from .state_demand import (
 )
 from .state_fetch import StateFetchCoordinator
 from .state_scheduler import StateScheduler
+from .tournament import (LIFECYCLE_STATES, TERMINAL_STATES,
+                         TournamentContext, TournamentRules)
+from .security import redact_exception, redact_text
 from .window_confirmation import WindowConfirmation, WindowTiming
 from ..replay_debugger.model import stable_id
 
+# Keep the legacy tuple/order for test-room and free-match callers; formal
+# lifecycle membership uses the shared TERMINAL_STATES set below.
 TERMINAL = ("finished", "closed", "void")
+FORMAL_POLL_INTERVAL = 1.0
+FORMAL_RETRY_MAX = 8.0
 WINDOW_SEC = 1.0  # 碰/吃窗口固定走满时长(提交吃牌须等碰窗结束)
 DISCARD_SEC = 3.0
 DEADLINE_MARGIN = 0.12  # 为模型串行决策与动作提交预留的本地安全余量
@@ -200,8 +207,30 @@ class BotClient:
         # 挂起(3 房日志 0 次 pending),故本模式不兼容 use_notify
         self.long_poll = long_poll and not use_notify
         self._tid = None
+        self._user_id = None
+        self._tournament_stop = None
         self.you_cai_bi_kao = False
         self.base = 1
+        self.tournament_m = None
+        self.tournament_rounds = None
+        self.tournament_rules = None
+        self.tournament_context = None
+        self.tournament_status = None
+        self.tournament_stage = None
+        self.tournament_qualified = None
+        self.tournament_stage_history = []
+        self.tournament_termination_reason = None
+        self.tournament_warnings = []
+        self.tournament_diagnostic = {}
+        self._formal_attended = set()
+        self._formal_attendance_lost = set()
+        self._formal_attendance_attempts = {}
+        self._formal_stage_counter = 0
+        self._formal_last_status = None
+        self._formal_last_stage_key = None
+        self._formal_crash_warnings = set()
+        self._formal_poll_interval = FORMAL_POLL_INTERVAL
+        self._formal_retry_max = FORMAL_RETRY_MAX
         self._decide_lock = threading.Lock()
         self._stats_lock = threading.Lock()
         self._done_games = set()
@@ -281,6 +310,8 @@ class BotClient:
     # ---------- 生命周期(监督线程) ----------
 
     def run(self, max_games=None, stop=None):
+        if self.mode == "tournament":
+            return self._run_formal_tournament(max_games=max_games, stop=stop)
         me = self.api.me()
         tid = me.get("tournament_id") or ""
         if not tid:
@@ -342,6 +373,385 @@ class BotClient:
         if self.recorder is not None:
             self.recorder.close_all()
         return dict(self.stats)
+
+    # ---------- 正式锦标赛生命周期 ----------
+
+    def configure_tournament(self, context):
+        """Install a token-scoped context prepared by the formal runner."""
+        if not isinstance(context, TournamentContext):
+            raise TypeError("context 必须是 TournamentContext")
+        self.tournament_context = context
+        self._tid = context.tournament_id
+        self._user_id = context.user_id
+        if context.rules is not None:
+            self._apply_tournament_rules(context.rules)
+
+    def _apply_tournament_rules(self, rules):
+        if not isinstance(rules, TournamentRules):
+            rules = TournamentRules.from_response(rules)
+        self.tournament_rules = rules
+        self.you_cai_bi_kao = rules.you_cai_bi_kao
+        self.base = rules.base_score
+        self.tournament_m = rules.m
+        self.tournament_rounds = rules.rounds
+        # Only fields with an explicit client meaning are consumed.  Unknown
+        # fields stay in neither the BotClient defaults nor global state.
+        for key in ("WindowSec", "ResponseWindowSec", "window_sec",
+                    "response_window_sec"):
+            value = rules.config.get(key)
+            if isinstance(value, (int, float)) and value > 0:
+                self.window_wait = float(value)
+                break
+
+    @staticmethod
+    def _formal_auth_error(exc):
+        return isinstance(exc, ApiError) and exc.status in (401, 403)
+
+    @staticmethod
+    def _formal_transient_error(exc):
+        if isinstance(exc, (TimeoutError, OSError, ConnectionError)):
+            return True
+        if not isinstance(exc, ApiError):
+            return False
+        return exc.status in (0, 408, 425, 429) or 500 <= exc.status < 600
+
+    def _formal_log_error(self, prefix, exc):
+        safe = redact_exception(exc, [getattr(self.api, "token", None)])
+        self._log(f"{prefix}: {safe.get('type')}: {safe.get('message')}")
+
+    def _formal_close_recorder(self):
+        if self.recorder is None:
+            return
+        try:
+            self.recorder.close_all()
+        except Exception:
+            pass
+
+    def _shutdown_requested(self):
+        return (self._tournament_stop is not None
+                and self._tournament_stop.is_set())
+
+    def _formal_fetch_me(self, stop):
+        delay = 0.5
+        while True:
+            if stop is not None and stop.is_set():
+                raise RuntimeError("INTERRUPTED")
+            try:
+                return self.api.me()
+            except Exception as exc:
+                if self._formal_auth_error(exc):
+                    raise
+                if not self._formal_transient_error(exc):
+                    raise
+                self._formal_log_error("me 暂时失败", exc)
+                if self._sleep_stop(delay, stop):
+                    raise RuntimeError("INTERRUPTED")
+                delay = min(self._formal_retry_max, delay * 2.0)
+
+    def _formal_resolve_context(self, stop):
+        context = self.tournament_context
+        if context is None:
+            me = self._formal_fetch_me(stop)
+            context = TournamentContext.from_me(
+                token_label=self.name,
+                server=getattr(self.api, "base", ""),
+                response=me)
+        if not context.tournament_id:
+            raise RuntimeError("TOKEN_NOT_BOUND")
+        self.configure_tournament(context)
+        if self.tournament_rules is not None:
+            return context
+
+        delay = 0.5
+        while True:
+            if stop is not None and stop.is_set():
+                raise RuntimeError("INTERRUPTED")
+            try:
+                rules = TournamentRules.from_response(self.api.rules())
+                self._apply_tournament_rules(rules)
+                self.tournament_context = TournamentContext(
+                    token_label=context.token_label,
+                    server=context.server,
+                    tournament_id=context.tournament_id,
+                    user_id=context.user_id,
+                    active_games=context.active_games,
+                    rules=rules)
+                return self.tournament_context
+            except Exception as exc:
+                if self._formal_auth_error(exc):
+                    raise
+                if not self._formal_transient_error(exc):
+                    raise
+                self._formal_log_error("rules 拉取失败", exc)
+                if self._sleep_stop(delay, stop):
+                    raise RuntimeError("INTERRUPTED")
+                delay = min(self._formal_retry_max, delay * 2.0)
+
+    @staticmethod
+    def _formal_scalar(value):
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            return value
+        if isinstance(value, dict):
+            for key in ("id", "stage_id", "stage", "number", "no"):
+                if key in value:
+                    return BotClient._formal_scalar(value[key])
+        return str(value)
+
+    def _formal_stage_key(self, tournament, status):
+        """Return a stable stage key without using poll count as identity."""
+        for source_name, source in (("top", tournament),
+                                    ("stage", tournament.get("stage")),
+                                    ("ranking", tournament.get("ranking"))):
+            if not isinstance(source, dict):
+                continue
+            for key in ("stage_id", "stageId", "stage_no", "stageNo",
+                        "stage_index", "stageIndex", "stage", "round_no",
+                        "roundNo", "round", "id"):
+                if key in source and source[key] is not None:
+                    return (source_name, key,
+                            self._formal_scalar(source[key]))
+        # When the fixture/server omits a stage identifier, keep one fallback
+        # key across registering -> stage_open -> running -> stage_done.  Only
+        # a stage_open observed after stage_done starts a new attendance
+        # boundary; poll count is never used as identity.
+        if self._formal_stage_counter == 0:
+            self._formal_stage_counter = 1
+        elif status == "stage_open" and self._formal_last_status == "stage_done":
+            self._formal_stage_counter += 1
+        return ("edge", self._formal_stage_counter)
+
+    def _formal_record_stage(self, tournament, status, stage_key):
+        self.tournament_status = status
+        self.tournament_stage = stage_key
+        qualified = tournament.get("qualified")
+        self.tournament_qualified = qualified
+        transition = {
+            "status": status,
+            "stage": stage_key,
+            "qualified": qualified,
+            "stage_crashed": bool(tournament.get("stage_crashed", False)),
+        }
+        if (not self.tournament_stage_history
+                or self.tournament_stage_history[-1] != transition):
+            self.tournament_stage_history.append(transition)
+
+    def _formal_attend(self, tid, stage_key):
+        if stage_key in self._formal_attended:
+            return
+        # Reserve the key before making requests: a repeated poll or a
+        # TOURNAMENT_STARTED race cannot create an unbounded POST loop.
+        self._formal_attended.add(stage_key)
+        self._formal_attendance_attempts[stage_key] = (
+            self._formal_attendance_attempts.get(stage_key, 0) + 1)
+        for operation, label in ((self.api.register, "register"),
+                                 (self.api.ready, "ready")):
+            try:
+                operation(tid)
+            except ApiError as exc:
+                if exc.code == "TOURNAMENT_STARTED":
+                    self.tournament_warnings.append({
+                        "reason": "TOURNAMENT_STARTED", "stage": stage_key,
+                    })
+                elif exc.code == "NOT_QUALIFIED":
+                    self._formal_attendance_lost.add(stage_key)
+                elif self._formal_auth_error(exc):
+                    raise
+                elif not self._formal_transient_error(exc):
+                    self._formal_log_error(f"{label} 失败", exc)
+                else:
+                    self._formal_log_error(f"{label} 暂时失败", exc)
+            except (ConnectionError, OSError, TimeoutError) as exc:
+                self._formal_log_error(f"{label} 暂时失败", exc)
+
+    def _formal_active_games(self, tournament):
+        me = self.api.me()
+        active = me.get("active_games") if isinstance(me, dict) else None
+        active_ids = []
+        for item in active or ():
+            gid = item.get("game_id") if isinstance(item, dict) else item
+            if gid:
+                active_ids.append(str(gid))
+        mine = tournament.get("my_games")
+        if not isinstance(mine, (list, tuple, set, frozenset)):
+            return []
+        allowed = {str(gid) for gid in mine if gid}
+        return list(dict.fromkeys(gid for gid in active_ids if gid in allowed))
+
+    def _formal_spawn_games(self, tournament, workers, stop):
+        if stop is not None and stop.is_set():
+            return
+        for gid in self._formal_active_games(tournament):
+            if stop is not None and stop.is_set():
+                return
+            if gid in self._done_games:
+                continue
+            thread = workers.get(gid)
+            if thread is not None and thread.is_alive():
+                continue
+            thread = threading.Thread(
+                target=self._play_game_safe,
+                args=(gid,),
+                name=f"{self.name}:{gid}", daemon=True)
+            workers[gid] = thread
+            thread.start()
+
+    def _run_formal_tournament(self, max_games=None, stop=None):
+        self._tournament_stop = stop
+        self.tournament_termination_reason = None
+        self.tournament_status = None
+        self.tournament_stage = None
+        self.tournament_qualified = None
+        self.tournament_stage_history = []
+        self.tournament_warnings = []
+        self.tournament_diagnostic = {}
+        self._formal_attended.clear()
+        self._formal_attendance_lost.clear()
+        self._formal_attendance_attempts.clear()
+        self._formal_crash_warnings.clear()
+        self._formal_stage_counter = 0
+        self._formal_last_status = None
+        self._formal_last_stage_key = None
+        self._done_games.clear()
+        self._game_fails.clear()
+        workers = {}
+        retry_delay = 0.5
+        try:
+            context = self._formal_resolve_context(stop)
+        except RuntimeError as exc:
+            reason = str(exc)
+            if reason not in ("TOKEN_NOT_BOUND", "INTERRUPTED"):
+                reason = "PROTOCOL_FATAL"
+            self.tournament_termination_reason = reason
+            self._formal_close_recorder()
+            return self._formal_result_stats()
+        except ApiError as exc:
+            self.tournament_termination_reason = (
+                "AUTH_FAILED" if self._formal_auth_error(exc)
+                else "PROTOCOL_FATAL")
+            self._formal_log_error("赛事预检失败", exc)
+            self._formal_close_recorder()
+            return self._formal_result_stats()
+        except Exception as exc:
+            self.tournament_termination_reason = "PROTOCOL_FATAL"
+            self._formal_log_error("赛事预检失败", exc)
+            self._formal_close_recorder()
+            return self._formal_result_stats()
+
+        tid = context.tournament_id
+        try:
+            while stop is None or not stop.is_set():
+                if max_games is not None and self.stats.get("games", 0) >= max_games:
+                    self.tournament_diagnostic = {
+                        "max_games_debug": max_games,
+                        "warning": "仅调试；正式锦标赛不要使用，会导致提前离赛",
+                    }
+                    self.tournament_termination_reason = "INTERRUPTED"
+                    break
+                try:
+                    tournament = self.api.tournament(tid)
+                    if not isinstance(tournament, dict):
+                        raise ValueError("赛事状态响应必须是对象")
+                    status = tournament.get("status")
+                    if status not in LIFECYCLE_STATES:
+                        raise ValueError(f"未知赛事状态: {status!r}")
+                    retry_delay = 0.5
+                except Exception as exc:
+                    if self._formal_auth_error(exc):
+                        self.tournament_termination_reason = "AUTH_FAILED"
+                        self._formal_log_error("赛事查询认证失败", exc)
+                        break
+                    if not self._formal_transient_error(exc):
+                        self.tournament_termination_reason = "PROTOCOL_FATAL"
+                        self._formal_log_error("赛事查询失败", exc)
+                        break
+                    self._formal_log_error("赛事查询暂时失败", exc)
+                    if self._sleep_stop(retry_delay, stop):
+                        self.tournament_termination_reason = "INTERRUPTED"
+                        break
+                    retry_delay = min(self._formal_retry_max, retry_delay * 2.0)
+                    continue
+
+                stage_key = self._formal_stage_key(tournament, status)
+                self._formal_record_stage(tournament, status, stage_key)
+                self._formal_last_status = status
+                self._formal_last_stage_key = stage_key
+
+                if status in TERMINAL_STATES:
+                    self.tournament_termination_reason = {
+                        "finished": "FINISHED", "closed": "CLOSED",
+                        "void": "VOID",
+                    }[status]
+                    break
+                if status == "stage_open" and tournament.get("qualified") is False:
+                    self.tournament_termination_reason = "ELIMINATED"
+                    break
+                if status in ("registering", "stage_open"):
+                    self._formal_attend(tid, stage_key)
+                if status == "stage_done" and tournament.get("stage_crashed"):
+                    warning_key = (stage_key, "stage_crashed")
+                    if warning_key not in self._formal_crash_warnings:
+                        self._formal_crash_warnings.add(warning_key)
+                        self.tournament_warnings.append({
+                            "reason": "STAGE_CRASHED_WAITING",
+                            "stage": stage_key,
+                        })
+                        self._log("STAGE_CRASHED_WAITING: 等待赛事恢复")
+                if status == "running":
+                    try:
+                        self._formal_spawn_games(tournament, workers, stop)
+                    except Exception as exc:
+                        if self._formal_auth_error(exc):
+                            self.tournament_termination_reason = "AUTH_FAILED"
+                        elif self._formal_transient_error(exc):
+                            self._formal_log_error("active game 查询暂时失败", exc)
+                            if self._sleep_stop(retry_delay, stop):
+                                self.tournament_termination_reason = "INTERRUPTED"
+                                break
+                            retry_delay = min(self._formal_retry_max,
+                                              retry_delay * 2.0)
+                            continue
+                        else:
+                            self.tournament_termination_reason = "PROTOCOL_FATAL"
+                        if self.tournament_termination_reason:
+                            break
+                if self._sleep_stop(self._formal_poll_interval, stop):
+                    self.tournament_termination_reason = "INTERRUPTED"
+                    break
+        except KeyboardInterrupt:
+            self.tournament_termination_reason = "INTERRUPTED"
+        except ApiError as exc:
+            self.tournament_termination_reason = (
+                "AUTH_FAILED" if self._formal_auth_error(exc)
+                else "PROTOCOL_FATAL")
+            self._formal_log_error("赛事生命周期失败", exc)
+        except Exception as exc:
+            self.tournament_termination_reason = "PROTOCOL_FATAL"
+            self._formal_log_error("赛事生命周期失败", exc)
+        finally:
+            if stop is not None and stop.is_set() \
+                    and self.tournament_termination_reason is None:
+                self.tournament_termination_reason = "INTERRUPTED"
+            for thread in workers.values():
+                thread.join(timeout=5)
+            self._formal_close_recorder()
+        return self._formal_result_stats()
+
+    def _formal_result_stats(self):
+        stats = dict(self.stats)
+        stats.update({
+            "token_label": self.name,
+            "user_id": self._user_id,
+            "tournament_id": self._tid,
+            "termination_reason": self.tournament_termination_reason
+                                   or "PROTOCOL_FATAL",
+            "final_status": self.tournament_status,
+            "final_stage": self.tournament_stage,
+            "qualified": self.tournament_qualified,
+            "stage_transitions": list(self.tournament_stage_history),
+            "tournament_warnings": list(self.tournament_warnings),
+            "tournament_diagnostic": dict(self.tournament_diagnostic),
+        })
+        return stats
 
     # ---------- 自由对战(自动匹配房,run_match) ----------
 
@@ -1998,7 +2408,10 @@ class BotClient:
         try:
             self.play_game(gid)
         except Exception as e:
-            self._log(f"场次 {gid} 异常: {type(e).__name__}: {e}")
+            safe_error = redact_text(
+                f"{type(e).__name__}: {e}",
+                [getattr(self.api, "token", None)])
+            self._log(f"场次 {gid} 异常: {safe_error}")
             with self._stats_lock:
                 fails = self._game_fails.get(gid, 0) + 1
                 self._game_fails[gid] = fails
@@ -2008,7 +2421,9 @@ class BotClient:
                 # 服务端代打污染积分;有限重派 + seq=0 快照重锚可续打)
                 if self.recorder is not None:
                     self.recorder.end(gid, "error",
-                                      error=f"{type(e).__name__}: {e}")
+                                      error=redact_text(
+                                          f"{type(e).__name__}: {e}",
+                                          [getattr(self.api, "token", None)]))
                 self._done_games.add(gid)
             # 未超限:不标完成、不落 end(error)——监督线程重派工作线程,
             # 快照重锚后续写同一份对局日志(避免双终态记录)
@@ -2047,6 +2462,8 @@ class BotClient:
         rec = self.recorder
         if rec is not None:
             meta_kwargs = {"mode": self.mode}
+            if self.mode == "tournament" and self.tournament_rules is not None:
+                meta_kwargs["rules"] = self.tournament_rules.as_dict()
             evaluator = getattr(self.decide, "bot_evaluator", None)
             if evaluator is not None:
                 meta_kwargs.update({
@@ -2248,6 +2665,11 @@ class BotClient:
         decide_fails = 0    # 决策/快照路径自愈预算(超限上抛终止)
         demand_seen = {}
         while True:
+            if self._shutdown_requested():
+                demand.close("shutdown")
+                demand.finalize_close("shutdown")
+                self._record_demand_metrics(demand, demand_seen)
+                return
             t0 = time.monotonic()
             state_deadline, stale_dl_used = self._stale_deadline_step(
                 state_deadline, stale_dl_used, t0)
@@ -2312,7 +2734,9 @@ class BotClient:
                                           self._state_scheduler.throttle
                                           if self._state_scheduler is not None
                                           else None),
-                                      cancel_check=fetch_coordinator.cancel_requested)
+                                      cancel_check=lambda: (
+                                          fetch_coordinator.cancel_requested()
+                                          or self._shutdown_requested()))
                 else:
                     # Keep the small fake/server adapter signature used by
                     # replay and unit tests.
@@ -3831,6 +4255,8 @@ class BotClient:
 
         提交前复查精确截止；保留旧等待态字段供离线时序测试使用。
         """
+        if self._shutdown_requested():
+            return
         t0, obs = chi["t0"], chi.get("obs", chi["t0"])
         anchored = chi.get("anchored", True)
         if not mirror.hand_count_ok("response_chi"):
@@ -3863,7 +4289,8 @@ class BotClient:
             return
         wait = ready - now
         if wait > 0:
-            time.sleep(wait)
+            if self._sleep_stop(wait, self._tournament_stop):
+                return
         now = time.monotonic()
         if deadline is not None and now >= deadline - SUBMIT_EPS:
             self._deadline_abandon(gid, "response_chi", "吃窗在等待后已关闭",
@@ -3895,6 +4322,9 @@ class BotClient:
 
     def _submit(self, mirror, gid, act, phase, deadline=None, window_key=None,
                 legal=None):
+        if self._shutdown_requested():
+            self._log(f"关闭中，跳过场次 {gid} 的新动作")
+            return False
         key = None
         action_attempt_index = 1
         logical_action_id = None
@@ -3966,6 +4396,8 @@ class BotClient:
                 exact_deadline_at=authorization.get("exact_deadline_at"),
                 deadline_left_at_send_ms=deadline_left_at_send_ms)
         try:
+            if self._shutdown_requested():
+                return False
             from .api import Api
             if isinstance(self.api, Api):
                 self.api.game_action(gid, payload, deadline=deadline)

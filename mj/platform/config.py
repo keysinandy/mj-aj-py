@@ -6,6 +6,53 @@ import os
 DEFAULT_PATH = os.path.join("local", "platform.json")
 
 
+class TournamentConfigError(ValueError):
+    """Invalid formal-tournament configuration without secret values."""
+
+
+def _read_json(path, purpose):
+    if not os.path.exists(path):
+        raise TournamentConfigError(f"缺少配置 {path}:{purpose}")
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise TournamentConfigError(
+            f"无法读取配置 {path}:{type(exc).__name__}") from None
+
+
+def _validate_token_label(label):
+    if not isinstance(label, str) or not label.strip():
+        raise TournamentConfigError("tokens 的 label 必须是非空字符串")
+    if label in (".", "..") or "\x00" in label \
+            or "/" in label or "\\" in label:
+        raise TournamentConfigError("tokens 的 label 含有非法路径字符")
+    return label
+
+
+def load_tournament_config(path=None):
+    """Load a scoped-token configuration for formal tournaments.
+
+    Unlike the test-room loader this function deliberately accepts one token;
+    it never infers tournament size from the number of configured identities.
+    """
+    p = path or DEFAULT_PATH
+    cfg = _read_json(p, "正式锦标赛需含 server 与 tokens")
+    if not isinstance(cfg, dict):
+        raise TournamentConfigError("config 顶层必须是对象")
+    if not isinstance(cfg.get("server"), str) or not cfg["server"].strip():
+        raise TournamentConfigError("config 需含非空 server")
+    tokens = cfg.get("tokens")
+    if not isinstance(tokens, dict) or not tokens:
+        raise TournamentConfigError("正式锦标赛需含一个或多个 tokens")
+    for label, token in tokens.items():
+        _validate_token_label(label)
+        if not isinstance(token, str) or not token:
+            raise TournamentConfigError(
+                f"token {label!r} 必须是非空字符串")
+    return cfg
+
+
 def load_config(path=None):
     p = path or DEFAULT_PATH
     if not os.path.exists(p):

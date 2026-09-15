@@ -37,6 +37,7 @@ import time
 import copy
 
 from ..replay_debugger.trace import ReplayTraceWriter
+from .security import redact_value
 
 
 def _json_default(value):
@@ -52,7 +53,7 @@ def _json_default(value):
 class GameLog:
     """单场对局 JSONL;写失败降级为静默丢弃(不影响对弈)。"""
 
-    def __init__(self, path, gid, tracer=None):
+    def __init__(self, path, gid, tracer=None, redact_secrets=()):
         self.gid = gid
         self.path = path
         self.cursor = 0            # 当前事件游标(对齐用)
@@ -62,6 +63,7 @@ class GameLog:
         self._n_decisions = 0
         self._closed = False
         self._tracer = tracer
+        self._redact_secrets = tuple(redact_secrets or ())
         self._f = open(path, "a", encoding="utf-8")
 
     def next_decision_id(self):
@@ -73,7 +75,8 @@ class GameLog:
         """追加一条记录;关闭后或写失败静默丢弃(日志永不打断对弈)。"""
         if self._closed:
             return
-        record = {"ts": round(time.time(), 3), **rec}
+        record = redact_value({"ts": round(time.time(), 3), **rec},
+                              self._redact_secrets)
         line = json.dumps(record,
                           ensure_ascii=False, default=_json_default)
         tracer = None
@@ -151,7 +154,8 @@ class Recorder:
     """
 
     def __init__(self, root="local/games", default_name="bot", *,
-                 replay_trace=False, trace_root=None, trace_queue_size=512):
+                 replay_trace=False, trace_root=None, trace_queue_size=512,
+                 redact_secrets=()):
         self.root = root
         self.default_name = default_name
         self._logs = {}
@@ -160,6 +164,7 @@ class Recorder:
         self.trace_root = trace_root
         self.trace_queue_size = trace_queue_size
         self._tracers = {}
+        self.redact_secrets = tuple(redact_secrets or ())
 
     # ---------- 文件管理 ----------
 
@@ -179,7 +184,8 @@ class Recorder:
                     self._tracers[gid] = tracer
                 log = GameLog(
                     os.path.join(d, f"{name or self.default_name}_{gid}.jsonl"),
-                    gid, tracer=tracer)
+                    gid, tracer=tracer,
+                    redact_secrets=self.redact_secrets)
                 self._logs[gid] = log
             return log
 
@@ -209,7 +215,7 @@ class Recorder:
 
     def meta(self, gid, name, tid=None, you_cai_bi_kao=False, base=1,
              mode=None, evaluator=None, evaluator_profile=None,
-             evaluator_fingerprint=None, evaluator_kernel=None):
+             evaluator_fingerprint=None, evaluator_kernel=None, rules=None):
         """mode 标记对局来源(match=自由对战;测试房/正式赛缺省不写,
         log2data 按 mode 过滤时缺省视作非 match)。"""
         rec = {"type": "meta", "gid": gid, "name": name, "tid": tid,
@@ -222,6 +228,8 @@ class Recorder:
                            ("evaluator_kernel", evaluator_kernel)):
             if value is not None:
                 rec[key] = value
+        if rules is not None:
+            rec["rules"] = rules
         self.log_for(gid, name).write(rec)
 
     def sse_frame(self, gid, seq=None, closed=False, payload=None,
