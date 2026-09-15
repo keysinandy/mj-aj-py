@@ -6,6 +6,18 @@
 其中 v33 杠后补牌的暗杠/补杠会在公开信息下比较下一张补牌的积分期望，
 shape-v2 本身仍只评价普通舍牌，不把该策略升级宣称为 EV2 全动作评价。
 
+本地成对评估以本家每局 `Game.scores[seat]` 的净积分增量为主指标：
+`shape_score.mean`/`legacy_score.mean` 是平均每局积分，`score_delta.mean`
+是同种子下 shape 减 legacy 的配对差；胜率只作辅助诊断。示例：
+
+```shell
+python3 scripts/bot_shape_eval.py --games 4096 --evaluator shape-v1 \
+  --output /tmp/bot-shape-score.json
+```
+
+积分比较应使用相同 seed、seat、dealer 和规则配置；开启
+`--you-cai-bi-kao` 时应作为独立规则分组报告，不能与关闭配置混合。
+
 ```python
 from mj.bot import choose_action
 

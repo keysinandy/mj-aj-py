@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Paired legacy/shape-v1/shape-v2 offline evaluation.
 
+The primary capability metric is the hero's round settlement score in base
+score points. Paired score delta and win rate remain diagnostic metrics; a win
+alone is not treated as equivalent to a higher-scoring win.
+
 The default seed plan is the one frozen in
 ``openspec/changes/bot-shape-aware-evaluation/artifacts/calibration_plan.json``.
 This command deliberately keeps the opponent callable bound to
@@ -50,14 +54,16 @@ def _play(seed, seat, dealer, ycbk, evaluator):
 
 def _bootstrap(values, rounds=2000, seed=20260913):
     if not values:
-        return {"n": 0, "mean": 0.0, "low": 0.0, "high": 0.0}
+        return {"n": 0, "total": 0.0, "mean": 0.0,
+                "low": 0.0, "high": 0.0}
     rng = random.Random(seed)
     n = len(values)
     means = []
     for _ in range(rounds):
         means.append(sum(values[rng.randrange(n)] for _ in range(n)) / n)
     means.sort()
-    return {"n": n, "mean": statistics.fmean(values),
+    return {"n": n, "total": sum(values),
+            "mean": statistics.fmean(values),
             "low": means[int(0.025 * (rounds - 1))],
             "high": means[int(0.975 * (rounds - 1))]}
 
@@ -79,11 +85,17 @@ def run(games=4096, seed_start=182048, ycbk=False, evaluator="shape-v1"):
                      "score_delta": new["score"] - old["score"],
                      "win_delta": int(new["win"]) - int(old["win"])})
     score = [r["score_delta"] for r in rows]
+    legacy_score = [r["legacy"]["score"] for r in rows]
+    shape_score = [r["shape"]["score"] for r in rows]
     win = [r["win_delta"] for r in rows]
     return {
         "games": games, "seed_start": seed_start, "ycbk": bool(ycbk),
         "evaluator": evaluator,
+        "primary_metric": "hero_round_score_points",
+        "higher_is_better": True,
         "seat_dealer_combinations": 16,
+        "legacy_score": _bootstrap(legacy_score),
+        "shape_score": _bootstrap(shape_score),
         "score_delta": _bootstrap(score),
         "win_delta": _bootstrap(win),
         "shape_wins": sum(r["shape"]["win"] for r in rows),
