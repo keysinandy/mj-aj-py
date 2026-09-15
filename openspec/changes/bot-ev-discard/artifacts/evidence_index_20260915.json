@@ -1,0 +1,64 @@
+{
+  "schema": "bot-ev-discard/evidence-index-v1",
+  "indexed_at": "2026-09-15",
+  "release_status": "legacy_default_release_pending",
+  "default_policy": "legacy",
+  "opt_in_policy": "shape-v2/discard",
+  "documentation": [
+    "docs/bot-ev-discard.md",
+    "README.md"
+  ],
+  "profiles": [
+    {
+      "artifact": "artifacts/profile_manifest.json",
+      "profile": "shape-v2",
+      "scope": "discard",
+      "fingerprint": "b21192d917d128cd",
+      "status": "versioned_opt_in"
+    }
+  ],
+  "teacher": [
+    {
+      "artifact": "artifacts/teacher_smoke_20260915.json",
+      "status": "offline_smoke_ambiguous"
+    },
+    {
+      "artifact": "artifacts/teacher_exhaustive_reference_20260915.json",
+      "status": "toy_exhaustive_reference_pass"
+    }
+  ],
+  "opponent_distribution": {
+    "paired_online_opponent": "legacy",
+    "rollout_continuation": "frozen_shape_v1",
+    "belief": "uniform_unseen-v1",
+    "oracle": false
+  },
+  "validated": [
+    {
+      "command": "python3 -m pytest tests/ -q -p no:cacheprovider",
+      "result": "462 passed, 1 skipped, 9 subtests passed"
+    },
+    {
+      "command": "OPENSPEC_TELEMETRY=0 openspec validate bot-ev-discard --strict --no-interactive",
+      "result": "valid"
+    },
+    {
+      "command": "python3 scripts/bot_shape_perf.py --games 1 --seed-start 190000 --evaluator shape-v2",
+      "result": "diagnostic smoke passed; not a release gate"
+    }
+  ],
+  "pending_release_evidence": [
+    "5.1 calibration and ablation on frozen splits",
+    "5.2 independent paired Q/regret evaluation",
+    "5.3 4096 paired games / 8192 runs / 16 seat-dealer combinations",
+    "5.4 calibration and runtime evidence manifests",
+    "7.1-7.4 hu-piao, KONG and reaction scopes",
+    "8.1-8.5 three-way performance, concurrent rooms, window audit and release gate"
+  ],
+  "prohibited_claims": [
+    "real_wall_optimal",
+    "model_error_free",
+    "shape_v2_default_enabled",
+    "P5-P7_complete"
+  ]
+}

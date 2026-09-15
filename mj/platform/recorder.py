@@ -423,13 +423,20 @@ class Recorder:
         log = self.log_for(gid)
         did = log.next_decision_id()
         log.pending_decision = did
-        rec = {"type": "decision", "id": did, "seq": log.cursor,
+        rec = {"type": "decision", "gid": gid, "id": did, "seq": log.cursor,
                "phase": phase, "legal": legal, "action": action,
                "latency_ms": latency_ms}
         if digest:
             rec["digest"] = digest
         if evaluation is not None:
             rec["evaluation"] = evaluation
+            eval_data = (evaluation.as_json()
+                         if hasattr(evaluation, "as_json") else evaluation)
+            if isinstance(eval_data, dict):
+                for key in ("context_hash", "scope", "profile_fingerprint",
+                            "rules_version", "kernel_version"):
+                    if eval_data.get(key) is not None:
+                        rec[key] = eval_data[key]
         for key, value in (("window_id", window_id),
                            ("window_attempt_key", window_attempt_key),
                            ("identity_status", identity_status),
@@ -457,7 +464,10 @@ class Recorder:
 
     def counterfactual_evaluation(self, gid, phase, action, evaluation,
                                   window_id=None, source_seq=None,
-                                  reason="offline_only"):
+                                  reason="offline_only", round_no=None,
+                                  decision_id=None, input_hash=None,
+                                  scope=None, identity_status=None,
+                                  identity_origin=None):
         """Append an explicitly offline counterfactual record.
 
         This additive entry is intentionally never emitted by BotClient's
@@ -465,10 +475,15 @@ class Recorder:
         preferred discard for a window that had no strategy call without
         manufacturing an online ``decision`` or upgrading window identity.
         """
-        rec = {"type": "counterfactual_evaluation", "phase": phase,
+        rec = {"type": "counterfactual_evaluation", "gid": gid,
+               "counterfactual": True, "online_decision": False,
+               "phase": phase,
                "action": action, "evaluation": evaluation,
                "reason": reason, "source_seq": source_seq,
-               "window_id": window_id}
+               "window_id": window_id, "round_no": round_no,
+               "decision": decision_id, "input_hash": input_hash,
+               "scope": scope, "identity_status": identity_status,
+               "identity_origin": identity_origin}
         self.log_for(gid).write({k: v for k, v in rec.items()
                                  if v is not None})
 
@@ -540,7 +555,7 @@ class Recorder:
                post_status=None, response_epoch=None,
                server_trace_id=None, outcome=None, reconciliation=None):
         log = self.log_for(gid)
-        rec = {"type": "action", "phase": phase, "payload": payload,
+        rec = {"type": "action", "gid": gid, "phase": phase, "payload": payload,
                "ok": ok, "status": status, "code": code,
                "latency_ms": latency_ms, "attempts": attempts}
         # ts is response completion/log time, not the time the POST was sent.

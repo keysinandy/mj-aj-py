@@ -122,7 +122,9 @@ def render(rec, t0):
                 f"{action_name(rec.get('action'))} ({rec.get('latency_ms')}ms"
                 f",手{dg.get('hand')}张/墙{dg.get('wall')}){evtxt}")
     if t == "counterfactual_evaluation":
-        return (f"{pre} COUNTERFACTUAL window={rec.get('window_id')} "
+        ev = rec.get("evaluation") or {}
+        return (f"{pre} COUNTERFACTUAL gid={rec.get('gid')} "
+                f"window={rec.get('window_id')} input={rec.get('input_hash') or ev.get('context_hash')} "
                 f"action={action_name(rec.get('action'))} "
                 f"reason={rec.get('reason')}")
     if t == "action":
@@ -219,6 +221,9 @@ def summarize(recs):
                     if r.get("latency_ms") is not None)
         print(f"决策: {len(dec)} 次, decide p50="
               f"{dl[len(dl) // 2] if dl else '?'}ms max={dl[-1] if dl else '?'}ms")
+    cf = [r for r in recs if r["type"] == "counterfactual_evaluation"]
+    if cf:
+        print(f"反事实评价: {len(cf)} 次(不计入线上 decision/action)")
     miss = [r for r in recs if r["type"] == "claim_miss"]
     if miss:
         by_reason = {}

@@ -1,0 +1,49 @@
+{
+  "schema": "bot-ev-discard/profile-manifest-v1",
+  "profile": {
+    "name": "shape-v2",
+    "version": "shape-v2",
+    "scope": "discard",
+    "schema": "bot-ev-discard/profile-v1",
+    "reward_units": "base-score points",
+    "reward_name": "hero_round_settlement_delta",
+    "rules_version": "hangzhou-platform-guide-v21",
+    "belief_version": "uniform_unseen-v1",
+    "continuation_version": "frozen_shape_v1",
+    "kernel_version": "python-frontier-v1",
+    "tail_version": "zero-v1",
+    "horizon": 2,
+    "node_budget": 4096,
+    "time_budget_ms": 17.5,
+    "explanation": true,
+    "calibrated": false,
+    "q0_shanten_weight": -1.0,
+    "q0_u1_weight": 0.01,
+    "q0_ev1_weight": 0.0,
+    "q0_ev2_weight": 1.0,
+    "q0_fan_weight": 0.0,
+    "q0_risk_weight": 0.0,
+    "reward_upper_bound": null,
+    "tau": {},
+    "lut_buckets": [],
+    "min_bucket_samples": 64,
+    "calibration_fingerprint": "",
+    "calibration_kind": "none",
+    "calibration_intercept": 0.0,
+    "fingerprint": "b21192d917d128cd"
+  },
+  "fingerprint_algorithm": "sha256-canonical-json-truncated-16",
+  "scope_contract": {
+    "discard": "ordinary legal discards only; HU/KONG/reaction delegated",
+    "hu-piao": "separate calibrated root profile",
+    "all-root": "separate calibrated root profile"
+  },
+  "failure_states": [
+    "invalid_context", "unsupported_context", "missing_field",
+    "budget_exceeded", "incomplete_layer", "failed_rollout",
+    "incomplete_rollout", "ambiguous"
+  ],
+  "oracle": false,
+  "teacher": "offline-only",
+  "hidden_posterior": "not modeled"
+}

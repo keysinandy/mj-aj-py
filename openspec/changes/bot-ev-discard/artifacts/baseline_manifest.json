@@ -1,0 +1,66 @@
+{
+  "schema": "bot-ev-discard/baseline-v1",
+  "captured_at": "2026-09-15",
+  "repository": {
+    "head": "3da22b3ff215b565da6bc67a238e83cc90f5744a",
+    "head_note": "The short hash is recorded in git history; source fingerprints below are authoritative for this artifact.",
+    "baseline_commits": {
+      "shape_v1": "917e7f845b7e364dbbea6cb1fa3546151b7cf27e",
+      "shape_aware_parent": "72a4f65b209ed79232bb2f9112da7a31c226a4e1"
+    },
+    "worktree": "clean at capture"
+  },
+  "environment": {
+    "python": "3.11.14",
+    "kernel": {
+      "name": "mj_kernels",
+      "importable": true,
+      "path": "/Users/shenzeqi/.pyenv/versions/3.11.14/lib/python3.11/site-packages/mj_kernels/__init__.py",
+      "forced_python": false,
+      "v2_frontier": false,
+      "reported_version": "rust-batch-v1"
+    }
+  },
+  "rules": {
+    "guide_source": "PROGRESS.md",
+    "guide_fingerprint": "786e6b16c901b6a6d9d9303402b4af341a68d858807382e50415412640439d78",
+    "dead_wall": 20,
+    "chow_limit": 2,
+    "default_you_cai_bi_kao": false,
+    "score_source": "mj/scoring.py",
+    "legal_action_source": "mj/game.py"
+  },
+  "source_sha256": {
+    "mj/bot.py": "0410c4cfc126946ab42116fc220dc93e5690f3334644cee8c40145d3da3ba28b",
+    "mj/hand_eval.py": "3db071d7543d31b4d4801d90cebe3af1d6ef985b197640f532c882d09f2cb340",
+    "mj/shanten.py": "11247f1eae9375ae320547bae379c5c0ba4c2aa612049d7378ebc2f7615f45ff",
+    "mj/game.py": "c9f0ebfce4e1d6778a1974e4f15996b908324b79da1552fb928b9ba4acdd7141",
+    "mj/scoring.py": "87395c8ba0bf9eaf4e200f9ad5a080ca71f56c19821833260fa30ac5074ceebe",
+    "mj/win.py": "937a82481fd36acf66878134dc6be6b9a60cfbb6d0d9f3f74c6be9ccc696daed",
+    "rust/src/lib.rs": "e8139587d3b7ffe6f47c0709920c82a7486542a5e5f09937c09e7bc3e95dfbe7",
+    "docs/ev.md": "53f5024c587e790ad8e404c92cfd2e4bfbedfb2e13a1cb608691326f4b0fe435"
+  },
+  "evaluation_boundary": {
+    "online_profiles": ["legacy", "shape-v1"],
+    "production_default": "legacy",
+    "shape_v1_scope": "ordinary discard ranking; HU/piao/KONG remain frozen",
+    "opponent_binding": "frozen legacy callable",
+    "online_inputs": ["hero hand", "public rivers", "public melds", "rule switches", "wall length"],
+    "forbidden_inputs": ["opponent concealed tiles", "real wall order", "source Game RNG", "future events", "tokens", "request bodies"],
+    "historical_evidence_not_revalidated": [
+      "docs/q-performance-optimization-20260914.md",
+      "openspec/changes/archive/2026-09-15-bot-shape-aware-evaluation/artifacts/verification_20260913.json",
+      "openspec/changes/archive/2026-09-15-bot-shape-aware-evaluation/artifacts/online_run_20260914_a30361c544db9.json"
+    ],
+    "release_gates": {
+      "paired_games": 4096,
+      "seat_dealer_combinations": 16,
+      "new_rooms": 3,
+      "legacy_until_all_gates": true
+    }
+  },
+  "secret_scan": {
+    "status": "not_present",
+    "excluded_material": ["local logs", "tokens", "request bodies", "complete hidden replays"]
+  }
+}

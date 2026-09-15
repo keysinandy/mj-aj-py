@@ -36,8 +36,12 @@ def make_decide(strategy, ckpt=None, evaluator="legacy"):
             from mj.hand_eval import warmup
             warmup("shape-v1")
         def play(g, seat):
-            if profile in ("shape-v1", "shape_v1", "shape"):
-                return choose_action(g, seat, evaluator="shape-v1",
+            if profile in ("shape-v1", "shape_v1", "shape",
+                           "shape-v2", "shape_v2", "ev2"):
+                requested = ("shape-v2" if profile in
+                             ("shape-v2", "shape_v2", "ev2")
+                             else "shape-v1")
+                return choose_action(g, seat, evaluator=requested,
                                      return_evaluation=True)
             action = choose_action(g, seat)
             return action, {"version": "legacy", "profile": "legacy",
@@ -178,7 +182,7 @@ def main(argv=None):
     ap.add_argument("--strategy", default="policy",
                     choices=("policy", "bot", "random"))
     ap.add_argument("--bot-evaluator", default="legacy",
-                    choices=("legacy", "shape-v1"),
+                    choices=("legacy", "shape-v1", "shape-v2"),
                     help="strategy=bot 时的评价器(默认 legacy)")
     ap.add_argument("--ckpt", default="runs/bc0/best.pt")
     ap.add_argument("--games", type=int, default=1, help="打满场数(跨轮复用)")

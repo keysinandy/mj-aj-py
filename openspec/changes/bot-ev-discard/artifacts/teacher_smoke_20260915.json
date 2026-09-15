@@ -1,0 +1,783 @@
+{
+  "status": "ambiguous",
+  "context_hash": "c30a3c7aabb63434",
+  "profile_fingerprint": "b21192d917d128cd",
+  "belief_version": "uniform_unseen-v1",
+  "continuation_version": "frozen_shape-v1",
+  "actions": [
+    4,
+    6,
+    7,
+    9,
+    10,
+    13,
+    17,
+    19,
+    21,
+    24,
+    25,
+    29
+  ],
+  "candidates": [
+    {
+      "action": 9,
+      "EV": 24.0,
+      "CI": {
+        "n": 1,
+        "mean": 24.0,
+        "low": -4.692658355507151e+23,
+        "high": 4.692658355507151e+23,
+        "half_width": 4.692658355507151e+23,
+        "alpha": 0.05,
+        "comparisons": 132,
+        "method": "hoeffding-bounded-simultaneous"
+      },
+      "samples": 1,
+      "valid_samples": 1,
+      "win_rate": 1.0,
+      "avg_win_multiplier": 1.0,
+      "draw_rate": 0.0,
+      "failed": 0
+    },
+    {
+      "action": 10,
+      "EV": 24.0,
+      "CI": {
+        "n": 1,
+        "mean": 24.0,
+        "low": -4.692658355507151e+23,
+        "high": 4.692658355507151e+23,
+        "half_width": 4.692658355507151e+23,
+        "alpha": 0.05,
+        "comparisons": 132,
+        "method": "hoeffding-bounded-simultaneous"
+      },
+      "samples": 1,
+      "valid_samples": 1,
+      "win_rate": 1.0,
+      "avg_win_multiplier": 1.0,
+      "draw_rate": 0.0,
+      "failed": 0
+    },
+    {
+      "action": 25,
+      "EV": 24.0,
+      "CI": {
+        "n": 1,
+        "mean": 24.0,
+        "low": -4.692658355507151e+23,
+        "high": 4.692658355507151e+23,
+        "half_width": 4.692658355507151e+23,
+        "alpha": 0.05,
+        "comparisons": 132,
+        "method": "hoeffding-bounded-simultaneous"
+      },
+      "samples": 1,
+      "valid_samples": 1,
+      "win_rate": 1.0,
+      "avg_win_multiplier": 1.0,
+      "draw_rate": 0.0,
+      "failed": 0
+    },
+    {
+      "action": 4,
+      "EV": -8.0,
+      "CI": {
+        "n": 1,
+        "mean": -8.0,
+        "low": -4.692658355507151e+23,
+        "high": 4.692658355507151e+23,
+        "half_width": 4.692658355507151e+23,
+        "alpha": 0.05,
+        "comparisons": 132,
+        "method": "hoeffding-bounded-simultaneous"
+      },
+      "samples": 1,
+      "valid_samples": 1,
+      "win_rate": 0.0,
+      "draw_rate": 0.0,
+      "failed": 0
+    },
+    {
+      "action": 6,
+      "EV": -8.0,
+      "CI": {
+        "n": 1,
+        "mean": -8.0,
+        "low": -4.692658355507151e+23,
+        "high": 4.692658355507151e+23,
+        "half_width": 4.692658355507151e+23,
+        "alpha": 0.05,
+        "comparisons": 132,
+        "method": "hoeffding-bounded-simultaneous"
+      },
+      "samples": 1,
+      "valid_samples": 1,
+      "win_rate": 0.0,
+      "draw_rate": 0.0,
+      "failed": 0
+    },
+    {
+      "action": 7,
+      "EV": -8.0,
+      "CI": {
+        "n": 1,
+        "mean": -8.0,
+        "low": -4.692658355507151e+23,
+        "high": 4.692658355507151e+23,
+        "half_width": 4.692658355507151e+23,
+        "alpha": 0.05,
+        "comparisons": 132,
+        "method": "hoeffding-bounded-simultaneous"
+      },
+      "samples": 1,
+      "valid_samples": 1,
+      "win_rate": 0.0,
+      "draw_rate": 0.0,
+      "failed": 0
+    },
+    {
+      "action": 13,
+      "EV": -8.0,
+      "CI": {
+        "n": 1,
+        "mean": -8.0,
+        "low": -4.692658355507151e+23,
+        "high": 4.692658355507151e+23,
+        "half_width": 4.692658355507151e+23,
+        "alpha": 0.05,
+        "comparisons": 132,
+        "method": "hoeffding-bounded-simultaneous"
+      },
+      "samples": 1,
+      "valid_samples": 1,
+      "win_rate": 0.0,
+      "draw_rate": 0.0,
+      "failed": 0
+    },
+    {
+      "action": 17,
+      "EV": -8.0,
+      "CI": {
+        "n": 1,
+        "mean": -8.0,
+        "low": -4.692658355507151e+23,
+        "high": 4.692658355507151e+23,
+        "half_width": 4.692658355507151e+23,
+        "alpha": 0.05,
+        "comparisons": 132,
+        "method": "hoeffding-bounded-simultaneous"
+      },
+      "samples": 1,
+      "valid_samples": 1,
+      "win_rate": 0.0,
+      "draw_rate": 0.0,
+      "failed": 0
+    },
+    {
+      "action": 19,
+      "EV": -8.0,
+      "CI": {
+        "n": 1,
+        "mean": -8.0,
+        "low": -4.692658355507151e+23,
+        "high": 4.692658355507151e+23,
+        "half_width": 4.692658355507151e+23,
+        "alpha": 0.05,
+        "comparisons": 132,
+        "method": "hoeffding-bounded-simultaneous"
+      },
+      "samples": 1,
+      "valid_samples": 1,
+      "win_rate": 0.0,
+      "draw_rate": 0.0,
+      "failed": 0
+    },
+    {
+      "action": 21,
+      "EV": -8.0,
+      "CI": {
+        "n": 1,
+        "mean": -8.0,
+        "low": -4.692658355507151e+23,
+        "high": 4.692658355507151e+23,
+        "half_width": 4.692658355507151e+23,
+        "alpha": 0.05,
+        "comparisons": 132,
+        "method": "hoeffding-bounded-simultaneous"
+      },
+      "samples": 1,
+      "valid_samples": 1,
+      "win_rate": 0.0,
+      "draw_rate": 0.0,
+      "failed": 0
+    },
+    {
+      "action": 24,
+      "EV": -8.0,
+      "CI": {
+        "n": 1,
+        "mean": -8.0,
+        "low": -4.692658355507151e+23,
+        "high": 4.692658355507151e+23,
+        "half_width": 4.692658355507151e+23,
+        "alpha": 0.05,
+        "comparisons": 132,
+        "method": "hoeffding-bounded-simultaneous"
+      },
+      "samples": 1,
+      "valid_samples": 1,
+      "win_rate": 0.0,
+      "draw_rate": 0.0,
+      "failed": 0
+    },
+    {
+      "action": 29,
+      "EV": -8.0,
+      "CI": {
+        "n": 1,
+        "mean": -8.0,
+        "low": -4.692658355507151e+23,
+        "high": 4.692658355507151e+23,
+        "half_width": 4.692658355507151e+23,
+        "alpha": 0.05,
+        "comparisons": 132,
+        "method": "hoeffding-bounded-simultaneous"
+      },
+      "samples": 1,
+      "valid_samples": 1,
+      "win_rate": 0.0,
+      "draw_rate": 0.0,
+      "failed": 0
+    }
+  ],
+  "best_action": 9,
+  "runner_up": 10,
+  "paired_deltas": [
+    {
+      "best": 9,
+      "runner_up": 10,
+      "delta": {
+        "n": 1,
+        "mean": 0.0,
+        "low": -9.385316711014302e+23,
+        "high": 9.385316711014302e+23,
+        "half_width": 9.385316711014302e+23,
+        "alpha": 0.05,
+        "comparisons": 132,
+        "method": "hoeffding-bounded-simultaneous",
+        "variance": 0.0,
+        "paired_sample_ids": [
+          0
+        ]
+      }
+    }
+  ],
+  "sample_count": 1,
+  "attempted_samples": 1,
+  "failed_samples": 0,
+  "ambiguous": true,
+  "unsupported": false,
+  "stop_reason": "nmax",
+  "failures": [],
+  "rows": [
+    {
+      "sample_id": 0,
+      "world_fingerprint": "93db97fbd851e281605aee57",
+      "outcomes": {
+        "4": {
+          "status": "ok",
+          "reward": -8.0,
+          "sample_id": 0,
+          "world_fingerprint": "93db97fbd851e281605aee57",
+          "steps": 188,
+          "winner": 1,
+          "multiplier": 1,
+          "draw": false,
+          "group_failed": false
+        },
+        "6": {
+          "status": "ok",
+          "reward": -8.0,
+          "sample_id": 0,
+          "world_fingerprint": "93db97fbd851e281605aee57",
+          "steps": 176,
+          "winner": 1,
+          "multiplier": 1,
+          "draw": false,
+          "group_failed": false
+        },
+        "7": {
+          "status": "ok",
+          "reward": -8.0,
+          "sample_id": 0,
+          "world_fingerprint": "93db97fbd851e281605aee57",
+          "steps": 134,
+          "winner": 2,
+          "multiplier": 1,
+          "draw": false,
+          "group_failed": false
+        },
+        "9": {
+          "status": "ok",
+          "reward": 24.0,
+          "sample_id": 0,
+          "world_fingerprint": "93db97fbd851e281605aee57",
+          "steps": 115,
+          "winner": 0,
+          "multiplier": 1,
+          "draw": false,
+          "group_failed": false
+        },
+        "10": {
+          "status": "ok",
+          "reward": 24.0,
+          "sample_id": 0,
+          "world_fingerprint": "93db97fbd851e281605aee57",
+          "steps": 195,
+          "winner": 0,
+          "multiplier": 1,
+          "draw": false,
+          "group_failed": false
+        },
+        "13": {
+          "status": "ok",
+          "reward": -8.0,
+          "sample_id": 0,
+          "world_fingerprint": "93db97fbd851e281605aee57",
+          "steps": 125,
+          "winner": 2,
+          "multiplier": 1,
+          "draw": false,
+          "group_failed": false
+        },
+        "17": {
+          "status": "ok",
+          "reward": -8.0,
+          "sample_id": 0,
+          "world_fingerprint": "93db97fbd851e281605aee57",
+          "steps": 173,
+          "winner": 3,
+          "multiplier": 1,
+          "draw": false,
+          "group_failed": false
+        },
+        "19": {
+          "status": "ok",
+          "reward": -8.0,
+          "sample_id": 0,
+          "world_fingerprint": "93db97fbd851e281605aee57",
+          "steps": 183,
+          "winner": 1,
+          "multiplier": 1,
+          "draw": false,
+          "group_failed": false
+        },
+        "21": {
+          "status": "ok",
+          "reward": -8.0,
+          "sample_id": 0,
+          "world_fingerprint": "93db97fbd851e281605aee57",
+          "steps": 196,
+          "winner": 1,
+          "multiplier": 1,
+          "draw": false,
+          "group_failed": false
+        },
+        "24": {
+          "status": "ok",
+          "reward": -8.0,
+          "sample_id": 0,
+          "world_fingerprint": "93db97fbd851e281605aee57",
+          "steps": 208,
+          "winner": 2,
+          "multiplier": 1,
+          "draw": false,
+          "group_failed": false
+        },
+        "25": {
+          "status": "ok",
+          "reward": 24.0,
+          "sample_id": 0,
+          "world_fingerprint": "93db97fbd851e281605aee57",
+          "steps": 217,
+          "winner": 0,
+          "multiplier": 1,
+          "draw": false,
+          "group_failed": false
+        },
+        "29": {
+          "status": "ok",
+          "reward": -8.0,
+          "sample_id": 0,
+          "world_fingerprint": "93db97fbd851e281605aee57",
+          "steps": 108,
+          "winner": 2,
+          "multiplier": 1,
+          "draw": false,
+          "group_failed": false
+        }
+      },
+      "group_failed": false
+    }
+  ],
+  "resume_state": {
+    "rows": [
+      {
+        "sample_id": 0,
+        "world_fingerprint": "93db97fbd851e281605aee57",
+        "outcomes": {
+          "4": {
+            "status": "ok",
+            "reward": -8.0,
+            "sample_id": 0,
+            "world_fingerprint": "93db97fbd851e281605aee57",
+            "steps": 188,
+            "winner": 1,
+            "multiplier": 1,
+            "draw": false,
+            "group_failed": false
+          },
+          "6": {
+            "status": "ok",
+            "reward": -8.0,
+            "sample_id": 0,
+            "world_fingerprint": "93db97fbd851e281605aee57",
+            "steps": 176,
+            "winner": 1,
+            "multiplier": 1,
+            "draw": false,
+            "group_failed": false
+          },
+          "7": {
+            "status": "ok",
+            "reward": -8.0,
+            "sample_id": 0,
+            "world_fingerprint": "93db97fbd851e281605aee57",
+            "steps": 134,
+            "winner": 2,
+            "multiplier": 1,
+            "draw": false,
+            "group_failed": false
+          },
+          "9": {
+            "status": "ok",
+            "reward": 24.0,
+            "sample_id": 0,
+            "world_fingerprint": "93db97fbd851e281605aee57",
+            "steps": 115,
+            "winner": 0,
+            "multiplier": 1,
+            "draw": false,
+            "group_failed": false
+          },
+          "10": {
+            "status": "ok",
+            "reward": 24.0,
+            "sample_id": 0,
+            "world_fingerprint": "93db97fbd851e281605aee57",
+            "steps": 195,
+            "winner": 0,
+            "multiplier": 1,
+            "draw": false,
+            "group_failed": false
+          },
+          "13": {
+            "status": "ok",
+            "reward": -8.0,
+            "sample_id": 0,
+            "world_fingerprint": "93db97fbd851e281605aee57",
+            "steps": 125,
+            "winner": 2,
+            "multiplier": 1,
+            "draw": false,
+            "group_failed": false
+          },
+          "17": {
+            "status": "ok",
+            "reward": -8.0,
+            "sample_id": 0,
+            "world_fingerprint": "93db97fbd851e281605aee57",
+            "steps": 173,
+            "winner": 3,
+            "multiplier": 1,
+            "draw": false,
+            "group_failed": false
+          },
+          "19": {
+            "status": "ok",
+            "reward": -8.0,
+            "sample_id": 0,
+            "world_fingerprint": "93db97fbd851e281605aee57",
+            "steps": 183,
+            "winner": 1,
+            "multiplier": 1,
+            "draw": false,
+            "group_failed": false
+          },
+          "21": {
+            "status": "ok",
+            "reward": -8.0,
+            "sample_id": 0,
+            "world_fingerprint": "93db97fbd851e281605aee57",
+            "steps": 196,
+            "winner": 1,
+            "multiplier": 1,
+            "draw": false,
+            "group_failed": false
+          },
+          "24": {
+            "status": "ok",
+            "reward": -8.0,
+            "sample_id": 0,
+            "world_fingerprint": "93db97fbd851e281605aee57",
+            "steps": 208,
+            "winner": 2,
+            "multiplier": 1,
+            "draw": false,
+            "group_failed": false
+          },
+          "25": {
+            "status": "ok",
+            "reward": 24.0,
+            "sample_id": 0,
+            "world_fingerprint": "93db97fbd851e281605aee57",
+            "steps": 217,
+            "winner": 0,
+            "multiplier": 1,
+            "draw": false,
+            "group_failed": false
+          },
+          "29": {
+            "status": "ok",
+            "reward": -8.0,
+            "sample_id": 0,
+            "world_fingerprint": "93db97fbd851e281605aee57",
+            "steps": 108,
+            "winner": 2,
+            "multiplier": 1,
+            "draw": false,
+            "group_failed": false
+          }
+        },
+        "group_failed": false
+      }
+    ],
+    "next_sample_id": 1,
+    "config_fingerprint": "8d09216bf32bb46f",
+    "terminal": true,
+    "stop_reason": "nmax",
+    "ambiguous": true
+  },
+  "paired_rows": [
+    {
+      "sample_id": 0,
+      "world_fingerprint": "93db97fbd851e281605aee57",
+      "delta": 0.0
+    }
+  ],
+  "fingerprint": "8d09216bf32bb46f",
+  "alpha": 0.05,
+  "max_looks": 1,
+  "reward_bound": 1.1333679558887149e+23,
+  "artifact_schema": "rollout-ev-teacher-v1",
+  "counterfactual": true,
+  "online_decision": false,
+  "q_object": "Q^pi(s,a)|public_context,belief,continuation",
+  "finite_sample_estimate": true,
+  "real_wall_optimal": false,
+  "model_error_free": false,
+  "metadata": {
+    "source_game_seed": 242048,
+    "seat": 0,
+    "dealer": 0,
+    "you_cai_bi_kao": false,
+    "oracle": false,
+    "source_group": "seed:242048"
+  },
+  "context": {
+    "schema": "public-decision-context-v1",
+    "hero_seat": 0,
+    "dealer": 0,
+    "base": 1,
+    "you_cai_bi_kao": false,
+    "hand": [
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      1,
+      1,
+      0,
+      2,
+      1,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      2,
+      0,
+      1,
+      0,
+      1,
+      0,
+      0,
+      1,
+      1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0
+    ],
+    "drawn": 17,
+    "kong_draw": false,
+    "locked": 0,
+    "melds": [
+      [],
+      [],
+      [],
+      []
+    ],
+    "chows": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "discards": [
+      [],
+      [],
+      [],
+      []
+    ],
+    "visible": [
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      1,
+      1,
+      0,
+      2,
+      1,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      2,
+      0,
+      1,
+      0,
+      1,
+      0,
+      0,
+      1,
+      1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0
+    ],
+    "concealed_counts": [
+      14,
+      13,
+      13,
+      13
+    ],
+    "turn": 0,
+    "phase": "discard",
+    "freeze": 0,
+    "chain_counts": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "chain_piao_counts": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "chain_count": 0,
+    "chain_piao": 0,
+    "live_wall": 63,
+    "dead_wall": 20,
+    "react_seq": [],
+    "legal_actions": [
+      4,
+      6,
+      7,
+      9,
+      10,
+      13,
+      17,
+      19,
+      21,
+      24,
+      25,
+      29
+    ],
+    "fast_valid": true,
+    "rollout_valid": true,
+    "missing_fields": [],
+    "unsupported": [],
+    "provenance": {
+      "chain_count": "hero_game_state",
+      "concealed_counts": "public_phase_and_meld_count_derivation",
+      "hand": "hero_private_game_state",
+      "live_wall": "public_wall_length",
+      "opponent_chain": "unknown_not_read_from_game",
+      "visible": "derived_from_hero_hand_public_rivers_melds"
+    },
+    "input_hash": "c30a3c7aabb63434"
+  },
+  "profile": {
+    "name": "shape-v2",
+    "version": "shape-v2",
+    "scope": "discard",
+    "schema": "bot-ev-discard/profile-v1",
+    "reward_units": "base-score points",
+    "reward_name": "hero_round_settlement_delta",
+    "rules_version": "hangzhou-platform-guide-v21",
+    "belief_version": "uniform_unseen-v1",
+    "continuation_version": "frozen_shape_v1",
+    "kernel_version": "python-frontier-v1",
+    "tail_version": "zero-v1",
+    "horizon": 2,
+    "node_budget": 4096,
+    "time_budget_ms": 17.5,
+    "explanation": true,
+    "calibrated": false,
+    "calibration_fingerprint": "",
+    "calibration_kind": "none",
+    "calibration_intercept": 0.0,
+    "q0_shanten_weight": -1.0,
+    "q0_u1_weight": 0.01,
+    "q0_ev1_weight": 0.0,
+    "q0_ev2_weight": 1.0,
+    "q0_fan_weight": 0.0,
+    "q0_risk_weight": 0.0,
+    "tau": {},
+    "lut_buckets": [],
+    "min_bucket_samples": 64,
+    "fingerprint": "b21192d917d128cd"
+  },
+  "artifact_fingerprint": "6ad8f4c97e7b6a70c1452c69"
+}

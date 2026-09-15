@@ -150,6 +150,13 @@ def _compact_evaluation(evaluation, limit=3):
     """
     if evaluation is None:
         return None
+    try:
+        from mj.decision.report import sanitize_public
+        evaluation = sanitize_public(evaluation)
+    except Exception:
+        # Logging must never affect an already selected action.  The existing
+        # conversion below remains the compatibility fallback.
+        pass
     data = (evaluation.as_json() if hasattr(evaluation, "as_json")
             else dict(evaluation) if isinstance(evaluation, dict)
             else evaluation)
@@ -157,8 +164,9 @@ def _compact_evaluation(evaluation, limit=3):
         return data
     data = dict(data)
     candidates = data.get("candidates")
-    if not isinstance(candidates, list) or len(candidates) <= limit + 2:
+    if not isinstance(candidates, list):
         return data
+    data["candidate_count"] = len(candidates)
     keep = []
     selected = data.get("best_discard", data.get("selected"))
     if isinstance(data.get("selected"), dict):
@@ -167,16 +175,17 @@ def _compact_evaluation(evaluation, limit=3):
     legacy = data.get("legacy_best")
     for i, item in enumerate(candidates):
         ident = item.get("tile", item.get("action")) if isinstance(item, dict) else None
-        if ident in (selected, legacy) or (isinstance(item, dict)
-                                           and item.get("selected")):
+        if ((ident is not None and ident in (selected, legacy)) or
+                (isinstance(item, dict) and item.get("selected"))):
             if i not in keep:
                 keep.append(i)
+    max_total = len(keep) + max(0, int(limit))
     for i in range(len(candidates)):
-        if i not in keep and len(keep) < limit + 2:
+        if i not in keep and len(keep) < max_total:
             keep.append(i)
-    data["candidate_count"] = len(candidates)
-    data["candidates_truncated"] = True
-    data["candidates"] = [candidates[i] for i in keep]
+    if len(keep) < len(candidates):
+        data["candidates_truncated"] = True
+        data["candidates"] = [candidates[i] for i in keep]
     return data
 
 
@@ -2471,9 +2480,16 @@ class BotClient:
                     "evaluator_profile": evaluator,
                 })
                 try:
-                    from mj.hand_eval import profile_for
-                    meta_kwargs["evaluator_fingerprint"] = \
-                        profile_for(evaluator).fingerprint
+                    if evaluator in ("shape-v2", "shape_v2", "ev2"):
+                        from mj.decision.profile import ProfileSpec
+                        meta_kwargs["evaluator_fingerprint"] = \
+                            ProfileSpec.shape_v2_discard().fingerprint
+                        meta_kwargs["evaluator_kernel"] = \
+                            ProfileSpec.shape_v2_discard().kernel_version
+                    else:
+                        from mj.hand_eval import profile_for
+                        meta_kwargs["evaluator_fingerprint"] = \
+                            profile_for(evaluator).fingerprint
                 except Exception:
                     pass
             try:

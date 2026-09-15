@@ -182,6 +182,12 @@ class TestHandEvaluation(unittest.TestCase):
         self.assertTrue({7, 8}.issubset(
             {x["tile"] for x in compact["candidates"]}))
 
+        same = _compact_evaluation({"best_discard": 7,
+                                    "legacy_best": 7,
+                                    "candidates": [{"tile": i}
+                                                   for i in range(10)]})
+        self.assertEqual(len(same["candidates"]), 4)
+
     def test_explanation_flag_does_not_change_q0_result(self):
         hand = counts("123m456m789m123p5p")
         ctx = EvalContext(hand=hand, visible=tuple(hand))

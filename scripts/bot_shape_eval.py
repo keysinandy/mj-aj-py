@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Paired legacy/shape-v1 offline evaluation.
+"""Paired legacy/shape-v1/shape-v2 offline evaluation.
 
 The default seed plan is the one frozen in
 ``openspec/changes/bot-shape-aware-evaluation/artifacts/calibration_plan.json``.
@@ -38,7 +38,8 @@ def _play(seed, seat, dealer, ycbk, evaluator):
         current = g.current_seat()
         action = players[current](g, current)
         if action not in g.legal_actions():
-            action = choose_action(g, current, evaluator="legacy")
+            raise RuntimeError(
+                f"{evaluator} produced illegal action {action} at seed={seed}")
         g.step(action)
     score = float(g.scores[seat])
     win = bool(g.result and g.result[0] == seat)
@@ -61,8 +62,9 @@ def _bootstrap(values, rounds=2000, seed=20260913):
             "high": means[int(0.975 * (rounds - 1))]}
 
 
-def run(games=4096, seed_start=182048, ycbk=False):
-    warmup("shape-v1")
+def run(games=4096, seed_start=182048, ycbk=False, evaluator="shape-v1"):
+    if evaluator == "shape-v1":
+        warmup(evaluator)
     rows = []
     t0 = time.perf_counter()
     # Indexing by i gives all sixteen (seat, dealer) combinations equal
@@ -71,7 +73,7 @@ def run(games=4096, seed_start=182048, ycbk=False):
         seat, dealer = i % 4, (i // 4) % 4
         seed = seed_start + i
         old = _play(seed, seat, dealer, ycbk, "legacy")
-        new = _play(seed, seat, dealer, ycbk, "shape-v1")
+        new = _play(seed, seat, dealer, ycbk, evaluator)
         rows.append({"seed": seed, "seat": seat, "dealer": dealer,
                      "legacy": old, "shape": new,
                      "score_delta": new["score"] - old["score"],
@@ -80,6 +82,7 @@ def run(games=4096, seed_start=182048, ycbk=False):
     win = [r["win_delta"] for r in rows]
     return {
         "games": games, "seed_start": seed_start, "ycbk": bool(ycbk),
+        "evaluator": evaluator,
         "seat_dealer_combinations": 16,
         "score_delta": _bootstrap(score),
         "win_delta": _bootstrap(win),
@@ -96,9 +99,12 @@ def main(argv=None):
     ap.add_argument("--games", type=int, default=4096)
     ap.add_argument("--seed-start", type=int, default=182048)
     ap.add_argument("--you-cai-bi-kao", action="store_true")
+    ap.add_argument("--evaluator", choices=("shape-v1", "shape-v2"),
+                    default="shape-v1")
     ap.add_argument("--output")
     args = ap.parse_args(argv)
-    result = run(args.games, args.seed_start, args.you_cai_bi_kao)
+    result = run(args.games, args.seed_start, args.you_cai_bi_kao,
+                 args.evaluator)
     text = json.dumps(result, ensure_ascii=False, indent=2)
     print(text)
     if args.output:

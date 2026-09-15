@@ -1,0 +1,27 @@
+{
+  "schema": "bot-ev-discard/evaluation-plan-v1",
+  "frozen_at": "2026-09-15",
+  "source_group": "one source game/seed/room owns every decision, candidate, rotation and resample",
+  "splits": {
+    "train": {"seed_start": 240000, "games": 1024},
+    "validation": {"seed_start": 241024, "games": 1024},
+    "final_test": {"seed_start": 242048, "games": 8192}
+  },
+  "seat_dealer": {"combinations": 16, "schedule": "seat=i%4; dealer=(i//4)%4", "balanced": true},
+  "you_cai_bi_kao": [false, true],
+  "scopes": ["discard", "hu-piao", "all-root"],
+  "primary_scope": "discard",
+  "strategies": {"opponent": "legacy", "shape_v1": "shape-v1", "shape_v2": "shape-v2", "teacher": "rollout-v1"},
+  "filters": {
+    "require_legal_root": true,
+    "require_complete_context_for_teacher": true,
+    "exclude_ambiguous_hard_labels": true,
+    "exclude_failed_rollouts_from_valid_reward": true,
+    "retain_failed_and_unsupported_denominators": true,
+    "oracle": false
+  },
+  "sampling": {"n0": 32, "batch": 32, "nmax": 512, "seed_formula": "context_hash + belief_version + seed + sample_id", "resume": true},
+  "statistics": {"alpha": 0.05, "interval": "bounded simultaneous paired interval", "cluster": "source_game_seed", "bootstrap_rounds": 2000},
+  "expansion_rule": "increase a split only by 1024 before inspecting that split; never reuse an observed validation/final seed",
+  "release_gate": {"paired_game_pairs": 4096, "runs": 8192, "mean_score_ci_lower_gt": 0, "legacy_default_until_pass": true}
+}

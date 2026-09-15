@@ -237,6 +237,18 @@ def choose_shape_action(g, seat):
     return evaluate_reaction(g, seat)
 
 
+def choose_shape_v2_action(g, seat):
+    """Opt-in shape-v2 ordinary-discard evaluator.
+
+    The v2 scope is deliberately narrow in this first release.  HU/piao,
+    KONG, and reaction actions are delegated to the frozen legacy path and the
+    returned explanation records that delegation explicitly.
+    """
+    from .decision.fast_ev import choose_game_action
+    from .decision.profile import ProfileSpec
+    return choose_game_action(g, seat, ProfileSpec.shape_v2_discard())
+
+
 def choose_action(g, seat, evaluator="legacy", return_evaluation=False):
     """统一入口:返回该 seat 的动作。
 
@@ -244,8 +256,12 @@ def choose_action(g, seat, evaluator="legacy", return_evaluation=False):
     ``evaluator='shape-v1'`` opts into the shared shape evaluator; callers
     that need an explanation can additionally request ``return_evaluation``.
     """
-    if evaluator not in (None, "legacy", "shape-v1", "shape_v1", "shape"):
+    if evaluator not in (None, "legacy", "shape-v1", "shape_v1", "shape",
+                         "shape-v2", "shape_v2", "ev2"):
         raise ValueError(f"unknown evaluator profile: {evaluator}")
+    if evaluator in ("shape-v2", "shape_v2", "ev2"):
+        action, evaluation = choose_shape_v2_action(g, seat)
+        return (action, evaluation) if return_evaluation else action
     if evaluator not in (None, "legacy"):
         action, evaluation = choose_shape_action(g, seat)
         return (action, evaluation) if return_evaluation else action

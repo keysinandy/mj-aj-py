@@ -1,0 +1,12 @@
+{
+  "schema": "bot-ev-discard/rust-frontier-parity-v1",
+  "date": "2026-09-15",
+  "source": "rust/src/lib.rs",
+  "wheel": "/tmp/mj-kernel-wheels/mj_kernels-0.1.0-cp311-cp311-macosx_15_0_x86_64.whl",
+  "cases": 40,
+  "generator": "random.Random(seed) seed=0..39; valid 14-tile hands",
+  "comparison": "all legal distinct discards; shanten/ukeire_tiles/U1",
+  "result": "pass",
+  "runtime_default": "python-frontier-v1 because installed site wheel predates discard_frontier",
+  "prohibited_substitution": "never use best_future_discard for the v2 frontier"
+}

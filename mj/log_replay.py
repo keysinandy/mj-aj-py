@@ -144,6 +144,13 @@ def replay_game(recs, want_samples=True):
     return rep
 
 
+def offline_decision_report(recs, *, teacher_by_key=None, scope=None):
+    """Build additive counterfactual evidence from a replay's raw records."""
+    from .decision.report import build_offline_report
+    return build_offline_report(recs, teacher_by_key=teacher_by_key,
+                                scope=scope)
+
+
 def _on_event(rep, mirror, ev):
     et = ev.get("type")
     if et == EV_HU and ev.get("seat") == mirror.me:
@@ -211,13 +218,23 @@ def _on_decision(rep, mirror, r, want_samples, ok_ids):
         return
     if not want_samples or r.get("id") not in ok_ids:
         return
-    planes, scalars = extract(g, mirror.me)
+    planes, scalars = extract(g, mirror.me, oracle=False)
     rep["samples"].append({
         "planes": planes, "scalars": scalars,
         "mask": legal_mask(g),
         "action_flat": action_to_flat(r["action"]),
         "seq": r.get("seq"), "round_no": mirror.round_no,
         "decision_id": r.get("id"),
+        "context_hash": (r.get("input_hash") or
+                         (r.get("evaluation") or {}).get("context_hash", "")),
+        "label_source": "online_submitted",
+        "evaluator": (r.get("evaluation") or {}).get(
+            "profile", (rep.get("meta") or {}).get("evaluator", "unknown")),
+        "scope": (r.get("evaluation") or {}).get("scope", "discard"),
+        "teacher_confidence": float("nan"),
+        "teacher_ev": float("nan"),
+        "oracle": False,
+        "counterfactual": False,
     })
 
 

@@ -56,8 +56,13 @@ def collect(paths, mode=None):
     return out, skipped
 
 
-def write_shards(collected, out_dir, per_shard=200):
-    """样本 → npz 分片(与 bc_data 同构;跨局拼接)。"""
+def write_shards(collected, out_dir, per_shard=200, *, metadata=False):
+    """样本 → npz 分片(与 bc_data 同构;跨局拼接)。
+
+    ``metadata=True`` adds the versioned provenance arrays.  The default keeps
+    the six-array layout readable by older training jobs; the CLI always
+    enables the new contract.
+    """
     os.makedirs(out_dir, exist_ok=True)
     flat = []
     for samples, scores, seat in collected:
@@ -69,18 +74,44 @@ def write_shards(collected, out_dir, per_shard=200):
         path = os.path.join(out_dir, f"shard_{k:05d}.npz")
         planes = np.asarray([s["planes"] for s, _, _ in part],
                             dtype=np.float16)
+        data = {
+            "planes": planes,
+            "scalars": np.asarray([s["scalars"] for s, _, _ in part],
+                                  dtype=np.float32),
+            "mask": np.asarray([s["mask"] for s, _, _ in part],
+                                dtype=np.bool_),
+            "action": np.asarray([s["action_flat"] for s, _, _ in part],
+                                  dtype=np.int16),
+            "seat": np.asarray([seat for _, _, seat in part], dtype=np.int8),
+            "score": np.asarray([scores for _, scores, _ in part],
+                                 dtype=np.int32),
+        }
+        if metadata:
+            data.update({
+                "context_hash": np.asarray([
+                    s.get("context_hash", "") for s, _, _ in part], dtype="U16"),
+                "label_source": np.asarray([
+                    s.get("label_source", "online_submitted") for s, _, _ in part],
+                    dtype="U32"),
+                "evaluator": np.asarray([
+                    s.get("evaluator", "unknown") for s, _, _ in part], dtype="U24"),
+                "scope": np.asarray([
+                    s.get("scope", "discard") for s, _, _ in part], dtype="U16"),
+                "teacher_confidence": np.asarray([
+                    s.get("teacher_confidence", np.nan) for s, _, _ in part],
+                    dtype=np.float32),
+                "teacher_ev": np.asarray([
+                    s.get("teacher_ev", np.nan) for s, _, _ in part],
+                    dtype=np.float32),
+                "oracle": np.asarray([
+                    s.get("oracle", False) for s, _, _ in part], dtype=np.bool_),
+                "counterfactual": np.asarray([
+                    s.get("counterfactual", False) for s, _, _ in part],
+                    dtype=np.bool_),
+            })
         np.savez(
             path,
-            planes=planes,
-            scalars=np.asarray([s["scalars"] for s, _, _ in part],
-                               dtype=np.float32),
-            mask=np.asarray([s["mask"] for s, _, _ in part],
-                            dtype=np.bool_),
-            action=np.asarray([s["action_flat"] for s, _, _ in part],
-                              dtype=np.int16),
-            seat=np.asarray([seat for _, _, seat in part], dtype=np.int8),
-            score=np.asarray([scores for _, scores, _ in part],
-                             dtype=np.int32),
+            **data,
         )
         yield path, len(part)
     return n_shards
@@ -94,6 +125,8 @@ def main(argv=None):
     ap.add_argument("--mode", default="all",
                     choices=("all", "match", "test"),
                     help="对局来源过滤:match=自由对战,test=其他(含存量)")
+    ap.add_argument("--legacy-layout", action="store_true",
+                    help="兼容旧的六数组 NPZ 布局(默认写入元数据)")
     args = ap.parse_args(argv)
     paths = sorted(glob.glob(os.path.join(args.root, "**", "*.jsonl"),
                              recursive=True))
@@ -103,7 +136,8 @@ def main(argv=None):
     collected, skipped = collect(paths,
                                  mode=None if args.mode == "all" else args.mode)
     total = 0
-    for path, n in write_shards(collected, args.out, args.per_shard):
+    for path, n in write_shards(collected, args.out, args.per_shard,
+                                metadata=not args.legacy_layout):
         total += n
         print(f"{path}: {n} 样本")
     print(f"共 {total} 样本 ({len(collected)}/{len(paths)} 局干净, "

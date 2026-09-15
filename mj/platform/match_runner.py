@@ -47,7 +47,7 @@ def main(argv=None):
     ap.add_argument("--strategy", default="policy",
                     choices=("policy", "bot", "random"))
     ap.add_argument("--bot-evaluator", default="legacy",
-                    choices=("legacy", "shape-v1"),
+                    choices=("legacy", "shape-v1", "shape-v2"),
                     help="strategy=bot 时的评价器(默认 legacy)")
     ap.add_argument("--ckpt", default="runs/ppo4/ckpt_350000.pt",
                     help="policy 策略 checkpoint(BC best.pt 或 PPO ckpt)")

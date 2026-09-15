@@ -28,6 +28,15 @@ struct FutureDiscard {
     total: i64,
 }
 
+/// Python-facing row for the all-candidate discard frontier.
+#[derive(Clone)]
+struct FrontierRow {
+    discard: usize,
+    shanten: i32,
+    tiles: Vec<usize>,
+    total: i64,
+}
+
 /// 未分配自然牌张数 → 该侧最多还能节省的向听数(保守下界,Python
 /// shanten.py 同表;rem ∈ [0,14])。
 const SAVE: [i32; 15] = [0, 0, 1, 2, 2, 3, 4, 4, 5, 6, 6, 7, 8, 8, 9];
@@ -386,6 +395,43 @@ fn best_future_discard_impl_with_cache(
     }))
 }
 
+fn discard_frontier_impl(
+    counts: &[i32; 34],
+    locked: i32,
+    visible: Option<&[i32; 34]>,
+    legal: Option<&[usize]>,
+    include_tiles: bool,
+) -> Result<Vec<FrontierRow>, String> {
+    let mut rows = Vec::new();
+    let mut cache = HashMap::new();
+    let tiles: Vec<usize> = match legal {
+        Some(values) => values.to_vec(),
+        None => (0..34).filter(|&t| counts[t] > 0).collect(),
+    };
+    for discard in tiles {
+        if discard >= 34 || counts[discard] <= 0 {
+            return Err("legal discard is absent from hand".to_string());
+        }
+        let mut child = *counts;
+        child[discard] -= 1;
+        let child_s = wildcard_shanten(&child, locked, &mut cache)?;
+        let (draw_tiles, total) = if let Some(view) = visible {
+            let value = ukeire_impl(&child, locked, Some(view))?;
+            (value.1, value.2)
+        } else {
+            let value = ukeire_impl(&child, locked, None)?;
+            (value.1, value.2)
+        };
+        rows.push(FrontierRow {
+            discard,
+            shanten: child_s,
+            tiles: if include_tiles { draw_tiles } else { Vec::new() },
+            total,
+        });
+    }
+    Ok(rows)
+}
+
 /// 在一张摸牌后的手牌中，找出最低向听的立即弃牌及其 p1。
 ///
 /// Python 前瞻原先先在 Python 侧枚举每张可弃牌，再逐个跨 FFI 调用
@@ -423,6 +469,37 @@ fn best_future_discard(
     }
 }
 
+/// Enumerate every legal distinct discard.  Unlike best_future_discard this
+/// intentionally does not apply the old minimum-shanten filter or wildcard
+/// protection; the Python layer decides how a complete value model ranks the
+/// returned rows.
+#[pyfunction(signature = (counts, locked=0, visible=None, legal_discards=None, include_tiles=true))]
+fn discard_frontier(
+    counts: Vec<i32>,
+    locked: i32,
+    visible: Option<Vec<i32>>,
+    legal_discards: Option<Vec<i32>>,
+    include_tiles: bool,
+) -> PyResult<Vec<(i32, i32, Vec<i32>, i64)>> {
+    let arr = to_arr(counts)?;
+    let vis = match visible {
+        Some(v) => Some(to_arr(v)?),
+        None => None,
+    };
+    let legal = legal_discards.map(|values| {
+        values.into_iter().map(|t| t as usize).collect::<Vec<_>>()
+    });
+    let rows = discard_frontier_impl(
+        &arr, locked, vis.as_ref(), legal.as_deref(), include_tiles)
+        .map_err(PyValueError::new_err)?;
+    Ok(rows.into_iter().map(|row| (
+        row.discard as i32,
+        row.shanten,
+        row.tiles.into_iter().map(|t| t as i32).collect(),
+        row.total,
+    )).collect())
+}
+
 fn to_arr(counts: Vec<i32>) -> PyResult<[i32; 34]> {
     counts
         .try_into()
@@ -455,5 +532,6 @@ fn mj_kernels(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(shanten, m)?)?;
     m.add_function(wrap_pyfunction!(ukeire, m)?)?;
     m.add_function(wrap_pyfunction!(best_future_discard, m)?)?;
+    m.add_function(wrap_pyfunction!(discard_frontier, m)?)?;
     Ok(())
 }

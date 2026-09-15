@@ -16,14 +16,18 @@ logical_state_requests、physical_state_attempts、候选替代和发送前取�
 
 离线麻将复盘调试器见 [docs/replay-debugger.md](docs/replay-debugger.md)。它将本地日志、独立服务端时间线和可选执行 trace 编译为只读 JSON 与单文件 React + shadcn/ui 页面；trace 默认关闭，使用 `python3 -m mj.replay_debugger <gid-or-jsonl> --out replay-output/<gid>` 导出。
 
+shape-v2 的公开上下文、积分 EV2、离线 rollout teacher 和 BC provenance 见
+[docs/bot-ev-discard.md](docs/bot-ev-discard.md)；在离线/线上闸门全部通过前保持
+opt-in，legacy 仍是默认策略。
+
 ## 环境
 
 ```bash
 # Python 3.11;依赖:torch、numpy、stable-baselines3 + sb3-contrib(RL 用)、pytest
 pip install torch numpy stable-baselines3 sb3-contrib pytest
 
-# 离线全量测试(165 个,无需内网)
-python3 -m pytest tests/ -q
+# 离线全量测试(无需内网)
+python3 -m pytest tests/ -q -p no:cacheprovider
 ```
 
 ## 运行测试房(实弹对弈)

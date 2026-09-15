@@ -251,10 +251,18 @@ try:
 except (ImportError, AttributeError):
     _rust_best_future_discard = None
 
+try:
+    from mj_kernels import discard_frontier as _rust_discard_frontier
+except (ImportError, AttributeError):
+    _rust_discard_frontier = None
+
 
 FUTURE_DISCARD_KERNEL_VERSION = (
     "rust-batch-v1" if _rust_best_future_discard is not None
     else "python-fallback")
+DISCARD_FRONTIER_KERNEL_VERSION = (
+    "rust-frontier-v1" if _rust_discard_frontier is not None
+    else "python-frontier-v1")
 
 _FORCE_PY = os.environ.get("MJ_KERNELS", "").lower() == "python"
 
@@ -292,6 +300,23 @@ def best_future_discard(counts, locked=0, visible=None, include_tiles=True):
         if not include_tiles and result is not None:
             return (result[0], result[1], [], result[3])
         return result
+
+
+def discard_frontier(counts, locked=0, visible=None, legal_discards=None,
+                     include_tiles=True):
+    """Optional Rust batch for every legal discard.
+
+    ``None`` is an intentional capability signal.  The decision layer owns
+    the semantic Python fallback and must never substitute the old
+    min-shanten ``best_future_discard`` result.
+    """
+    if _rust_discard_frontier is None or _FORCE_PY:
+        return None
+    try:
+        return _rust_discard_frontier(
+            counts, locked, visible, legal_discards, include_tiles)
+    except (TypeError, ValueError):
+        return None
 
 
 def _left(t, vis):

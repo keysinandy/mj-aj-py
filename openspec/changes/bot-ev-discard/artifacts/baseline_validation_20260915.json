@@ -1,0 +1,53 @@
+{
+  "schema": "bot-ev-discard/baseline-validation-v1",
+  "captured_at": "2026-09-15",
+  "baseline": "917e7f845b7e364dbbea6cb1fa3546151b7cf27e",
+  "new_evidence": {
+    "focused_tests": {
+      "command": "python3 -m pytest tests/test_hand_eval.py tests/test_bot.py tests/test_shanten.py tests/test_game.py tests/test_features.py tests/test_bc_pipeline.py -q -p no:cacheprovider",
+      "passed": 105,
+      "skipped": 1,
+      "status": "passed"
+    },
+    "full_tests": {
+      "command": "python3 -m pytest tests/ -q -p no:cacheprovider",
+      "passed": 441,
+      "skipped": 1,
+      "subtests": 9,
+      "elapsed_s": 132.32,
+      "status": "passed"
+    },
+    "rust_parity": {
+      "command": "python3 scripts/rust_parity.py --n 100 --bench 500",
+      "shanten_cases": 3000,
+      "ukeire_cases": 3000,
+      "shanten_speedup": 41.3,
+      "ukeire_speedup": 106.8,
+      "status": "passed"
+    },
+    "shape_v1_perf": {
+      "command": "python3 scripts/bot_shape_perf.py --games 200 --seed-start 190000 --evaluator shape-v1",
+      "games": 200,
+      "discard": {"n": 7860, "mean_ms": 19.41699, "p50_ms": 19.06234, "p95_ms": 25.31030, "p99_ms": 36.38017, "max_ms": 144.29514},
+      "react": {"n": 29486, "mean_ms": 0.26296, "p50_ms": 0.05769, "p95_ms": 1.65113, "p99_ms": 4.20550, "max_ms": 53.65940},
+      "levels": {"discard": {"Q0": 6836, "Q": 366, "legacy": 658}, "react": {"Q0": 0, "Q": 0, "legacy": 27773}},
+      "fallbacks": {"time_budget": 7274, "q_incomplete": 1712},
+      "status": "diagnostic_only"
+    }
+  },
+  "historical_evidence": {
+    "paired_4096": {
+      "source": "openspec/changes/archive/2026-09-15-bot-shape-aware-evaluation/artifacts/verification_20260913.json",
+      "status": "not_available_as_a_completed_release_gate",
+      "note": "The archived verification contains a 16-game smoke pair, not the required 4096 paired games."
+    },
+    "online": {
+      "source": "openspec/changes/archive/2026-09-15-bot-shape-aware-evaluation/artifacts/online_run_20260914_a30361c544db9.json",
+      "command": "PYTHONPATH=. python -m mj.platform.match_runner --games 10 --strategy bot --state-rate 15 --bot-evaluator shape-v1",
+      "games": 10,
+      "status": "historical_not_revalidated",
+      "known_limit": "protocol-skipped round-boundary segments retained; not an EV-v2 release result"
+    }
+  },
+  "release_status": "legacy_default; no v2 release claim"
+}

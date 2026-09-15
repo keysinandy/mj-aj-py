@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic local timing probe for legacy vs shape-v1 decisions."""
+"""Deterministic local timing probe for legacy/shape-v1/shape-v2 decisions."""
 
 from __future__ import annotations
 
@@ -41,6 +41,12 @@ def run(games=200, seed_start=190000, evaluator="shape-v1"):
             start = time.perf_counter()
             result = choose_action(g, g.current_seat(), evaluator=evaluator,
                                    return_evaluation=True)
+            # Include the actual JSON-compatible explanation construction in
+            # the decision budget accounting; this must not trigger a second
+            # search.
+            if isinstance(result, tuple) and len(result) == 2:
+                json.dumps(result[1], ensure_ascii=False, separators=(",", ":"),
+                           default=str)
             elapsed_ms = (time.perf_counter() - start) * 1000.0
             act, ev = result if isinstance(result, tuple) else (result, None)
             if act not in g.legal_actions():
@@ -89,7 +95,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--games", type=int, default=200)
     ap.add_argument("--seed-start", type=int, default=190000)
-    ap.add_argument("--evaluator", choices=("legacy", "shape-v1"),
+    ap.add_argument("--evaluator", choices=("legacy", "shape-v1", "shape-v2"),
                     default="shape-v1")
     args = ap.parse_args(argv)
     print(json.dumps(run(args.games, args.seed_start, args.evaluator),

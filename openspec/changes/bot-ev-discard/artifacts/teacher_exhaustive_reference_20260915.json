@@ -1,0 +1,23 @@
+{
+  "schema": "bot-ev-discard/teacher-exhaustive-reference-v1",
+  "frozen_at": "2026-09-15",
+  "context_hash": "d8953482793af110",
+  "config_fingerprint": "23bf900e98a27168",
+  "domain": {
+    "sample_ids": [0, 1, 2, 3],
+    "root_actions": [0, 5],
+    "reward_rule": "action 0 = sample_id; action 5 = sample_id + 10"
+  },
+  "expected": {
+    "best_action": 5,
+    "runner_up": 0,
+    "candidate_ev": {"5": 11.5, "0": 1.5},
+    "paired_delta": {"n": 4, "mean": 10.0, "variance": 0.0,
+                      "paired_sample_ids": [0, 1, 2, 3]},
+    "ambiguous": true,
+    "stop_reason": "nmax"
+  },
+  "assertion": "tests/test_bot_ev_discard.py::BotEvDiscardTests::test_teacher_small_exhaustive_reference_and_resume",
+  "offline_only": true,
+  "oracle": false
+}
