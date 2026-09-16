@@ -562,6 +562,25 @@ def freeze_source_splits(source_groups: Iterable[str], *, seed=0,
                    "final-test") for index, group in enumerate(ordered)}
 
 
+def merge_datasets(datasets: Iterable[SearchDataset]):
+    """Merge shards, deduplicating by work id and rejecting conflicts."""
+    by_work = {}
+    for dataset in datasets:
+        for sample in dataset.samples:
+            key = sample.work_id
+            existing = by_work.get(key)
+            if existing is None:
+                by_work[key] = sample
+                continue
+            if existing.as_json()["fingerprint"] != sample.as_json()["fingerprint"]:
+                raise ValueError(
+                    f"conflicting rows for work id {key} "
+                    f"({existing.source_group})")
+    return SearchDataset(sorted(
+        by_work.values(), key=lambda sample: (sample.source_group,
+                                              sample.work_id)))
+
+
 def write_search_dataset(path, dataset: SearchDataset | Iterable[SearchSample],
                          *, include_features=True):
     if not isinstance(dataset, SearchDataset):

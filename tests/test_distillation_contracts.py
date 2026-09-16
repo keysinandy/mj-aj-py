@@ -254,6 +254,17 @@ class TestSpecialStateTags(unittest.TestCase):
 
 
 class TestDatasetQuality(unittest.TestCase):
+    def test_merge_datasets_dedupes_and_rejects_conflicts(self):
+        from mj.training.search_data import merge_datasets
+
+        first = SearchDataset([_sample("a"), _sample("b")])
+        second = SearchDataset([_sample("b")])
+        merged = merge_datasets([first, second])
+        self.assertEqual(len(merged), 2)
+        conflict = replace(_sample("b"), root_value=99.0)
+        with self.assertRaises(ValueError):
+            merge_datasets([first, SearchDataset([conflict])])
+
     def test_work_id_is_stable_and_generation_independent(self):
         first = _sample(generation=0)
         second = _sample(generation=3)

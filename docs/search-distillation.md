@@ -209,3 +209,44 @@ Experiment order is one variable per run: E0 baseline → E1 active sampling
 → E2 ranking loss → E3 both → E4 replay → E5 hard set → E6 catastrophic /
 weighting refinements. Top-1 accuracy is diagnostic; dashboards lead with
 mean/p95 regret, catastrophic rate, special-state regret and teacher cost.
+
+## Multi-machine generation
+
+Games are independent and deterministic, so generation shards by seed window
+and merges cleanly. Keep the same code revision, budget profile and
+belief/search profiles on every machine, and use one `--out` +
+`--teacher-cache-dir` per machine (no shared writes):
+
+```bash
+# machine A (train seeds 240000-240511)
+PYTHONPATH=. python3 scripts/search_teacher_generate.py \
+  --out data/distill/shard_a.jsonl --seed-start 240000 --games 512 \
+  --ycbk off --workers "$(nproc)" \
+  --policy-source heuristic:shape-v1 \
+  --budget-json openspec/changes/search-teacher-distillation-bc/artifacts/teacher_budget_reduced_gen0.json \
+  --teacher-cache-dir data/distill/cache_a
+
+# machine B (train seeds 240512-241023)
+PYTHONPATH=. python3 scripts/search_teacher_generate.py \
+  --out data/distill/shard_b.jsonl --seed-start 240512 --games 512 \
+  --ycbk off --workers "$(nproc)" \
+  --policy-source heuristic:shape-v1 \
+  --budget-json openspec/changes/search-teacher-distillation-bc/artifacts/teacher_budget_reduced_gen0.json \
+  --teacher-cache-dir data/distill/cache_b
+
+# merge (dedupes by work_id, rejects conflicting fingerprints)
+PYTHONPATH=. python3 scripts/search_dataset_merge.py \
+  --data "data/distill/shard_*.jsonl" --out data/distill/dataset0.jsonl \
+  --manifest-out data/distill/dataset0.manifest.json
+```
+
+Source-group splits derive from the seed ranges, so windows inside
+`240000..241023` stay in `train` and merging cannot leak validation/final
+test. Reference generation shards the same way (`--reference-out` plus a
+per-machine `--seed-start/--games` window, or distinct `--limit-specs`
+windows); concatenate the reference JSONL files.
+
+Training stays single-machine: 10k–50k rows is minutes on the GPU, while
+teacher search is the CPU bottleneck by orders of magnitude. Distributed
+training is not implemented and is not needed at this scale.
+
