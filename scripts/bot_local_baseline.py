@@ -226,6 +226,7 @@ def _run_rollout_teacher(view, seat, config):
     envelopes = _teacher_envelopes(context)
     profile = ProfileSpec.shape_v2_all_root(
         calibrated=True, explanation=False,
+        horizon=config["shape_v2_horizon"],
         node_budget=config["teacher_node_budget"],
         time_budget_ms=config["teacher_time_budget_ms"])
     teacher = PairedTeacher(
@@ -263,6 +264,7 @@ def _run_shape_v2(view, seat, config):
     context = _public_context(view, seat)
     profile = ProfileSpec.shape_v2_all_root(
         calibrated=True, explanation=False,
+        horizon=config["shape_v2_horizon"],
         # The all-root transaction must retain a comparable value for every
         # ordinary discard before it can rank HU/KONG/reaction actions.  The
         # production discard evaluator may safely prune by a derived upper
@@ -416,14 +418,14 @@ def _finish_stats(stats):
     }
 
 
-def run(games=500, seed_start=2026091600, *, you_cai_bi_kao=False,
-        output=None, config=None, stop_on_error=False):
+def run(games=500, seed_start=2026091600, *, index_start=0,
+        you_cai_bi_kao=False, output=None, config=None, stop_on_error=False):
     config = dict(config or {})
     defaults = {
         # The teacher is deliberately fixed and visible in the report.  Its
         # continuation is explicitly legacy, not a fallback chosen by this
         # harness, and its root action is still selected by PairedTeacher.
-        "teacher_n0": 1, "teacher_batch": 1, "teacher_nmax": 1,
+        "teacher_n0": 32, "teacher_batch": 32, "teacher_nmax": 512,
         "teacher_alpha": 0.05,
         "teacher_node_budget": 100000, "teacher_time_budget_ms": 5000.0,
         # These budgets are only used by the benchmark adapter.  The ordinary
@@ -434,12 +436,14 @@ def run(games=500, seed_start=2026091600, *, you_cai_bi_kao=False,
         "shape_v1_react_time_budget_ms": 1000.0,
         "shape_v2_node_budget": 200000,
         "shape_v2_time_budget_ms": 2000.0,
+        "shape_v2_horizon": 2,
     }
     defaults.update(config)
     stats = {kind: _new_bot_stats() for kind in BOT_TYPES}
     rows = []
     started = time.perf_counter()
-    for index in range(int(games)):
+    for local_index in range(int(games)):
+        index = int(index_start) + local_index
         mapping, dealer = _assignment(index)
         seed = int(seed_start) + index
         game = Game(seed=seed, dealer=dealer,
@@ -541,6 +545,7 @@ def run(games=500, seed_start=2026091600, *, you_cai_bi_kao=False,
         "schema": "bot-local-mixed-score-performance-v1",
         "workload": {
             "games_requested": int(games), "seed_start": int(seed_start),
+            "index_start": int(index_start),
             "you_cai_bi_kao": bool(you_cai_bi_kao),
             "bot_types": list(BOT_TYPES),
             "mixed_seats_per_game": True,
@@ -573,16 +578,27 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="本地四类 BOT 对局基线")
     parser.add_argument("--games", type=int, default=500)
     parser.add_argument("--seed-start", type=int, default=2026091600)
+    parser.add_argument("--index-start", type=int, default=0)
     parser.add_argument("--you-cai-bi-kao", action="store_true")
+    parser.add_argument("--teacher-n0", type=int, default=32)
+    parser.add_argument("--teacher-batch", type=int, default=32)
+    parser.add_argument("--teacher-nmax", type=int, default=512)
+    parser.add_argument("--shape-v2-horizon", type=int, default=2)
     parser.add_argument(
         "--output",
         default="openspec/changes/bot-ev-tight-bound-racing/artifacts/"
-                "bot_local_mixed_20260916.json")
+                "bot_local_mixed_correct_20260916.json")
     parser.add_argument("--stop-on-error", action="store_true")
     args = parser.parse_args(argv)
-    value = run(args.games, args.seed_start,
+    value = run(args.games, args.seed_start, index_start=args.index_start,
                 you_cai_bi_kao=args.you_cai_bi_kao,
-                output=args.output, stop_on_error=args.stop_on_error)
+                output=args.output, stop_on_error=args.stop_on_error,
+                config={
+                    "teacher_n0": args.teacher_n0,
+                    "teacher_batch": args.teacher_batch,
+                    "teacher_nmax": args.teacher_nmax,
+                    "shape_v2_horizon": args.shape_v2_horizon,
+                })
     print(json.dumps({
         "schema": value["schema"],
         "git_revision": value["runtime"]["git_revision"],
