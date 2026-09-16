@@ -11,6 +11,7 @@ from pathlib import Path
 from mj.training.distillation_profile import SearchDistillationProfile
 from mj.training.search_bc_train import (
     SearchBCTrainProfile,
+    aggregate_version,
     build_training_rows,
     train_search_bc,
     write_training_manifest,
@@ -115,11 +116,17 @@ def main(argv=None):
     teacher_budget = provenance.get("teacher_budget")
     tbf = (teacher_budget.get("fingerprint")
            if isinstance(teacher_budget, dict) else "")
-    spf = _unique((sample.search_fingerprint
-                   for sample in train_dataset.samples), "search fingerprints")
+    population = provenance.get("population")
+    population_fingerprint = (population.get("fingerprint")
+                              if isinstance(population, dict) else "")
+    spf = aggregate_version((sample.search_fingerprint
+                     for sample in train_dataset.samples), "search fingerprints")
+    opponent_versions = aggregate_version(
+        (sample.opponent_policy_version
+         for sample in train_dataset.samples), "opponent versions")
     profile = SearchDistillationProfile(
         generation=args.generation,
-        policy_version_source=_unique(
+        policy_version_source=aggregate_version(
             (sample.policy_version_source
              for sample in train_dataset.samples), "policy source versions"),
         teacher_budget_fingerprint=str(tbf or ""),
@@ -127,9 +134,8 @@ def main(argv=None):
             provenance.get("feature_contract_fingerprint", "")),
         belief_profile_fingerprint=str(bff or ""),
         search_profile_fingerprint=spf,
-        opponent_population_fingerprint=_unique(
-            (sample.opponent_policy_version
-             for sample in train_dataset.samples), "opponent versions"),
+        opponent_population_fingerprint=str(
+            population_fingerprint or opponent_versions),
         leaf_version=_unique((sample.leaf_version
                               for sample in train_dataset.samples),
                              "leaf versions"),

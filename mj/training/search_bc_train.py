@@ -76,6 +76,21 @@ class SearchBCTrainProfile:
         return value
 
 
+def aggregate_version(values, field):
+    """Single version string for one source, aggregate digest for D0+D1.
+
+    Aggregating DAgger generations (or seat-rotated opponent provenance)
+    legitimately mixes version strings; the profile records a stable digest
+    instead of rejecting the dataset.
+    """
+    values = sorted({str(value) for value in values if str(value)})
+    if not values:
+        raise ValueError(f"dataset has no {field}")
+    if len(values) == 1:
+        return values[0]
+    return f"aggregate:{fingerprint({'field': field, 'values': values}, 24)}"
+
+
 @dataclass
 class TrainingRow:
     work_id: str

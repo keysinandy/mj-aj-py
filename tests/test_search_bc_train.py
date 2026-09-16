@@ -16,6 +16,7 @@ from mj.training.policy_value_train import (
 )
 from mj.training.search_bc_train import (
     SearchBCTrainProfile,
+    aggregate_version,
     augment_parity_row,
     build_training_rows,
     train_search_bc,
@@ -114,6 +115,25 @@ class TestUnitSafeWeight(unittest.TestCase):
         self.assertFalse(is_usable_sample(_sample(status="failed")))
         self.assertFalse(is_usable_sample(_sample(status="unsupported")))
         self.assertFalse(is_usable_sample(_sample(simulations=0)))
+
+
+class TestAggregateVersion(unittest.TestCase):
+    def test_single_source_is_passthrough(self):
+        self.assertEqual(aggregate_version(["pi1"], "policy version"), "pi1")
+        self.assertEqual(aggregate_version(["pi1", "pi1"], "policy version"),
+                         "pi1")
+
+    def test_mixed_sources_get_a_stable_digest(self):
+        first = aggregate_version(["pi0", "pi1"], "policy version")
+        second = aggregate_version(["pi1", "pi0"], "policy version")
+        self.assertEqual(first, second)
+        self.assertTrue(first.startswith("aggregate:"))
+        self.assertNotEqual(first, aggregate_version(["pi0", "pi2"],
+                                                     "policy version"))
+
+    def test_empty_is_rejected(self):
+        with self.assertRaises(ValueError):
+            aggregate_version([], "policy version")
 
 
 class TestTrainingRowsAndRows(unittest.TestCase):
