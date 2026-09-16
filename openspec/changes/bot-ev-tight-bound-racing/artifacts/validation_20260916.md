@@ -57,6 +57,41 @@ This fixture demonstrates the bound reduction but does not claim a speed or
 release-gate improvement; the observed pruning rate and rollout count remain
 the measured result for this small sample only.
 
+## Local 500-game mixed BOT baseline
+
+Command:
+
+```text
+.venv/bin/python scripts/bot_local_baseline.py \
+  --games 500 --seed-start 2026091600 \
+  --output openspec/changes/bot-ev-tight-bound-racing/artifacts/bot_local_mixed_20260916.json
+```
+
+The workload assigns one of each BOT type to every game and rotates seats and
+dealer position.  The rollout teacher uses one fixed public-context sample per
+decision with its explicitly configured legacy continuation; this continuation
+is not a harness fallback.  The all-root shape-v2 benchmark profile uses an
+unknown bound mode so every ordinary root candidate remains comparable, with
+no substitute action on evaluator incompleteness.
+
+| BOT | score total | score mean | wins | draws | decisions | decision mean ms | decision p95 ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| rollout-teacher | `-2303` | `-4.606` | `9` | `13` | `22616` | `24.2163` | `109.6175` |
+| shape-v2 | `-174` | `-0.348` | `120` | `13` | `22679` | `3.5695` | `18.4852` |
+| shape-v1 | `1139` | `2.278` | `185` | `13` | `22674` | `4.2328` | `26.4956` |
+| legacy | `1338` | `2.676` | `173` | `13` | `22566` | `0.0386` | `0.2091` |
+
+All `500/500` games were valid, all per-game scores conserved to zero, and
+all four BOT types received each seat `125` times.  Harness fallback count was
+zero for every BOT, hidden-state access count was zero, and no sensitive hand,
+wall, RNG, or world fields were written to the per-game artifact.  Native
+evaluator branches remain separately visible: shape-v2 had `16391`
+`only_legal_action` delegations; shape-v1 had `263` explicit legacy-level
+decisions (including `185` `hu_or_piao_legacy`).
+
+Artifact: `bot_local_mixed_20260916.json`, git revision
+`6ef04c55235a6aef7771628e7961ca4c89a200e1`.
+
 ## Schema validation
 
 ```text
