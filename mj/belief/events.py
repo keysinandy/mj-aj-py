@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import copy
+from functools import cached_property
 import hashlib
 import json
 from typing import Any, Iterable, Mapping
@@ -84,7 +85,6 @@ class PublicEvent:
     round_no: int | None = None
     seq: int | None = None
     log_format: str | None = None
-    event_hash: str = field(init=False)
 
     def __post_init__(self):
         if self.schema != "public-event-v1":
@@ -105,10 +105,24 @@ class PublicEvent:
                 raise ValueError("legal_actions_before must contain unique actions")
             object.__setattr__(self, "legal_actions_before", actions)
         object.__setattr__(self, "provenance", _json_safe(self.provenance))
-        object.__setattr__(self, "event_hash", fingerprint(self.semantic_payload(), 24))
 
+    @cached_property
+    def event_hash(self) -> str:
+        """Semantic event identity, computed on first use.
+
+        Simulation rollouts create many events that are never serialized, so
+        eager hashing would double the cost of every simulated step.  The
+        value is a pure function of the immutable fields.
+        """
+        return fingerprint(self.semantic_payload, 24)
+
+    @cached_property
     def semantic_payload(self) -> dict[str, Any]:
-        """Fields that can change observable semantics, excluding log identity."""
+        """Fields that can change observable semantics, excluding log identity.
+
+        Cached because every history hash re-reads all prior events; the
+        event is immutable so the payload cannot change after construction.
+        """
         return {
             "schema": self.schema,
             "event_type": self.event_type,
@@ -244,12 +258,14 @@ class InformationHistory:
         object.__setattr__(self, "incomplete_reasons", tuple(sorted({str(x) for x in
                                                                      (self.incomplete_reasons or ())})))
 
-    @property
+    @cached_property
     def history_hash(self) -> str:
         # Event order is preserved by the list.  Do not sort this payload.
+        # Cached per immutable instance: search re-reads the hash while a
+        # history object is shared by node keys, belief and reports.
         return fingerprint({
             "schema": self.schema,
-            "events": [event.semantic_payload() for event in self.events],
+            "events": [event.semantic_payload for event in self.events],
             "history_incomplete": self.history_incomplete,
             "incomplete_reasons": self.incomplete_reasons,
         }, 32)
@@ -258,21 +274,35 @@ class InformationHistory:
     def fingerprint(self):
         return self.history_hash
 
+    def _derived(self, *, events, history_incomplete=None,
+                 incomplete_reasons=None):
+        """Build an appended/marked history without re-normalizing events.
+
+        ``events`` must already be normalized ``PublicEvent`` values, which
+        holds for every internal append: the invariants are established by
+        the constructor and preserved by appending.
+        """
+        result = object.__new__(type(self))
+        object.__setattr__(result, "events", events)
+        object.__setattr__(
+            result, "history_incomplete",
+            self.history_incomplete if history_incomplete is None
+            else bool(history_incomplete))
+        reasons = (self.incomplete_reasons if incomplete_reasons is None
+                   else incomplete_reasons)
+        object.__setattr__(result, "incomplete_reasons",
+                           tuple(sorted({str(item) for item in reasons})))
+        object.__setattr__(result, "schema", self.schema)
+        return result
+
     def append(self, event: PublicEvent | Mapping[str, Any]) -> "InformationHistory":
         value = event if isinstance(event, PublicEvent) else PublicEvent.from_json(event)
-        return InformationHistory(
-            events=self.events + (value,),
-            history_incomplete=self.history_incomplete,
-            incomplete_reasons=self.incomplete_reasons,
-            schema=self.schema,
-        )
+        return self._derived(events=self.events + (value,))
 
     def mark_incomplete(self, reason: str) -> "InformationHistory":
-        return InformationHistory(
+        return self._derived(
             events=self.events, history_incomplete=True,
-            incomplete_reasons=self.incomplete_reasons + (str(reason),),
-            schema=self.schema,
-        )
+            incomplete_reasons=self.incomplete_reasons + (str(reason),))
 
     def as_json(self) -> dict[str, Any]:
         return {
