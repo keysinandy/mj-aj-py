@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from mj.game import Game
 from mj.decision.context import PublicDecisionContext
-from mj.decision.fast_ev import evaluate_discard_context
+from mj.decision.fast_ev import choose_game_action, evaluate_discard_context
 from mj.decision.profile import ProfileSpec
 from mj.decision.score_value import (
     REWARD_ENVELOPE_VERSION, RewardEnvelope, reward_envelope,
@@ -158,6 +158,12 @@ class TightBoundRacingTests(unittest.TestCase):
                             for item in override.candidates))
         self.assertTrue(all(item.reward_envelope["fast_upper"] == 7.0
                             for item in override.candidates))
+
+    def test_shape_v2_two_draw_path_initializes_each_draw_probability(self):
+        game = Game(seed=190000, dealer=0)
+        action, explanation = choose_game_action(game, game.current_seat())
+        self.assertIn(action, game.legal_actions())
+        self.assertIn(explanation["level"], ("V2-EV2", "V2-Q0", "legacy"))
 
     def test_unknown_fast_bound_disables_pruning_without_zero_fill(self):
         context = self._context(count=2).replace(

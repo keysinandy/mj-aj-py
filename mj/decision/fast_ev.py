@@ -324,6 +324,7 @@ def future_values(context: PublicDecisionContext, root_hand, locked,
             continue
         budget.consume()
         hand2, rem2 = _apply_draw(root_hand, rem, tile)
+        probability = left / n
         # Avoid constructing a full ScoreValue gate for the overwhelmingly
         # common non-winning draw.  The exact ScoreValue path remains the
         # authority for winning tiles (including YCBK, standing13 and the
@@ -337,7 +338,6 @@ def future_values(context: PublicDecisionContext, root_hand, locked,
         breakdown = scorer.hu(
             hand2, scorer.standing_before_draw(hand2, tile), locked,
             tile, False, chain_count, chain_piao)
-        probability = left / n
         if breakdown.legal:
             # The first draw is a terminal value for both horizons.
             ev1 += probability * float(breakdown.reward)
