@@ -469,7 +469,9 @@ def compile_bundle(bundle: EvidenceBundle, *, round_no: int | None = None,
         checkpoints=checkpoints, diagnostics=diagnostics,
         quality=quality, metadata={"selectedRound": selected_round,
                                    "identityConflicts": len(all_games) > 1,
-                                   "tracePresent": trace_present})
+                                   "tracePresent": trace_present,
+                                   "policyDiagnostics": _policy_diagnostics(
+                                       bundle.raw_records)})
     visible_diagnostic = next((d for d in diagnostics
                                if d.type == DiagnosticType.FIRST_DIVERGENCE), None)
     confirmed_diagnostic = next((d for d in diagnostics
@@ -511,6 +513,37 @@ def _coverage(bundle, events, steps, trace_present):
         "trace": trace_present,
         "traceComplete": not any(q.get("kind") == "INCOMPLETE_TRACE" for q in bundle.quality),
         "qualityRecords": len(bundle.quality),
+    }
+
+
+def _policy_diagnostics(raw_records):
+    """Project additive policy-v3 fields for the read-only debugger only."""
+    rows = []
+    fields = (
+        "gid", "round_no", "seq", "id", "history_hash",
+        "belief_profile_fingerprint", "belief_fingerprint",
+        "search_profile_fingerprint", "search_fingerprint",
+        "model_fingerprint", "belief_ess", "belief_entropy",
+        "belief_marginals", "network_confidence", "fallback_reason",
+        "actual_action", "suggested_action", "counterfactual_suggestion",
+        "search_regret", "root_regret", "regret")
+    for raw in raw_records:
+        record = raw.raw if hasattr(raw, "raw") else raw
+        if not isinstance(record, Mapping) or record.get("type") != "decision":
+            continue
+        evaluation = record.get("evaluation")
+        if not isinstance(evaluation, Mapping):
+            evaluation = {}
+        row = {
+            key: (record.get(key)
+                  if record.get(key) is not None else evaluation.get(key))
+            for key in fields
+        }
+        if any(value is not None for value in row.values()):
+            rows.append(row)
+    return {
+        "schema": "policy-v3-debugger-diagnostics-v1",
+        "count": len(rows), "rows": rows, "oracle": False,
     }
 
 

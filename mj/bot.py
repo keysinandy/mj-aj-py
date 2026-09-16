@@ -481,8 +481,16 @@ def choose_action(g, seat, evaluator="legacy", return_evaluation=False):
     that need an explanation can additionally request ``return_evaluation``.
     """
     if evaluator not in (None, "legacy", "shape-v1", "shape_v1", "shape",
-                         "shape-v2", "shape_v2", "ev2"):
+                         "shape-v2", "shape_v2", "ev2", "policy-v3",
+                         "policy_v3"):
         raise ValueError(f"unknown evaluator profile: {evaluator}")
+    if evaluator in ("policy-v3", "policy_v3"):
+        from .decision.policy_v3 import PolicyV3Runtime
+        runtime = getattr(g, "_policy_v3_runtime", None)
+        if runtime is None:
+            runtime = PolicyV3Runtime()
+        result = runtime.choose(g, seat, return_evaluation=True)
+        return result if return_evaluation else result[0]
     if evaluator in ("shape-v2", "shape_v2", "ev2"):
         action, evaluation = choose_shape_v2_action(g, seat)
         return (action, evaluation) if return_evaluation else action

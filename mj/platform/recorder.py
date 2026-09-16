@@ -418,23 +418,56 @@ class Recorder:
                  decision_started_at=None, decision_finished_at=None,
                  deadline_left_at_start_ms=None,
                  deadline_left_at_finish_ms=None,
-                 decision_result=None, evaluation=None):
+                 decision_result=None, evaluation=None,
+                 history_hash=None, belief_profile_fingerprint=None,
+                 belief_fingerprint=None, search_profile_fingerprint=None,
+                 search_fingerprint=None, model_fingerprint=None,
+                 network_confidence=None, fallback_reason=None,
+                 actual_action=None, suggested_action=None,
+                 counterfactual_suggestion=None, belief_ess=None,
+                 belief_entropy=None, belief_marginals=None,
+                 search_regret=None, root_regret=None, regret=None):
         """返回决策 id(action 记录据此配对)。"""
         log = self.log_for(gid)
         did = log.next_decision_id()
         log.pending_decision = did
+        safe_evaluation = evaluation
+        if evaluation is not None:
+            try:
+                from ..decision.report import sanitize_public
+                safe_evaluation = sanitize_public(evaluation)
+            except Exception:
+                # GameLog's compatibility serializer handles existing
+                # explanation objects; policy-v3 itself contains no hidden
+                # material.  Keep logging best-effort as before.
+                safe_evaluation = evaluation
         rec = {"type": "decision", "gid": gid, "id": did, "seq": log.cursor,
                "phase": phase, "legal": legal, "action": action,
                "latency_ms": latency_ms}
         if digest:
             rec["digest"] = digest
-        if evaluation is not None:
-            rec["evaluation"] = evaluation
-            eval_data = (evaluation.as_json()
-                         if hasattr(evaluation, "as_json") else evaluation)
+        if safe_evaluation is not None:
+            rec["evaluation"] = safe_evaluation
+            eval_data = (safe_evaluation.as_json()
+                         if hasattr(safe_evaluation, "as_json") else safe_evaluation)
             if isinstance(eval_data, dict):
                 for key in ("context_hash", "scope", "profile_fingerprint",
                             "rules_version", "kernel_version"):
+                    if eval_data.get(key) is not None:
+                        rec[key] = eval_data[key]
+                # Policy-v3 uses the same additive recorder entry but keeps
+                # its safe diagnostics in the explanation object. Promote
+                # only public metadata; hidden particles/worlds have no
+                # accepted key here and are never serialized.
+                for key in (
+                        "history_hash", "belief_profile_fingerprint",
+                        "belief_fingerprint", "search_profile_fingerprint",
+                        "search_fingerprint", "model_fingerprint",
+                        "network_confidence", "fallback_reason",
+                        "actual_action", "suggested_action",
+                        "counterfactual_suggestion", "belief_ess",
+                        "belief_entropy", "belief_marginals",
+                        "search_regret", "root_regret", "regret"):
                     if eval_data.get(key) is not None:
                         rec[key] = eval_data[key]
         for key, value in (("window_id", window_id),
@@ -456,7 +489,27 @@ class Recorder:
                             deadline_left_at_start_ms),
                            ("deadline_left_at_finish_ms",
                             deadline_left_at_finish_ms),
-                           ("decision_result", decision_result)):
+                           ("decision_result", decision_result),
+                           ("history_hash", history_hash),
+                           ("belief_profile_fingerprint",
+                            belief_profile_fingerprint),
+                           ("belief_fingerprint", belief_fingerprint),
+                           ("search_profile_fingerprint",
+                            search_profile_fingerprint),
+                           ("search_fingerprint", search_fingerprint),
+                           ("model_fingerprint", model_fingerprint),
+                           ("network_confidence", network_confidence),
+                           ("fallback_reason", fallback_reason),
+                           ("actual_action", actual_action),
+                           ("suggested_action", suggested_action),
+                           ("counterfactual_suggestion",
+                            counterfactual_suggestion),
+                           ("belief_ess", belief_ess),
+                           ("belief_entropy", belief_entropy),
+                           ("belief_marginals", belief_marginals),
+                           ("search_regret", search_regret),
+                           ("root_regret", root_regret),
+                           ("regret", regret)):
             if value is not None:
                 rec[key] = value
         log.write(rec)

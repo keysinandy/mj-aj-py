@@ -344,6 +344,23 @@ class ReplayDebuggerTests(unittest.TestCase):
         self.assertNotIn("</script><img", html)
         self.assertIn("React + shadcn/ui", html)
 
+    def test_policy_diagnostics_are_visible_without_web_bundle(self):
+        session = ReplaySession(
+            "session", game_id="g",
+            metadata={"policyDiagnostics": {
+                "schema": "policy-v3-debugger-diagnostics-v1",
+                "count": 1,
+                "rows": [{"actual_action": -1, "suggested_action": -2,
+                           "belief_marginals": {"seat_1": [0.5]},
+                           "search_regret": 1.25}],
+                "oracle": False,
+            }})
+        html = render_html(session)
+        self.assertIn("Policy-v3 suggestions / belief", html)
+        self.assertIn("suggested_action", html)
+        self.assertIn("search_regret", html)
+        self.assertIn("belief_marginals", html)
+
     def test_cursor_rejects_missing_seq_without_mutation(self):
         bundle = EvidenceBundle(game_id="g")
         event = normalize_event({"type": "tile_discarded", "seat": 0,

@@ -1,0 +1,44 @@
+{
+  "schema": "belief-search-policy-iteration/evaluation-plan-v1",
+  "source_group_ownership": "source game/room/seed owns every decision and counterfactual candidate",
+  "splits": {
+    "train": {"seed_start": 240000, "games": 1024},
+    "validation": {"seed_start": 241024, "games": 1024},
+    "final_test": {"seed_start": 242048, "games": 8192}
+  },
+  "seat_dealer": {
+    "combinations": 16,
+    "schedule": "seat=i%4; dealer=(i//4)%4",
+    "balanced": true
+  },
+  "you_cai_bi_kao": [false, true],
+  "opponent_splits": ["self_play", "frozen_population", "legacy_shape_v1"],
+  "sampling": {
+    "belief_particles": 512,
+    "search_reference_simulations": [8000, 16000],
+    "search_test_simulations": [16, 32, 64, 2048],
+    "seeds": [0, 1, 2, 3, 4],
+    "worker_independent_sample_ids": true
+  },
+  "filters": {
+    "legal_root_required": true,
+    "oracle": false,
+    "failed_rollouts_excluded_from_reward": true,
+    "ambiguous_soft_labels_retained": true,
+    "same_source_group_must_not_cross_split": true
+  },
+  "statistics": {
+    "alpha": 0.05,
+    "regret": "Q_ref(best_ref)-Q_ref(candidate)",
+    "score_metric": "hero_round_score_points",
+    "cluster": "source_game_seed",
+    "bootstrap_rounds": 2000
+  },
+  "release_rule": {
+    "belief_calibration_must_pass": true,
+    "reference_regret_must_not_regress": true,
+    "paired_games": 4096,
+    "online_gate_must_pass": true,
+    "legacy_default_until_all_pass": true
+  }
+}

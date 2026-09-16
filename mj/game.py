@@ -77,7 +77,41 @@ class Game:
         self.scores = [0] * 4
         self.done = False
         self.result = None  # (winner, mult, parts) 或 None=流局
+        # Public event history is an audit-only projection.  It deliberately
+        # omits tile identities from draw events and never stores opponent
+        # hands or wall order.  Imports stay local so the rule engine remains
+        # the dependency root of the project.
+        from .belief.events import InformationHistory, PublicEvent, public_state_hash
+        self._public_history = InformationHistory().append(PublicEvent(
+            "ROUND_START", actor=dealer, phase=self.phase,
+            context_hash_before=public_state_hash(self), provenance="game"))
         self._draw(dealer)
+
+    @property
+    def public_history(self):
+        """Immutable public history; hidden state is not part of this object."""
+        from .belief.events import history_from_game
+        return history_from_game(self)
+
+    def _record_public_event(self, event):
+        """Append an already-created semantic event when recording is enabled."""
+        from .belief.events import InformationHistory
+        history = getattr(self, "_public_history", None)
+        if not isinstance(history, InformationHistory):
+            history = InformationHistory()
+        self._public_history = history.append(event)
+
+    def _history_action_event(self, action):
+        from .belief.events import InformationHistory, PublicEvent, public_state_hash
+        history = getattr(self, "_public_history", None)
+        if not isinstance(history, InformationHistory):
+            history = InformationHistory().append(PublicEvent(
+                "ROUND_START", actor=getattr(self, "dealer", None),
+                phase=getattr(self, "phase", None),
+                context_hash_before=public_state_hash(self),
+                provenance="game_recovered"))
+        return history, PublicEvent.from_action(self, int(action),
+                                                 provenance="game")
 
     # ---------- 查询 ----------
 
@@ -196,19 +230,32 @@ class Game:
 
     def step(self, action):
         assert not self.done, "对局已结束"
+        old_history, event = self._history_action_event(action)
+        # Store the action before mutation so an internally generated draw is
+        # ordered after it.  Restore the old history if a malformed manually
+        # assembled state makes the transition fail.
+        self._public_history = old_history.append(event)
         if self.phase == "discard":
-            if action == HU:
-                self._do_hu(self.turn)
-            elif action >= 0:
-                self._do_discard(self.turn, action)
-            elif KONG_CLOSED_BASE - 33 <= action <= KONG_CLOSED_BASE:
-                self._do_kong_closed(self.turn, KONG_CLOSED_BASE - action)
-            elif KONG_ADD_BASE - 33 <= action <= KONG_ADD_BASE:
-                self._do_kong_add(self.turn, KONG_ADD_BASE - action)
-            else:
-                raise ValueError(f"非法动作 {action}")
+            try:
+                if action == HU:
+                    self._do_hu(self.turn)
+                elif action >= 0:
+                    self._do_discard(self.turn, action)
+                elif KONG_CLOSED_BASE - 33 <= action <= KONG_CLOSED_BASE:
+                    self._do_kong_closed(self.turn, KONG_CLOSED_BASE - action)
+                elif KONG_ADD_BASE - 33 <= action <= KONG_ADD_BASE:
+                    self._do_kong_add(self.turn, KONG_ADD_BASE - action)
+                else:
+                    raise ValueError(f"非法动作 {action}")
+            except Exception:
+                self._public_history = old_history
+                raise
         else:
-            self._do_react(self.turn, action)
+            try:
+                self._do_react(self.turn, action)
+            except Exception:
+                self._public_history = old_history
+                raise
 
     def _do_discard(self, seat, tile):
         h = self.hands[seat]
@@ -346,12 +393,28 @@ class Game:
         if len(self.wall) <= DEAD_WALL:
             self._end_draw()
             return
+        before_hash = None
+        try:
+            from .belief.events import public_state_hash
+            before_hash = public_state_hash(self)
+        except Exception:
+            # A partially assembled compatibility Game can still use the
+            # authoritative draw transition; its history will carry no
+            # guessed context hash rather than failing the rule action.
+            pass
         t = self.wall.pop()
         self.drawn[seat] = t
         self.hands[seat][t] += 1
         self._kong_draw = kong
         self.turn = seat
         self.phase = "discard"
+        # The draw transition is public as an event, but the tile itself is
+        # visible only to the actor and remains in the private Game state.
+        from .belief.events import PublicEvent, public_state_hash
+        self._record_public_event(PublicEvent(
+            "DRAW_PUBLIC", actor=seat, phase="draw",
+            public_payload={"source": "kong_replacement" if kong else "normal"},
+            context_hash_before=before_hash, provenance="game"))
 
     def _win(self, seat):
         locked = len(self.melds[seat])
@@ -364,7 +427,17 @@ class Game:
         self.scores = settle(seat, self.dealer, mult, self.base)
         self.result = (seat, mult, parts)
         self.done = True
+        from .belief.events import PublicEvent, public_state_hash
+        self._record_public_event(PublicEvent(
+            "ROUND_END", actor=seat, phase="settled",
+            public_payload={"winner": seat, "multiplier": mult},
+            context_hash_before=public_state_hash(self), provenance="game"))
 
     def _end_draw(self):
         self.done = True
         self.result = None
+        from .belief.events import PublicEvent, public_state_hash
+        self._record_public_event(PublicEvent(
+            "ROUND_END", actor=None, phase="settled",
+            public_payload={"draw": True},
+            context_hash_before=public_state_hash(self), provenance="game"))

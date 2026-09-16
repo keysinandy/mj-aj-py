@@ -32,12 +32,22 @@ _CALIBRATION_EXPORTS = frozenset({
     "calibration_evidence_manifest", "scheduled_game",
 })
 
+_POLICY_V3_EXPORTS = frozenset({
+    "PolicyV3Profile", "PolicyV3Runtime", "load_policy_value_model",
+    "policy_v3_profile_from_json",
+})
+
 
 def __getattr__(name):
     """Load NumPy-backed calibration only when an offline caller asks for it."""
     if name in _CALIBRATION_EXPORTS:
         from . import calibration
         value = getattr(calibration, name)
+        globals()[name] = value
+        return value
+    if name in _POLICY_V3_EXPORTS:
+        from . import policy_v3
+        value = getattr(policy_v3, name)
         globals()[name] = value
         return value
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
@@ -64,4 +74,6 @@ __all__ = [
     "sanitize_public", "compact_evaluation", "decision_key",
     "associate_counterfactual", "build_offline_report",
     "RootEvaluation", "evaluate_root_context", "choose_root_game_action",
+    "PolicyV3Profile", "PolicyV3Runtime", "load_policy_value_model",
+    "policy_v3_profile_from_json",
 ]

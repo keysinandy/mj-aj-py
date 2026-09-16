@@ -23,7 +23,30 @@ from .recorder import Recorder
 from .security import redact_exception, redact_value
 
 
-def make_decide(strategy, ckpt=None, evaluator="legacy"):
+def make_decide(strategy, ckpt=None, evaluator="legacy", model=None,
+                policy_profile=None):
+    if strategy == "policy-v3" or (
+            strategy == "bot" and evaluator in ("policy-v3", "policy_v3")):
+        from mj.decision.policy_v3 import PolicyV3Runtime, load_policy_value_model
+        if model is None and ckpt:
+            try:
+                if os.path.exists(ckpt):
+                    model = load_policy_value_model(ckpt)
+            except Exception as exc:
+                model = None
+                load_error = f"checkpoint_load:{type(exc).__name__}"
+            else:
+                load_error = None
+        else:
+            load_error = None
+        runtime = PolicyV3Runtime(model, profile=policy_profile)
+        if load_error is not None and runtime.model_error == "model_missing":
+            runtime.model_error = load_error
+        def play(g, seat):
+            return runtime.choose(g, seat, return_evaluation=True)
+        play.bot_evaluator = "policy-v3"
+        play.policy_v3_runtime = runtime
+        return play
     if strategy == "policy":
         from mj.evaluate import policy_player
         if not ckpt or not os.path.exists(ckpt):
@@ -180,9 +203,9 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="测试房 4 令牌 runner")
     ap.add_argument("--config", default="local/platform.json")
     ap.add_argument("--strategy", default="policy",
-                    choices=("policy", "bot", "random"))
+                    choices=("policy", "bot", "random", "policy-v3"))
     ap.add_argument("--bot-evaluator", default="legacy",
-                    choices=("legacy", "shape-v1", "shape-v2"),
+                    choices=("legacy", "shape-v1", "shape-v2", "policy-v3"),
                     help="strategy=bot 时的评价器(默认 legacy)")
     ap.add_argument("--ckpt", default="runs/bc0/best.pt")
     ap.add_argument("--games", type=int, default=1, help="打满场数(跨轮复用)")

@@ -1,0 +1,56 @@
+{
+  "schema": "belief-search-policy-iteration/baseline-v1",
+  "captured_at": "2026-09-16",
+  "repository": {
+    "implementation_base_commit": "f625550cedae935b4c9e16d2cbb31922cda344d4",
+    "planning_head": "9e1c5e9",
+    "worktree": "clean before implementation",
+    "note": "The implementation base is the frozen shape-v2 two-draw baseline; planning-only docs were added after it."
+  },
+  "rules": {
+    "rules_version": "hangzhou-platform-guide-v34",
+    "guide_source": "PROGRESS.md",
+    "dead_wall": 20,
+    "chow_limit": 2,
+    "legal_action_source": "mj/game.py:Game.legal_actions",
+    "transition_source": "mj/game.py:Game.step",
+    "score_source": "mj/scoring.py",
+    "default_you_cai_bi_kao": false
+  },
+  "profiles": {
+    "stable_fallback": "legacy",
+    "shape_v2": "shape-v2/discard",
+    "belief": "uniform_unseen-v1",
+    "continuation": "frozen_shape_v1_self_kong_v1",
+    "paired_racing": "paired-racing-v3",
+    "reward_envelope": "reward-envelope-v1"
+  },
+  "source_sha256": {
+    "mj/game.py": "87a0559facda05ae662be4797181615ac74b2129686e22a7fbd1fe15d01de4cf",
+    "mj/scoring.py": "4d44bda2eb95d0fc97a1e55d87a3215efed685edae576e1be159754dee6b3af6",
+    "mj/win.py": "fdcab977393cbd89e509038c492489d809ab5ad2fb1a1d54f66548c8d53696fe",
+    "mj/decision/profile.py": "2fff69e9f01bd17d2f9522218d64673dba44a78f30ee0336c4ae80bd1f1819d7",
+    "mj/decision/fast_ev.py": "a4d3b96748db5b5db0f3eafff12cf147e51f2fbff994e1255fbc7433d385bbf8",
+    "mj/decision/root.py": "5b9c1217ee43024d600b776ed3c53cb005fbc2ba1ac1ed412ad36ebf9190740d",
+    "mj/rollout/belief.py": "f7f357b5b7ecf8b8d579aa3031233b6f1b3e4d0ca34ca80a5add5aec5fb8aee7",
+    "mj/rollout/evaluator.py": "3d67d5e497377fc928241fd4618748310f9ea955281f070fa80cf11159a56486",
+    "mj/rollout/simulator.py": "4f7ed5840503961dcd4e0a569abe732f52aa59a0be16fca6233f1a33da49977e"
+  },
+  "online_gate": {
+    "default_policy_until_all_gates": "legacy",
+    "paired_games": 4096,
+    "seat_dealer_combinations": 16,
+    "new_rooms": 3,
+    "status": "not_started_for_belief_search_policy_iteration",
+    "required_evidence": [
+      "belief held-out calibration",
+      "high-budget search reference and regret",
+      "4096 paired score confidence interval",
+      "ten-room concurrency/window audit"
+    ]
+  },
+  "oracle_boundary": {
+    "oracle": false,
+    "forbidden": ["opponent concealed tiles", "real wall order", "future events", "source RNG", "tokens"]
+  }
+}

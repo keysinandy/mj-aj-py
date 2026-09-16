@@ -117,6 +117,14 @@ def render(rec, t0):
                 evtxt += f" fallback={ev['fallback_reason']}"
         else:
             evtxt = " eval=legacy_unrecorded"
+        if rec.get("network_confidence") is not None:
+            evtxt += f" conf={rec['network_confidence']:.4f}"
+        if rec.get("fallback_reason") and "fallback=" not in evtxt:
+            evtxt += f" fallback={rec['fallback_reason']}"
+        if rec.get("suggested_action") is not None:
+            evtxt += f" suggested={action_name(rec['suggested_action'])}"
+        if rec.get("history_hash"):
+            evtxt += f" history={str(rec['history_hash'])[:8]}"
         return (f"{pre} DECIDE #{rec.get('id')} {rec.get('phase')} "
                 f"seq={rec.get('seq')} 合法={lsum} → "
                 f"{action_name(rec.get('action'))} ({rec.get('latency_ms')}ms"

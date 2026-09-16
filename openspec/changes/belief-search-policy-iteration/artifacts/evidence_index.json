@@ -1,0 +1,20 @@
+{
+  "schema": "belief-search-policy-iteration/evidence-index-v1",
+  "status": "implementation-with-gates-pending",
+  "default_runtime": "legacy",
+  "artifacts": {
+    "baseline": "baseline_manifest.json",
+    "contracts": "contract_manifest.json",
+    "evaluation_plan": "evaluation_plan.json",
+    "acceptance_definition": "acceptance_definition.md"
+  },
+  "pending": [
+    "belief held-out calibration versus uniform unseen",
+    "8000/16000 frozen information-set search reference",
+    "4096 paired round-score games",
+    "population/self-play robustness matrix",
+    "real-room concurrency and decision-window audit",
+    "final release manifest"
+  ],
+  "oracle": false
+}

@@ -193,10 +193,13 @@ class TestRecorderUnits(unittest.TestCase):
                       evaluator_profile="shape-v1",
                       evaluator_fingerprint="fp")
         self.rec.decision("g_eval", "draw", [1, 2], 2, 1.0,
-                          evaluation={"version": "shape-v1", "Q": 0.5})
+                          evaluation={"version": "shape-v1", "Q": 0.5},
+                          search_regret=0.25, root_regret=0.5, regret=0.25)
         recs = _read_all(self.rec, "g_eval", "b")
         self.assertEqual(recs[0]["evaluator"], "shape-v1")
         self.assertEqual(recs[1]["evaluation"]["Q"], 0.5)
+        self.assertEqual(recs[1]["search_regret"], 0.25)
+        self.assertEqual(recs[1]["root_regret"], 0.5)
 
     def test_counterfactual_is_separate_from_online_decision(self):
         self.rec.meta("g_cf", "b")

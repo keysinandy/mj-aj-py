@@ -1,0 +1,18 @@
+{
+  "schema": "belief-search-policy-iteration/contract-manifest-v1",
+  "fingerprint_algorithm": "sha256-canonical-json-truncated",
+  "contracts": {
+    "information_history": "information-history-v1",
+    "public_event": "public-event-v1",
+    "belief_profile": "belief-profile-v2",
+    "search_profile": "information-set-search-v1",
+    "policy_value_model": "policy-value-model-manifest-v1",
+    "value_features": "value-feature-contract-v1"
+  },
+  "unknown_field_policy": "reject-unless-explicitly-versioned",
+  "action_space": 109,
+  "reward": "hero_round_settlement_delta",
+  "default_leaf": "terminal-rollout-v1",
+  "default_runtime": "legacy",
+  "oracle": false
+}

@@ -71,6 +71,7 @@ _JS = r"""
     const diags = (data.diagnostics || []).filter(d => !f || d.roundNo === f.roundNo && (d.seqNo == null || d.seqNo === f.seqNo));
     byId('diagnostics').textContent = pretty(diags.length ? diags : (data.diagnostics || []).slice(0, 5));
     byId('coverage').textContent = pretty(data.sourceCoverage || {});
+    byId('policy-diagnostics').textContent = pretty((data.metadata || {}).policyDiagnostics || {});
     byId('raw-search').textContent = pretty((data.rawRecords || []).filter(r => !byId('search').value || JSON.stringify(r).toLowerCase().includes(byId('search').value.toLowerCase())).slice(0, 20));
     byId('first').disabled = !fs.length || ui.frame === 0; byId('last').disabled = !fs.length || ui.frame === fs.length - 1;
   }
@@ -91,7 +92,15 @@ _JS = r"""
 
 def render_html(session: ReplaySession) -> str:
     payload = safe_json(session.as_dict())
-    react_bundle = _load_react_bundle()
+    policy_diagnostics = (session.metadata or {}).get("policyDiagnostics")
+    has_policy_diagnostics = (
+        isinstance(policy_diagnostics, dict) and
+        int(policy_diagnostics.get("count", 0) or 0) > 0)
+    # The checked-in React artifact may predate the policy-v3 diagnostics
+    # panel.  Prefer the self-contained renderer for these sessions so the
+    # evidence remains visible even before the optional web build is run.
+    react_bundle = (None if has_policy_diagnostics
+                    else _load_react_bundle())
     if react_bundle is not None:
         javascript, stylesheet = react_bundle
         return """<!doctype html>
@@ -103,7 +112,7 @@ def render_html(session: ReplaySession) -> str:
 <body><header><strong>Mahjong Replay Debugger</strong><div id="position" class="muted"></div></header><main>
 <div class="panel bar"><button id="first">|&lt;</button><button id="prev">&lt;</button><label>Seq <input id="seq" type="number" min="0"></label><button id="next">&gt;</button><button id="last">&gt;|</button><button id="local-prev">Local −</button><button id="local-next">Local +</button><button id="play">Play</button><button id="diag-prev">Previous diagnostic</button><button id="diag-next">Next diagnostic</button><label>View <select id="view"><option>PLAYER_VIEW</option><option selected>LOCAL_KNOWLEDGE</option><option>OMNISCIENT</option></select></label><label>Player <select id="selected"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label><label>Search <input id="search" type="search"></label></div>
 <p id="message" class="muted">Visibility modes are presentation semantics, not access control over this complete exported evidence file.</p>
-<div id="table" class="panel"></div><div class="grid"><section class="panel"><h3>Server event</h3><pre id="server-event"></pre></section><section class="panel"><h3>Local step</h3><pre id="local-step"></pre></section><section class="panel"><h3>Request / response / merge</h3><pre id="request"></pre></section><section class="panel"><h3>Diagnostics</h3><pre id="diagnostics"></pre></section><section class="panel"><h3>Source coverage</h3><pre id="coverage"></pre></section><section class="panel wide"><h3>Raw evidence search</h3><pre id="raw-search"></pre></section></div></main>
+<div id="table" class="panel"></div><div class="grid"><section class="panel"><h3>Server event</h3><pre id="server-event"></pre></section><section class="panel"><h3>Local step</h3><pre id="local-step"></pre></section><section class="panel"><h3>Request / response / merge</h3><pre id="request"></pre></section><section class="panel"><h3>Diagnostics</h3><pre id="diagnostics"></pre></section><section class="panel"><h3>Source coverage</h3><pre id="coverage"></pre></section><section class="panel"><h3>Policy-v3 suggestions / belief</h3><pre id="policy-diagnostics"></pre></section><section class="panel wide"><h3>Raw evidence search</h3><pre id="raw-search"></pre></section></div></main>
 <script type="application/json" id="replay-data">""" + payload + """</script><script>""" + _JS + """</script></body></html>
 """
 

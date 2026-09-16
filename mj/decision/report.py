@@ -15,7 +15,9 @@ _DROP_KEYS = frozenset({
     "authorization", "token", "access_token", "bearer", "credential",
     "body", "request_body", "response_body", "url", "wall_order",
     "wall_sequence", "real_wall", "opponent_hand", "opponent_hands",
-    "hidden_hands", "hidden_wall", "rng_state", "rng", "secret",
+    "hidden_hands", "hidden_wall", "sampled_world", "particle",
+    "particles", "particle_worlds", "live_wall_order", "dead_wall_order",
+    "rng_state", "rng", "secret",
 })
 
 

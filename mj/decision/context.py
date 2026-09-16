@@ -550,7 +550,30 @@ class PublicDecisionContext:
                 ("chain_count", "hero_game_state"),
                 ("opponent_chain", "unknown_not_read_from_game"),
             ),
-        )
+            )
+
+    @classmethod
+    def from_game_complete(cls, game, seat: int, *, gid=None, round_no=None,
+                           seq=None, decision_id=None, phase=None):
+        """Build a complete offline context using only public game state.
+
+        ``from_game`` intentionally leaves opponent chain fields unknown for
+        the online mirror.  An offline self-play game has already exposed
+        every action that produced those counters, so the counters can be
+        copied as public transition state for rollout/search.  No opponent
+        hand or wall identity is read by this method.
+        """
+        context = cls.from_game(
+            game, seat, gid=gid, round_no=round_no, seq=seq,
+            decision_id=decision_id, phase=phase)
+        chains = tuple(int(value) for value in getattr(game, "chain", (0,) * 4))
+        piao = tuple(int(value) for value in
+                     getattr(game, "chain_piao", (0,) * 4))
+        missing = tuple(value for value in context.missing_fields
+                        if not value.startswith("opponent_chain"))
+        return context.replace(
+            chain_counts=chains, chain_piao_counts=piao,
+            missing_fields=missing, unsupported=(), rollout_valid=True)
 
     @classmethod
     def from_mirror(cls, mirror, phase=None, *, gid=None, round_no=None,
