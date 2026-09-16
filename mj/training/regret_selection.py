@@ -127,85 +127,65 @@ def _bucket_summary(rows):
             for bucket, values in sorted(buckets.items())}
 
 
-def evaluate_checkpoint(model, rows, *, profile: SearchDistillationProfile,
-                        device="cpu", catastrophe_threshold=None,
-                        benchmark_samples=0, benchmark_repeats=1):
-    """Run network-only actions against the frozen reference evidence."""
-    import torch
-
+def _score_rows(rows, *, pick_action, threshold):
+    """Shared regret/KL/agreement/bucket scoring for one action provider."""
     from ..features import action_to_flat
 
-    threshold = (float(catastrophe_threshold)
-                 if catastrophe_threshold is not None
-                 else float(profile.catastrophic_regret_threshold))
     regrets, kls, agreements = [], [], []
     buckets = []
     skipped = {"forced": 0, "missing_q": 0, "missing_features": 0,
                "no_legal_action": 0, "model_error": 0}
     evaluated_rows = []
-    model.to(device)
-    model.eval()
-    with torch.no_grad():
-        for row in rows:
-            sample = _sample_of(row)
-            if sample.forced:
-                skipped["forced"] += 1
-                continue
-            if not sample.q_by_action:
-                skipped["missing_q"] += 1
-                continue
-            if sample.planes is None or sample.scalars is None:
-                skipped["missing_features"] += 1
-                continue
-            legal = [index for index, ok in enumerate(sample.legal_mask) if ok]
-            if not legal:
-                skipped["no_legal_action"] += 1
-                continue
-            try:
-                planes = torch.as_tensor(
-                    [sample.planes], dtype=torch.float32, device=device)
-                scalars = torch.as_tensor(
-                    [sample.scalars], dtype=torch.float32, device=device)
-                mask = torch.as_tensor(
-                    [sample.legal_mask], dtype=torch.bool, device=device)
-                action = int(action_to_flat(
-                    model.select_action(planes, scalars, mask)))
-                distribution = model.policy_distribution(planes, scalars,
-                                                         mask)
-            except Exception:
-                skipped["model_error"] += 1
-                continue
-            q_values = {int(action): float(value)
-                        for action, value in sample.q_by_action.items()}
-            if action not in q_values:
-                skipped["missing_q"] += 1
-                continue
-            best = max(q_values.values())
-            regret = best - q_values[action]
-            regrets.append(regret)
-            evaluated_rows.append(row)
-            target = sample.policy_target
-            predicted = {action_to_flat(item): probability for item, probability
-                         in zip(distribution.actions,
-                                distribution.probabilities)}
-            kl = policy_kl(target, predicted)
+    for row in rows:
+        sample = _sample_of(row)
+        if sample.forced:
+            skipped["forced"] += 1
+            continue
+        if not sample.q_by_action:
+            skipped["missing_q"] += 1
+            continue
+        if sample.planes is None or sample.scalars is None:
+            skipped["missing_features"] += 1
+            continue
+        legal = [index for index, ok in enumerate(sample.legal_mask) if ok]
+        if not legal:
+            skipped["no_legal_action"] += 1
+            continue
+        try:
+            action, distribution = pick_action(row, sample)
+        except Exception:
+            skipped["model_error"] += 1
+            continue
+        q_values = {int(item): float(value)
+                    for item, value in sample.q_by_action.items()}
+        if action not in q_values:
+            skipped["missing_q"] += 1
+            continue
+        best = max(q_values.values())
+        regret = best - q_values[action]
+        regrets.append(regret)
+        evaluated_rows.append(row)
+        if distribution is not None:
+            predicted = {action_to_flat(item): probability
+                         for item, probability in zip(distribution.actions,
+                                                      distribution.probabilities)}
+            kl = policy_kl(sample.policy_target, predicted)
             if kl is not None:
                 kls.append(kl)
-            agreements.append(int(max(q_values, key=q_values.get)) == action)
-            for tag in (sample.special_state_tags or ("untagged",)):
-                buckets.append((f"tag:{tag}", regret))
-            buckets.append((f"phase:{sample.phase or 'unknown'}", regret))
+        agreements.append(int(max(q_values, key=q_values.get)) == action)
+        for tag in (sample.special_state_tags or ("untagged",)):
+            buckets.append((f"tag:{tag}", regret))
+        buckets.append((f"phase:{sample.phase or 'unknown'}", regret))
+    return regrets, kls, agreements, buckets, skipped, evaluated_rows
+
+
+def _evaluation_from_scores(path, *, regrets, kls, agreements, buckets,
+                            skipped, threshold, latency):
     mean = sum(regrets) / len(regrets) if regrets else None
     catastrophic = (sum(1 for value in regrets if value > threshold) /
                     len(regrets) if regrets else None)
-    latency = {}
-    if benchmark_samples and evaluated_rows:
-        latency = batch1_benchmark(
-            model, evaluated_rows[:int(benchmark_samples)],
-            repeats=int(benchmark_repeats), device=device)
-    report = CheckpointEvaluation(
-        path=str(getattr(model, "checkpoint_path", "")),
-        mean_reference_regret=mean,
+    return CheckpointEvaluation(
+        path=path, mean_reference_regret=mean,
         p50_reference_regret=_percentile(regrets, .50),
         p95_reference_regret=_percentile(regrets, .95),
         catastrophic_regret_rate=catastrophic,
@@ -214,7 +194,124 @@ def evaluate_checkpoint(model, rows, *, profile: SearchDistillationProfile,
                                if agreements else None),
         count=len(regrets), skipped=skipped,
         bucket_regret=_bucket_summary(buckets), latency=latency)
-    return report
+
+
+def _threshold(profile, catastrophe_threshold):
+    return (float(catastrophe_threshold)
+            if catastrophe_threshold is not None
+            else float(profile.catastrophic_regret_threshold))
+
+
+def evaluate_checkpoint(model, rows, *, profile: SearchDistillationProfile,
+                        device="cpu", catastrophe_threshold=None,
+                        benchmark_samples=0, benchmark_repeats=1):
+    """Run network-only actions against the frozen reference evidence."""
+    import torch
+
+    from ..features import action_to_flat
+
+    model.to(device)
+    model.eval()
+
+    def pick(row, sample):
+        with torch.no_grad():
+            planes = torch.as_tensor([sample.planes], dtype=torch.float32,
+                                     device=device)
+            scalars = torch.as_tensor([sample.scalars], dtype=torch.float32,
+                                      device=device)
+            mask = torch.as_tensor([sample.legal_mask], dtype=torch.bool,
+                                   device=device)
+            action = int(action_to_flat(
+                model.select_action(planes, scalars, mask)))
+            distribution = model.policy_distribution(planes, scalars, mask)
+        return action, distribution
+
+    threshold = _threshold(profile, catastrophe_threshold)
+    regrets, kls, agreements, buckets, skipped, evaluated_rows = _score_rows(
+        rows, pick_action=pick, threshold=threshold)
+    latency = {}
+    if benchmark_samples and evaluated_rows:
+        latency = batch1_benchmark(
+            model, evaluated_rows[:int(benchmark_samples)],
+            repeats=int(benchmark_repeats), device=device)
+    return _evaluation_from_scores(
+        str(getattr(model, "checkpoint_path", "")), regrets=regrets, kls=kls,
+        agreements=agreements, buckets=buckets, skipped=skipped,
+        threshold=threshold, latency=latency)
+
+
+def public_game_for_row(row):
+    """Reconstruct the actor's public view for a reference context."""
+    from ..decision.context import PublicDecisionContext
+    from ..models.policy_value import _public_game_from_context
+
+    context = PublicDecisionContext.from_public(row["context"])
+    return context, _public_game_from_context(context)
+
+
+def heuristic_pick_action(game, seat, evaluator):
+    from ..bot import choose_action
+    from ..features import action_to_flat
+
+    return int(action_to_flat(choose_action(game, seat, evaluator=evaluator)))
+
+
+def heuristic_benchmark(rows, evaluator, *, repeats=1):
+    """Full CPU heuristic path: context rebuild, legal mask, choice."""
+    def callable_for(row):
+        def infer(_):
+            context, game = public_game_for_row(row)
+            return heuristic_pick_action(game, context.hero_seat, evaluator)
+        return infer
+
+    inputs = [callable_for(row) for row in rows]
+    return inference_benchmark(lambda infer: infer(None), inputs,
+                               repeats=int(repeats))
+
+
+def evaluate_heuristic(rows, *, evaluator, profile: SearchDistillationProfile,
+                       catastrophe_threshold=None, benchmark_samples=0,
+                       benchmark_repeats=1):
+    """Regret of a heuristic baseline at the same frozen reference contexts."""
+    from ..features import action_to_flat
+
+    threshold = _threshold(profile, catastrophe_threshold)
+
+    def pick(row, sample):
+        if row.get("context") is None:
+            raise ValueError("heuristic evaluation requires a stored context")
+        context, game = public_game_for_row(row)
+        legal = tuple(int(action) for action in game.legal_actions())
+        expected = {index for index, ok in enumerate(sample.legal_mask) if ok}
+        actual = {action_to_flat(action) for action in legal}
+        if actual != expected:
+            raise ValueError("reconstructed public game legal set mismatch")
+        return heuristic_pick_action(game, context.hero_seat, evaluator), None
+
+    regrets, kls, agreements, buckets, skipped, evaluated_rows = _score_rows(
+        rows, pick_action=pick, threshold=threshold)
+    latency = {}
+    if benchmark_samples and evaluated_rows:
+        latency = heuristic_benchmark(
+            evaluated_rows[:int(benchmark_samples)], evaluator,
+            repeats=int(benchmark_repeats))
+    return _evaluation_from_scores(
+        f"heuristic:{evaluator}", regrets=regrets, kls=kls,
+        agreements=agreements, buckets=buckets, skipped=skipped,
+        threshold=threshold, latency=latency)
+
+
+def candidate_from_evaluation(evaluation, *, name=None):
+    """Map a regret report to the pi0 candidate type."""
+    from .distillation_profile import PolicyCandidate
+
+    return PolicyCandidate(
+        name=name or evaluation.path,
+        mean_reference_regret=evaluation.mean_reference_regret,
+        p95_reference_regret=evaluation.p95_reference_regret,
+        batch1_latency_ms=(evaluation.latency or {}).get("p95_ms"),
+        illegal_actions=int(evaluation.skipped.get("illegal_selected", 0)),
+        nonfinite_outputs=0)
 
 
 def batch1_benchmark(model, rows, *, repeats=1, device="cpu"):

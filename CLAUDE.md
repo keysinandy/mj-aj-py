@@ -109,7 +109,7 @@ platform/ (P4 平台对接:api/proto/actions/mirror/bot_client/recorder/runner/s
 - **动作空间 109 维**:弃牌 0-33 / 过 34 / 吃 35-37 / 碰 38 / 明杠 39 / 暗杠 40-73 / 加杠 74-107 / 胡 108;胡是显式动作,弃胡=选弃牌。
 - **oracle 平面段 `[75:91)`**:训练时 Bernoulli dropout 退火(1→0),推理/评估时置零;obs 为 99×34(91 平面 + 8 标量行),BC 与 RL 网络输入同构。
 - **花色置换增广方向不对称**:平面取列用 σ⁻¹,掩码与动作用 σ 前向——方向写反会把非法动作洗成合法,`tests/test_bc_pipeline.py` 有语义回归。
-- **`Game(you_cai_bi_kao=...)`** 开关贯通 rl_env/evaluate/bc_data/train_ppo(`--you-cai-bi-kao`);平台每场锦标赛配置不同,以 API 返回为准。
+- **`Game(you_cai_bi_kao=...)`** 开关贯通 rl_env/evaluate/bc_data/train_ppo(`--you-cai-bi-kao`);平台每场锦标赛配置不同,以 API 返回为准。**Search-teacher distillation 训练口径例外**:`search_teacher_generate`/reference/paired 一律 `--ycbk off`(YCBK 视为永远关闭,只作推理兼容),见 `docs/search-distillation.md` 与 change design §16。
 - **checkpoint 只存张量与标量**,加载一律 `torch.load(..., weights_only=True)`;policy_player 兼容 BC(net+state_dict)与 PPO(net+action_net)双格式。
 - **shanten 剪枝界必须保守**:下界基准随 locked 数变化(历史 bug #6);"已见"信息只在 `visible` 一处折算成 `4 − visible`(历史 bug #7,双重扣减)。任何 shanten 优化必须配随机手牌差分验证。
 - **BN 冻结**:sb3 的 `set_training_mode(True)` 会在更新期切回 train 模式,BCPriorPPO.train() 内已显式冻结;改训练循环时勿破坏。

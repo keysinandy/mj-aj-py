@@ -485,7 +485,14 @@ def run_source_game(spec: SourceGameSpec, config: GenerationConfig,
 def _reference_sample(snapshot, config, *, source_group,
                       policy_version_source, critical_tags=None,
                       completed_work_ids=()):
-    """Run the frozen high-budget reference search for one snapshot."""
+    """Run the frozen high-budget reference search for one snapshot.
+
+    Forced states are excluded: they carry no strategic choice and would
+    waste the most expensive teacher budget.  The main loop also skips them
+    before calling this function; the guard keeps direct callers honest.
+    """
+    if len(snapshot.legal_actions) <= 1:
+        return None
     profile = replace(
         config.search_profile,
         version=f"search-v1-reference-{int(config.reference_simulations)}",

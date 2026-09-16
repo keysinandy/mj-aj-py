@@ -93,8 +93,12 @@ def _profiles(args):
 def _seed_range(args):
     if args.split:
         row = FROZEN_SPLITS[args.split]
-        return int(row["seed_start"]), int(row["games"])
-    return int(args.seed_start), int(args.games)
+        games = (int(args.games) if args.games is not None
+                 else int(row["games"]))
+        return int(row["seed_start"]), games
+    games = (int(args.games) if args.games is not None
+             else int(FROZEN_SPLITS["train"]["games"]))
+    return int(args.seed_start), games
 
 
 def _ycbk_variants(value):
@@ -121,8 +125,8 @@ def main(argv=None):
     parser.add_argument("--split", choices=sorted(FROZEN_SPLITS))
     parser.add_argument("--seed-start", type=int,
                         default=FROZEN_SPLITS["train"]["seed_start"])
-    parser.add_argument("--games", type=int,
-                        default=FROZEN_SPLITS["train"]["games"])
+    parser.add_argument("--games", type=int, default=None,
+                        help="override the split's game count")
     parser.add_argument("--limit-specs", type=int, default=0)
     parser.add_argument("--ycbk", choices=("off", "on", "both"), default="off")
     parser.add_argument("--no-rotate-seats", action="store_true")
@@ -130,6 +134,8 @@ def main(argv=None):
     parser.add_argument("--no-resume", action="store_true")
     parser.add_argument("--reference-out", type=Path,
                         help="write a frozen reference context set instead")
+    parser.add_argument("--reference-simulations", type=int, default=16000,
+                        choices=(8000, 16000))
     parser.add_argument("--manifest-out", type=Path)
     parser.add_argument("--no-features", action="store_true",
                         help="write provenance-only rows (no planes/scalars)")
@@ -155,10 +161,7 @@ def main(argv=None):
         specs = specs[:int(args.limit_specs)]
 
     reference_mode = args.reference_out is not None
-    reference_simulations = 16000
-    if reference_mode:
-        # The reference set is derived from the validation split by default.
-        reference_simulations = 16000
+    reference_simulations = int(args.reference_simulations)
     config = GenerationConfig(
         generation=args.generation, policy_source=args.policy_source,
         population=population, budget_profile=budget, search_profile=search,
@@ -167,7 +170,8 @@ def main(argv=None):
         reference_simulations=reference_simulations)
 
     completed = frozenset()
-    if not args.no_resume and args.out.exists() and not reference_mode:
+    if (not args.no_resume and not reference_mode and args.out is not None
+            and args.out.exists()):
         _, completed = resume_dataset(args.out)
     if reference_mode and args.reference_out.exists() and not args.no_resume:
         from mj.training.teacher_generate import read_reference_contexts

@@ -11,6 +11,25 @@ Baseline freeze: `openspec/changes/search-teacher-distillation-bc/artifacts/base
 (HEAD `8a94fdeb`, rules `hangzhou-platform-guide-v34`, score units
 `hero_round_score_points`).
 
+## Reduced Gen0 scope (approved 2026-09-16)
+
+Measured CPU-only throughput after the history-hash optimization is
+33.7 sims/s/core (512 sims ≈ 15s, 2048 sims ≈ 61s, 8192 sims ≈ 4.1min per
+state). The full 200k–500k state target is a multi-week run on the 6-core
+host, so the first generation uses a frozen reduced profile:
+`artifacts/teacher_budget_reduced_gen0.json` (tiers 512→1024),
+`dataset0` target 10k–20k states (bounded by the frozen train split),
+8000-sim reference and ≥1024 paired pairs. The full ladder, 8k/16k
+reference, 4096-pair gate and online switch requirements are unchanged and
+still required before any release; reduced Gen0 evidence is explicitly
+labeled. See `design.md` §15.
+
+**YCBK rule:** `you_cai_bi_kao` is treated as permanently disabled for this
+change — generation, teacher search, reference sets and paired schedules
+MUST use `you_cai_bi_kao=false` (`--ycbk off`). The engine/runtime still
+honor the platform flag at inference, but YCBK-on is never training input
+or release evidence. See `design.md` §16.
+
 ## Contracts
 
 | Module | Contract |
@@ -39,14 +58,22 @@ python3 -c "from mj.training import write_baseline_freeze; \
 # 1. teacher dataset (resume is the default: an existing --out is deduplicated by work_id)
 PYTHONPATH=. python3 scripts/search_teacher_generate.py \
   --out data/distill/dataset0.jsonl \
-  --split train --ycbk both --workers 8 \
+  --split train --ycbk off --workers 6 \
   --policy-source heuristic:shape-v2 \
   --disagreement-source heuristic:shape-v1 \
+  --budget-json openspec/changes/search-teacher-distillation-bc/artifacts/teacher_budget_reduced_gen0.json \
   --manifest-out openspec/changes/search-teacher-distillation-bc/artifacts/dataset0.manifest.json
 
-# 2. frozen high-budget reference set (validation/final-test groups only)
+# 2. frozen reference set (validation split; forced states skipped)
 PYTHONPATH=. python3 scripts/search_teacher_generate.py \
-  --reference-out data/distill/reference.jsonl --split validation --ycbk both
+  --reference-out data/distill/reference_gen0.jsonl \
+  --split validation --limit-specs 24 --ycbk off --workers 6 \
+  --reference-simulations 8000
+
+# 2b. freeze pi0 by reference regret (heuristics; paired CI optional)
+PYTHONPATH=. python3 scripts/search_pi0_freeze.py \
+  --reference data/distill/reference_gen0.jsonl \
+  --out runs/search_bc/pi0_selection.json
 
 # 3. BC training (visit-only policy-first is the default; --augment suit is parity-tested)
 PYTHONPATH=. python3 scripts/search_bc_train.py \
@@ -73,7 +100,7 @@ PYTHONPATH=. python3 scripts/search_bc_paired.py \
   --candidate checkpoint:runs/search_bc/gen0/best-by-regret.pt \
   --baseline heuristic:shape-v2 \
   --matrices self_play,legacy_shape_v1,frozen_population \
-  --games 2048 --ycbk both --out runs/search_bc/gen0/paired_report.json
+  --games 1024 --ycbk off --out runs/search_bc/gen0/paired_report.json
 ```
 
 `paired_score_report` clusters by source-game seed, uses

@@ -2,26 +2,52 @@
   "schema": "search-teacher-distillation-bc/evaluation-plan-v1",
   "baseline_git": "8a94fdeb1a7801289f2bd707b24b271d99bb8961",
   "optimization_metric": "hero_round_score_points",
+  "scope": {
+    "gen0": "reduced",
+    "approved": "2026-09-16",
+    "reason": "measured CPU-only throughput (33.7 sims/s/core, 61s per state at 2048 sims) makes the full 200k-500k target a ~23-day run on the 6-core training host",
+    "full_scale_required_for_release": true,
+    "note": "the full ladder and 4096-pair gate remain the release contract; reduced Gen0 only produces the first evaluable pi1 and is labeled as reduced evidence"
+  },
   "teacher": {
     "type": "information-set-search",
-    "training_simulation_tiers": [
+    "training_simulation_tiers_full": [
       512,
       2048,
       8192,
       16000
     ],
+    "reduced_gen0_training_tiers": [
+      512,
+      1024
+    ],
+    "reduced_gen0_budget_profile": "artifacts/teacher_budget_reduced_gen0.json",
     "reference_simulations": [
       8000,
       16000
     ],
+    "reduced_gen0_reference_simulations": 8000,
     "oracle": false
   },
   "generation0": {
     "useful_multi_action_samples_target": [
+      10000,
+      20000
+    ],
+    "target_bound": "frozen train split x ~10.8 multi-action states/game under YCBK-off",
+    "full_scale_samples_target_reserved": [
       200000,
       500000
     ],
     "forced_state_high_budget_search": false
+  },
+  "you_cai_bi_kao": {
+    "training": false,
+    "reference": false,
+    "paired_games": false,
+    "policy": "ycbk-permanently-disabled-v1",
+    "approved": "2026-09-16",
+    "note": "engine/runtime keep honoring the platform flag; YCBK-on is never training input or release evidence"
   },
   "policy_targets": [
     "visit-distribution-v1",
@@ -42,6 +68,7 @@
   },
   "paired_games": {
     "minimum_pairs": 4096,
+    "reduced_gen0_minimum_pairs": 1024,
     "cluster": "source_game_seed",
     "alpha": 0.05,
     "comparisons": [

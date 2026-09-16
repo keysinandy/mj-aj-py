@@ -264,7 +264,7 @@ Release MUST report self_play, legacy_shape_v1 and frozen_population separately.
 
 ## 12. Special-State Coverage
 
-Dataset/evaluation MUST report separate coverage/regret for HU vs piao, wild discard/baotou, four white boards, seven pairs/luxury seven pairs, closed/add/open kong, PONG/PASS, CHOW/PASS, 抓打圈, wall tail, reaction cursor, dealer/non-dealer and YCBK off/on.
+Dataset/evaluation MUST report separate coverage/regret for HU vs piao, wild discard/baotou, four white boards, seven pairs/luxury seven pairs, closed/add/open kong, PONG/PASS, CHOW/PASS, 抓打圈, wall tail, reaction cursor and dealer/non-dealer. YCBK coverage is reported for `you_cai_bi_kao=false` only (see §16).
 
 ## 13. Runtime
 
@@ -285,3 +285,54 @@ Fallback remains mandatory for checkpoint/manifest mismatch, feature fingerprint
 ## 14. Reproducibility
 
 Every artifact MUST record git revision, rules, feature contract, belief profile, teacher budget profile, search profile, opponent population, continuation, leaf, dataset source groups, training seed, model architecture, loss profile and checkpoint selector.
+
+## 15. Reduced Generation-0 Scope (approved 2026-09-16)
+
+Measured on the 6-core CPU training host after the 2026-09-16 throughput
+optimization (history-hash caching, append fast path, lazy event hash):
+
+```text
+33.7 simulations/s/core (was 27.8)
+512 sims  ~15 s/state
+2048 sims ~61 s/state   (75 s before optimization)
+8192 sims ~4.1 min/state
+```
+
+A full Gen0 at the original target (200k-500k states at the default 2048
+tier) is therefore a ~23-59 day run on this host.  The first generation is
+reduced and explicitly labeled as reduced evidence:
+
+```text
+training teacher tiers: 512 -> 1024   (artifacts/teacher_budget_reduced_gen0.json)
+dataset0 target:        10k-20k useful multi-action states
+                        (bounded by the frozen train split: 1024 games)
+reference simulations:  8000          (validation split, forced states skipped)
+paired evidence:        >= 1024 pairs (full 4096 remains the release gate)
+YCBK:                   fixed off (§16)
+```
+
+The full ladder 512/2048/8192/16000, the 8k/16k reference, the 4096-pair
+gate and every release requirement remain unchanged for the final release;
+a promoted policy based on reduced Gen0 evidence MUST NOT switch the online
+default until the full-scale gates are re-run.
+
+The reduced profile is itself frozen and fingerprinted, and every dataset /
+checkpoint records it, so a later full-scale run is a new dataset version
+rather than a silent overwrite.
+
+## 16. YCBK Training Rule (approved 2026-09-16)
+
+`you_cai_bi_kao` is treated as **permanently disabled** for this change:
+
+- trajectory generation, teacher search, reference sets and paired-game
+  schedules MUST use `you_cai_bi_kao=false`;
+- no dataset, checkpoint or promotion evidence may be produced from
+  YCBK-on games;
+- the engine and runtime keep their existing ability to honor the platform
+  flag at inference time, but YCBK-on is not training input and not release
+  evidence;
+- coverage/reporting therefore carries only the `ycbk-off` bucket.
+
+Rationale: the tournament/test-room configuration this pipeline targets
+runs with YCBK off; splitting scarce teacher budget across an unused rule
+variant only delays the first evaluable generation.

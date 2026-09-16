@@ -483,8 +483,17 @@ extract 含 oracle ~1.6ms/决策点。
 - 契约要点:policy-v3 新增 `calibration_policy`(policy-only 允许未校准
   纯策略 checkpoint,value 叶仍强制 calibrated);value 目标统一走
   `ValueTransformContract`(tanh,scale=96,修复旧 24 分歧)。
-- 状态:代码与单测完成(579+ 用例);`dataset0` 200k-500k、4096 对局、
-  平台十场并发/三房间等待算力与房间,属显式 blocker。
+- 吞吐与降规格(2026-09-16 实测,6 核 CPU):优化后 33.7 sims/s/核
+  (512 档 ~15s/状态、2048 档 ~61s、8192 档 ~4.1min);原规格 20-50 万
+  状态 @2048 在本机需 23-59 天,故 Gen0 采用冻结的降规格 profile
+  `artifacts/teacher_budget_reduced_gen0.json`(512→1024 档、2-5 万
+  状态、8000 reference、≥1024 对局),完整梯子/16k reference/4096 对局
+  与线上切换门仍是发布前提,降规格证据显式标注(design.md §15)。
+- YCBK 规则(2026-09-16 定):`you_cai_bi_kao` 视为**永远关闭**;轨迹生成、
+  teacher、reference、配对一律 `--ycbk off`,数据集/发布证据只含
+  ycbk-off 桶;引擎与运行时仍按平台 flag 推理(见 design §16、
+  docs/search-distillation.md)。
+- 状态:代码与单测完成(627 用例);降规格 Gen0 长跑与平台门待执行。
 
 ## 四、待办清单
 

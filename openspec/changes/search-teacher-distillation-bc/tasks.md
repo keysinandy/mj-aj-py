@@ -5,7 +5,7 @@
 - [x] 1.1 Freeze `HEAD=8a94fdeb1a7801289f2bd707b24b271d99bb8961`, rules, belief/search/model/runtime fingerprints and current final-test splits.
 - [x] 1.2 Add `TeacherBudgetProfile`, `SearchDistillationProfile`, `OpponentPopulationProfile`, and immutable fingerprints.
 - [x] 1.3 Freeze `pi0` selection procedure: strongest low-latency policy is chosen by reference regret + paired score, not evaluator name.
-- [x] 1.4 Freeze forced-state policy, special-state tags, catastrophic-regret threshold and score units.
+- [x] 1.4 Freeze forced-state policy, special-state tags, catastrophic-regret threshold and score units (YCBK fixed off, design §16).
 
 ## 2. P1 Teacher Dataset Generator
 
@@ -56,8 +56,8 @@
 ## 7. P6 Generation 0
 
 - [ ] 7.1 Evaluate current candidates and freeze strongest fast `pi0`.
-- [ ] 7.2 Generate `dataset0` with ~200k–500k useful multi-action states.
-- [x] 7.3 Default teacher 2048 sims; hard/disagreement 8192; 16000 reference subset.
+- [ ] 7.2 Generate `dataset0` with ~10k–20k useful multi-action states (reduced Gen0 scope, design §15; YCBK fixed off per design §16; full 200k–500k reserved for the release-scale run).
+- [x] 7.3 Default teacher 512 sims; hard/disagreement 1024 for reduced Gen0 (reduced profile artifact); full ladder 2048/8192/16000 reserved for release-scale evidence.
 - [ ] 7.4 Train `pi1` under visit-only and at least one Q-soft/hybrid ablation.
 - [ ] 7.5 Promote only if frozen reference regret improves and runtime legality/latency gates pass.
 
@@ -71,7 +71,7 @@
 
 ## 9. P8 Paired Score and Robustness
 
-- [ ] 9.1 Run at least 4096 paired games against previous promoted policy.
+- [ ] 9.1 Run at least 1024 paired games against previous promoted policy (reduced Gen0; full 4096 remains the release gate).
 - [ ] 9.2 Run BC vs shape-v2 and BC vs shape-v1 with identical seed/seat/dealer/YCBK/opponent schedules.
 - [x] 9.3 Use source-game clustered bootstrap for `hero_round_score_points`.
 - [x] 9.4 Report self-play, legacy/shape-v1 and frozen-population matrices separately.

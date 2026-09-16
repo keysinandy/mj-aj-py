@@ -1,0 +1,33 @@
+{
+  "critical_tags": [
+    "baotou",
+    "four-white-boards",
+    "hu",
+    "kong-add",
+    "kong-closed",
+    "kong-open",
+    "luxury-seven-pairs",
+    "piao",
+    "zhuada-quan"
+  ],
+  "default_tier": 0,
+  "escalate_on_ambiguous": true,
+  "escalate_on_baseline_disagreement": true,
+  "escalate_on_critical_state": true,
+  "escalate_on_failure": true,
+  "escalate_on_incomplete": true,
+  "fingerprint": "51834fe78838f3e8f472a126",
+  "forced_sanity_ratio": 0.03,
+  "hard_state_tier": 1,
+  "max_mean_variance": 144.0,
+  "min_q_gap": 1.0,
+  "min_visit_share": 0.5,
+  "reference_tier": 1,
+  "schema": "teacher-budget-profile-v1",
+  "search_seed": 0,
+  "tiers": [
+    512,
+    1024
+  ],
+  "version": "teacher-budget-reduced-gen0-v1"
+}

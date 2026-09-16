@@ -8,12 +8,19 @@ from pathlib import Path
 import numpy as np
 
 from mj.models.opponent_policy import ActionDistribution
+from mj.decision.context import PublicDecisionContext
+from mj.features import action_to_flat
+from mj.game import Game
+from mj.models.policy_value import extract_value_features
 from mj.training.distillation_profile import SearchDistillationProfile
 from mj.training.regret_selection import (
     CheckpointEvaluation,
+    candidate_from_evaluation,
     evaluate_checkpoint,
+    evaluate_heuristic,
     freeze_reference_contexts,
     load_reference_rows,
+    public_game_for_row,
     reference_split,
     select_best_checkpoint,
     write_selection_report,
@@ -129,6 +136,74 @@ class TestEvaluateCheckpoint(unittest.TestCase):
             _Model(), rows, profile=SearchDistillationProfile())
         self.assertEqual(evaluation.count, 1)
         self.assertEqual(evaluation.skipped["forced"], 1)
+
+
+class TestHeuristicEvaluation(unittest.TestCase):
+    def _context_row(self, seed=240000, mismatch=False):
+        game = Game(seed=seed)
+        seat = game.current_seat()
+        context = PublicDecisionContext.from_game_complete(game, seat)
+        planes, scalars = extract_value_features(context, history=None,
+                                                 belief=None)
+        legal = tuple(action_to_flat(action) for action in context.legal_actions)
+        mask = [False] * 109
+        for action in legal:
+            mask[action] = True
+        q_values = {action: float(10 - index)
+                    for index, action in enumerate(legal)}
+        visits = {legal[0]: 1}
+        if mismatch:
+            mask = [True, True] + [False] * 107
+            q_values = {0: 1.0, 1: 0.0}
+            visits = {0: 1}
+        sample = SearchSample(
+            context_hash=context.context_hash, history_hash="h",
+            legal_mask=tuple(mask), visit_counts=visits,
+            q_by_action=q_values, root_value=1.0, simulations=64,
+            ambiguous=False, confidence=1.0, source_group="game:240000",
+            belief_fingerprint="b", search_fingerprint="s",
+            opponent_policy_version="o", leaf_version="terminal-rollout-v1",
+            teacher_status="ok", teacher_q_gap=1.0,
+            special_state_tags=("hu",), phase=context.phase,
+            planes=planes, scalars=scalars)
+        return {"schema": "search-reference-context-v1",
+                "source_group": "game:240000", "generation": 0,
+                "policy_version_source": "pi0",
+                "context": context.as_json(), "history": None,
+                "sample": sample.as_json()}
+
+    def test_heuristic_regret_and_benchmark(self):
+        row = self._context_row()
+        evaluation = evaluate_heuristic(
+            [row], evaluator="legacy",
+            profile=SearchDistillationProfile(), benchmark_samples=1,
+            benchmark_repeats=2)
+        self.assertEqual(evaluation.count, 1)
+        self.assertEqual(evaluation.path, "heuristic:legacy")
+        self.assertIsNotNone(evaluation.mean_reference_regret)
+        self.assertIsNotNone(evaluation.latency["p95_ms"])
+        self.assertIsNone(evaluation.policy_kl)
+        candidate = candidate_from_evaluation(evaluation)
+        self.assertIsNotNone(candidate.batch1_latency_ms)
+
+    def test_legal_mismatch_is_skipped_not_scored(self):
+        row = self._context_row(mismatch=True)
+        evaluation = evaluate_heuristic(
+            [row], evaluator="legacy", profile=SearchDistillationProfile())
+        self.assertEqual(evaluation.count, 0)
+        self.assertEqual(evaluation.skipped["model_error"], 1)
+
+    def test_public_game_reconstruction_matches_context(self):
+        row = self._context_row()
+        context, game = public_game_for_row(row)
+        actual = {action_to_flat(action) for action in game.legal_actions()}
+        expected = {index for index, ok
+                    in enumerate(self._sample_mask(row)) if ok}
+        self.assertEqual(actual, expected)
+
+    @staticmethod
+    def _sample_mask(row):
+        return row["sample"]["legal_mask"]
 
 
 class TestSelection(unittest.TestCase):
