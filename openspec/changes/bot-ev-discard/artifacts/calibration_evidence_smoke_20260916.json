@@ -1,0 +1,118 @@
+{
+  "schema": "bot-ev-discard/calibration-evidence-manifest-v1",
+  "contract": {
+    "profile_fingerprint": "2b39eceb16c8fa0d",
+    "rule_version": "hangzhou-platform-guide-v34",
+    "kernel_version": "python-frontier-v1",
+    "scope": "discard",
+    "continuation_version": "frozen_shape_v1_self_kong_v1",
+    "strategy": "shape-v2",
+    "reward_units": "base-score points",
+    "belief_version": "uniform_unseen-v1",
+    "tail_version": "zero-v1",
+    "horizon": 2,
+    "manifest_fingerprint": "55ada75c96ef79dd"
+  },
+  "split_manifest": {
+    "schema": "bot-ev-discard/split-manifest-v1",
+    "source_group": "one source seed owns every decision and rotation",
+    "splits": {
+      "train": {
+        "seed_start": 240000,
+        "games": 1024
+      },
+      "validation": {
+        "seed_start": 241024,
+        "games": 1024
+      },
+      "final_test": {
+        "seed_start": 242048,
+        "games": 8192
+      }
+    },
+    "seat_dealer": {
+      "seat": "i%4",
+      "dealer": "(i//4)%4",
+      "combinations": 16,
+      "balanced": true
+    },
+    "you_cai_bi_kao": [
+      false,
+      true
+    ],
+    "seed_fingerprint": "",
+    "contract": {
+      "profile_fingerprint": "2b39eceb16c8fa0d",
+      "rule_version": "hangzhou-platform-guide-v34",
+      "kernel_version": "python-frontier-v1",
+      "scope": "discard",
+      "continuation_version": "frozen_shape_v1_self_kong_v1",
+      "strategy": "shape-v2"
+    },
+    "fingerprint": "55ada75c96ef79dd"
+  },
+  "split_manifest_self_check": {
+    "valid": true,
+    "supplied": "55ada75c96ef79dd",
+    "actual": "55ada75c96ef79dd"
+  },
+  "profile": {
+    "name": "shape-v2",
+    "version": "shape-v2",
+    "scope": "discard",
+    "schema": "bot-ev-discard/profile-v1",
+    "reward_units": "base-score points",
+    "reward_name": "hero_round_settlement_delta",
+    "rules_version": "hangzhou-platform-guide-v34",
+    "belief_version": "uniform_unseen-v1",
+    "continuation_version": "frozen_shape_v1_self_kong_v1",
+    "kernel_version": "python-frontier-v1",
+    "tail_version": "zero-v1",
+    "horizon": 2,
+    "node_budget": 4096,
+    "time_budget_ms": 36.0,
+    "explanation": true,
+    "calibrated": false,
+    "calibration_fingerprint": "",
+    "calibration_kind": "none",
+    "calibration_intercept": 0.0,
+    "q0_shanten_weight": -1.0,
+    "q0_u1_weight": 0.01,
+    "q0_ev1_weight": 0.0,
+    "q0_ev2_weight": 1.0,
+    "q0_fan_weight": 0.0,
+    "q0_risk_weight": 0.0,
+    "reward_upper_bound": null,
+    "tau": {},
+    "lut_buckets": [],
+    "min_bucket_samples": 64,
+    "fingerprint": "2b39eceb16c8fa0d"
+  },
+  "artifacts": {
+    "calibration": {
+      "present": true,
+      "valid": true,
+      "mismatch": {},
+      "fingerprint": "993bcac9ba6698b4b0b158fb"
+    },
+    "teacher": {
+      "present": false,
+      "valid": false
+    },
+    "score_evidence": {
+      "present": false,
+      "valid": false
+    }
+  },
+  "strict": true,
+  "require_all": false,
+  "missing_required_artifacts": [
+    "teacher",
+    "score_evidence"
+  ],
+  "invalidated": [],
+  "contract_valid": true,
+  "legacy_default": true,
+  "offline_only": true,
+  "fingerprint": "886dde8cc3cad1661b4a14ed"
+}

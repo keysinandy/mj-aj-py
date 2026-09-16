@@ -14,7 +14,7 @@
     "tail_version": "zero-v1",
     "horizon": 2,
     "node_budget": 4096,
-    "time_budget_ms": 17.5,
+    "time_budget_ms": 36.0,
     "explanation": true,
     "calibrated": false,
     "q0_shanten_weight": -1.0,
@@ -30,7 +30,7 @@
     "calibration_fingerprint": "",
     "calibration_kind": "none",
     "calibration_intercept": 0.0,
-    "fingerprint": "f1ae51545bea9b5b"
+    "fingerprint": "2b39eceb16c8fa0d"
   },
   "fingerprint_algorithm": "sha256-canonical-json-truncated-16",
   "scope_contract": {

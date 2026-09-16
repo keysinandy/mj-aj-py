@@ -1,0 +1,262 @@
+{
+  "schema": "bot-ev-discard/release-evidence-manifest-v1",
+  "frozen_at": "2026-09-16",
+  "profile": {
+    "name": "shape-v2",
+    "version": "shape-v2",
+    "scope": "discard",
+    "schema": "bot-ev-discard/profile-v1",
+    "reward_units": "base-score points",
+    "reward_name": "hero_round_settlement_delta",
+    "rules_version": "hangzhou-platform-guide-v34",
+    "belief_version": "uniform_unseen-v1",
+    "continuation_version": "frozen_shape_v1_self_kong_v1",
+    "kernel_version": "python-frontier-v1",
+    "tail_version": "zero-v1",
+    "horizon": 2,
+    "node_budget": 4096,
+    "time_budget_ms": 36.0,
+    "explanation": true,
+    "calibrated": false,
+    "calibration_fingerprint": "",
+    "calibration_kind": "none",
+    "calibration_intercept": 0.0,
+    "q0_shanten_weight": -1.0,
+    "q0_u1_weight": 0.01,
+    "q0_ev1_weight": 0.0,
+    "q0_ev2_weight": 1.0,
+    "q0_fan_weight": 0.0,
+    "q0_risk_weight": 0.0,
+    "reward_upper_bound": null,
+    "tau": {},
+    "lut_buckets": [],
+    "min_bucket_samples": 64,
+    "fingerprint": "2b39eceb16c8fa0d"
+  },
+  "contract": {
+    "profile_fingerprint": "2b39eceb16c8fa0d",
+    "rule_version": "hangzhou-platform-guide-v34",
+    "kernel_version": "python-frontier-v1",
+    "scope": "discard",
+    "continuation_version": "frozen_shape_v1_self_kong_v1",
+    "strategy": "shape-v2",
+    "reward_units": "base-score points",
+    "belief_version": "uniform_unseen-v1",
+    "tail_version": "zero-v1",
+    "horizon": 2,
+    "manifest_fingerprint": "55ada75c96ef79dd"
+  },
+  "split_manifest": {
+    "schema": "bot-ev-discard/split-manifest-v1",
+    "source_group": "one source seed owns every decision and rotation",
+    "splits": {
+      "train": {
+        "seed_start": 240000,
+        "games": 1024
+      },
+      "validation": {
+        "seed_start": 241024,
+        "games": 1024
+      },
+      "final_test": {
+        "seed_start": 242048,
+        "games": 8192
+      }
+    },
+    "seat_dealer": {
+      "seat": "i%4",
+      "dealer": "(i//4)%4",
+      "combinations": 16,
+      "balanced": true
+    },
+    "you_cai_bi_kao": [
+      false,
+      true
+    ],
+    "seed_fingerprint": "",
+    "contract": {
+      "profile_fingerprint": "2b39eceb16c8fa0d",
+      "rule_version": "hangzhou-platform-guide-v34",
+      "kernel_version": "python-frontier-v1",
+      "scope": "discard",
+      "continuation_version": "frozen_shape_v1_self_kong_v1",
+      "strategy": "shape-v2"
+    },
+    "fingerprint": "55ada75c96ef79dd"
+  },
+  "calibration": {
+    "present": true,
+    "valid": true,
+    "mismatch": {},
+    "fingerprint": "9a067a9c335007b82cc47318"
+  },
+  "validation": {
+    "present": true,
+    "rows": 19,
+    "metrics": {
+      "n": 19,
+      "mae": 16.222267524598564,
+      "rmse": 23.16645032677733,
+      "bias": 16.222267524598564,
+      "bucket_fallbacks": 0
+    }
+  },
+  "final_test": {
+    "present": true,
+    "rows": 73,
+    "metrics": {
+      "n": 73,
+      "mae": 6.951551366046397,
+      "rmse": 8.355788843245728,
+      "bias": 6.951551366046397,
+      "bucket_fallbacks": 0
+    }
+  },
+  "teacher": {
+    "present": true,
+    "valid": true,
+    "mismatch": {},
+    "fingerprint": "02a105f390fa7f2b0486db0b"
+  },
+  "q_regret": {
+    "records": 16,
+    "complete_records": 16,
+    "teacher_ambiguous_records": 16,
+    "report_fingerprint": "c11ee68a2337eb08a35e09c5",
+    "independent_worlds_verified": true
+  },
+  "score_evidence": {
+    "present": true,
+    "valid": true,
+    "mismatch": {},
+    "fingerprint": null
+  },
+  "runtime": {
+    "profile": {
+      "name": "shape-v2",
+      "version": "shape-v2",
+      "scope": "discard",
+      "schema": "bot-ev-discard/profile-v1",
+      "reward_units": "base-score points",
+      "reward_name": "hero_round_settlement_delta",
+      "rules_version": "hangzhou-platform-guide-v34",
+      "belief_version": "uniform_unseen-v1",
+      "continuation_version": "frozen_shape_v1_self_kong_v1",
+      "kernel_version": "python-frontier-v1",
+      "tail_version": "zero-v1",
+      "horizon": 2,
+      "node_budget": 4096,
+      "time_budget_ms": 36.0,
+      "explanation": true,
+      "calibrated": false,
+      "calibration_fingerprint": "",
+      "calibration_kind": "none",
+      "calibration_intercept": 0.0,
+      "q0_shanten_weight": -1.0,
+      "q0_u1_weight": 0.01,
+      "q0_ev1_weight": 0.0,
+      "q0_ev2_weight": 1.0,
+      "q0_fan_weight": 0.0,
+      "q0_risk_weight": 0.0,
+      "reward_upper_bound": null,
+      "tau": {},
+      "lut_buckets": [],
+      "min_bucket_samples": 64,
+      "fingerprint": "2b39eceb16c8fa0d"
+    },
+    "contract": {
+      "profile_fingerprint": "2b39eceb16c8fa0d",
+      "rule_version": "hangzhou-platform-guide-v34",
+      "kernel_version": "python-frontier-v1",
+      "scope": "discard",
+      "continuation_version": "frozen_shape_v1_self_kong_v1",
+      "strategy": "shape-v2",
+      "reward_units": "base-score points",
+      "belief_version": "uniform_unseen-v1",
+      "tail_version": "zero-v1",
+      "horizon": 2,
+      "manifest_fingerprint": "55ada75c96ef79dd"
+    },
+    "rules": {
+      "rule_version": "hangzhou-platform-guide-v34",
+      "dead_wall": 20,
+      "chow_limit": 2,
+      "scope": "discard"
+    },
+    "policy": {
+      "production_default": "legacy",
+      "candidate": "shape-v2",
+      "opponent": "legacy",
+      "online_decision": false
+    },
+    "repository": {
+      "head": "0d6cefd7d35d113d432886b2457955734f2b8a46",
+      "worktree_diff_fingerprint": "07412a56a085b4cdfcb8a3f8383218a78a5eb2a18b66af5966a3b075d544f787"
+    },
+    "source_sha256": {
+      "mj/bot.py": "920dedf3bbe9c2425862359d048b543c60ef0ae992358508bf58ec64eca42985",
+      "mj/decision/calibration.py": "da215f0443fe4e755ecd15ee9aa15cc5bfe6f376d971a3b98c9ec8042a95b0dc",
+      "mj/decision/context.py": "b7d1a4694d900996416cb581fc5108feaed6e5490a2672632e743171a1a5ac77",
+      "mj/decision/fast_ev.py": "2b6d7a0d80c223a5a23575dab3c7dfd0cdd026f10d8db743c70b1977a8f9d721",
+      "mj/decision/frontier.py": "80779d27f6452e1c99dd4062b510a77a07779dd4d001baa5cd043efc60456ca3",
+      "mj/decision/profile.py": "d78b7935ac10ee52451352a5587469d490f7e57fe459423f80d9dc181c77c340",
+      "mj/game.py": "87a0559facda05ae662be4797181615ac74b2129686e22a7fbd1fe15d01de4cf",
+      "mj/hand_eval.py": "3db071d7543d31b4d4801d90cebe3af1d6ef985b197640f532c882d09f2cb340",
+      "mj/rollout/belief.py": "f7f357b5b7ecf8b8d579aa3031233b6f1b3e4d0ca34ca80a5add5aec5fb8aee7",
+      "mj/rollout/evaluator.py": "ba9dcebe0d246c1a818321c1806c6d19777cfa7f3f730eacac501b5a69a9b17b",
+      "mj/rollout/simulator.py": "4f7ed5840503961dcd4e0a569abe732f52aa59a0be16fca6233f1a33da49977e",
+      "mj/scoring.py": "4d44bda2eb95d0fc97a1e55d87a3215efed685edae576e1be159754dee6b3af6",
+      "mj/shanten.py": "37875245fb2ab1339b362eaa0f3677238701efb3d1836bb21404ecce6f73e1c8",
+      "rust/src/lib.rs": "4e0bc80ada1165281a3c07d9df19caabd8503c6d637822591e4f03864c5905c0",
+      "docs/ev.md": "53f5024c587e790ad8e404c92cfd2e4bfbedfb2e13a1cb608691326f4b0fe435"
+    },
+    "offline_only": true,
+    "oracle": false,
+    "fingerprint": "54682b944b14ebf18cc77caa"
+  },
+  "drift": {
+    "calibration": {
+      "present": true,
+      "valid": true,
+      "mismatch": {},
+      "fingerprint": "9a067a9c335007b82cc47318"
+    },
+    "q_regret": {
+      "present": true,
+      "valid": true,
+      "mismatch": {},
+      "fingerprint": "02a105f390fa7f2b0486db0b"
+    },
+    "score": {
+      "present": true,
+      "valid": true,
+      "mismatch": {},
+      "fingerprint": "dde05d27fff41425e22adacb",
+      "frozen_final_test_schedule": {
+        "valid": true,
+        "seed_start": 242048,
+        "games": 4096,
+        "expected": {
+          "seed_start": 242048,
+          "games": 8192
+        }
+      }
+    }
+  },
+  "release_gate": {
+    "pairs": 4096,
+    "required_pairs": 4096,
+    "score_gate_passed": false,
+    "balanced_16_seat_dealer": true,
+    "independent_q_verified": true,
+    "calibration_splits_present": true,
+    "legacy_default": true,
+    "eligible_for_default_switch": false
+  },
+  "common_contract_valid": true,
+  "invalidated": [],
+  "legacy_default": true,
+  "offline_only": true,
+  "oracle": false,
+  "fingerprint": "984f0ef33afd3b7039905b5f"
+}

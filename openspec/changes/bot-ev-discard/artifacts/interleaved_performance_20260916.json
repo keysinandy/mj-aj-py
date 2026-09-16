@@ -1,0 +1,1043 @@
+{
+  "schema": "bot-ev-discard/interleaved-performance-v1",
+  "workload": {
+    "games": 200,
+    "seed_start": 190000,
+    "repetitions": 3,
+    "evaluators": [
+      "shape-v1",
+      "shape-v2"
+    ],
+    "include_explanation_serialization": true
+  },
+  "runtime": {
+    "python": "3.11.14 (main, Dec 22 2025, 14:04:56) [Clang 17.0.0 (clang-1700.3.19.1)]",
+    "platform": "macOS-26.6.2-x86_64-i386-64bit",
+    "machine": "x86_64",
+    "kernel": "rust-frontier-v1",
+    "frontier_batch_kernel": "rust-frontier-batch-v1"
+  },
+  "runs": [
+    {
+      "games": 200,
+      "seed_start": 190000,
+      "evaluator": "shape-v1",
+      "elapsed_s": 108.72514838498319,
+      "decisions": {
+        "discard": 8194,
+        "react": 30751
+      },
+      "fallback_decisions": {
+        "discard": 3748,
+        "react": 1896
+      },
+      "complete_levels": {
+        "discard": 4149,
+        "react": 0
+      },
+      "fallbacks": {
+        "time_budget": 3753,
+        "q_incomplete": 1891
+      },
+      "fallbacks_by_phase": {
+        "discard": {
+          "time_budget": 3748
+        },
+        "react": {
+          "q_incomplete": 1891,
+          "time_budget": 5
+        }
+      },
+      "levels": {
+        "discard": {
+          "Q0": 3745,
+          "Q": 4149,
+          "legacy": 300
+        },
+        "react": {
+          "legacy": 28860,
+          "Q0": 1891
+        }
+      },
+      "q_pruned_candidates": {
+        "discard": 1586,
+        "react": 0
+      },
+      "discard": {
+        "n": 8194,
+        "mean_ms": 12.957734892049666,
+        "p50_ms": 16.522328020073473,
+        "p95_ms": 18.690579978283495,
+        "p99_ms": 21.13619400188327,
+        "max_ms": 46.453977993223816,
+        "fallback_rate": 0.4574078594093239,
+        "complete_level_rate": 0.5063461069074933,
+        "nodes": {
+          "n": 7897,
+          "mean": 501.0045586931746,
+          "p50": 66,
+          "p95": 2677,
+          "p99": 4606,
+          "max": 7568
+        },
+        "kernel_calls": {
+          "n": 7897,
+          "mean": 491.384196530328,
+          "p50": 110,
+          "p95": 2555,
+          "p99": 4290,
+          "max": 7073
+        }
+      },
+      "react": {
+        "n": 30751,
+        "mean_ms": 0.06643344276059193,
+        "p50_ms": 0.01998001243919134,
+        "p95_ms": 0.426418031565845,
+        "p99_ms": 0.8804289973340929,
+        "max_ms": 13.34376900922507,
+        "fallback_rate": 0.06165653149491074,
+        "complete_level_rate": 0.0,
+        "nodes": {
+          "n": 1896,
+          "mean": 14.069620253164556,
+          "p50": 13,
+          "p95": 27,
+          "p99": 39,
+          "max": 52
+        },
+        "kernel_calls": {
+          "n": 1896,
+          "mean": 17.543776371308017,
+          "p50": 16,
+          "p95": 33,
+          "p99": 50,
+          "max": 75
+        }
+      },
+      "elapsed_per_game_s": 0.543625741924916,
+      "repetition": 1,
+      "order_index": 0,
+      "schedule_order": [
+        "shape-v1",
+        "shape-v2"
+      ]
+    },
+    {
+      "games": 200,
+      "seed_start": 190000,
+      "evaluator": "shape-v2",
+      "elapsed_s": 333.22276225697715,
+      "decisions": {
+        "discard": 7796,
+        "react": 29293
+      },
+      "fallback_decisions": {
+        "discard": 7412,
+        "react": 1814
+      },
+      "complete_levels": {
+        "discard": 376,
+        "react": 0
+      },
+      "fallbacks": {
+        "time_budget": 7168,
+        "only_legal_action": 27487,
+        "scope_delegated_reaction": 1814,
+        "scope_delegated_root_action": 244
+      },
+      "fallbacks_by_phase": {
+        "discard": {
+          "time_budget": 7168,
+          "scope_delegated_root_action": 244,
+          "only_legal_action": 8
+        },
+        "react": {
+          "only_legal_action": 27479,
+          "scope_delegated_reaction": 1814
+        }
+      },
+      "levels": {
+        "discard": {
+          "V2-Q0": 7168,
+          "V2-EV2": 376,
+          "legacy": 252
+        },
+        "react": {
+          "legacy": 29293
+        }
+      },
+      "q_pruned_candidates": {
+        "discard": 0,
+        "react": 0
+      },
+      "discard": {
+        "n": 7796,
+        "mean_ms": 41.21110927060427,
+        "p50_ms": 39.83980999328196,
+        "p95_ms": 59.27704001078382,
+        "p99_ms": 87.58486900478601,
+        "max_ms": 131.9380839704536,
+        "fallback_rate": 0.9507439712673166,
+        "complete_level_rate": 0.04822986146741919,
+        "nodes": {
+          "n": 7796,
+          "mean": 732.5241149307337,
+          "p50": 755,
+          "p95": 1458,
+          "p99": 1737,
+          "max": 1926
+        },
+        "kernel_calls": {
+          "n": 7796,
+          "mean": 3.667008722421755,
+          "p50": 3,
+          "p95": 6,
+          "p99": 8,
+          "max": 9
+        }
+      },
+      "react": {
+        "n": 29293,
+        "mean_ms": 0.38298637255658036,
+        "p50_ms": 0.3606350510381162,
+        "p95_ms": 0.5934149958193302,
+        "p99_ms": 0.8411669987253845,
+        "max_ms": 15.511963982135057,
+        "fallback_rate": 0.0619260574198614,
+        "complete_level_rate": 0.0,
+        "nodes": {
+          "n": 29293,
+          "mean": 0.0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "max": 0
+        },
+        "kernel_calls": {
+          "n": 29293,
+          "mean": 0.0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "max": 0
+        }
+      },
+      "elapsed_per_game_s": 1.6661138112848857,
+      "repetition": 1,
+      "order_index": 1,
+      "schedule_order": [
+        "shape-v1",
+        "shape-v2"
+      ]
+    },
+    {
+      "games": 200,
+      "seed_start": 190000,
+      "evaluator": "shape-v2",
+      "elapsed_s": 409.6883388879942,
+      "decisions": {
+        "discard": 7780,
+        "react": 29209
+      },
+      "fallback_decisions": {
+        "discard": 7668,
+        "react": 1818
+      },
+      "complete_levels": {
+        "discard": 104,
+        "react": 0
+      },
+      "fallbacks": {
+        "time_budget": 7419,
+        "only_legal_action": 27399,
+        "scope_delegated_reaction": 1818,
+        "scope_delegated_root_action": 246,
+        "q0_time_budget": 3
+      },
+      "fallbacks_by_phase": {
+        "discard": {
+          "time_budget": 7419,
+          "scope_delegated_root_action": 246,
+          "q0_time_budget": 3,
+          "only_legal_action": 8
+        },
+        "react": {
+          "only_legal_action": 27391,
+          "scope_delegated_reaction": 1818
+        }
+      },
+      "levels": {
+        "discard": {
+          "V2-Q0": 7419,
+          "legacy": 257,
+          "V2-EV2": 104
+        },
+        "react": {
+          "legacy": 29209
+        }
+      },
+      "q_pruned_candidates": {
+        "discard": 0,
+        "react": 0
+      },
+      "discard": {
+        "n": 7780,
+        "mean_ms": 49.52027393183413,
+        "p50_ms": 44.25965697737411,
+        "p95_ms": 87.54359901649877,
+        "p99_ms": 142.36317505128682,
+        "max_ms": 372.9174060281366,
+        "fallback_rate": 0.9856041131105399,
+        "complete_level_rate": 0.013367609254498715,
+        "nodes": {
+          "n": 7780,
+          "mean": 383.03431876606686,
+          "p50": 409,
+          "p95": 912,
+          "p99": 1149,
+          "max": 1393
+        },
+        "kernel_calls": {
+          "n": 7780,
+          "mean": 2.775192802056555,
+          "p50": 3,
+          "p95": 5,
+          "p99": 6,
+          "max": 7
+        }
+      },
+      "react": {
+        "n": 29209,
+        "mean_ms": 0.7870388161990135,
+        "p50_ms": 0.6910269730724394,
+        "p95_ms": 1.5351910260505974,
+        "p99_ms": 2.1619100007228553,
+        "max_ms": 84.76802898803726,
+        "fallback_rate": 0.06224109007497689,
+        "complete_level_rate": 0.0,
+        "nodes": {
+          "n": 29209,
+          "mean": 0.0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "max": 0
+        },
+        "kernel_calls": {
+          "n": 29209,
+          "mean": 0.0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "max": 0
+        }
+      },
+      "elapsed_per_game_s": 2.048441694439971,
+      "repetition": 2,
+      "order_index": 0,
+      "schedule_order": [
+        "shape-v2",
+        "shape-v1"
+      ]
+    },
+    {
+      "games": 200,
+      "seed_start": 190000,
+      "evaluator": "shape-v1",
+      "elapsed_s": 140.08532721700612,
+      "decisions": {
+        "discard": 7971,
+        "react": 29873
+      },
+      "fallback_decisions": {
+        "discard": 5843,
+        "react": 1816
+      },
+      "complete_levels": {
+        "discard": 1815,
+        "react": 0
+      },
+      "fallbacks": {
+        "time_budget": 5857,
+        "q_incomplete": 1802
+      },
+      "fallbacks_by_phase": {
+        "discard": {
+          "time_budget": 5843
+        },
+        "react": {
+          "q_incomplete": 1802,
+          "time_budget": 14
+        }
+      },
+      "levels": {
+        "discard": {
+          "Q0": 5809,
+          "Q": 1815,
+          "legacy": 347
+        },
+        "react": {
+          "legacy": 28071,
+          "Q0": 1802
+        }
+      },
+      "q_pruned_candidates": {
+        "discard": 527,
+        "react": 0
+      },
+      "discard": {
+        "n": 7971,
+        "mean_ms": 16.816314599515486,
+        "p50_ms": 18.624674004968256,
+        "p95_ms": 20.769120019394904,
+        "p99_ms": 27.798139955848455,
+        "max_ms": 149.7109429910779,
+        "fallback_rate": 0.7330322418768034,
+        "complete_level_rate": 0.22770041400075272,
+        "nodes": {
+          "n": 7658,
+          "mean": 86.40010446591799,
+          "p50": 21,
+          "p95": 384,
+          "p99": 1057,
+          "max": 2398
+        },
+        "kernel_calls": {
+          "n": 7658,
+          "mean": 97.24601723687647,
+          "p50": 42,
+          "p95": 356,
+          "p99": 1014,
+          "max": 2264
+        }
+      },
+      "react": {
+        "n": 29873,
+        "mean_ms": 0.16170112662501449,
+        "p50_ms": 0.04873797297477722,
+        "p95_ms": 0.9242669912055135,
+        "p99_ms": 2.376974036451429,
+        "max_ms": 19.134639005642384,
+        "fallback_rate": 0.06079068054765172,
+        "complete_level_rate": 0.0,
+        "nodes": {
+          "n": 1816,
+          "mean": 14.094713656387665,
+          "p50": 13,
+          "p95": 27,
+          "p99": 39,
+          "max": 52
+        },
+        "kernel_calls": {
+          "n": 1816,
+          "mean": 17.748898678414097,
+          "p50": 16,
+          "p95": 34,
+          "p99": 51,
+          "max": 75
+        }
+      },
+      "elapsed_per_game_s": 0.7004266360850306,
+      "repetition": 2,
+      "order_index": 1,
+      "schedule_order": [
+        "shape-v2",
+        "shape-v1"
+      ]
+    },
+    {
+      "games": 200,
+      "seed_start": 190000,
+      "evaluator": "shape-v1",
+      "elapsed_s": 149.3719126060023,
+      "decisions": {
+        "discard": 7902,
+        "react": 29589
+      },
+      "fallback_decisions": {
+        "discard": 6257,
+        "react": 1808
+      },
+      "complete_levels": {
+        "discard": 1329,
+        "react": 0
+      },
+      "fallbacks": {
+        "time_budget": 6289,
+        "q_incomplete": 1776
+      },
+      "fallbacks_by_phase": {
+        "discard": {
+          "time_budget": 6257
+        },
+        "react": {
+          "q_incomplete": 1776,
+          "time_budget": 32
+        }
+      },
+      "levels": {
+        "discard": {
+          "Q0": 6184,
+          "Q": 1329,
+          "legacy": 389
+        },
+        "react": {
+          "legacy": 27813,
+          "Q0": 1776
+        }
+      },
+      "q_pruned_candidates": {
+        "discard": 337,
+        "react": 0
+      },
+      "discard": {
+        "n": 7902,
+        "mean_ms": 17.891778223420665,
+        "p50_ms": 19.02682101354003,
+        "p95_ms": 21.745681995525956,
+        "p99_ms": 26.867670007050037,
+        "max_ms": 237.55988798802719,
+        "fallback_rate": 0.7918248544672235,
+        "complete_level_rate": 0.16818526955201216,
+        "nodes": {
+          "n": 7586,
+          "mean": 50.71065119957817,
+          "p50": 15,
+          "p95": 262,
+          "p99": 396,
+          "max": 1268
+        },
+        "kernel_calls": {
+          "n": 7586,
+          "mean": 62.85143685736884,
+          "p50": 30,
+          "p95": 234,
+          "p99": 383,
+          "max": 1230
+        }
+      },
+      "react": {
+        "n": 29589,
+        "mean_ms": 0.2155458492808027,
+        "p50_ms": 0.06543798372149467,
+        "p95_ms": 1.2721600360237062,
+        "p99_ms": 3.070599981583655,
+        "max_ms": 26.264121988788247,
+        "fallback_rate": 0.06110378857007672,
+        "complete_level_rate": 0.0,
+        "nodes": {
+          "n": 1808,
+          "mean": 14.103429203539823,
+          "p50": 13,
+          "p95": 27,
+          "p99": 38,
+          "max": 52
+        },
+        "kernel_calls": {
+          "n": 1808,
+          "mean": 17.753318584070797,
+          "p50": 16,
+          "p95": 33,
+          "p99": 50,
+          "max": 75
+        }
+      },
+      "elapsed_per_game_s": 0.7468595630300114,
+      "repetition": 3,
+      "order_index": 0,
+      "schedule_order": [
+        "shape-v1",
+        "shape-v2"
+      ]
+    },
+    {
+      "games": 200,
+      "seed_start": 190000,
+      "evaluator": "shape-v2",
+      "elapsed_s": 420.8293207740062,
+      "decisions": {
+        "discard": 7782,
+        "react": 29231
+      },
+      "fallback_decisions": {
+        "discard": 7706,
+        "react": 1816
+      },
+      "complete_levels": {
+        "discard": 68,
+        "react": 0
+      },
+      "fallbacks": {
+        "time_budget": 7462,
+        "only_legal_action": 27423,
+        "scope_delegated_reaction": 1816,
+        "scope_delegated_root_action": 244
+      },
+      "fallbacks_by_phase": {
+        "discard": {
+          "time_budget": 7462,
+          "scope_delegated_root_action": 244,
+          "only_legal_action": 8
+        },
+        "react": {
+          "only_legal_action": 27415,
+          "scope_delegated_reaction": 1816
+        }
+      },
+      "levels": {
+        "discard": {
+          "V2-Q0": 7462,
+          "legacy": 252,
+          "V2-EV2": 68
+        },
+        "react": {
+          "legacy": 29231
+        }
+      },
+      "q_pruned_candidates": {
+        "discard": 0,
+        "react": 0
+      },
+      "discard": {
+        "n": 7782,
+        "mean_ms": 50.56535662500431,
+        "p50_ms": 45.24032701738179,
+        "p95_ms": 91.64636395871639,
+        "p99_ms": 145.39189101196826,
+        "max_ms": 329.2288969969377,
+        "fallback_rate": 0.9902338730403495,
+        "complete_level_rate": 0.008738113595476741,
+        "nodes": {
+          "n": 7782,
+          "mean": 309.7654844512979,
+          "p50": 375,
+          "p95": 701,
+          "p99": 807,
+          "max": 930
+        },
+        "kernel_calls": {
+          "n": 7782,
+          "mean": 2.570033410434336,
+          "p50": 2,
+          "p95": 4,
+          "p99": 5,
+          "max": 6
+        }
+      },
+      "react": {
+        "n": 29231,
+        "mean_ms": 0.8802152592652,
+        "p50_ms": 0.7502699736505747,
+        "p95_ms": 1.554469985421747,
+        "p99_ms": 2.13307497324422,
+        "max_ms": 71.29067601636052,
+        "fallback_rate": 0.06212582532243167,
+        "complete_level_rate": 0.0,
+        "nodes": {
+          "n": 29231,
+          "mean": 0.0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "max": 0
+        },
+        "kernel_calls": {
+          "n": 29231,
+          "mean": 0.0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0,
+          "max": 0
+        }
+      },
+      "elapsed_per_game_s": 2.104146603870031,
+      "repetition": 3,
+      "order_index": 1,
+      "schedule_order": [
+        "shape-v1",
+        "shape-v2"
+      ]
+    }
+  ],
+  "aggregate": {
+    "shape-v1": {
+      "runs": 3,
+      "elapsed_per_game_s": {
+        "values": [
+          0.543625741924916,
+          0.7004266360850306,
+          0.7468595630300114
+        ],
+        "median": 0.7004266360850306,
+        "mean": 0.663637313679986
+      },
+      "discard": {
+        "p50_ms": [
+          16.522328020073473,
+          18.624674004968256,
+          19.02682101354003
+        ],
+        "p95_ms": [
+          18.690579978283495,
+          20.769120019394904,
+          21.745681995525956
+        ],
+        "p99_ms": [
+          21.13619400188327,
+          27.798139955848455,
+          26.867670007050037
+        ],
+        "max_ms": [
+          46.453977993223816,
+          149.7109429910779,
+          237.55988798802719
+        ],
+        "fallback_rate": [
+          0.4574078594093239,
+          0.7330322418768034,
+          0.7918248544672235
+        ],
+        "complete_level_rate": [
+          0.5063461069074933,
+          0.22770041400075272,
+          0.16818526955201216
+        ],
+        "nodes": [
+          {
+            "n": 7897,
+            "mean": 501.0045586931746,
+            "p50": 66,
+            "p95": 2677,
+            "p99": 4606,
+            "max": 7568
+          },
+          {
+            "n": 7658,
+            "mean": 86.40010446591799,
+            "p50": 21,
+            "p95": 384,
+            "p99": 1057,
+            "max": 2398
+          },
+          {
+            "n": 7586,
+            "mean": 50.71065119957817,
+            "p50": 15,
+            "p95": 262,
+            "p99": 396,
+            "max": 1268
+          }
+        ],
+        "kernel_calls": [
+          {
+            "n": 7897,
+            "mean": 491.384196530328,
+            "p50": 110,
+            "p95": 2555,
+            "p99": 4290,
+            "max": 7073
+          },
+          {
+            "n": 7658,
+            "mean": 97.24601723687647,
+            "p50": 42,
+            "p95": 356,
+            "p99": 1014,
+            "max": 2264
+          },
+          {
+            "n": 7586,
+            "mean": 62.85143685736884,
+            "p50": 30,
+            "p95": 234,
+            "p99": 383,
+            "max": 1230
+          }
+        ]
+      },
+      "react": {
+        "p50_ms": [
+          0.01998001243919134,
+          0.04873797297477722,
+          0.06543798372149467
+        ],
+        "p95_ms": [
+          0.426418031565845,
+          0.9242669912055135,
+          1.2721600360237062
+        ],
+        "p99_ms": [
+          0.8804289973340929,
+          2.376974036451429,
+          3.070599981583655
+        ],
+        "max_ms": [
+          13.34376900922507,
+          19.134639005642384,
+          26.264121988788247
+        ],
+        "fallback_rate": [
+          0.06165653149491074,
+          0.06079068054765172,
+          0.06110378857007672
+        ],
+        "complete_level_rate": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "nodes": [
+          {
+            "n": 1896,
+            "mean": 14.069620253164556,
+            "p50": 13,
+            "p95": 27,
+            "p99": 39,
+            "max": 52
+          },
+          {
+            "n": 1816,
+            "mean": 14.094713656387665,
+            "p50": 13,
+            "p95": 27,
+            "p99": 39,
+            "max": 52
+          },
+          {
+            "n": 1808,
+            "mean": 14.103429203539823,
+            "p50": 13,
+            "p95": 27,
+            "p99": 38,
+            "max": 52
+          }
+        ],
+        "kernel_calls": [
+          {
+            "n": 1896,
+            "mean": 17.543776371308017,
+            "p50": 16,
+            "p95": 33,
+            "p99": 50,
+            "max": 75
+          },
+          {
+            "n": 1816,
+            "mean": 17.748898678414097,
+            "p50": 16,
+            "p95": 34,
+            "p99": 51,
+            "max": 75
+          },
+          {
+            "n": 1808,
+            "mean": 17.753318584070797,
+            "p50": 16,
+            "p95": 33,
+            "p99": 50,
+            "max": 75
+          }
+        ]
+      }
+    },
+    "shape-v2": {
+      "runs": 3,
+      "elapsed_per_game_s": {
+        "values": [
+          1.6661138112848857,
+          2.048441694439971,
+          2.104146603870031
+        ],
+        "median": 2.048441694439971,
+        "mean": 1.9395673698649627
+      },
+      "discard": {
+        "p50_ms": [
+          39.83980999328196,
+          44.25965697737411,
+          45.24032701738179
+        ],
+        "p95_ms": [
+          59.27704001078382,
+          87.54359901649877,
+          91.64636395871639
+        ],
+        "p99_ms": [
+          87.58486900478601,
+          142.36317505128682,
+          145.39189101196826
+        ],
+        "max_ms": [
+          131.9380839704536,
+          372.9174060281366,
+          329.2288969969377
+        ],
+        "fallback_rate": [
+          0.9507439712673166,
+          0.9856041131105399,
+          0.9902338730403495
+        ],
+        "complete_level_rate": [
+          0.04822986146741919,
+          0.013367609254498715,
+          0.008738113595476741
+        ],
+        "nodes": [
+          {
+            "n": 7796,
+            "mean": 732.5241149307337,
+            "p50": 755,
+            "p95": 1458,
+            "p99": 1737,
+            "max": 1926
+          },
+          {
+            "n": 7780,
+            "mean": 383.03431876606686,
+            "p50": 409,
+            "p95": 912,
+            "p99": 1149,
+            "max": 1393
+          },
+          {
+            "n": 7782,
+            "mean": 309.7654844512979,
+            "p50": 375,
+            "p95": 701,
+            "p99": 807,
+            "max": 930
+          }
+        ],
+        "kernel_calls": [
+          {
+            "n": 7796,
+            "mean": 3.667008722421755,
+            "p50": 3,
+            "p95": 6,
+            "p99": 8,
+            "max": 9
+          },
+          {
+            "n": 7780,
+            "mean": 2.775192802056555,
+            "p50": 3,
+            "p95": 5,
+            "p99": 6,
+            "max": 7
+          },
+          {
+            "n": 7782,
+            "mean": 2.570033410434336,
+            "p50": 2,
+            "p95": 4,
+            "p99": 5,
+            "max": 6
+          }
+        ]
+      },
+      "react": {
+        "p50_ms": [
+          0.3606350510381162,
+          0.6910269730724394,
+          0.7502699736505747
+        ],
+        "p95_ms": [
+          0.5934149958193302,
+          1.5351910260505974,
+          1.554469985421747
+        ],
+        "p99_ms": [
+          0.8411669987253845,
+          2.1619100007228553,
+          2.13307497324422
+        ],
+        "max_ms": [
+          15.511963982135057,
+          84.76802898803726,
+          71.29067601636052
+        ],
+        "fallback_rate": [
+          0.0619260574198614,
+          0.06224109007497689,
+          0.06212582532243167
+        ],
+        "complete_level_rate": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "nodes": [
+          {
+            "n": 29293,
+            "mean": 0.0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0,
+            "max": 0
+          },
+          {
+            "n": 29209,
+            "mean": 0.0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0,
+            "max": 0
+          },
+          {
+            "n": 29231,
+            "mean": 0.0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0,
+            "max": 0
+          }
+        ],
+        "kernel_calls": [
+          {
+            "n": 29293,
+            "mean": 0.0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0,
+            "max": 0
+          },
+          {
+            "n": 29209,
+            "mean": 0.0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0,
+            "max": 0
+          },
+          {
+            "n": 29231,
+            "mean": 0.0,
+            "p50": 0,
+            "p95": 0,
+            "p99": 0,
+            "max": 0
+          }
+        ]
+      }
+    }
+  },
+  "comparison": {
+    "shape-v1": {
+      "elapsed_per_game_median_increase_vs_shape_v1": 0.0,
+      "within_15_percent": true,
+      "complete_discard_rate_median": 0.22770041400075272,
+      "fallback_discard_rate_median": 0.7330322418768034,
+      "performance_gate_passed": true
+    },
+    "shape-v2": {
+      "elapsed_per_game_median_increase_vs_shape_v1": 1.9245628148717255,
+      "within_15_percent": false,
+      "complete_discard_rate_median": 0.013367609254498715,
+      "fallback_discard_rate_median": 0.9856041131105399,
+      "performance_gate_passed": false
+    }
+  },
+  "offline_only": true,
+  "legacy_default_unchanged": true
+}

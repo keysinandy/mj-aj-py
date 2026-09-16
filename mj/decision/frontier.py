@@ -10,9 +10,14 @@ from ..shanten import shanten, ukeire
 try:
     from ..shanten import discard_frontier as _discard_frontier_kernel
     from ..shanten import DISCARD_FRONTIER_KERNEL_VERSION
+    from ..shanten import (discard_frontier_batch as
+                           _discard_frontier_batch_kernel,
+                           DISCARD_FRONTIER_BATCH_KERNEL_VERSION)
 except ImportError:  # pragma: no cover - kept for rolling deployments
     _discard_frontier_kernel = None
     DISCARD_FRONTIER_KERNEL_VERSION = "python-frontier-v1"
+    _discard_frontier_batch_kernel = None
+    DISCARD_FRONTIER_BATCH_KERNEL_VERSION = None
 
 from .context import PublicDecisionContext
 
@@ -158,3 +163,92 @@ def discard_frontier(hand_or_context, locked=None, visible=None,
             except (TypeError, ValueError, FrontierError):
                 pass
     return _python_frontier(hand, locked, visible, legal)
+
+
+def discard_frontier_batch(states, locked=0, visibles=None,
+                           legal_discards=None, *, use_rust=True):
+    """Return one all-legal frontier for each post-draw state.
+
+    The Rust implementation shares its decomposition cache across states.
+    When unavailable, this is a semantic-preserving Python/state fallback;
+    callers can inspect each item's ``kernel`` field for the actual path.
+    """
+    states = tuple(tuple(int(x) for x in state) for state in states)
+    if any(len(state) != 34 for state in states):
+        raise FrontierError("every batch hand must have 34 entries")
+    if any(any(x < 0 for x in state) for state in states):
+        raise FrontierError("batch hand contains a negative count")
+    locked = int(locked)
+    if not 0 <= locked <= 4:
+        raise FrontierError(f"invalid locked={locked}")
+    if visibles is not None:
+        visibles = tuple(tuple(int(x) for x in value) for value in visibles)
+        if len(visibles) != len(states):
+            raise FrontierError("visibles must have one entry per state")
+        if any(len(value) != 34 for value in visibles):
+            raise FrontierError("every batch visible vector must have 34 entries")
+        if any(any(x < 0 or x > 4 for x in value) for value in visibles):
+            raise FrontierError("batch visible counts must be in [0,4]")
+        if any(any(state[t] > value[t] for t in range(34))
+               for state, value in zip(states, visibles)):
+            raise FrontierError("batch hand is not included in visible")
+    if legal_discards is not None:
+        legal_discards = tuple(
+            tuple(sorted(set(int(x) for x in value)))
+            for value in legal_discards)
+        if len(legal_discards) != len(states):
+            raise FrontierError("legal_discards must have one entry per state")
+        if any(any(tile < 0 or tile >= 34 for tile in value)
+               for value in legal_discards):
+            raise FrontierError("batch legal discard out of range")
+        if any(any(state[tile] <= 0 for tile in value)
+               for state, value in zip(states, legal_discards)):
+            raise FrontierError("batch legal discard is absent from hand")
+    if use_rust and _discard_frontier_batch_kernel is not None:
+        try:
+            raw = _discard_frontier_batch_kernel(
+                [list(state) for state in states], int(locked),
+                [list(value) for value in visibles] if visibles is not None else None,
+                [list(value) for value in legal_discards]
+                if legal_discards is not None else None, True)
+        except (TypeError, ValueError):
+            raw = None
+        if raw is not None and len(raw) == len(states):
+            result = []
+            for index, rows in enumerate(raw):
+                visible = (visibles[index] if visibles is not None
+                           else states[index])
+                legal = (tuple(sorted(set(legal_discards[index])))
+                         if legal_discards is not None else
+                         tuple(t for t, n in enumerate(states[index]) if n > 0))
+                unknown = sum(max(0, 4 - x) for x in visible)
+                items = []
+                for row in rows:
+                    tile, sh, tiles, u1 = row
+                    item = DiscardFrontierItem(
+                        tile=int(tile), shanten=int(sh),
+                        ukeire_tiles=tuple(int(t) for t in tiles),
+                        u1=int(u1), ukeire_bitset=_bitset(tiles),
+                        waits=tuple(int(t) for t in tiles) if int(sh) == 0 else (),
+                        structure_ukeire=() if int(sh) == 0 else
+                        tuple(int(t) for t in tiles),
+                        visible_unknown=unknown,
+                        kernel=DISCARD_FRONTIER_BATCH_KERNEL_VERSION or
+                        DISCARD_FRONTIER_KERNEL_VERSION)
+                    items.append(item)
+                if tuple(item.tile for item in items) == legal:
+                    result.append(tuple(items))
+                else:
+                    result = []
+                    break
+            if result:
+                return tuple(result)
+    result = []
+    for index, state in enumerate(states):
+        visible = visibles[index] if visibles is not None else None
+        legal = (legal_discards[index]
+                 if legal_discards is not None else None)
+        result.append(discard_frontier(
+            state, locked=locked, visible=visible,
+            legal_discards=legal, use_rust=use_rust))
+    return tuple(result)

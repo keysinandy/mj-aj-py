@@ -52,7 +52,10 @@ class ProfileSpec:
     tail_version: str = "zero-v1"
     horizon: int = 2
     node_budget: int = 4096
-    time_budget_ms: float = 17.5
+    # shape-v2 is evaluated inside the platform decision window.  Keep the
+    # wider 36ms budget explicit in its profile; shape-v1 has an independent
+    # budget in hand_eval.EvalProfile and is intentionally unchanged.
+    time_budget_ms: float = 36.0
     explanation: bool = True
     calibrated: bool = False
     calibration_fingerprint: str = ""

@@ -1,10 +1,15 @@
 # bot-ev-discard 使用说明
 
-`shape-v2` 是当前默认保持关闭的 opt-in 评价器。它只在 `discard` scope
-中枚举所有合法的普通舍牌，使用公开信息、规则计分适配器和最多两次本家
-未来摸牌的 EV2 特征；HU/财飘、KONG 和反应窗口仍由 legacy 委托路径处理。
+`shape-v2` 默认是保持关闭的 `discard`-scope opt-in 评价器。它枚举所有合法
+普通舍牌，使用公开信息、规则计分适配器和最多两次本家未来摸牌的 EV2 特征；
+默认入口中的 HU/财飘、KONG 和反应窗口仍由 legacy 委托路径处理。显式的
+校准 `all-root` profile 另有公开 HU/财飘、KONG 和完整响应游标 fast helper，
+但尚未满足独立 teacher、性能和线上发布闸门，不能当作默认全动作策略。
 其中 v33 杠后补牌的暗杠/补杠会在公开信息下比较下一张补牌的积分期望，
 shape-v2 本身仍只评价普通舍牌，不把该策略升级宣称为 EV2 全动作评价。
+
+shape-v2 的默认内部评价预算为 36ms；这是评价器预算，不改变平台动作截止、
+SSE/HTTP 传输超时或 shape-v1 的预算。完整决策耗时仍须按实际调用链单独验收。
 
 本地成对评估以本家每局 `Game.scores[seat]` 的净积分增量为主指标：
 `shape_score.mean`/`legacy_score.mean` 是平均每局积分，`score_delta.mean`
@@ -14,6 +19,56 @@ shape-v2 本身仍只评价普通舍牌，不把该策略升级宣称为 EV2 全
 python3 scripts/bot_shape_eval.py --games 4096 --evaluator shape-v1 \
   --output /tmp/bot-shape-score.json
 ```
+
+EV2 的完整离线积分 smoke 使用独立的大预算 profile；它只用于本地诊断，
+不会切换默认策略：
+
+```shell
+PYTHONPATH=. python3 scripts/bot_ev_full_eval.py --games 16 \
+  --node-budget 10000000 --time-budget-ms 30000 \
+  --output /tmp/bot-ev-full-score.json
+```
+
+如果需要同时跑 legacy 对照积分，可使用同一离线大预算：
+
+```shell
+PYTHONPATH=. python3 scripts/bot_ev_score_eval.py --games 16 \
+  --full-ev2 --output /tmp/bot-ev-paired-full-score.json
+```
+
+校准必须显式绑定冻结的 train/validation/final-test manifest；不满足契约时
+可以用 `--require-contract` 让命令失败：
+
+```shell
+python3 scripts/bot_ev_calibrate.py --input rows.jsonl \
+  --split-manifest split.json --profile-json profile.json \
+  --require-all-splits --require-contract \
+  --manifest-output /tmp/bot-ev-evidence-manifest.json \
+  --output /tmp/bot-ev-calibration.json
+python3 scripts/bot_ev_regret.py q-regret.jsonl \
+  --require-independent-worlds \
+  --output /tmp/bot-ev-q-regret.json
+```
+
+同机性能验收使用交错调度；正式门禁固定为每个 profile 三轮、每轮 200 局。
+输出同时保留解释序列化、内核、层级、回退率和弃牌/反应分位数：
+
+```shell
+python3 scripts/bot_shape_perf.py --interleaved \
+  --games 200 --repetitions 3 \
+  --evaluators shape-v1,shape-v2 \
+  --output /tmp/bot-ev-interleaved-perf.json
+```
+
+该报告只表示本机离线计时；如果 shape-v2 主要回退到 Q0，
+`performance_gate_passed` 会保持 false，不能用回退路径的吞吐替代完整 EV2
+覆盖。校准证据需要额外使用 `--strict-evidence` 检查 split/profile/kernel
+指纹自洽。
+
+`bot_ev_score_eval.py` 和 `bot_ev_regret.py` 产生的比较均带有
+`counterfactual_evaluation=true`、`oracle=false`，不能当作线上实际动作证据。
+只有 4096 对局、独立世界、性能和线上逐窗门禁全部通过，才可以改变
+`legacy` 默认策略。
 
 积分比较应使用相同 seed、seat、dealer 和规则配置；开启
 `--you-cai-bi-kao` 时应作为独立规则分组报告，不能与关闭配置混合。

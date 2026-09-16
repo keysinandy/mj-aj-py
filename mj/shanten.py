@@ -256,6 +256,11 @@ try:
 except (ImportError, AttributeError):
     _rust_discard_frontier = None
 
+try:
+    from mj_kernels import discard_frontier_batch as _rust_discard_frontier_batch
+except (ImportError, AttributeError):
+    _rust_discard_frontier_batch = None
+
 
 FUTURE_DISCARD_KERNEL_VERSION = (
     "rust-batch-v1" if _rust_best_future_discard is not None
@@ -263,6 +268,9 @@ FUTURE_DISCARD_KERNEL_VERSION = (
 DISCARD_FRONTIER_KERNEL_VERSION = (
     "rust-frontier-v1" if _rust_discard_frontier is not None
     else "python-frontier-v1")
+DISCARD_FRONTIER_BATCH_KERNEL_VERSION = (
+    "rust-frontier-batch-v1" if _rust_discard_frontier_batch is not None
+    else None)
 
 _FORCE_PY = os.environ.get("MJ_KERNELS", "").lower() == "python"
 
@@ -315,6 +323,23 @@ def discard_frontier(counts, locked=0, visible=None, legal_discards=None,
     try:
         return _rust_discard_frontier(
             counts, locked, visible, legal_discards, include_tiles)
+    except (TypeError, ValueError):
+        return None
+
+
+def discard_frontier_batch(states, locked=0, visibles=None,
+                           legal_discards=None, include_tiles=True):
+    """Optional Rust batch for several all-legal discard frontiers.
+
+    ``None`` is a capability signal, matching :func:`discard_frontier`.
+    The decision layer may then run its reference implementation state by
+    state; this helper never substitutes ``best_future_discard``.
+    """
+    if _rust_discard_frontier_batch is None or _FORCE_PY:
+        return None
+    try:
+        return _rust_discard_frontier_batch(
+            states, locked, visibles, legal_discards, include_tiles)
     except (TypeError, ValueError):
         return None
 

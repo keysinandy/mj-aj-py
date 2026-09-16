@@ -13,11 +13,14 @@
 | `mj/game.py` / `mj/scoring.py` | 合法动作、20 张死墙、动作链、显式 HU、倍率与自摸结算 | 无隐藏信息的计分输入和可验证的世界恢复入口 |
 | `mj/platform/mirror.py::build_game` | 本家合法决策投影；他家暗手为零、墙为占位值、反应队列仅本家 | 与在线投影分离的完整 rollout 状态，公共字段缺失不得补猜 |
 | `scripts/bot_shape_eval.py` | shape-v1/legacy 成对对局，对手固定 legacy | 任意冻结候选/基线、逐对明细、错误即失败和按种子聚类统计 |
-| `scripts/bot_shape_perf.py` | 串行全 `choose_action` 耗时与回退统计 | 十场实际调度方式下的并发和含序列化的计时 |
+| `scripts/bot_shape_perf.py` | 串行全 `choose_action` 耗时、交错三轮和回退统计 | 十场实际调度方式下的并发和线上含序列化的计时 |
 | `mj/bc_data.py` / `mj/log2data.py` | 动作掩码、实际终局 score、严格线上提交过滤 | teacher 版本/标签来源/置信度；不能把估计 EV 冒充实际 score |
 | `mj/features.py::extract` | 默认本家特征；可选 oracle 平面 | 本路线数据必须显式 `oracle=False`；兼容补零不等于允许 oracle 输入 |
+| `mj/decision/root.py` | 校准 profile 下的 HU/财飘、自摸暗杠/加杠和完整响应游标下的反应转移比较 | P5/P6 独立校准、完整多玩家 continuation 和发布闸门 |
 
-shape-v1 的 tasks 7–9 仍有未完成项；源码中的 17.5ms 弃牌内部预算、7ms 反应内部预算不构成完整决策或十场并发已达标的证明。`docs/ev.md` 的示例 EV/延迟数字不是新版本验收证据。
+shape-v1 的 tasks 7–9 仍有未完成项；shape-v2 当前使用 36ms 评价预算，shape-v1
+仍保留 17.5ms 弃牌内部预算和 7ms 反应内部预算。这些内部预算都不构成完整
+决策或十场并发已达标的证明。`docs/ev.md` 的示例 EV/延迟数字不是新版本验收证据。
 
 ## Goals / Non-Goals
 
@@ -140,6 +143,21 @@ P5 的模型增加合法 HU 与继续动作价值比较；P6 补充不同 action
 随机 tie 使用按 sample/actor/该 actor 决策序号分流的随机流；候选枚举和 worker 调度不改变 sample_id。不同根动作会导致不同后续轨迹，不承诺每个后续节点牌面相同。跑到 Game.done 才计分；非法动作、超限、异常不得偷偷以 legacy 修复、零分或临时截断分计入样本。整组 world 标为失败并报告，发布数据不接受未解释失败。
 
 采样预设 `N0=32, batch=32, Nmax=512`，每轮活跃候选在同一批世界补齐后比较。候选均值、样本数、配对差值均值/标准误和有效配对 id 都保留；不同样本数的候选不能用非配对均值误称 paired comparison。
+
+当前实现将序贯比较版本化为 `paired-racing-v2`：初始候选共享每个
+`sample_id` 的 world，按所有活跃候选对分配同时 Hoeffding CI；若某候选的
+成对差值上界证明为负，则从后续 world 中淘汰，但保留它与仍活跃候选的共同
+样本。结果同时记录 `pairwise_deltas`、活跃候选和 `elimination_history`，
+不把淘汰后的不等样本数误报成独立同样本比较。该 bound 仍是当前规则上界；
+更紧的局面级 reward bound 属于独立的后续变更。
+
+`bot_shape_perf.py --interleaved` 已提供相同 seed 计划的本机交错计时，并将
+解释序列化、内核、层级和回退率写入报告；它不替代十场真实调度验收。校准
+evidence manifest 的 strict 模式还会校验 split 自身 fingerprint 以及完整
+reward/belief/tail 契约。校准 `all-root` helper 已覆盖自摸暗杠/加杠的公开
+补牌层，并对完整权威响应游标提供 PASS/CHOW/PONG/明杠的本家 fast comparison；
+未知或模式不一致的响应上下文仍 legacy。反应窗口的完整多玩家 continuation、
+独立 teacher 和对应 P5/P6 闸门仍未完成。
 
 序贯淘汰和“置信胜出”需要预先冻结、控制多候选/多次查看错误率的方法。实现首个正确参考可采用有界收益的同时区间，为有限检查点和候选对分配总 alpha=0.05；收益界必须来自规则证明，不能取观测最大值或裁剪大番。普通 t/正态区间重复检查只能作诊断，不能授权置信淘汰。若正确区间因高番过宽，达到 Nmax 输出 `ambiguous=true`，不强造标签；后续更紧方法需独立统计验证和新版本。
 

@@ -13,6 +13,9 @@ from .belief import BeliefSampler
 from .simulator import FixedContinuation, run_rollout
 
 
+PAIRWISE_RACING_VERSION = "paired-racing-v2"
+
+
 def _mean(values):
     return statistics.fmean(values) if values else None
 
@@ -30,6 +33,40 @@ def _bounded_interval(values, bound, alpha, comparisons=1):
             "half_width": half, "alpha": float(alpha),
             "comparisons": int(comparisons),
             "method": "hoeffding-bounded-simultaneous"}
+
+
+def _paired_interval(values, reward_bound, alpha, comparisons=1):
+    """Hoeffding interval for a shared-world reward difference.
+
+    Each reward is in ``[-reward_bound, reward_bound]``; therefore a paired
+    difference is in ``[-2*reward_bound, 2*reward_bound]``.  Keeping this
+    separate from the marginal interval makes the unit and proof bound
+    explicit in the serialized teacher evidence.
+    """
+    interval = _bounded_interval(
+        values, 2.0 * float(reward_bound), alpha, comparisons)
+    interval["method"] = "hoeffding-paired-bounded-simultaneous"
+    interval["difference_bound"] = 2.0 * float(reward_bound)
+    return interval
+
+
+def _paired_values(rows, left, right):
+    """Return valid CRN deltas and sample ids for two actions."""
+    values = []
+    sample_ids = []
+    for row in rows:
+        if row.get("group_failed"):
+            continue
+        outcomes = row.get("outcomes") or {}
+        a = outcomes.get(str(left), outcomes.get(left))
+        b = outcomes.get(str(right), outcomes.get(right))
+        if (not a or not b or a.get("status") != "ok" or
+                b.get("status") != "ok" or a.get("reward") is None or
+                b.get("reward") is None):
+            continue
+        values.append(float(a["reward"]) - float(b["reward"]))
+        sample_ids.append(int(row["sample_id"]))
+    return values, sample_ids
 
 
 @dataclass(frozen=True)
@@ -58,6 +95,9 @@ class TeacherResult:
     alpha: float = 0.05
     max_looks: int = 1
     reward_bound: float = 0.0
+    pairwise_deltas: tuple = ()
+    elimination_history: tuple = ()
+    pairwise_racing_version: str = PAIRWISE_RACING_VERSION
 
     def as_json(self):
         return {
@@ -77,6 +117,9 @@ class TeacherResult:
             "paired_rows": list(self.paired_rows),
             "fingerprint": self.fingerprint, "alpha": self.alpha,
             "max_looks": self.max_looks, "reward_bound": self.reward_bound,
+            "pairwise_deltas": list(self.pairwise_deltas),
+            "elimination_history": list(self.elimination_history),
+            "pairwise_racing_version": self.pairwise_racing_version,
         }
 
 
@@ -122,13 +165,15 @@ class PairedTeacher:
             "nmax": self.nmax, "alpha": self.alpha,
             "max_looks": self.max_looks,
             "reward_bound": self.reward_bound,
+            "pairwise_racing_version": PAIRWISE_RACING_VERSION,
         })
 
     def _unsupported_result(self, config_fp, actions, error):
         message = f"{type(error).__name__}:{error}"
         state = {"rows": [], "next_sample_id": 0,
                  "config_fingerprint": config_fp, "terminal": True,
-                 "stop_reason": "unsupported_context", "ambiguous": False}
+                 "stop_reason": "unsupported_context", "ambiguous": False,
+                 "pairwise_racing_version": PAIRWISE_RACING_VERSION}
         return TeacherResult(
             status="unsupported", context_hash=self.context.context_hash,
             profile_fingerprint=self.profile_fingerprint,
@@ -166,6 +211,29 @@ class PairedTeacher:
                            o.get("group_failed", False) for o in outcomes),
         }
 
+    def _pairwise_summary(self, rows, left, right, comparisons):
+        values, sample_ids = _paired_values(rows, left, right)
+        interval = _paired_interval(
+            values, self.reward_bound, self.look_alpha, comparisons)
+        if len(values) > 1:
+            interval["variance"] = statistics.pvariance(values)
+            interval["std_error"] = math.sqrt(
+                interval["variance"] / len(values))
+        elif values:
+            interval["variance"] = 0.0
+            interval["std_error"] = None
+        interval["paired_sample_ids"] = sample_ids
+        return {"left": left, "right": right, "delta": interval}
+
+    def _active_pairwise(self, rows, actions):
+        actions = tuple(actions)
+        comparisons = max(1, len(actions) * (len(actions) - 1) // 2)
+        return {
+            (left, right): self._pairwise_summary(
+                rows, left, right, comparisons)
+            for left in actions for right in actions if left != right
+        }
+
     def evaluate(self, actions=None, *, resume=None):
         """Run deterministic sequential batches and return a teacher artifact."""
         actions = tuple(sorted(set(
@@ -185,6 +253,8 @@ class PairedTeacher:
         rows = []
         failures = []
         attempted = 0
+        active_actions = list(actions)
+        elimination_history = []
         resume_data = resume
         if isinstance(resume, dict) and isinstance(
                 resume.get("resume_state"), dict):
@@ -196,11 +266,17 @@ class PairedTeacher:
         # sample rows are restored; partial rows are retried from their id.
         completed_ids = set()
         if resume_data:
+            restored_active = resume_data.get("active_actions")
+            if restored_active is not None:
+                active_actions = [int(action) for action in restored_active
+                                  if int(action) in actions]
+                if not active_actions:
+                    active_actions = list(actions)
             for row in resume_data.get("rows", ()):
                 if not isinstance(row, dict):
                     continue
                 row_actions = row.get("outcomes") or {}
-                if set(int(a) for a in row_actions) != set(actions):
+                if not set(int(a) for a in row_actions).issubset(set(actions)):
                     continue
                 sid = int(row.get("sample_id"))
                 # A retried writer may contain the same completed row twice;
@@ -213,19 +289,22 @@ class PairedTeacher:
                 for action in actions:
                     out = row_actions.get(str(action), row_actions.get(action))
                     if out is None:
-                        row_valid = False
-                        break
+                        # Racing may stop sampling an eliminated action.  Do
+                        # not fabricate a later outcome for its paired data.
+                        continue
                     out = dict(out)
                     out["group_failed"] = bool(row.get("group_failed"))
                     restored[str(action)] = out
-                if not row_valid:
+                if not row_valid or not restored:
                     continue
                 row = dict(row)
                 row["outcomes"] = restored
                 completed_ids.add(sid)
                 rows.append(row)
                 for action in actions:
-                    out = restored[str(action)]
+                    out = restored.get(str(action))
+                    if out is None:
+                        continue
                     outcomes[action].append(out)
                     if (not row.get("group_failed") and
                             out.get("status") == "ok" and
@@ -251,7 +330,8 @@ class PairedTeacher:
             world = sampler.sample(sid)
             row_outcomes = {}
             row_failed = False
-            for action in actions:
+            sampled_actions = tuple(active_actions)
+            for action in sampled_actions:
                 outcome = run_rollout(
                     self.context, world, action, self.continuation,
                     max_steps=self.max_steps)
@@ -263,41 +343,60 @@ class PairedTeacher:
             # Keep the failure row for the denominator, but never append any
             # reward from a partially successful candidate group.
             if row_failed:
-                for action in actions:
+                for action in sampled_actions:
                     out = row_outcomes[str(action)]
                     out["group_failed"] = True
                     outcomes[action].append(out)
                     failures.append({"sample_id": sid, "action": action,
-                                     "error": out.get("error")})
+                                         "error": out.get("error")})
             else:
-                for action in actions:
+                for action in sampled_actions:
                     out = row_outcomes[str(action)]
                     outcomes[action].append(out)
                     rewards[action].append(float(out["reward"]))
             rows.append({"sample_id": sid,
                          "world_fingerprint": world.fingerprint,
-                         "outcomes": row_outcomes, "group_failed": row_failed})
+                         "outcomes": row_outcomes, "group_failed": row_failed,
+                         "sampled_actions": list(sampled_actions)})
             completed_ids.add(sid)
             if len(completed_ids) < self.n0:
                 continue
             if len(completed_ids) % self.batch != 0 and len(completed_ids) != self.n0:
                 continue
-            if len(actions) == 1:
+            if len(active_actions) == 1:
                 ambiguous = False
-                stop_reason = "only_legal_action"
+                stop_reason = ("only_legal_action" if len(actions) == 1
+                               else "paired_elimination")
                 break
-            summaries = [self._candidate_summary(
-                action, rewards[action], outcomes[action],
-                max(1, len(actions) * (len(actions) - 1))) for action in actions]
-            summaries.sort(key=lambda d: (
-                d["EV"] if d["EV"] is not None else -math.inf,
-                -int(d["action"])), reverse=True)
-            best, runner = summaries[0], summaries[1]
-            low = best["CI"]["low"]
-            high = runner["CI"]["high"]
-            if low is not None and high is not None and low > high:
+            # Shared-world differences cancel a large part of the rollout
+            # noise.  Use simultaneous pairwise intervals for both safe
+            # elimination and stopping; marginal best/runner CIs remain only
+            # descriptive fields in the candidate table.
+            pairwise = self._active_pairwise(rows, active_actions)
+            dominated = set()
+            for left in active_actions:
+                for right in active_actions:
+                    if left == right:
+                        continue
+                    interval = pairwise[(left, right)]["delta"]
+                    if interval.get("low") is not None and interval["low"] > 0:
+                        dominated.add(right)
+            if dominated and len(dominated) < len(active_actions):
+                before = list(active_actions)
+                active_actions = [action for action in active_actions
+                                  if action not in dominated]
+                elimination_history.append({
+                    "sample_count": len(completed_ids),
+                    "before": before,
+                    "eliminated": sorted(dominated),
+                    "after": list(active_actions),
+                    "pairwise": [pairwise[(left, right)] for left in before
+                                 for right in before if left != right
+                                 and right in dominated],
+                })
+            if len(active_actions) == 1:
                 ambiguous = False
-                stop_reason = "simultaneous_ci_separated"
+                stop_reason = "paired_elimination"
                 break
         if not rows:
             raise ValueError("teacher did not execute a sample")
@@ -325,9 +424,9 @@ class PairedTeacher:
                                         "world_fingerprint": row.get(
                                             "world_fingerprint"),
                                         "delta": delta})
-        delta_summary = _bounded_interval(
-            deltas, self.reward_bound * 2.0, self.look_alpha,
-            max(1, len(actions) * (len(actions) - 1)))
+        delta_summary = _paired_interval(
+            deltas, self.reward_bound, self.look_alpha,
+            max(1, len(actions) * (len(actions) - 1) // 2))
         if deltas:
             delta_summary["variance"] = (statistics.pvariance(deltas)
                                           if len(deltas) > 1 else 0.0)
@@ -338,11 +437,16 @@ class PairedTeacher:
                 row["sample_id"] for row in paired_rows]
         paired = [{"best": best_action, "runner_up": runner_action,
                    "delta": delta_summary}]
+        pairwise = self._active_pairwise(rows, actions)
+        pairwise_deltas = tuple(pairwise.values())
         status = "ok" if not ambiguous and not failures else (
             "ambiguous" if ambiguous else "ok_with_failures")
         state = {"rows": rows, "next_sample_id": next_id,
                  "config_fingerprint": config_fp, "terminal": True,
-                 "stop_reason": stop_reason, "ambiguous": ambiguous}
+                 "stop_reason": stop_reason, "ambiguous": ambiguous,
+                 "active_actions": list(active_actions),
+                 "elimination_history": elimination_history,
+                 "pairwise_racing_version": PAIRWISE_RACING_VERSION}
         return TeacherResult(
             status=status, context_hash=self.context.context_hash,
             profile_fingerprint=self.profile_fingerprint,
@@ -359,7 +463,9 @@ class PairedTeacher:
             failures=tuple(failures), rows=tuple(rows),
             paired_rows=tuple(paired_rows), resume_state=state,
             fingerprint=config_fp, alpha=self.alpha,
-            max_looks=self.max_looks, reward_bound=self.reward_bound)
+            max_looks=self.max_looks, reward_bound=self.reward_bound,
+            pairwise_deltas=pairwise_deltas,
+            elimination_history=tuple(elimination_history))
 
 
 def evaluate_paired(context, actions=None, **kwargs):

@@ -14,7 +14,9 @@ def teacher_artifact(result, *, context=None, profile=None, metadata=None):
     value = sanitize_public(result.as_json())
     value["artifact_schema"] = "rollout-ev-teacher-v1"
     value["counterfactual"] = True
+    value["counterfactual_evaluation"] = True
     value["online_decision"] = False
+    value["oracle"] = False
     value["q_object"] = "Q^pi(s,a)|public_context,belief,continuation"
     value["finite_sample_estimate"] = True
     value["real_wall_optimal"] = False
@@ -24,6 +26,18 @@ def teacher_artifact(result, *, context=None, profile=None, metadata=None):
         value["context"] = sanitize_public(context.as_json())
     if profile is not None:
         value["profile"] = sanitize_public(profile.as_json())
+        value["contract"] = {
+            "profile_fingerprint": profile.fingerprint,
+            "rule_version": profile.rules_version,
+            "kernel_version": profile.kernel_version,
+            "scope": profile.scope,
+            "continuation_version": profile.continuation_version,
+            "strategy": str((metadata or {}).get("strategy", profile.name)),
+            "reward_units": profile.reward_units,
+            "belief_version": profile.belief_version,
+            "tail_version": profile.tail_version,
+            "horizon": profile.horizon,
+        }
     # A context contains public material only; rows contain world hashes and
     # rewards, not hidden hands or wall order.
     value["artifact_fingerprint"] = fingerprint({

@@ -1,0 +1,249 @@
+{
+  "schema": "bot-ev-discard/paired-q-regret-report-v1",
+  "baseline": "legacy",
+  "teacher": "teacher",
+  "strategies": [
+    "legacy",
+    "shape-v1",
+    "shape-v2",
+    "teacher",
+    "actual"
+  ],
+  "source_groups": 3,
+  "valid_source_groups": 3,
+  "invalid": [],
+  "paired_policy_delta": {
+    "shape-v1": {
+      "interval": {
+        "n": 3,
+        "clusters": 3,
+        "mean": 0.0,
+        "low": 0.0,
+        "high": 0.0,
+        "rounds": 2000,
+        "seed": 20260916,
+        "alpha": 0.05,
+        "method": "source-group-bootstrap"
+      },
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "negative_count": 0
+    },
+    "shape-v2": {
+      "interval": {
+        "n": 3,
+        "clusters": 3,
+        "mean": 0.0,
+        "low": 0.0,
+        "high": 0.0,
+        "rounds": 2000,
+        "seed": 20260916,
+        "alpha": 0.05,
+        "method": "source-group-bootstrap"
+      },
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "negative_count": 0
+    },
+    "teacher": {
+      "interval": {
+        "n": 3,
+        "clusters": 3,
+        "mean": 5.333333333333333,
+        "low": -2.0,
+        "high": 12.0,
+        "rounds": 2000,
+        "seed": 20260916,
+        "alpha": 0.05,
+        "method": "source-group-bootstrap"
+      },
+      "values": [
+        -2.0,
+        12.0,
+        6.0
+      ],
+      "negative_count": 1
+    },
+    "actual": {
+      "interval": {
+        "n": 3,
+        "clusters": 3,
+        "mean": 0.0,
+        "low": 0.0,
+        "high": 0.0,
+        "rounds": 2000,
+        "seed": 20260916,
+        "alpha": 0.05,
+        "method": "source-group-bootstrap"
+      },
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "negative_count": 0
+    }
+  },
+  "signed_regret": {
+    "legacy": {
+      "interval": {
+        "n": 3,
+        "clusters": 3,
+        "mean": 5.333333333333333,
+        "low": -2.0,
+        "high": 12.0,
+        "rounds": 2000,
+        "seed": 20260916,
+        "alpha": 0.05,
+        "method": "source-group-bootstrap"
+      },
+      "values": [
+        -2.0,
+        12.0,
+        6.0
+      ],
+      "negative_count": 1
+    },
+    "shape-v1": {
+      "interval": {
+        "n": 3,
+        "clusters": 3,
+        "mean": 5.333333333333333,
+        "low": -2.0,
+        "high": 12.0,
+        "rounds": 2000,
+        "seed": 20260916,
+        "alpha": 0.05,
+        "method": "source-group-bootstrap"
+      },
+      "values": [
+        -2.0,
+        12.0,
+        6.0
+      ],
+      "negative_count": 1
+    },
+    "shape-v2": {
+      "interval": {
+        "n": 3,
+        "clusters": 3,
+        "mean": 5.333333333333333,
+        "low": -2.0,
+        "high": 12.0,
+        "rounds": 2000,
+        "seed": 20260916,
+        "alpha": 0.05,
+        "method": "source-group-bootstrap"
+      },
+      "values": [
+        -2.0,
+        12.0,
+        6.0
+      ],
+      "negative_count": 1
+    },
+    "teacher": {
+      "interval": {
+        "n": 3,
+        "clusters": 3,
+        "mean": 0.0,
+        "low": 0.0,
+        "high": 0.0,
+        "rounds": 2000,
+        "seed": 20260916,
+        "alpha": 0.05,
+        "method": "source-group-bootstrap"
+      },
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "negative_count": 0
+    },
+    "actual": {
+      "interval": {
+        "n": 3,
+        "clusters": 3,
+        "mean": 5.333333333333333,
+        "low": -2.0,
+        "high": 12.0,
+        "rounds": 2000,
+        "seed": 20260916,
+        "alpha": 0.05,
+        "method": "source-group-bootstrap"
+      },
+      "values": [
+        -2.0,
+        12.0,
+        6.0
+      ],
+      "negative_count": 1
+    }
+  },
+  "statistics": {
+    "alpha": 0.05,
+    "rounds": 2000,
+    "seed": 20260916,
+    "cluster": "source_group"
+  },
+  "independent_worlds_verified": true,
+  "independent_worlds_required": true,
+  "counterfactual_evaluation": true,
+  "online_decision": false,
+  "oracle": false,
+  "fingerprint": "4d3380289fe7801bef6d3b8c",
+  "artifact_schema": "bot-ev-discard/paired-q-regret-evidence-v1",
+  "profile": {
+    "name": "shape-v2",
+    "version": "shape-v2",
+    "scope": "discard",
+    "schema": "bot-ev-discard/profile-v1",
+    "reward_units": "base-score points",
+    "reward_name": "hero_round_settlement_delta",
+    "rules_version": "hangzhou-platform-guide-v34",
+    "belief_version": "uniform_unseen-v1",
+    "continuation_version": "frozen_shape_v1_self_kong_v1",
+    "kernel_version": "python-frontier-v1",
+    "tail_version": "zero-v1",
+    "horizon": 2,
+    "node_budget": 4096,
+    "time_budget_ms": 36.0,
+    "explanation": true,
+    "calibrated": false,
+    "calibration_fingerprint": "",
+    "calibration_kind": "none",
+    "calibration_intercept": 0.0,
+    "q0_shanten_weight": -1.0,
+    "q0_u1_weight": 0.01,
+    "q0_ev1_weight": 0.0,
+    "q0_ev2_weight": 1.0,
+    "q0_fan_weight": 0.0,
+    "q0_risk_weight": 0.0,
+    "reward_upper_bound": null,
+    "tau": {},
+    "lut_buckets": [],
+    "min_bucket_samples": 64,
+    "fingerprint": "2b39eceb16c8fa0d"
+  },
+  "contract": {
+    "profile_fingerprint": "2b39eceb16c8fa0d",
+    "rule_version": "hangzhou-platform-guide-v34",
+    "kernel_version": "python-frontier-v1",
+    "scope": "discard",
+    "continuation_version": "frozen_shape_v1_self_kong_v1",
+    "strategy": "shape-v2",
+    "reward_units": "base-score points",
+    "belief_version": "uniform_unseen-v1",
+    "tail_version": "zero-v1",
+    "horizon": 2,
+    "manifest_fingerprint": "55ada75c96ef79dd"
+  },
+  "offline_only": true
+}

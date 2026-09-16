@@ -20,8 +20,11 @@ from .root import RootEvaluation, evaluate_root_context, choose_root_game_action
 _CALIBRATION_EXPORTS = frozenset({
     "CalibrationError", "CalibrationRow", "LinearModel", "SparseLUT",
     "candidate_features", "fit_global_linear", "fit_sparse_lut",
-    "calibrated_profile", "paired_q_regret", "cluster_bootstrap",
-    "release_gate", "freeze_split_manifest", "scheduled_game",
+    "calibrated_profile", "paired_q_regret", "paired_q_regret_report",
+    "cluster_bootstrap", "cluster_bootstrap_simultaneous",
+    "release_gate", "freeze_split_manifest", "split_for_seed", "split_rows",
+    "split_calibration_artifact", "evidence_contract",
+    "calibration_evidence_manifest", "scheduled_game",
 })
 
 
@@ -44,8 +47,11 @@ __all__ = [
     "CalibrationError", "CalibrationRow", "LinearModel", "SparseLUT",
     "candidate_features", "fit_global_linear", "fit_sparse_lut",
     "calibrated_profile",
-    "paired_q_regret", "cluster_bootstrap", "release_gate",
-    "freeze_split_manifest", "scheduled_game",
+    "paired_q_regret", "paired_q_regret_report", "cluster_bootstrap",
+    "cluster_bootstrap_simultaneous",
+    "release_gate", "freeze_split_manifest", "split_for_seed", "split_rows",
+    "split_calibration_artifact", "evidence_contract",
+    "calibration_evidence_manifest", "scheduled_game",
     "sanitize_public", "compact_evaluation", "decision_key",
     "associate_counterfactual", "build_offline_report",
     "RootEvaluation", "evaluate_root_context", "choose_root_game_action",

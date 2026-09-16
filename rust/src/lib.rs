@@ -102,20 +102,56 @@ fn std_dfs(
     // 刻子(三枚自然牌)
     if c >= 3 {
         nat[i] -= 3;
-        std_dfs(nat, i, m + 1, t, p, w, rem - 3, base, floor, need_melds, best);
+        std_dfs(
+            nat,
+            i,
+            m + 1,
+            t,
+            p,
+            w,
+            rem - 3,
+            base,
+            floor,
+            need_melds,
+            best,
+        );
         nat[i] += 3;
     }
     // 刻子(两枚 + 1 财神):不可省——score 无"对子+财神成刻"记账,
     // locked 多/gaps 少时严格优于对子+财神作雀头
     if c >= 2 && w >= 1 {
         nat[i] -= 2;
-        std_dfs(nat, i, m + 1, t, p, w - 1, rem - 2, base, floor, need_melds, best);
+        std_dfs(
+            nat,
+            i,
+            m + 1,
+            t,
+            p,
+            w - 1,
+            rem - 2,
+            base,
+            floor,
+            need_melds,
+            best,
+        );
         nat[i] += 2;
     }
     // 对子(雀头候选)
     if c >= 2 {
         nat[i] -= 2;
-        std_dfs(nat, i, m, t, p + 1, w, rem - 2, base, floor, need_melds, best);
+        std_dfs(
+            nat,
+            i,
+            m,
+            t,
+            p + 1,
+            w,
+            rem - 2,
+            base,
+            floor,
+            need_melds,
+            best,
+        );
         nat[i] += 2;
     }
     // 顺子(三张连续自然牌)
@@ -123,7 +159,19 @@ fn std_dfs(
         nat[i] -= 1;
         nat[i + 1] -= 1;
         nat[i + 2] -= 1;
-        std_dfs(nat, i, m + 1, t, p, w, rem - 3, base, floor, need_melds, best);
+        std_dfs(
+            nat,
+            i,
+            m + 1,
+            t,
+            p,
+            w,
+            rem - 3,
+            base,
+            floor,
+            need_melds,
+            best,
+        );
         nat[i] += 1;
         nat[i + 1] += 1;
         nat[i + 2] += 1;
@@ -132,7 +180,19 @@ fn std_dfs(
     if i < 27 && i % 9 <= 7 && nat[i + 1] > 0 {
         nat[i] -= 1;
         nat[i + 1] -= 1;
-        std_dfs(nat, i, m, t + 1, p, w, rem - 2, base, floor, need_melds, best);
+        std_dfs(
+            nat,
+            i,
+            m,
+            t + 1,
+            p,
+            w,
+            rem - 2,
+            base,
+            floor,
+            need_melds,
+            best,
+        );
         nat[i] += 1;
         nat[i + 1] += 1;
     }
@@ -140,12 +200,36 @@ fn std_dfs(
     if i < 27 && i % 9 <= 6 && nat[i + 2] > 0 {
         nat[i] -= 1;
         nat[i + 2] -= 1;
-        std_dfs(nat, i, m, t + 1, p, w, rem - 2, base, floor, need_melds, best);
+        std_dfs(
+            nat,
+            i,
+            m,
+            t + 1,
+            p,
+            w,
+            rem - 2,
+            base,
+            floor,
+            need_melds,
+            best,
+        );
         nat[i] += 1;
         nat[i + 2] += 1;
     }
     // 孤张(放弃位置 i 剩余的 c 张)
-    std_dfs(nat, i + 1, m, t, p, w, rem - c, base, floor, need_melds, best);
+    std_dfs(
+        nat,
+        i + 1,
+        m,
+        t,
+        p,
+        w,
+        rem - c,
+        base,
+        floor,
+        need_melds,
+        best,
+    );
 }
 
 fn std_shanten(counts: &[i32; 34], locked: i32) -> i32 {
@@ -154,10 +238,16 @@ fn std_shanten(counts: &[i32; 34], locked: i32) -> i32 {
     nat.copy_from_slice(&counts[..33]);
     let need_melds = 4 - locked;
     let base = 2 * need_melds;
-    let floor = if counts.iter().sum::<i32>() == 13 - 3 * locked { 0 } else { -1 };
+    let floor = if counts.iter().sum::<i32>() == 13 - 3 * locked {
+        0
+    } else {
+        -1
+    };
     let mut best = 9;
     let rem0: i32 = nat.iter().sum();
-    std_dfs(&mut nat, 0, 0, 0, 0, wilds, rem0, base, floor, need_melds, &mut best);
+    std_dfs(
+        &mut nat, 0, 0, 0, 0, wilds, rem0, base, floor, need_melds, &mut best,
+    );
     best
 }
 
@@ -366,8 +456,7 @@ fn best_future_discard_impl_with_cache(
             ukeire_impl(&child, locked, None)?.2
         };
         if total > best_total
-            || (total == best_total
-                && (best_discard.is_none() || d < best_discard.unwrap()))
+            || (total == best_total && (best_discard.is_none() || d < best_discard.unwrap()))
         {
             best_discard = Some(d);
             best_total = total;
@@ -402,8 +491,19 @@ fn discard_frontier_impl(
     legal: Option<&[usize]>,
     include_tiles: bool,
 ) -> Result<Vec<FrontierRow>, String> {
-    let mut rows = Vec::new();
     let mut cache = HashMap::new();
+    discard_frontier_impl_with_cache(counts, locked, visible, legal, include_tiles, &mut cache)
+}
+
+fn discard_frontier_impl_with_cache(
+    counts: &[i32; 34],
+    locked: i32,
+    visible: Option<&[i32; 34]>,
+    legal: Option<&[usize]>,
+    include_tiles: bool,
+    cache: &mut HashMap<ShantenCacheKey, i32>,
+) -> Result<Vec<FrontierRow>, String> {
+    let mut rows = Vec::new();
     let tiles: Vec<usize> = match legal {
         Some(values) => values.to_vec(),
         None => (0..34).filter(|&t| counts[t] > 0).collect(),
@@ -414,7 +514,7 @@ fn discard_frontier_impl(
         }
         let mut child = *counts;
         child[discard] -= 1;
-        let child_s = wildcard_shanten(&child, locked, &mut cache)?;
+        let child_s = wildcard_shanten(&child, locked, cache)?;
         let (draw_tiles, total) = if let Some(view) = visible {
             let value = ukeire_impl(&child, locked, Some(view))?;
             (value.1, value.2)
@@ -425,7 +525,11 @@ fn discard_frontier_impl(
         rows.push(FrontierRow {
             discard,
             shanten: child_s,
-            tiles: if include_tiles { draw_tiles } else { Vec::new() },
+            tiles: if include_tiles {
+                draw_tiles
+            } else {
+                Vec::new()
+            },
             total,
         });
     }
@@ -452,8 +556,13 @@ fn best_future_discard(
     };
     let mut shanten_cache = HashMap::new();
     let best = best_future_discard_impl_with_cache(
-        &arr, locked, vis.as_ref(), &mut shanten_cache, include_tiles)
-        .map_err(PyValueError::new_err)?;
+        &arr,
+        locked,
+        vis.as_ref(),
+        &mut shanten_cache,
+        include_tiles,
+    )
+    .map_err(PyValueError::new_err)?;
     match best {
         Some(value) => Ok((
             value.discard as i32,
@@ -486,18 +595,89 @@ fn discard_frontier(
         Some(v) => Some(to_arr(v)?),
         None => None,
     };
-    let legal = legal_discards.map(|values| {
-        values.into_iter().map(|t| t as usize).collect::<Vec<_>>()
-    });
-    let rows = discard_frontier_impl(
-        &arr, locked, vis.as_ref(), legal.as_deref(), include_tiles)
+    let legal =
+        legal_discards.map(|values| values.into_iter().map(|t| t as usize).collect::<Vec<_>>());
+    let rows = discard_frontier_impl(&arr, locked, vis.as_ref(), legal.as_deref(), include_tiles)
         .map_err(PyValueError::new_err)?;
-    Ok(rows.into_iter().map(|row| (
-        row.discard as i32,
-        row.shanten,
-        row.tiles.into_iter().map(|t| t as i32).collect(),
-        row.total,
-    )).collect())
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            (
+                row.discard as i32,
+                row.shanten,
+                row.tiles.into_iter().map(|t| t as i32).collect(),
+                row.total,
+            )
+        })
+        .collect())
+}
+
+/// Enumerate several post-draw discard frontiers in one native call.
+///
+/// EV2 visits many 14-tile states with the same public visibility snapshot.
+/// Keeping the shanten cache alive across those states removes repeated
+/// decomposition work while preserving the exact per-state all-legal
+/// frontier contract.  ``visibles`` and ``legal_discards`` are optional
+/// parallel vectors; when omitted, the normal per-state defaults apply.
+#[pyfunction(signature = (states, locked=0, visibles=None, legal_discards=None, include_tiles=true))]
+fn discard_frontier_batch(
+    states: Vec<Vec<i32>>,
+    locked: i32,
+    visibles: Option<Vec<Vec<i32>>>,
+    legal_discards: Option<Vec<Vec<i32>>>,
+    include_tiles: bool,
+) -> PyResult<Vec<Vec<(i32, i32, Vec<i32>, i64)>>> {
+    if let Some(ref values) = visibles {
+        if values.len() != states.len() {
+            return Err(PyValueError::new_err(
+                "visibles must have one entry per state",
+            ));
+        }
+    }
+    if let Some(ref values) = legal_discards {
+        if values.len() != states.len() {
+            return Err(PyValueError::new_err(
+                "legal_discards must have one entry per state",
+            ));
+        }
+    }
+    let mut cache = HashMap::new();
+    let mut result = Vec::with_capacity(states.len());
+    for (index, values) in states.into_iter().enumerate() {
+        let counts = to_arr(values)?;
+        let visible = match visibles.as_ref() {
+            Some(all) => Some(to_arr(all[index].clone())?),
+            None => None,
+        };
+        let legal = legal_discards.as_ref().map(|all| {
+            all[index]
+                .iter()
+                .map(|&tile| tile as usize)
+                .collect::<Vec<_>>()
+        });
+        let rows = discard_frontier_impl_with_cache(
+            &counts,
+            locked,
+            visible.as_ref(),
+            legal.as_deref(),
+            include_tiles,
+            &mut cache,
+        )
+        .map_err(PyValueError::new_err)?;
+        result.push(
+            rows.into_iter()
+                .map(|row| {
+                    (
+                        row.discard as i32,
+                        row.shanten,
+                        row.tiles.into_iter().map(|tile| tile as i32).collect(),
+                        row.total,
+                    )
+                })
+                .collect(),
+        );
+    }
+    Ok(result)
 }
 
 fn to_arr(counts: Vec<i32>) -> PyResult<[i32; 34]> {
@@ -516,14 +696,17 @@ fn shanten(counts: Vec<i32>, locked: i32) -> PyResult<i32> {
 /// 进张枚举:返回 (向听数, 进张种类列表, 进张总张数)。
 /// visible=None 时按手牌自身折算(与 mj.shanten.ukeire 同口径)。
 #[pyfunction(signature = (counts, locked, visible=None))]
-fn ukeire(counts: Vec<i32>, locked: i32, visible: Option<Vec<i32>>) -> PyResult<(i32, Vec<i32>, i64)> {
+fn ukeire(
+    counts: Vec<i32>,
+    locked: i32,
+    visible: Option<Vec<i32>>,
+) -> PyResult<(i32, Vec<i32>, i64)> {
     let arr = to_arr(counts)?;
     let vis = match visible {
         Some(v) => Some(to_arr(v)?),
         None => None,
     };
-    let (s, acc, total) = ukeire_impl(&arr, locked, vis.as_ref())
-        .map_err(PyValueError::new_err)?;
+    let (s, acc, total) = ukeire_impl(&arr, locked, vis.as_ref()).map_err(PyValueError::new_err)?;
     Ok((s, acc.iter().map(|&t| t as i32).collect(), total))
 }
 
@@ -533,5 +716,6 @@ fn mj_kernels(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(ukeire, m)?)?;
     m.add_function(wrap_pyfunction!(best_future_discard, m)?)?;
     m.add_function(wrap_pyfunction!(discard_frontier, m)?)?;
+    m.add_function(wrap_pyfunction!(discard_frontier_batch, m)?)?;
     Ok(())
 }

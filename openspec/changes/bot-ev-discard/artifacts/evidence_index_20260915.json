@@ -1,6 +1,6 @@
 {
   "schema": "bot-ev-discard/evidence-index-v1",
-  "indexed_at": "2026-09-15",
+  "indexed_at": "2026-09-16",
   "release_status": "legacy_default_release_pending",
   "default_policy": "legacy",
   "opt_in_policy": "shape-v2/discard",
@@ -13,7 +13,7 @@
       "artifact": "artifacts/profile_manifest.json",
       "profile": "shape-v2",
       "scope": "discard",
-      "fingerprint": "f1ae51545bea9b5b",
+      "fingerprint": "2b39eceb16c8fa0d",
       "status": "versioned_opt_in"
     }
   ],
@@ -25,6 +25,28 @@
     {
       "artifact": "artifacts/teacher_exhaustive_reference_20260915.json",
       "status": "toy_exhaustive_reference_pass"
+    },
+    {
+      "artifact": "artifacts/paired_q_regret_16_20260916.json",
+      "source": "artifacts/independent_q_regret_16_20260916.jsonl",
+      "status": "independent_worlds_verified_signed_regret",
+      "source_groups": 16,
+      "oracle": false
+    }
+  ],
+  "offline_diagnostics": [
+    {
+      "artifact": "artifacts/full_local_score_eval_20260916.json",
+      "status": "4-game-exhaustive-ev2-diagnostic",
+      "release_gate": "not_applicable"
+    },
+    {
+      "artifact": "artifacts/score_evidence_4096_20260916.json",
+      "status": "4096-paired-games-balanced",
+      "release_gate": "failed_ci_lower_not_gt_zero",
+      "score_delta_mean": -0.088134765625,
+      "score_delta_ci95_simultaneous": [-0.517822265625, 0.35986328125],
+      "legacy_default": true
     }
   ],
   "opponent_distribution": {
@@ -36,7 +58,7 @@
   "validated": [
     {
       "command": "python3 -m pytest tests/ -q -p no:cacheprovider",
-      "result": "462 passed, 1 skipped, 9 subtests passed"
+      "result": "490 passed, 1 skipped, 9 subtests passed in 120.13s"
     },
     {
       "command": "OPENSPEC_TELEMETRY=0 openspec validate bot-ev-discard --strict --no-interactive",
@@ -45,15 +67,32 @@
     {
       "command": "python3 scripts/bot_shape_perf.py --games 1 --seed-start 190000 --evaluator shape-v2",
       "result": "diagnostic smoke passed; not a release gate"
+    },
+    {
+      "command": "PYTHONPATH=/tmp/mj-kernel-batch-20260916:. python3 scripts/bot_ev_full_eval.py --games 4 --seed-start 260000 --node-budget 10000000 --time-budget-ms 30000",
+      "result": "4 paired local games; all 42 ordinary-discard evaluations reached V2-EV2; diagnostic only"
+    },
+    {
+      "artifact": "artifacts/interleaved_performance_20260916.json",
+      "command": "PYTHONPATH=/tmp/mj-kernel-batch-20260916:. python3 scripts/bot_shape_perf.py --interleaved --games 200 --seed-start 190000 --evaluators shape-v1,shape-v2 --repetitions 3",
+      "result": "formal 3x200 interleaved run recorded; shape-v2 performance gate failed with 192.46% elapsed/game increase, 1.34% median complete-discard rate and 98.56% median fallback rate"
+    },
+    {
+      "artifact": "artifacts/calibration_artifact_20260916.json",
+      "result": "frozen train/validation/final-test artifact; 110 rows across 4/4/16 source groups; all six requested ablations; sparse LUT fallback recorded"
+    },
+    {
+      "artifact": "artifacts/evidence_manifest_20260916.json",
+      "result": "strict runtime/profile/rules/kernel/scope drift checks valid; independent Q verified; default switch ineligible and legacy retained"
     }
   ],
   "pending_release_evidence": [
-    "5.1 calibration and ablation on frozen splits",
-    "5.2 independent paired Q/regret evaluation",
-    "5.3 4096 paired games / 8192 runs / 16 seat-dealer combinations",
-    "5.4 calibration and runtime evidence manifests",
     "7.1-7.4 hu-piao, KONG and reaction scopes",
-    "8.1-8.5 three-way performance, concurrent rooms, window audit and release gate"
+    "8.2-8.5 concurrent rooms, window audit and release gate"
+  ],
+  "failed_release_gates": [
+    "8.1 shape-v2 timing/coverage gate: recorded but not passed",
+    "5.3 score gate: 4096 pairs complete but simultaneous score-delta CI [-0.5178, 0.3599] crosses zero"
   ],
   "prohibited_claims": [
     "real_wall_optimal",

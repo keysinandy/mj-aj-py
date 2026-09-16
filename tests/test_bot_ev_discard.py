@@ -3,16 +3,20 @@
 import unittest
 from unittest.mock import patch
 
-from mj.game import Game
+from mj.game import (Game, PASS, PONG, KONG_OPEN, CHOW_LOW, CHOW_MID,
+                     CHOW_HIGH, HU, KONG_CLOSED_BASE)
 from mj.bot import choose_action
 from mj.decision.context import ContextError, PublicDecisionContext
-from mj.decision.frontier import discard_frontier
+from mj.decision.frontier import discard_frontier, discard_frontier_batch
 from mj.decision.profile import ProfileSpec, ProfileFingerprintError, validate_profile_fingerprint
 from mj.decision.score_value import ScoreValue
-from mj.decision.fast_ev import DecisionBudget, evaluate_discard_context
+from mj.decision.root import evaluate_root_context
+from mj.decision.fast_ev import (DecisionBudget, _apply_draw,
+                                 evaluate_discard_context, future_values)
 from mj.rollout.belief import BeliefSampler
 from mj.rollout.evaluator import PairedTeacher
 from mj.rollout.simulator import build_world_game, actor_view, RolloutOutcome
+from mj.rollout.teacher_data import teacher_artifact
 
 
 class BotEvDiscardTests(unittest.TestCase):
@@ -65,6 +69,32 @@ class BotEvDiscardTests(unittest.TestCase):
         self.assertTrue(all(x.legal and len(x.ukeire_tiles) ==
                             len(set(x.ukeire_tiles)) for x in items))
 
+    def test_frontier_batch_matches_scalar_reference(self):
+        context = self._complete_context(seed=27)
+        root_hand = list(context.hand)
+        root_hand[context.legal_discards[0]] -= 1
+        states = []
+        visibles = []
+        for tile, left in enumerate(context.remaining):
+            if left <= 0:
+                continue
+            hand = list(root_hand)
+            hand[tile] += 1
+            remaining = list(context.remaining)
+            remaining[tile] -= 1
+            states.append(tuple(hand))
+            visibles.append(tuple(4 - value for value in remaining))
+            if len(states) == 2:
+                break
+        batch = discard_frontier_batch(
+            states, locked=context.locked, visibles=visibles, use_rust=False)
+        scalar = tuple(discard_frontier(
+            state, locked=context.locked, visible=visible, use_rust=False)
+                       for state, visible in zip(states, visibles))
+        self.assertEqual(
+            [[item.as_json() for item in rows] for rows in batch],
+            [[item.as_json() for item in rows] for rows in scalar])
+
     def test_profile_fingerprint_rejects_mutation(self):
         profile = ProfileSpec.shape_v2_discard()
         payload = profile.as_json()
@@ -115,8 +145,79 @@ class BotEvDiscardTests(unittest.TestCase):
         self.assertEqual(result.level, "V2-EV2")
         for candidate in result.candidates:
             self.assertEqual(candidate.ev1, candidate.ev2)
-            self.assertAlmostEqual(candidate.value,
-                                   candidate.q0 + candidate.ev2)
+            self.assertAlmostEqual(candidate.value, candidate.ev2)
+
+    def test_ev2_frontier_batch_matches_full_final_draw_reference(self):
+        context = self._complete_context(seed=34).replace(live_wall=8)
+        root_tile = context.legal_discards[0]
+        scorer = ScoreValue(context.dealer, context.base,
+                            bool(context.you_cai_bi_kao), context.hero_seat)
+        root_hand, chain, piao, _ = scorer.discard(
+            context.hand, root_tile, context.locked,
+            context.chain_count, context.chain_piao)
+
+        def reference_one_draw(hand, rem, locked, chain_count, chain_piao):
+            n = sum(rem)
+            total = 0.0
+            for tile, left in enumerate(rem):
+                if left <= 0:
+                    continue
+                hand2, _ = _apply_draw(hand, rem, tile)
+                breakdown = scorer.hu(
+                    hand2, scorer.standing_before_draw(hand2, tile), locked,
+                    tile, False, chain_count, chain_piao)
+                if breakdown.legal:
+                    total += left / n * breakdown.reward
+            return total
+
+        def reference():
+            rem = tuple(context.remaining)
+            n = sum(rem)
+            ev1 = ev2 = 0.0
+            for tile, left in enumerate(rem):
+                if left <= 0:
+                    continue
+                hand2, rem2 = _apply_draw(root_hand, rem, tile)
+                breakdown = scorer.hu(
+                    hand2, scorer.standing_before_draw(hand2, tile),
+                    context.locked, tile, False, chain, piao)
+                probability = left / n
+                if breakdown.legal:
+                    ev1 += probability * breakdown.reward
+                    ev2 += probability * breakdown.reward
+                    continue
+                best = 0.0
+                for discard, count in enumerate(hand2):
+                    if count <= 0:
+                        continue
+                    next_hand, next_chain, next_piao, _ = scorer.discard(
+                        hand2, discard, context.locked, chain, piao)
+                    best = max(best, reference_one_draw(
+                        next_hand, rem2, context.locked,
+                        next_chain, next_piao))
+                ev2 += probability * best
+            return ev1, ev2
+
+        expected = reference()
+        actual = future_values(
+            context, root_hand, context.locked, chain, piao,
+            horizon=2, budget=DecisionBudget(10_000_000, 10_000))
+        self.assertAlmostEqual(actual[0], expected[0])
+        self.assertAlmostEqual(actual[1], expected[1])
+
+    def test_uncalibrated_ev2_uses_q0_only_as_tie_break(self):
+        from mj.decision.fast_ev import _candidate_q0
+
+        context = self._complete_context(seed=33)
+        item = discard_frontier(context, use_rust=False)[0]
+        profile = ProfileSpec.shape_v2_discard(
+            q0_shanten_weight=-100.0, q0_u1_weight=100.0,
+            q0_ev2_weight=1.0)
+        q0, value, contributions = _candidate_q0(
+            item, context, profile, ev1=1.0, ev2=8.7)
+        self.assertEqual(value, 8.7)
+        self.assertEqual(contributions["EV2"], 8.7)
+        self.assertNotEqual(q0, value)
 
     def test_high_layer_budget_falls_back_to_complete_q0(self):
         context = self._complete_context(seed=32)
@@ -145,6 +246,162 @@ class BotEvDiscardTests(unittest.TestCase):
         for candidate in evaluation.get("candidates", ()):
             self.assertIsNone(candidate.get("I"))
             self.assertIn("I", candidate.get("missing", ()))
+
+    def test_calibrated_hu_piao_root_compares_hu_and_all_discards(self):
+        game = Game(seed=44, dealer=0, base=1)
+        hand = [0] * 34
+        for tile in (0, 1, 2, 0, 1, 2, 0, 1, 2, 3, 3, 3, 4, 4):
+            hand[tile] += 1
+        game.hands[0] = hand
+        game.drawn[0] = 4
+        game.turn = 0
+        game.phase = "discard"
+        context = PublicDecisionContext.from_game(game, 0).replace(
+            legal_actions=(HU, 0, 1),
+            concealed_counts=(None,) * 4,
+            rollout_valid=False)
+        profile = ProfileSpec.shape_v2(
+            scope="hu-piao", calibrated=True, node_budget=100000,
+            time_budget_ms=10000)
+        result = evaluate_root_context(context, profile, legacy_action=HU)
+        self.assertEqual(result.level, "V2-ROOT")
+        self.assertEqual(result.selected in (HU, 0, 1), True)
+        self.assertEqual({row["action"] for row in result.candidates},
+                         {HU, 0, 1})
+        hu = next(row for row in result.candidates if row["action"] == HU)
+        self.assertTrue(hu["instant_hu"]["legal"])
+
+    def test_calibrated_all_root_evaluates_closed_kong_transition(self):
+        game = Game(seed=45, dealer=0, base=1)
+        hand = [0] * 34
+        for tile in (0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 4, 5):
+            hand[tile] += 1
+        game.hands[0] = hand
+        game.drawn[0] = 5
+        game.turn = 0
+        game.phase = "discard"
+        kong = KONG_CLOSED_BASE - 0
+        context = PublicDecisionContext.from_game(game, 0).replace(
+            legal_actions=(0, 1, kong), concealed_counts=(None,) * 4,
+            rollout_valid=False)
+        profile = ProfileSpec.shape_v2(
+            scope="all-root", calibrated=True, node_budget=1000000,
+            time_budget_ms=10000)
+        result = evaluate_root_context(context, profile, legacy_action=0)
+        self.assertEqual(result.level, "V2-ROOT")
+        self.assertEqual({row["action"] for row in result.candidates},
+                         {0, 1, kong})
+        kong_row = next(row for row in result.candidates
+                        if row["action"] == kong)
+        self.assertEqual(kong_row["kong_evaluation"]["kind"], "closed")
+        self.assertEqual(kong_row["kong_evaluation"]["transition"]["locked"],
+                         1)
+
+    def test_uncalibrated_all_root_still_delegates_kong(self):
+        game = Game(seed=46, dealer=0)
+        game.hands[0] = [4] + [0] * 33
+        game.hands[0][1] = 4
+        game.hands[0][2] = 3
+        game.hands[0][3] = 2
+        game.hands[0][4] = 1
+        game.drawn[0] = 4
+        game.turn = 0
+        context = PublicDecisionContext.from_game(game, 0).replace(
+            legal_actions=(0, 1, KONG_CLOSED_BASE),
+            concealed_counts=(None,) * 4, rollout_valid=False)
+        result = evaluate_root_context(
+            context, ProfileSpec.shape_v2(scope="all-root"), legacy_action=0)
+        self.assertEqual(result.level, "legacy")
+        self.assertEqual(result.delegated_reason, "root_compare_uncalibrated")
+
+    def test_calibrated_all_root_reaction_uses_complete_response_cursor(self):
+        game = Game(seed=47, dealer=0, base=1)
+        hand = [0] * 34
+        hand[0] = 2
+        for tile in range(1, 12):
+            hand[tile] = 1
+        game.hands[1] = hand
+        game.hands[0] = [0] * 34
+        game.discards = [[] for _ in range(4)]
+        game.discards[0] = [0]
+        game.pending = (0, 0)
+        game.phase = "react"
+        game.react_seq = [1, 2, 3, 1]
+        game._n_claim = 3
+        game.react_idx = 0
+        game.turn = 1
+        context = PublicDecisionContext.from_game(game, 1)
+        profile = ProfileSpec.shape_v2(
+            scope="all-root", calibrated=True, horizon=0,
+            node_budget=2000, time_budget_ms=1000)
+        result = evaluate_root_context(context, profile, legacy_action=PASS)
+        self.assertEqual(result.level, "V2-ROOT")
+        self.assertEqual({row["action"] for row in result.candidates},
+                         {PASS, PONG})
+        pong = next(row for row in result.candidates if row["action"] == PONG)
+        self.assertEqual(pong["post_locked"], 1)
+        self.assertEqual(pong["remaining_response_order"], [2, 3, 1])
+
+    def test_calibrated_all_root_reaction_evaluates_open_kong_transition(self):
+        game = Game(seed=48, dealer=0, base=1)
+        hand = [0] * 34
+        hand[0] = 3
+        for tile in range(1, 11):
+            hand[tile] = 1
+        game.hands[1] = hand
+        game.hands[0] = [0] * 34
+        game.discards = [[] for _ in range(4)]
+        game.discards[0] = [0]
+        game.pending = (0, 0)
+        game.phase = "react"
+        game.react_seq = [1, 2, 3, 1]
+        game._n_claim = 3
+        game.react_idx = 0
+        game.turn = 1
+        context = PublicDecisionContext.from_game(game, 1)
+        profile = ProfileSpec.shape_v2(
+            scope="all-root", calibrated=True, horizon=0,
+            node_budget=5000, time_budget_ms=1000)
+        result = evaluate_root_context(context, profile, legacy_action=PASS)
+        self.assertEqual(result.level, "V2-ROOT")
+        self.assertEqual({row["action"] for row in result.candidates},
+                         {PASS, PONG, KONG_OPEN})
+        kong = next(row for row in result.candidates
+                    if row["action"] == KONG_OPEN)
+        self.assertEqual(kong["source"], "reaction_kong_transition")
+        self.assertEqual(kong["post_locked"], 1)
+
+    def test_calibrated_all_root_reaction_evaluates_chow_and_rejects_unknown(self):
+        game = Game(seed=49, dealer=0, base=1)
+        hand = [0] * 34
+        hand[0] = 1
+        hand[1] = 1
+        for tile in range(3, 14):
+            hand[tile] = 1
+        game.hands[1] = hand
+        game.hands[0] = [0] * 34
+        game.discards = [[] for _ in range(4)]
+        game.discards[0] = [2]
+        game.pending = (0, 2)
+        game.phase = "react"
+        game.react_seq = [1, 2, 3, 1]
+        game._n_claim = 3
+        game.react_idx = 3
+        game.turn = 1
+        context = PublicDecisionContext.from_game(game, 1)
+        profile = ProfileSpec.shape_v2(
+            scope="all-root", calibrated=True, horizon=0,
+            node_budget=2000, time_budget_ms=1000)
+        result = evaluate_root_context(context, profile, legacy_action=PASS)
+        self.assertEqual(result.level, "V2-ROOT")
+        self.assertEqual({row["action"] for row in result.candidates},
+                         {PASS, CHOW_LOW, CHOW_MID, CHOW_HIGH})
+        unknown = context.replace(
+            react_seq=(), react_index=None, react_claim_count=None)
+        delegated = evaluate_root_context(unknown, profile, legacy_action=PASS)
+        self.assertEqual(delegated.level, "legacy")
+        self.assertEqual(delegated.delegated_reason,
+                         "reaction_context_incomplete")
 
     def test_sampler_and_world_builder_preserve_material_and_actor_view(self):
         context = self._complete_context()
@@ -205,6 +462,36 @@ class BotEvDiscardTests(unittest.TestCase):
         self.assertTrue(result.ambiguous)
         self.assertEqual(resumed.fingerprint, result.fingerprint)
         self.assertEqual(resumed.sample_count, 4)
+        artifact = teacher_artifact(
+            result, context=context, profile=ProfileSpec.shape_v2_discard())
+        self.assertTrue(artifact["counterfactual_evaluation"])
+        self.assertFalse(artifact["oracle"])
+        self.assertEqual(artifact["contract"]["scope"], "discard")
+
+    def test_teacher_uses_paired_ci_to_eliminate_actions(self):
+        context = self._complete_context(seed=26)
+        context = context.replace(legal_actions=context.legal_discards[:2])
+        first, second = context.legal_actions
+
+        def fake_rollout(context, world, action, continuation, max_steps):
+            reward = 0.1 if action == first else 0.0
+            return RolloutOutcome("ok", reward, world.sample_id,
+                                 world.fingerprint, 1, None, None, True)
+
+        with patch("mj.rollout.evaluator.run_rollout", side_effect=fake_rollout):
+            result = PairedTeacher(
+                context, seed=8, n0=8, batch=8, nmax=64,
+                alpha=0.5, reward_bound=0.1).evaluate()
+
+        self.assertFalse(result.ambiguous)
+        self.assertEqual(result.stop_reason, "paired_elimination")
+        self.assertTrue(result.elimination_history)
+        self.assertEqual(result.elimination_history[0]["eliminated"], [second])
+        self.assertLess(result.attempted_samples, 64)
+        pair = next(item for item in result.pairwise_deltas
+                    if item["left"] == first and item["right"] == second)
+        self.assertEqual(pair["delta"]["method"],
+                         "hoeffding-paired-bounded-simultaneous")
 
     def test_teacher_terminal_resume_deduplicates_and_restores_stop_state(self):
         context = self._complete_context(seed=24)

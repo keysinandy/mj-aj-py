@@ -1,0 +1,819 @@
+{
+  "schema": "bot-ev-discard/split-calibration-artifact-v1",
+  "manifest": {
+    "schema": "bot-ev-discard/split-manifest-v1",
+    "source_group": "one source seed owns every decision and rotation",
+    "splits": {
+      "train": {
+        "seed_start": 240000,
+        "games": 1024
+      },
+      "validation": {
+        "seed_start": 241024,
+        "games": 1024
+      },
+      "final_test": {
+        "seed_start": 242048,
+        "games": 8192
+      }
+    },
+    "seat_dealer": {
+      "seat": "i%4",
+      "dealer": "(i//4)%4",
+      "combinations": 16,
+      "balanced": true
+    },
+    "you_cai_bi_kao": [
+      false,
+      true
+    ],
+    "seed_fingerprint": "",
+    "contract": {
+      "profile_fingerprint": "2b39eceb16c8fa0d",
+      "rule_version": "hangzhou-platform-guide-v34",
+      "kernel_version": "python-frontier-v1",
+      "scope": "discard",
+      "continuation_version": "frozen_shape_v1_self_kong_v1",
+      "strategy": "shape-v2"
+    },
+    "fingerprint": "55ada75c96ef79dd"
+  },
+  "contract": {
+    "profile_fingerprint": "2b39eceb16c8fa0d",
+    "rule_version": "hangzhou-platform-guide-v34",
+    "kernel_version": "python-frontier-v1",
+    "scope": "discard",
+    "continuation_version": "frozen_shape_v1_self_kong_v1",
+    "strategy": "shape-v2",
+    "reward_units": "base-score points",
+    "belief_version": "uniform_unseen-v1",
+    "tail_version": "zero-v1",
+    "horizon": 2,
+    "manifest_fingerprint": "55ada75c96ef79dd"
+  },
+  "feature_names": [
+    "shanten",
+    "U1",
+    "p1",
+    "I",
+    "EV1",
+    "EV2",
+    "B",
+    "C",
+    "structure_ukeire",
+    "visible_unknown",
+    "live_wall",
+    "dealer",
+    "locked",
+    "chain",
+    "chain_piao",
+    "risk",
+    "you_cai_bi_kao",
+    "wild_count"
+  ],
+  "constraints": {
+    "shanten": [
+      null,
+      0.0
+    ]
+  },
+  "min_bucket_samples": 64,
+  "source_groups": {
+    "train": 1,
+    "validation": 1,
+    "final_test": 1
+  },
+  "rows": {
+    "train": 5,
+    "validation": 4,
+    "final_test": 4
+  },
+  "global_model": {
+    "schema": "bot-ev-discard/calibration-v1",
+    "kind": "global_linear",
+    "feature_names": [
+      "shanten",
+      "U1",
+      "p1",
+      "I",
+      "EV1",
+      "EV2",
+      "B",
+      "C",
+      "structure_ukeire",
+      "visible_unknown",
+      "live_wall",
+      "dealer",
+      "locked",
+      "chain",
+      "chain_piao",
+      "risk",
+      "you_cai_bi_kao",
+      "wild_count"
+    ],
+    "coefficients": [
+      -1.0357301726391845e-05,
+      0.1138407014010263,
+      0.001007439835407193,
+      -0.00015939040991574496,
+      0.0,
+      0.004592163066724406,
+      -6.288361762390266e-06,
+      -1.0357301726389822e-05,
+      0.04273169223229082,
+      -0.0011703750950836902,
+      -0.0005592942932258604,
+      0.0,
+      -1.035730172639105e-05,
+      0.0,
+      0.0,
+      -0.11501107649610749,
+      0.0,
+      -2.0714603452788667e-05
+    ],
+    "intercept": 7.599989629101892,
+    "constraints": [
+      [
+        "shanten",
+        null,
+        0.0
+      ]
+    ],
+    "n_samples": 5,
+    "target_mean": 7.6,
+    "training_fingerprint": "df39d3c155e528ae",
+    "fingerprint": "41bf20717e873c36"
+  },
+  "sparse_lut": {
+    "schema": "bot-ev-discard/calibration-v1",
+    "kind": "sparse_lut",
+    "min_bucket_samples": 64,
+    "global": {
+      "schema": "bot-ev-discard/calibration-v1",
+      "kind": "global_linear",
+      "feature_names": [
+        "shanten",
+        "U1",
+        "p1",
+        "I",
+        "EV1",
+        "EV2",
+        "B",
+        "C",
+        "structure_ukeire",
+        "visible_unknown",
+        "live_wall",
+        "dealer",
+        "locked",
+        "chain",
+        "chain_piao",
+        "risk",
+        "you_cai_bi_kao",
+        "wild_count"
+      ],
+      "coefficients": [
+        -1.0357301726391845e-05,
+        0.1138407014010263,
+        0.001007439835407193,
+        -0.00015939040991574496,
+        0.0,
+        0.004592163066724406,
+        -6.288361762390266e-06,
+        -1.0357301726389822e-05,
+        0.04273169223229082,
+        -0.0011703750950836902,
+        -0.0005592942932258604,
+        0.0,
+        -1.035730172639105e-05,
+        0.0,
+        0.0,
+        -0.11501107649610749,
+        0.0,
+        -2.0714603452788667e-05
+      ],
+      "intercept": 7.599989629101892,
+      "constraints": [
+        [
+          "shanten",
+          null,
+          0.0
+        ]
+      ],
+      "n_samples": 5,
+      "target_mean": 7.6,
+      "training_fingerprint": "df39d3c155e528ae",
+      "fingerprint": "41bf20717e873c36"
+    },
+    "buckets": {},
+    "fingerprint": "817015dc297434a1"
+  },
+  "metrics": {
+    "global": {
+      "train": {
+        "n": 5,
+        "mae": 0.012617157509647824,
+        "rmse": 0.015774878518643638,
+        "bias": 4.574624368558488e-06,
+        "bucket_fallbacks": 0
+      },
+      "validation": {
+        "n": 4,
+        "mae": 27.3278545848384,
+        "rmse": 27.3278545848384,
+        "bias": 27.3278545848384,
+        "bucket_fallbacks": 0
+      },
+      "final_test": {
+        "n": 4,
+        "mae": 1.7825230290970495,
+        "rmse": 1.7825230290970495,
+        "bias": -1.7825230290970495,
+        "bucket_fallbacks": 0
+      }
+    },
+    "sparse_lut": {
+      "train": {
+        "n": 5,
+        "mae": 0.012617157509647824,
+        "rmse": 0.015774878518643638,
+        "bias": 4.574624368558488e-06,
+        "bucket_fallbacks": 5
+      },
+      "validation": {
+        "n": 4,
+        "mae": 27.3278545848384,
+        "rmse": 27.3278545848384,
+        "bias": 27.3278545848384,
+        "bucket_fallbacks": 4
+      },
+      "final_test": {
+        "n": 4,
+        "mae": 1.7825230290970495,
+        "rmse": 1.7825230290970495,
+        "bias": -1.7825230290970495,
+        "bucket_fallbacks": 4
+      }
+    }
+  },
+  "ablations": {
+    "schema": "bot-ev-discard/calibration-v1",
+    "kind": "ablation",
+    "models": {
+      "I": {
+        "model": {
+          "schema": "bot-ev-discard/calibration-v1",
+          "kind": "global_linear",
+          "feature_names": [
+            "shanten",
+            "U1",
+            "p1",
+            "EV1",
+            "EV2",
+            "B",
+            "C",
+            "structure_ukeire",
+            "visible_unknown",
+            "live_wall",
+            "dealer",
+            "locked",
+            "chain",
+            "chain_piao",
+            "risk",
+            "you_cai_bi_kao",
+            "wild_count"
+          ],
+          "coefficients": [
+            -1.0357357797285971e-05,
+            0.11384079384294409,
+            0.001007440653477259,
+            0.0,
+            0.004592166817383868,
+            -6.288395805435798e-06,
+            -1.0357357797285617e-05,
+            0.0427317271222934,
+            -0.001170381431095176,
+            -0.00055929732105436,
+            0.0,
+            -1.035735779728663e-05,
+            0.0,
+            0.0,
+            -0.11501117527403534,
+            0.0,
+            -2.071471559458478e-05
+          ],
+          "intercept": 7.599989629045839,
+          "constraints": [
+            [
+              "shanten",
+              null,
+              0.0
+            ]
+          ],
+          "n_samples": 5,
+          "target_mean": 7.6,
+          "training_fingerprint": "296af12e24b5d197",
+          "fingerprint": "045cc1c70ef157d6"
+        },
+        "metrics": {
+          "n": 5,
+          "mae": 0.012617202308610942,
+          "rmse": 0.01577493454524912,
+          "bias": 4.574661559431093e-06
+        },
+        "removed": [
+          "I"
+        ],
+        "kind": "feature_ablation",
+        "validation_metrics": {
+          "n": 4,
+          "mae": 27.327860051374454,
+          "rmse": 27.327860051374454,
+          "bias": 27.327860051374454
+        },
+        "final_test_metrics": {
+          "n": 4,
+          "mae": 1.7825299165238002,
+          "rmse": 1.7825299165238002,
+          "bias": -1.7825299165238002
+        }
+      },
+      "EV2": {
+        "model": {
+          "schema": "bot-ev-discard/calibration-v1",
+          "kind": "global_linear",
+          "feature_names": [
+            "shanten",
+            "U1",
+            "p1",
+            "I",
+            "EV1",
+            "B",
+            "C",
+            "structure_ukeire",
+            "visible_unknown",
+            "live_wall",
+            "dealer",
+            "locked",
+            "chain",
+            "chain_piao",
+            "risk",
+            "you_cai_bi_kao",
+            "wild_count"
+          ],
+          "coefficients": [
+            -1.0007539171101552e-05,
+            0.11394026168656236,
+            0.0010083208998809638,
+            -0.00015950023511228365,
+            0.0,
+            -6.076005925248185e-06,
+            -1.0007539171100139e-05,
+            0.04276762828914536,
+            -0.0011308519263363297,
+            -0.0005404071152402924,
+            0.0,
+            -1.000753917110262e-05,
+            0.0,
+            0.0,
+            -0.11507111361289522,
+            0.0,
+            -2.0015078342198974e-05
+          ],
+          "intercept": 7.599989978862647,
+          "constraints": [
+            [
+              "shanten",
+              null,
+              0.0
+            ]
+          ],
+          "n_samples": 5,
+          "target_mean": 7.6,
+          "training_fingerprint": "e13f1c58ad19553f",
+          "fingerprint": "7bb64ef5097b74e7"
+        },
+        "metrics": {
+          "n": 5,
+          "mae": 0.012647887411965009,
+          "rmse": 0.015813180700134852,
+          "bias": 4.42775371229942e-06
+        },
+        "removed": [
+          "EV2"
+        ],
+        "kind": "feature_ablation",
+        "validation_metrics": {
+          "n": 4,
+          "mae": 27.342002154050178,
+          "rmse": 27.342002154050178,
+          "bias": 27.342002154050178
+        },
+        "final_test_metrics": {
+          "n": 4,
+          "mae": 1.7833917889622768,
+          "rmse": 1.7833917889622768,
+          "bias": -1.7833917889622768
+        }
+      },
+      "B": {
+        "model": {
+          "schema": "bot-ev-discard/calibration-v1",
+          "kind": "global_linear",
+          "feature_names": [
+            "shanten",
+            "U1",
+            "p1",
+            "I",
+            "EV1",
+            "EV2",
+            "C",
+            "structure_ukeire",
+            "visible_unknown",
+            "live_wall",
+            "dealer",
+            "locked",
+            "chain",
+            "chain_piao",
+            "risk",
+            "you_cai_bi_kao",
+            "wild_count"
+          ],
+          "coefficients": [
+            -1.0357486001963934e-05,
+            0.11384084055589595,
+            0.0010074410668662118,
+            -0.00015939061889204035,
+            0.0,
+            0.004592168758128575,
+            -1.0357486001965527e-05,
+            0.042731745152469365,
+            -0.0011703959182238813,
+            -0.000559304244106515,
+            0.0,
+            -1.0357486001962477e-05,
+            0.0,
+            0.0,
+            -0.11501123647411636,
+            0.0,
+            -2.0714972003927215e-05
+          ],
+          "intercept": 7.599989628917375,
+          "constraints": [
+            [
+              "shanten",
+              null,
+              0.0
+            ]
+          ],
+          "n_samples": 5,
+          "target_mean": 7.6,
+          "training_fingerprint": "b074f94a3828b000",
+          "fingerprint": "f75686f48901e62b"
+        },
+        "metrics": {
+          "n": 5,
+          "mae": 0.01261634044277784,
+          "rmse": 0.01577385701948166,
+          "bias": 4.574403630641655e-06
+        },
+        "removed": [
+          "B"
+        ],
+        "kind": "feature_ablation",
+        "validation_metrics": {
+          "n": 4,
+          "mae": 27.32786206918129,
+          "rmse": 27.32786206918129,
+          "bias": 27.32786206918129
+        },
+        "final_test_metrics": {
+          "n": 4,
+          "mae": 1.7825322448645506,
+          "rmse": 1.7825322448645506,
+          "bias": -1.7825322448645506
+        }
+      },
+      "C": {
+        "model": {
+          "schema": "bot-ev-discard/calibration-v1",
+          "kind": "global_linear",
+          "feature_names": [
+            "shanten",
+            "U1",
+            "p1",
+            "I",
+            "EV1",
+            "EV2",
+            "B",
+            "structure_ukeire",
+            "visible_unknown",
+            "live_wall",
+            "dealer",
+            "locked",
+            "chain",
+            "chain_piao",
+            "risk",
+            "you_cai_bi_kao",
+            "wild_count"
+          ],
+          "coefficients": [
+            -1.0357801642807243e-05,
+            0.11384107888904191,
+            0.001007443176009099,
+            -0.0001593909768120062,
+            0.0,
+            0.00459217850591581,
+            -6.288665283067079e-06,
+            0.04273183578996222,
+            -0.0011704315856379366,
+            -0.000559321288712197,
+            0.0,
+            -1.0357801642803953e-05,
+            0.0,
+            0.0,
+            -0.115011510474677,
+            0.0,
+            -2.071560328559056e-05
+          ],
+          "intercept": 7.599989628601366,
+          "constraints": [
+            [
+              "shanten",
+              null,
+              0.0
+            ]
+          ],
+          "n_samples": 5,
+          "target_mean": 7.6,
+          "training_fingerprint": "246f4b1f49cf09d9",
+          "fingerprint": "9336b21607ffee4d"
+        },
+        "metrics": {
+          "n": 5,
+          "mae": 0.012614941028696869,
+          "rmse": 0.015772107468285997,
+          "bias": 4.574025552805949e-06
+        },
+        "removed": [
+          "C"
+        ],
+        "kind": "feature_ablation",
+        "validation_metrics": {
+          "n": 4,
+          "mae": 27.327877096077014,
+          "rmse": 27.327877096077014,
+          "bias": 27.327877096077014
+        },
+        "final_test_metrics": {
+          "n": 4,
+          "mae": 1.782548028913756,
+          "rmse": 1.782548028913756,
+          "bias": -1.782548028913756
+        }
+      },
+      "hard_gate": {
+        "model": {
+          "schema": "bot-ev-discard/calibration-v1",
+          "kind": "global_linear",
+          "feature_names": [
+            "shanten",
+            "U1",
+            "p1",
+            "I",
+            "EV1",
+            "EV2",
+            "B",
+            "C",
+            "structure_ukeire",
+            "visible_unknown",
+            "live_wall",
+            "dealer",
+            "locked",
+            "chain",
+            "chain_piao",
+            "risk",
+            "you_cai_bi_kao",
+            "wild_count"
+          ],
+          "coefficients": [
+            -1.0357301726391845e-05,
+            0.1138407014010263,
+            0.001007439835407193,
+            -0.00015939040991574496,
+            0.0,
+            0.004592163066724406,
+            -6.288361762390266e-06,
+            -1.0357301726389822e-05,
+            0.04273169223229082,
+            -0.0011703750950836902,
+            -0.0005592942932258604,
+            0.0,
+            -1.035730172639105e-05,
+            0.0,
+            0.0,
+            -0.11501107649610749,
+            0.0,
+            -2.0714603452788667e-05
+          ],
+          "intercept": 7.599989629101892,
+          "constraints": [
+            [
+              "shanten",
+              null,
+              0.0
+            ]
+          ],
+          "n_samples": 5,
+          "target_mean": 7.6,
+          "training_fingerprint": "df39d3c155e528ae",
+          "fingerprint": "41bf20717e873c36"
+        },
+        "metrics": {
+          "n": 5,
+          "mae": 0.012617157509647824,
+          "rmse": 0.015774878518643638,
+          "bias": 4.574624368558488e-06
+        },
+        "removed": [
+          "shanten_hard_gate"
+        ],
+        "kind": "policy_eligibility_diagnostic",
+        "policy": {
+          "status": "available",
+          "field": "hard_gate_pass",
+          "fields": [
+            "hard_gate_pass",
+            "hard_gate_eligible",
+            "hard_gate"
+          ],
+          "with_policy": {
+            "n": 5,
+            "target_mean": 7.6
+          },
+          "without_policy": {
+            "n": 5,
+            "target_mean": 7.6
+          }
+        },
+        "validation_metrics": {
+          "n": 4,
+          "mae": 27.3278545848384,
+          "rmse": 27.3278545848384,
+          "bias": 27.3278545848384
+        },
+        "final_test_metrics": {
+          "n": 4,
+          "mae": 1.7825230290970495,
+          "rmse": 1.7825230290970495,
+          "bias": -1.7825230290970495
+        }
+      },
+      "threshold": {
+        "model": {
+          "schema": "bot-ev-discard/calibration-v1",
+          "kind": "global_linear",
+          "feature_names": [
+            "shanten",
+            "U1",
+            "p1",
+            "I",
+            "EV1",
+            "EV2",
+            "B",
+            "C",
+            "structure_ukeire",
+            "visible_unknown",
+            "live_wall",
+            "dealer",
+            "locked",
+            "chain",
+            "chain_piao",
+            "risk",
+            "you_cai_bi_kao",
+            "wild_count"
+          ],
+          "coefficients": [
+            -1.0357301726391845e-05,
+            0.1138407014010263,
+            0.001007439835407193,
+            -0.00015939040991574496,
+            0.0,
+            0.004592163066724406,
+            -6.288361762390266e-06,
+            -1.0357301726389822e-05,
+            0.04273169223229082,
+            -0.0011703750950836902,
+            -0.0005592942932258604,
+            0.0,
+            -1.035730172639105e-05,
+            0.0,
+            0.0,
+            -0.11501107649610749,
+            0.0,
+            -2.0714603452788667e-05
+          ],
+          "intercept": 7.599989629101892,
+          "constraints": [
+            [
+              "shanten",
+              null,
+              0.0
+            ]
+          ],
+          "n_samples": 5,
+          "target_mean": 7.6,
+          "training_fingerprint": "df39d3c155e528ae",
+          "fingerprint": "41bf20717e873c36"
+        },
+        "metrics": {
+          "n": 5,
+          "mae": 0.012617157509647824,
+          "rmse": 0.015774878518643638,
+          "bias": 4.574624368558488e-06
+        },
+        "removed": [
+          "action_threshold"
+        ],
+        "kind": "policy_eligibility_diagnostic",
+        "policy": {
+          "status": "available",
+          "field": "action_threshold_pass",
+          "fields": [
+            "action_threshold_pass",
+            "threshold_pass",
+            "action_threshold"
+          ],
+          "with_policy": {
+            "n": 4,
+            "target_mean": 8.0
+          },
+          "without_policy": {
+            "n": 5,
+            "target_mean": 7.6
+          }
+        },
+        "validation_metrics": {
+          "n": 4,
+          "mae": 27.3278545848384,
+          "rmse": 27.3278545848384,
+          "bias": 27.3278545848384
+        },
+        "final_test_metrics": {
+          "n": 4,
+          "mae": 1.7825230290970495,
+          "rmse": 1.7825230290970495,
+          "bias": -1.7825230290970495
+        }
+      }
+    },
+    "fingerprint": "3bf1ec2b54e8fe90"
+  },
+  "oracle": false,
+  "fit_split": "train",
+  "selection_split": "validation",
+  "evaluation_splits": [
+    "validation",
+    "final_test"
+  ],
+  "model_selection": {
+    "criterion": "validation_rmse",
+    "final_test_is_report_only": true
+  },
+  "fingerprint": "993bcac9ba6698b4b0b158fb",
+  "input": "/Users/shenzeqi/Desktop/szq/inspire/openspec/changes/bot-ev-discard/artifacts/calibration_rows_smoke_20260916.jsonl",
+  "input_fingerprint": "4e3529fea9511317a411e680",
+  "profile": {
+    "name": "shape-v2",
+    "version": "shape-v2",
+    "scope": "discard",
+    "schema": "bot-ev-discard/profile-v1",
+    "reward_units": "base-score points",
+    "reward_name": "hero_round_settlement_delta",
+    "rules_version": "hangzhou-platform-guide-v34",
+    "belief_version": "uniform_unseen-v1",
+    "continuation_version": "frozen_shape_v1_self_kong_v1",
+    "kernel_version": "python-frontier-v1",
+    "tail_version": "zero-v1",
+    "horizon": 2,
+    "node_budget": 4096,
+    "time_budget_ms": 36.0,
+    "explanation": true,
+    "calibrated": false,
+    "calibration_fingerprint": "",
+    "calibration_kind": "none",
+    "calibration_intercept": 0.0,
+    "q0_shanten_weight": -1.0,
+    "q0_u1_weight": 0.01,
+    "q0_ev1_weight": 0.0,
+    "q0_ev2_weight": 1.0,
+    "q0_fan_weight": 0.0,
+    "q0_risk_weight": 0.0,
+    "reward_upper_bound": null,
+    "tau": {},
+    "lut_buckets": [],
+    "min_bucket_samples": 64,
+    "fingerprint": "2b39eceb16c8fa0d"
+  },
+  "teacher_only_offline": true,
+  "input_mode": "frozen_source_splits"
+}

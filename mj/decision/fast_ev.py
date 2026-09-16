@@ -14,9 +14,12 @@ import time
 from typing import Optional
 
 from .context import ContextError, PublicDecisionContext
-from .frontier import discard_frontier, DiscardFrontierItem
+from .frontier import (discard_frontier, discard_frontier_batch,
+                        DiscardFrontierItem,
+                        DISCARD_FRONTIER_BATCH_KERNEL_VERSION)
 from .profile import ProfileSpec
 from .score_value import ScoreValue, theoretical_reward_bound
+from ..tiles import W
 
 
 MODEL_ASSUMPTION = "uniform_unseen_no_opponent_actions_score_v1"
@@ -80,6 +83,11 @@ class V2Candidate:
     waits: tuple = ()
     visible_unknown: Optional[int] = None
     risk: Optional[float] = None
+    post_chain: Optional[int] = None
+    post_chain_piao: Optional[int] = None
+    is_piao: Optional[bool] = None
+    discarded_wild: Optional[bool] = None
+    post_locked: Optional[int] = None
 
     def as_json(self):
         return {
@@ -90,6 +98,11 @@ class V2Candidate:
             "structure_ukeire": list(self.structure_ukeire),
             "waits": list(self.waits),
             "unknown_pool": self.visible_unknown, "risk": self.risk,
+            "post_chain": self.post_chain,
+            "post_chain_piao": self.post_chain_piao,
+            "is_piao": self.is_piao,
+            "discarded_wild": self.discarded_wild,
+            "post_locked": self.post_locked,
             # ``I`` is shape-v1's improvement feature, not the score-valued
             # EV1 layer.  Fast v2 does not compute it yet, so keep it missing
             # instead of silently aliasing two different quantities.
@@ -168,14 +181,16 @@ class FastEvaluation:
 
 
 def _candidate_q0(item: DiscardFrontierItem, context, profile,
-                  ev1=None, ev2=None):
+                  ev1=None, ev2=None, *, post_chain=None,
+                  post_chain_piao=None):
     unknown = item.visible_unknown
+    chain = (context.chain_count if post_chain is None else post_chain)
     contributions = {
         "shanten": profile.q0_shanten_weight * float(item.shanten),
         "U1": profile.q0_u1_weight * float(item.u1),
     }
-    if context.chain_count is not None:
-        contributions["chain"] = profile.q0_fan_weight * float(context.chain_count)
+    if chain is not None:
+        contributions["chain"] = profile.q0_fan_weight * float(chain)
     contributions["risk"] = profile.q0_risk_weight * float(
         max(0, unknown - item.u1))
     base_q0 = float(profile.calibration_intercept) + sum(
@@ -186,11 +201,24 @@ def _candidate_q0(item: DiscardFrontierItem, context, profile,
     # layer is present, do not add EV1 a second time even if an old/custom
     # profile happens to carry a non-zero EV1 coefficient.
     if ev2 is None and ev1 is not None:
-        contributions["EV1"] = profile.q0_ev1_weight * float(ev1)
+        ev1 = float(ev1)
+        contributions["EV1"] = (profile.q0_ev1_weight * ev1
+                                 if profile.calibrated else ev1)
     if ev2 is not None:
-        contributions["EV2"] = profile.q0_ev2_weight * float(ev2)
-    value = base_q0 + sum(v for key, v in contributions.items()
-                          if key in ("EV1", "EV2"))
+        ev2 = float(ev2)
+        contributions["EV2"] = (profile.q0_ev2_weight * ev2
+                                 if profile.calibrated else ev2)
+    layer_value = sum(v for key, v in contributions.items()
+                      if key in ("EV1", "EV2"))
+    # Before calibration, Q0 is an uncalibrated structural score while EV1/
+    # EV2 are base-score points.  They have no common unit, so a complete
+    # score-valued layer must be the primary ordering key and Q0 can only
+    # break an exact layer tie.  A calibrated profile owns the same-unit
+    # combination explicitly.
+    has_score_layer = ev1 is not None or ev2 is not None
+    value = (base_q0 + layer_value if profile.calibrated else layer_value)
+    if not has_score_layer:
+        value = base_q0
     # Q0 is a structurally defined fallback.  It is not called an EV when no
     # calibrated score layer is available, even though it remains sortable.
     return base_q0, value, contributions
@@ -205,15 +233,22 @@ def _apply_draw(hand, rem, tile):
 
 
 def _one_draw_value(hand, rem, live_wall, locked, chain_count,
-                    chain_piao, scorer, budget):
-    """One future hero draw; non-HU tail is explicitly zero."""
+                    chain_piao, scorer, budget, waits=()):
+    """One future hero draw from a known tenpai hand.
+
+    ``future_values`` supplies the waits from the batched post-draw discard
+    frontier.  Under the v1 ``tail=zero`` model a non-tenpai hand has no
+    reward on this final draw, so enumerating every one of the 34 tile kinds
+    would only repeat guaranteed-zero HU checks.
+    """
     if live_wall < 4:
         return 0.0
     n = sum(max(0, x) for x in rem)
     if n <= 0:
         return 0.0
     total = 0.0
-    for tile, left in enumerate(rem):
+    for tile in waits:
+        left = rem[tile]
         if left <= 0:
             continue
         budget.consume()
@@ -227,7 +262,8 @@ def _one_draw_value(hand, rem, live_wall, locked, chain_count,
 
 
 def future_values(context: PublicDecisionContext, root_hand, locked,
-                  chain_count, chain_piao, *, horizon=2, budget=None):
+                  chain_count, chain_piao, *, horizon=2, budget=None,
+                  first_draws=4):
     """Return ``(EV1, EV2)`` for one root discard.
 
     The first-draw traversal is shared.  EV2 is the two-draw value itself,
@@ -239,16 +275,18 @@ def future_values(context: PublicDecisionContext, root_hand, locked,
             context.dealer is None or chain_count is None or
             chain_piao is None):
         return None, None
+    first_draws = max(0, int(first_draws))
     scorer = ScoreValue(context.dealer, context.base,
                         bool(context.you_cai_bi_kao), context.hero_seat)
     rem = tuple(int(x) for x in context.remaining)
-    if context.live_wall < 4 or sum(rem) <= 0:
+    if context.live_wall < first_draws or sum(rem) <= 0:
         return 0.0, 0.0
     budget = budget or DecisionBudget(10**9, 10**9)
     n = sum(rem)
     ev1 = 0.0
     ev2 = 0.0
-    live_after = max(0, int(context.live_wall) - 4)
+    live_after = max(0, int(context.live_wall) - first_draws)
+    pending = []
     for tile, left in enumerate(rem):
         if left <= 0:
             continue
@@ -265,19 +303,50 @@ def future_values(context: PublicDecisionContext, root_hand, locked,
             continue
         if horizon < 2 or live_after < 4:
             continue
-        # All legal post-draw discards participate in the continuation.  This
-        # intentionally does not call shape-v1's minimum-shanten helper.
+        # All legal post-draw discards participate in the continuation.  The
+        # batch frontier is the only source of the second-step shanten/waits;
+        # this intentionally does not call shape-v1's minimum-shanten helper.
+        pending.append((tile, left, hand2, rem2,
+                        tuple(4 - value for value in rem2)))
+
+    # One native batch replaces one FFI round-trip per possible first draw and
+    # shares the Rust shanten cache across states.  The Python fallback keeps
+    # exactly the same all-candidate semantics on older wheels.
+    frontiers = ()
+    if pending:
+        frontiers = discard_frontier_batch(
+            [item[2] for item in pending], locked=locked,
+            visibles=[item[4] for item in pending], use_rust=True)
+        if (DISCARD_FRONTIER_BATCH_KERNEL_VERSION and
+                any(any(not item.kernel.startswith("python-")
+                        for item in frontier)
+                    for frontier in frontiers)):
+            budget.kernel()
+        elif not DISCARD_FRONTIER_BATCH_KERNEL_VERSION:
+            native_calls = sum(any(
+                not item.kernel.startswith("python-") for item in frontier)
+                for frontier in frontiers)
+            if native_calls:
+                budget.kernel(native_calls)
+
+    for (tile, left, hand2, rem2, _visible), frontier2 in zip(
+            pending, frontiers):
         best_second = 0.0
         best_seen = False
-        for discard, count in enumerate(hand2):
-            if count <= 0:
-                continue
+        for item in frontier2:
+            discard = item.tile
             budget.consume()
+            # With tail=zero, only a post-discard tenpai hand can score on the
+            # final draw.  Its exact waits are already computed by the same
+            # all-candidate frontier kernel, so skip non-tenpai candidates
+            # without calling the scoring adapter at all.
+            if item.shanten != 0:
+                continue
             next_hand, next_chain, next_piao, _piao = scorer.discard(
                 hand2, discard, locked, chain_count, chain_piao)
             value = _one_draw_value(
                 next_hand, rem2, live_after, locked, next_chain, next_piao,
-                scorer, budget)
+                scorer, budget, waits=item.waits)
             if not best_seen or value > best_second:
                 best_second, best_seen = value, True
         if best_seen:
@@ -335,10 +404,25 @@ def evaluate_discard_context(context: PublicDecisionContext,
         runtime_kernel = ",".join(sorted(kernels)) or runtime_kernel
         if any(not kernel.startswith("python-") for kernel in kernels):
             started.kernel()
+        post_adapter = None
+        if (context.dealer is not None and context.base is not None and
+                context.chain_count is not None and
+                context.chain_piao is not None):
+            post_adapter = ScoreValue(
+                context.dealer, context.base,
+                bool(context.you_cai_bi_kao), context.hero_seat)
         candidates = []
         for item in frontier:
             started.consume()
-            q0, value, contributions = _candidate_q0(item, context, profile)
+            post_chain = post_chain_piao = is_piao = None
+            if post_adapter is not None:
+                _unused_hand, post_chain, post_chain_piao, is_piao = (
+                    post_adapter.discard(
+                        context.hand, item.tile, context.locked,
+                        context.chain_count, context.chain_piao))
+            q0, value, contributions = _candidate_q0(
+                item, context, profile, post_chain=post_chain,
+                post_chain_piao=post_chain_piao)
             candidates.append(V2Candidate(
                 item.tile, item.shanten, item.u1, item.p1,
                 item.ukeire_tiles, item.ukeire_bitset,
@@ -346,7 +430,10 @@ def evaluate_discard_context(context: PublicDecisionContext,
                 contributions, missing=("I", "EV1", "EV2"),
                 level="V2-Q0", waits=item.waits,
                 visible_unknown=item.visible_unknown,
-                risk=max(0, item.visible_unknown - item.u1)))
+                risk=max(0, item.visible_unknown - item.u1),
+                post_chain=post_chain, post_chain_piao=post_chain_piao,
+                is_piao=is_piao, discarded_wild=(item.tile == W),
+                post_locked=context.locked))
     except BudgetExceeded as exc:
         return _legacy_fallback_result(context, profile, "q0_" + exc.reason,
                                        selected=legacy_best,
@@ -383,8 +470,13 @@ def evaluate_discard_context(context: PublicDecisionContext,
                                 else theoretical_reward_bound(context.base or 1))
                 layer_weight = (profile.q0_ev2_weight if want_ev2
                                 else profile.q0_ev1_weight)
-                effective_weight = abs(layer_weight)
-                upper = candidate.q0 + effective_weight * reward_bound
+                if profile.calibrated:
+                    upper = candidate.q0 + abs(layer_weight) * reward_bound
+                else:
+                    # Uncalibrated EV1/EV2 is ordered directly in score units;
+                    # structural Q0 is only an exact-value tie-break and must
+                    # not be folded into the layer's pruning certificate.
+                    upper = reward_bound
                 if completed_values and upper < max(completed_values):
                     evaluated.append(V2Candidate(
                         candidate.tile, candidate.shanten, candidate.u1,
@@ -398,7 +490,12 @@ def evaluate_discard_context(context: PublicDecisionContext,
                         "V2-EV2" if want_ev2 else "V2-EV1",
                         waits=frontier_by_tile[candidate.tile].waits,
                         visible_unknown=candidate.visible_unknown,
-                        risk=max(0, candidate.visible_unknown - candidate.u1)))
+                        risk=max(0, candidate.visible_unknown - candidate.u1),
+                        post_chain=candidate.post_chain,
+                        post_chain_piao=candidate.post_chain_piao,
+                        is_piao=candidate.is_piao,
+                        discarded_wild=candidate.discarded_wild,
+                        post_locked=candidate.post_locked))
                     continue
                 if cache_key in cache:
                     ev1, ev2 = cache[cache_key]
@@ -420,7 +517,9 @@ def evaluate_discard_context(context: PublicDecisionContext,
                 # layer; q is available only after every candidate finishes.
                 q0, _value, contributions = _candidate_q0(
                     frontier_by_tile[candidate.tile], context, profile,
-                    ev1=ev1, ev2=ev2 if want_ev2 else None)
+                    ev1=ev1, ev2=ev2 if want_ev2 else None,
+                    post_chain=candidate.post_chain,
+                    post_chain_piao=candidate.post_chain_piao)
                 evaluated.append(V2Candidate(
                     candidate.tile, candidate.shanten, candidate.u1,
                     candidate.p1, candidate.ukeire_tiles,
@@ -431,7 +530,12 @@ def evaluate_discard_context(context: PublicDecisionContext,
                     level="V2-EV2" if want_ev2 else "V2-EV1",
                     waits=frontier_by_tile[candidate.tile].waits,
                     visible_unknown=candidate.visible_unknown,
-                    risk=max(0, candidate.visible_unknown - candidate.u1)))
+                    risk=max(0, candidate.visible_unknown - candidate.u1),
+                    post_chain=candidate.post_chain,
+                    post_chain_piao=candidate.post_chain_piao,
+                    is_piao=candidate.is_piao,
+                    discarded_wild=candidate.discarded_wild,
+                    post_locked=candidate.post_locked))
                 completed_values.append(_value)
             except BudgetExceeded:
                 high_complete = False
@@ -506,6 +610,11 @@ def choose_game_action(game, seat, profile=None):
     if game.phase != "discard":
         from ..bot import choose_action
         action = choose_action(game, seat, evaluator="legacy")
+        if profile.scope == "all-root":
+            from .root import evaluate_root_context
+            root = evaluate_root_context(context, profile,
+                                         legacy_action=action)
+            return root.selected, root.as_json()
         return action, _legacy_fallback_result(
             context, profile, "scope_delegated_reaction", selected=action,
             delegated="reaction_scope").as_json()

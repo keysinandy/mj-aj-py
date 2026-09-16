@@ -33,10 +33,10 @@
 
 ## 5. 校准、regret 和独立收益
 
-- [ ] 5.1 在冻结切分上完成 I/EV2/B/C/硬门槛/阈值消融，拟合全局受约束线性模型并验证 LUT 稀疏桶回退。
-- [ ] 5.2 冻结 shape-v2 profile，使用独立世界评估 legacy、shape-v1、shape-v2、teacher/actual 的 paired Q 和 regret，不截断负 regret。
-- [ ] 5.3 运行至少 4096 对局对（8192 次），16 个 seat/dealer 组合均衡，输出按源局聚类 bootstrap/同时区间和覆盖率；不达标保持 legacy。
-- [ ] 5.4 生成校准、验证、最终测试、teacher 和运行 manifest；检查规则、profile、kernel、策略或 scope 变化是否使证据失效。
+- [x] 5.1 在冻结切分上完成 I/EV2/B/C/硬门槛/阈值消融，拟合全局受约束线性模型并验证 LUT 稀疏桶回退。
+- [x] 5.2 冻结 shape-v2 profile，使用独立世界评估 legacy、shape-v1、shape-v2、teacher/actual 的 paired Q 和 regret，不截断负 regret。
+- [x] 5.3 运行至少 4096 对局对（8192 次），16 个 seat/dealer 组合均衡，输出按源局聚类 bootstrap/同时区间和覆盖率；不达标保持 legacy。
+- [x] 5.4 生成校准、验证、最终测试、teacher 和运行 manifest；检查规则、profile、kernel、策略或 scope 变化是否使证据失效。
 
 ## 6. 证据日志与 BC 契约
 
@@ -54,7 +54,7 @@
 
 ## 8. 性能、线上验收与发布
 
-- [ ] 8.1 在同机同内核交错三次 200 局压测，包含解释序列化，记录 p50/p95/p99/max、节点、内核、层级和回退率。
+- [x] 8.1 在同机同内核交错三次 200 局压测，包含解释序列化，记录 p50/p95/p99/max、节点、内核、层级和回退率。
 - [ ] 8.2 用实际十场并发调度验证完整决策 p95（弃牌≤20ms、反应≤10ms）及 elapsed/games ≤15% 增长；失败时优化后重跑受影响对拍。
 - [ ] 8.3 为每个已校准 scope/profile 冻结运行 manifest，按固定 BOT、SSE+增量、15/s 在至少三个新房各十场运行。
 - [ ] 8.4 逐窗审计 legal candidate、decision/action、deadline、身份、transport、server outcome、strategy PASS、未提交和代打；确认无 evaluator 导致窗口损失。
