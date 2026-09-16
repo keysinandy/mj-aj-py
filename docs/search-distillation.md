@@ -159,3 +159,53 @@ The code path above is covered by `tests/test_distillation_contracts.py`,
 `tests/test_release.py`. Producing the real `dataset0` (200k–500k states at
 2048–16000 simulations), the 4096-game paired matrices and the platform
 workload still requires the declared compute and room access.
+
+## Regret-aware active distillation
+
+OpenSpec change: `openspec/changes/regret-aware-active-distillation/`.
+
+The second round keeps the deployment shape (teacher offline, PolicyNet
+online) and optimizes the loop: active sampling, regret-aware loss, replay
+and a permanent hard-state set, with staged gates.
+
+| Module | Contract |
+| --- | --- |
+| `mj/training/active_sampling.py` | candidate pool + cheap scoring, `ActiveSamplingProfile` ratios/importance, deterministic quota sampling, `state_id` |
+| `mj/training/teacher_cache.py` | cache keyed by state + teacher version + config hash; reuse only at <= cached budget |
+| `mj/training/regret_training.py` | `RegretAwareLossProfile` (policy/ranking/catastrophic), pairwise logistic ranking with Q-gap weights, `teacher_confidence x policy_error x importance` weights (clipped) |
+| `mj/training/replay_buffer.py` | recent/historical/hard/special buckets, historical reservoir, deterministic batch mix |
+| `mj/training/hard_states.py` | permanent hard-state registry, failure-mode dedupe, per-checkpoint hard evaluation + fixed/regressed report |
+
+Commands:
+
+```bash
+# 1. candidate pool from the current policy (policy-only cheap scoring)
+PYTHONPATH=. python3 scripts/search_candidate_pool.py \
+  --out data/distill/pool_gen0.jsonl --selected-out data/distill/pool_gen0.selected.jsonl \
+  --manifest-out data/distill/pool_gen0.manifest.json \
+  --policy-source checkpoint:runs/search_bc/gen0/best-by-regret.pt \
+  --batch-size 20000 --generation 0 --split train --ycbk off
+
+# 2. teacher-label only the selected states (cache is resumable)
+PYTHONPATH=. python3 scripts/search_teacher_generate.py \
+  --pool-in data/distill/pool_gen0.selected.jsonl \
+  --out data/distill/dataset_dagger1.jsonl \
+  --teacher-cache-dir data/distill/teacher_cache \
+  --budget-json openspec/changes/search-teacher-distillation-bc/artifacts/teacher_budget_reduced_gen0.json
+
+# 3. train with regret-aware loss / replay (one experiment variable at a time)
+PYTHONPATH=. python3 scripts/search_bc_train.py \
+  --data data/distill/dataset0.jsonl data/distill/dataset_dagger1.jsonl \
+  --out runs/search_bc/gen1 --generation 1 --replay-size 20000 \
+  --ranking-weight 0.25 --catastrophic-weight 0.0 --device cuda
+
+# 4. staged gates: offline -> hard set -> fast paired (full paired unchanged)
+PYTHONPATH=. bash scripts/search_distill_pipeline.sh \
+  runs/search_bc/gen1/best-by-regret.pt data/distill/reference_gen0.jsonl \
+  runs/search_bc/gen1/gates
+```
+
+Experiment order is one variable per run: E0 baseline → E1 active sampling
+→ E2 ranking loss → E3 both → E4 replay → E5 hard set → E6 catastrophic /
+weighting refinements. Top-1 accuracy is diagnostic; dashboards lead with
+mean/p95 regret, catastrophic rate, special-state regret and teacher cost.

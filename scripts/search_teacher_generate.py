@@ -109,6 +109,85 @@ def _ycbk_variants(value):
     return (False,)
 
 
+def _label_pool(args, config):
+    """Label an active-sampling selected candidate pool into a dataset."""
+    from dataclasses import replace
+
+    from mj.decision.profile import fingerprint
+    from mj.training.active_sampling import read_candidate_pool
+    from mj.training.search_data import SearchDataset, write_search_dataset
+    from mj.training.teacher_generate import (
+        label_snapshot,
+        resume_dataset,
+        snapshot_from_candidate,
+        teacher_confidence_from_gap,
+    )
+
+    candidates = read_candidate_pool(args.pool_in)
+    completed = frozenset()
+    if args.out is not None and not args.no_resume and args.out.exists():
+        _, completed = resume_dataset(args.out)
+    samples = []
+    for candidate in candidates:
+        snapshot = snapshot_from_candidate(
+            candidate, belief_profile=config.belief_profile)
+        sample = label_snapshot(
+            snapshot, source_group=candidate.source_group,
+            generation=candidate.generation,
+            policy_version_source=candidate.policy_version_source,
+            budget_profile=config.budget_profile,
+            search_profile=config.search_profile,
+            belief_profile=config.belief_profile,
+            completed_work_ids=completed)
+        if sample is None:
+            continue
+        q_values = sample.q_by_action
+        regret = None
+        if (q_values and candidate.policy_action is not None
+                and candidate.policy_action in q_values):
+            regret = max(q_values.values()) - q_values[candidate.policy_action]
+        samples.append(replace(
+            sample, state_source=candidate.state_source,
+            importance_factor=candidate.importance_factor,
+            policy_action=candidate.policy_action,
+            policy_prob_by_action=candidate.policy_prob_by_action,
+            policy_entropy=candidate.policy_entropy,
+            policy_regret=regret,
+            teacher_confidence=teacher_confidence_from_gap(
+                sample.teacher_q_gap)))
+    existing = SearchDataset()
+    if args.out is not None and not args.no_resume and args.out.exists():
+        existing, _ = resume_dataset(args.out)
+    merged = SearchDataset(sorted(
+        existing.samples + samples,
+        key=lambda item: (item.source_group, item.work_id)))
+    if args.out is not None:
+        write_search_dataset(args.out, merged,
+                             include_features=not args.no_features)
+    manifest = {
+        "schema": "search-teacher-pool-labeling-v1",
+        "pool_in": str(args.pool_in),
+        "input_candidates": len(candidates),
+        "labeled": len(samples),
+        "total": len(merged.samples),
+        "generation": int(args.generation),
+        "budget_profile": config.budget_profile.as_json(),
+        "search_profile": config.search_profile.as_json(),
+        "dataset_fingerprint": merged.fingerprint,
+        "oracle": False,
+    }
+    manifest["fingerprint"] = fingerprint(manifest, 24)
+    if args.manifest_out:
+        args.manifest_out.write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2,
+                       sort_keys=True) + "\n", encoding="utf-8")
+    print(json.dumps({"out": str(args.out), "labeled": len(samples),
+                      "total": len(merged.samples),
+                      "dataset_fingerprint": merged.fingerprint},
+                     ensure_ascii=False))
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", type=Path,
@@ -136,6 +215,10 @@ def main(argv=None):
                         help="write a frozen reference context set instead")
     parser.add_argument("--reference-simulations", type=int, default=16000,
                         choices=(8000, 16000))
+    parser.add_argument("--pool-in", type=Path, default=None,
+                        help="label an active-sampling selected candidate pool")
+    parser.add_argument("--teacher-cache-dir", type=Path, default=None,
+                        help="sharded teacher result cache directory")
     parser.add_argument("--manifest-out", type=Path)
     parser.add_argument("--no-features", action="store_true",
                         help="write provenance-only rows (no planes/scalars)")
@@ -148,8 +231,8 @@ def main(argv=None):
     parser.add_argument("--search-wall-clock-ms", type=float, default=None)
     parser.add_argument("--forced-sanity-ratio", type=float, default=0.03)
     args = parser.parse_args(argv)
-    if args.out is None and args.reference_out is None:
-        parser.error("either --out or --reference-out is required")
+    if args.out is None and args.reference_out is None and args.pool_in is None:
+        parser.error("either --out, --reference-out or --pool-in is required")
 
     population, budget, search, belief, distillation = _profiles(args)
     seed_start, games = _seed_range(args)
@@ -167,7 +250,12 @@ def main(argv=None):
         population=population, budget_profile=budget, search_profile=search,
         belief_profile=belief, disagreement_source=args.disagreement_source,
         reference_mode=reference_mode,
-        reference_simulations=reference_simulations)
+        reference_simulations=reference_simulations,
+        teacher_cache_dir=(str(args.teacher_cache_dir)
+                           if args.teacher_cache_dir else None))
+
+    if args.pool_in is not None:
+        return _label_pool(args, config)
 
     completed = frozenset()
     if (not args.no_resume and not reference_mode and args.out is not None

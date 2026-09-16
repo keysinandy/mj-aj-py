@@ -86,6 +86,16 @@ def main(argv=None):
     parser.add_argument("--min-importance-weight", type=float, default=0.25)
     parser.add_argument("--full-evidence-simulations", type=int, default=2048)
     parser.add_argument("--augment", choices=("none", "suit"), default="none")
+    parser.add_argument("--loss-json", type=Path, default=None,
+                        help="RegretAwareLossProfile JSON")
+    parser.add_argument("--ranking-weight", type=float, default=None)
+    parser.add_argument("--catastrophic-weight", type=float, default=None)
+    parser.add_argument("--q-scale", type=float, default=None)
+    parser.add_argument("--rank-max-weight", type=float, default=None)
+    parser.add_argument("--catastrophic-threshold", type=float, default=None)
+    parser.add_argument("--replay-size", type=int, default=0,
+                        help="sample this many rows through generation replay")
+    parser.add_argument("--replay-json", type=Path, default=None)
     parser.add_argument("--assignments", type=Path, default=None,
                         help="JSON source_group -> split mapping")
     parser.add_argument("--split", default="train")
@@ -108,6 +118,44 @@ def main(argv=None):
             raise ValueError(f"no samples in split {args.split!r}")
     else:
         train_dataset = dataset
+
+    loss_profile = None
+    if args.loss_json or any(value is not None for value in (
+            args.ranking_weight, args.catastrophic_weight, args.q_scale,
+            args.rank_max_weight, args.catastrophic_threshold)):
+        from mj.training.regret_training import RegretAwareLossProfile
+        values = {}
+        if args.loss_json:
+            values = json.loads(args.loss_json.read_text(encoding="utf-8"))
+            values.pop("fingerprint", None)
+        if args.ranking_weight is not None:
+            values["ranking_weight"] = args.ranking_weight
+        if args.catastrophic_weight is not None:
+            values["catastrophic_weight"] = args.catastrophic_weight
+        if args.q_scale is not None:
+            values["q_scale"] = args.q_scale
+        if args.rank_max_weight is not None:
+            values["ranking_max_weight"] = args.rank_max_weight
+        if args.catastrophic_threshold is not None:
+            values["catastrophic_threshold"] = args.catastrophic_threshold
+        loss_profile = RegretAwareLossProfile(**values)
+
+    replay_manifest = None
+    if args.replay_size > 0:
+        from mj.training.replay_buffer import (ReplayBuffer, ReplayProfile,
+                                               replay_manifest as _manifest)
+        profile_values = {}
+        if args.replay_json:
+            profile_values = json.loads(
+                args.replay_json.read_text(encoding="utf-8"))
+            profile_values.pop("fingerprint", None)
+        buffer = ReplayBuffer(ReplayProfile(**profile_values))
+        max_generation = max((sample.generation
+                              for sample in train_dataset.samples), default=0)
+        buffer.add_generation(train_dataset, generation=max_generation)
+        selected = buffer.sample_batch(size=args.replay_size, seed=train.seed)
+        train_dataset = SearchDataset(sample for _, sample in selected)
+        replay_manifest = _manifest(buffer, selected)
 
     provenance = (json.loads(args.provenance.read_text(encoding="utf-8"))
                   if args.provenance else {})
@@ -153,25 +201,35 @@ def main(argv=None):
         device=args.device, augmentation=args.augment)
     model = _build_model(args, train_dataset)
     model_version = args.model_version or f"search-bc-gen{args.generation}"
+    extra_manifest = {"trained_on_split": args.split if assignments else "all",
+                      "dataset_fingerprint": train_dataset.fingerprint,
+                      "data_paths": list(args.data)}
+    if loss_profile is not None:
+        extra_manifest["loss_profile"] = loss_profile.as_json()
+    if replay_manifest is not None:
+        extra_manifest["replay"] = replay_manifest
     history, rows = train_search_bc(
         model, train_dataset, profile=profile, train=train,
+        loss_profile=loss_profile,
         value_contract_fingerprint=args.value_contract,
         output_dir=args.out, generation=args.generation,
-        model_version=model_version, blocks=args.blocks, width=args.width)
+        model_version=model_version, blocks=args.blocks, width=args.width,
+        extra_manifest=extra_manifest)
     manifest = write_training_manifest(
         args.out / "training_manifest.json", model=model, profile=profile,
         train=train, dataset=train_dataset, history=history, rows=rows,
         generation=args.generation, model_version=model_version,
-        blocks=args.blocks, width=args.width,
-        extra={"trained_on_split": args.split if assignments else "all",
-               "dataset_fingerprint": train_dataset.fingerprint,
-               "data_paths": list(args.data)})
+        blocks=args.blocks, width=args.width, extra=extra_manifest)
     summary = {
         "out": str(args.out), "model_version": model_version,
         "epochs": history,
         "usable_rows": len(rows.rows), "skipped_rows": dict(rows.skipped),
         "profile_fingerprint": profile.fingerprint,
         "train_profile_fingerprint": train.fingerprint,
+        "loss_profile_fingerprint": (loss_profile.fingerprint
+                                     if loss_profile is not None else None),
+        "replay": (replay_manifest["fingerprint"]
+                   if replay_manifest is not None else None),
         "manifest_fingerprint": manifest["fingerprint"],
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2))

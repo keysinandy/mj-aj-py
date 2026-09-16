@@ -36,9 +36,11 @@ from .search_data import (
     SearchSample,
     feature_fingerprint,
     read_search_dataset,
+    state_identity,
     work_identity,
     write_search_dataset,
 )
+from .teacher_cache import TeacherCache
 from .teacher_budget import (
     TeacherBudgetProfile,
     TeacherEvidence,
@@ -295,7 +297,8 @@ def label_snapshot(snapshot, *, source_group, generation, policy_version_source,
                    belief_profile: BeliefProfile,
                    actor_policy=None,
                    completed_work_ids: Iterable[str] = (),
-                   critical_tags: Sequence[str] | None = None):
+                   critical_tags: Sequence[str] | None = None,
+                   teacher_cache: TeacherCache | None = None):
     """Teacher-label one snapshot; returns ``None`` when resume skips it."""
     # Bind the effective belief profile before deriving any identity: the
     # resumed dataset stores the bound search fingerprint, so the resume key
@@ -332,22 +335,38 @@ def label_snapshot(snapshot, *, source_group, generation, policy_version_source,
         critical=critical, source_key=work)
     actor = actor_policy or HeuristicLikelihoodPolicy(
         temperature=1.0, version=search_profile.actor_policy_version)
+    state_hash = state_identity(snapshot.context.context_hash,
+                                snapshot.history.history_hash)
     result = None
     final = decision
     while True:
         simulations = budget_profile.budget(decision.tier)
-        try:
-            search = InformationSetSearch(
-                snapshot.context, history=snapshot.history,
-                belief=snapshot.belief, actor_policy=actor, profile=profile)
-            result = search.run(simulation_budget=simulations)
-        except SearchError as exc:
-            unsupported = replace(
-                decision, status="unsupported",
-                stop_reason=f"search_error:{type(exc).__name__}")
-            return _sample_without_evidence(
-                snapshot, decision=unsupported, status="unsupported",
-                forced=False, **common)
+        result = None
+        if teacher_cache is not None:
+            result = teacher_cache.lookup(
+                state_hash=state_hash, teacher_version=profile.version,
+                teacher_config_hash=profile.fingerprint,
+                requested_simulations=simulations)
+        if result is None:
+            try:
+                search = InformationSetSearch(
+                    snapshot.context, history=snapshot.history,
+                    belief=snapshot.belief, actor_policy=actor,
+                    profile=profile)
+                result = search.run(simulation_budget=simulations)
+            except SearchError as exc:
+                unsupported = replace(
+                    decision, status="unsupported",
+                    stop_reason=f"search_error:{type(exc).__name__}")
+                return _sample_without_evidence(
+                    snapshot, decision=unsupported, status="unsupported",
+                    forced=False, **common)
+            if teacher_cache is not None:
+                teacher_cache.store(
+                    state_hash=state_hash, teacher_version=profile.version,
+                    teacher_config_hash=profile.fingerprint,
+                    requested_simulations=simulations, result=result,
+                    generation=generation)
         follow = run_decision(
             budget_profile, decision,
             _evidence_from(result,
@@ -390,6 +409,7 @@ class GenerationConfig:
     disagreement_source: str | None = None
     reference_mode: bool = False
     reference_simulations: int = 16000
+    teacher_cache_dir: str | None = None
 
     def __post_init__(self):
         if int(self.generation) < 0:
@@ -405,6 +425,10 @@ def run_source_game(spec: SourceGameSpec, config: GenerationConfig,
     samples = []
     reference_rows = []
     error = None
+    teacher_cache = None
+    if config.teacher_cache_dir:
+        teacher_cache = TeacherCache.load_dir(config.teacher_cache_dir)
+        teacher_cache.open_shard(config.teacher_cache_dir)
     try:
         hero_policy = policy_from_source(config.policy_source)
         baseline = (policy_from_source(config.disagreement_source)
@@ -450,7 +474,8 @@ def run_source_game(spec: SourceGameSpec, config: GenerationConfig,
                     snapshot, config, source_group=spec.source_group,
                     policy_version_source=hero_policy.version,
                     critical_tags=critical_tags,
-                    completed_work_ids=completed_work_ids)
+                    completed_work_ids=completed_work_ids,
+                    teacher_cache=teacher_cache)
                 if sample is None:
                     continue
                 reference_rows.append({
@@ -471,7 +496,8 @@ def run_source_game(spec: SourceGameSpec, config: GenerationConfig,
                     search_profile=config.search_profile,
                     belief_profile=config.belief_profile,
                     completed_work_ids=completed_work_ids,
-                    critical_tags=critical_tags)
+                    critical_tags=critical_tags,
+                    teacher_cache=teacher_cache)
                 if sample is None:
                     continue
             score = float(game.scores[spec.hero_seat])
@@ -479,12 +505,15 @@ def run_source_game(spec: SourceGameSpec, config: GenerationConfig,
                                    terminal_reward=score))
     except Exception as exc:  # pragma: no cover - surfaced in GameResult
         error = f"{type(exc).__name__}:{exc}"
+    finally:
+        if teacher_cache is not None:
+            teacher_cache.flush()
     return GameResult(spec, samples, reference_rows, error)
 
 
 def _reference_sample(snapshot, config, *, source_group,
                       policy_version_source, critical_tags=None,
-                      completed_work_ids=()):
+                      completed_work_ids=(), teacher_cache=None):
     """Run the frozen high-budget reference search for one snapshot.
 
     Forced states are excluded: they carry no strategic choice and would
@@ -508,13 +537,29 @@ def _reference_sample(snapshot, config, *, source_group,
         return None
     actor = HeuristicLikelihoodPolicy(
         temperature=1.0, version=config.search_profile.actor_policy_version)
-    try:
-        search = InformationSetSearch(
-            snapshot.context, history=snapshot.history,
-            belief=snapshot.belief, actor_policy=actor, profile=profile)
-        result = search.run(simulation_budget=int(config.reference_simulations))
-    except SearchError:
-        return None
+    state_hash = state_identity(snapshot.context.context_hash,
+                                snapshot.history.history_hash)
+    result = None
+    if teacher_cache is not None:
+        result = teacher_cache.lookup(
+            state_hash=state_hash, teacher_version=profile.version,
+            teacher_config_hash=profile.fingerprint,
+            requested_simulations=int(config.reference_simulations))
+    if result is None:
+        try:
+            search = InformationSetSearch(
+                snapshot.context, history=snapshot.history,
+                belief=snapshot.belief, actor_policy=actor, profile=profile)
+            result = search.run(
+                simulation_budget=int(config.reference_simulations))
+        except SearchError:
+            return None
+        if teacher_cache is not None:
+            teacher_cache.store(
+                state_hash=state_hash, teacher_version=profile.version,
+                teacher_config_hash=profile.fingerprint,
+                requested_simulations=int(config.reference_simulations),
+                result=result, generation=config.generation)
     tags = set(critical_tags if critical_tags is not None
                else config.budget_profile.critical_tags)
     return SearchSample.from_search_result(
@@ -532,6 +577,37 @@ def _reference_sample(snapshot, config, *, source_group,
         hero_seat=snapshot.hero_seat,
         you_cai_bi_kao=snapshot.you_cai_bi_kao,
         shanten=snapshot.shanten, wall_remaining=snapshot.wall_remaining)
+
+
+def snapshot_from_candidate(candidate, *, belief_profile):
+    """Rebuild a labelable snapshot from a serialized candidate state."""
+    from .active_sampling import CandidateState
+
+    if not isinstance(candidate, CandidateState):
+        raise TypeError("snapshot_from_candidate expects a CandidateState")
+    context = PublicDecisionContext.from_public(candidate.context)
+    if candidate.history is not None:
+        history = InformationHistory.from_json(candidate.history)
+    else:
+        history = InformationHistory()
+    belief = BeliefState(context, history=history, profile=belief_profile)
+    legal = tuple(int(action) for action in context.legal_actions)
+    if not legal:
+        legal = tuple(int(action) for action in candidate.legal_mask)
+    return DecisionSnapshot(
+        context=context, history=history, belief=belief,
+        planes=candidate.planes, scalars=candidate.scalars,
+        legal_actions=legal, tags=candidate.special_state_tags,
+        shanten=candidate.shanten, wall_remaining=candidate.wall_remaining,
+        phase=candidate.phase, dealer=candidate.dealer,
+        hero_seat=candidate.hero_seat, you_cai_bi_kao=candidate.you_cai_bi_kao,
+        opponent_version="", baseline_disagreement=False)
+
+
+def teacher_confidence_from_gap(q_gap, *, tau=8.0):
+    if q_gap is None:
+        return 1.0
+    return 0.5 + min(1.0, max(0.0, float(q_gap)) / float(tau))
 
 
 def _worker(payload):

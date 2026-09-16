@@ -493,7 +493,19 @@ extract 含 oracle ~1.6ms/决策点。
   teacher、reference、配对一律 `--ycbk off`,数据集/发布证据只含
   ycbk-off 桶;引擎与运行时仍按平台 flag 推理(见 design §16、
   docs/search-distillation.md)。
-- 状态:代码与单测完成(627 用例);降规格 Gen0 长跑与平台门待执行。
+- 第二轮优化(2026-09-16 落地 change `regret-aware-active-distillation`):
+  candidate pool + 主动采样(normal .40/disagreement .20/hard .20/
+  special .15/random .05,比例入 profile)、teacher cache(state+teacher
+  version+config hash,只允许 ≤ 已缓存预算复用)、regret-aware loss
+  (policy 1.0 + pairwise ranking 0.25,catastrophic 默认 0)、sample
+  weight=teacher_confidence×policy_error×importance clip[0.25,4]、
+  replay 四桶(recent .50/historical .25/hard .15/special .10,历史
+  reservoir 有界)、hard-state 永久回归集(state_id 去重、failure-mode
+  覆盖、fixed/regressed 报告)、分级 gate(offline→hard→fast 256-512→
+  full 4096→runtime);实验按 E0-E6 单变量推进,top1 仅诊断。模块与
+  命令见 docs/search-distillation.md。
+- 状态:代码与单测完成(643 用例);降规格 Gen0 长跑、E0-E6 实验与
+  平台门待执行。
 
 ## 四、待办清单
 
