@@ -384,6 +384,55 @@ def label_snapshot(snapshot, *, source_group, generation, policy_version_source,
         teacher_stop_reason=final.stop_reason, **result_sample_kwargs)
 
 
+def sort_reference_rows(rows):
+    """Deterministic reference-row order without relying on a work_id key.
+
+    Serialized samples do not carry ``work_id`` (it is a computed property),
+    so ordering uses the stored fingerprint instead.
+    """
+    return sorted(rows, key=lambda row: (
+        str(row["source_group"]),
+        str(row["sample"].get("fingerprint", "")),
+        str(row["sample"].get("context_hash", "")),
+        str(row["sample"].get("history_hash", ""))))
+
+
+def _reference_shard_path(directory, source_group):
+    safe = str(source_group).replace(":", "_").replace("/", "_")
+    return Path(directory) / f"{safe}.jsonl"
+
+
+def _write_reference_shard(directory, source_group, rows):
+    if not rows:
+        return None
+    path = _reference_shard_path(directory, source_group)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a", encoding="utf-8") as stream:
+        for row in rows:
+            stream.write(json.dumps(row, ensure_ascii=False,
+                                    sort_keys=True) + "\n")
+    return path
+
+
+def read_reference_shards(directory):
+    rows = []
+    directory = Path(directory)
+    if not directory.exists():
+        return rows
+    for path in sorted(directory.glob("*.jsonl")):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                rows.append(json.loads(line))
+    return rows
+
+
+def completed_reference_groups(directory):
+    directory = Path(directory)
+    if not directory.exists():
+        return set()
+    return {path.stem.replace("_", ":", 1) for path in directory.glob("*.jsonl")}
+
+
 @dataclass
 class GameResult:
     spec: SourceGameSpec
@@ -410,6 +459,7 @@ class GenerationConfig:
     reference_mode: bool = False
     reference_simulations: int = 16000
     teacher_cache_dir: str | None = None
+    reference_shard_dir: str | None = None
 
     def __post_init__(self):
         if int(self.generation) < 0:
@@ -503,6 +553,9 @@ def run_source_game(spec: SourceGameSpec, config: GenerationConfig,
             score = float(game.scores[spec.hero_seat])
             samples.append(replace(sample, actual_round_score=score,
                                    terminal_reward=score))
+        if config.reference_shard_dir and reference_rows:
+            _write_reference_shard(config.reference_shard_dir,
+                                   spec.source_group, reference_rows)
     except Exception as exc:  # pragma: no cover - surfaced in GameResult
         error = f"{type(exc).__name__}:{exc}"
     finally:
@@ -649,8 +702,7 @@ def generate_dataset(specs: Iterable[SourceGameSpec],
         samples.extend(result.samples)
         reference_rows.extend(result.reference_rows)
     samples.sort(key=lambda sample: (sample.source_group, sample.work_id))
-    reference_rows.sort(key=lambda row: (row["source_group"],
-                                         row["sample"]["work_id"]))
+    reference_rows = sort_reference_rows(reference_rows)
     return GenerationResult(SearchDataset(samples), reference_rows, errors,
                             tuple(specs))
 

@@ -181,6 +181,61 @@ class TestReferenceContexts(unittest.TestCase):
         self.assertEqual(loaded, rows)
 
 
+class TestReferenceShards(unittest.TestCase):
+    """Reference rows must serialize/sort without a work_id key and shard."""
+
+    def test_reference_generation_writes_sorted_shards(self):
+        import tempfile as _tempfile
+        from pathlib import Path as _Path
+
+        import mj.training.teacher_generate as tg
+        from mj.features import action_to_flat, flat_to_action
+        from mj.training.teacher_generate import read_reference_shards
+
+        spec = SourceGameSpec(seed=1234, hero_seat=0, dealer=0)
+        with _tempfile.TemporaryDirectory() as root:
+            config = _config(reference_mode=True, reference_simulations=8000,
+                             reference_shard_dir=root)
+            original = tg._reference_sample
+
+            def fake(snapshot, config, *, source_group,
+                     policy_version_source, **kwargs):
+                if len(snapshot.legal_actions) <= 1:
+                    return None
+                mask = [False] * 109
+                legal = [action_to_flat(action)
+                         for action in snapshot.legal_actions]
+                for action in legal:
+                    mask[action] = True
+                return SearchSample(
+                    context_hash=snapshot.context.context_hash,
+                    history_hash=snapshot.history.history_hash,
+                    legal_mask=tuple(mask), visit_counts={legal[0]: 4},
+                    q_by_action={legal[0]: 1.0, legal[1]: 0.5},
+                    root_value=1.0, simulations=8, ambiguous=False,
+                    confidence=0.5, source_group=source_group,
+                    belief_fingerprint=snapshot.belief.fingerprint,
+                    search_fingerprint=config.search_profile.fingerprint,
+                    opponent_policy_version="o",
+                    leaf_version="terminal-rollout-v1",
+                    teacher_status="ok", planes=snapshot.planes,
+                    scalars=snapshot.scalars)
+
+            tg._reference_sample = fake
+            try:
+                result = tg.generate_dataset([spec], config, workers=1)
+            finally:
+                tg._reference_sample = original
+            self.assertTrue(result.ok, result.errors)
+            self.assertTrue(result.reference_rows)
+            shard_rows = read_reference_shards(_Path(root))
+            self.assertEqual(len(shard_rows), len(result.reference_rows))
+            keys = [(row["source_group"], row["sample"]["fingerprint"])
+                    for row in result.reference_rows]
+            self.assertEqual(keys, sorted(keys))
+            self.assertNotIn("work_id", result.reference_rows[0]["sample"])
+
+
 class TestSampleProvenanceValidation(unittest.TestCase):
     def _base(self, **overrides):
         values = dict(

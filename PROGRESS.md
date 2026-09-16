@@ -504,7 +504,7 @@ extract 含 oracle ~1.6ms/决策点。
   覆盖、fixed/regressed 报告)、分级 gate(offline→hard→fast 256-512→
   full 4096→runtime);实验按 E0-E6 单变量推进,top1 仅诊断。模块与
   命令见 docs/search-distillation.md。
-- 状态:代码与单测完成(643 用例);降规格 Gen0 长跑、E0-E6 实验与
+- 状态:代码与单测完成(644 用例);降规格 Gen0 长跑、E0-E6 实验与
   平台门待执行。
 
 ## 四、待办清单

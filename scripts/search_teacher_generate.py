@@ -219,6 +219,8 @@ def main(argv=None):
                         help="label an active-sampling selected candidate pool")
     parser.add_argument("--teacher-cache-dir", type=Path, default=None,
                         help="sharded teacher result cache directory")
+    parser.add_argument("--reference-shard-dir", type=Path, default=None,
+                        help="per-game reference shards (crash-safe resume)")
     parser.add_argument("--manifest-out", type=Path)
     parser.add_argument("--no-features", action="store_true",
                         help="write provenance-only rows (no planes/scalars)")
@@ -245,6 +247,11 @@ def main(argv=None):
 
     reference_mode = args.reference_out is not None
     reference_simulations = int(args.reference_simulations)
+    shard_dir = None
+    if reference_mode:
+        shard_dir = (args.reference_shard_dir or
+                     args.reference_out.with_suffix(
+                         args.reference_out.suffix + ".shards"))
     config = GenerationConfig(
         generation=args.generation, policy_source=args.policy_source,
         population=population, budget_profile=budget, search_profile=search,
@@ -252,19 +259,37 @@ def main(argv=None):
         reference_mode=reference_mode,
         reference_simulations=reference_simulations,
         teacher_cache_dir=(str(args.teacher_cache_dir)
-                           if args.teacher_cache_dir else None))
+                           if args.teacher_cache_dir else None),
+        reference_shard_dir=(str(shard_dir) if shard_dir else None))
 
     if args.pool_in is not None:
         return _label_pool(args, config)
+
+    completed_groups = set()
+    if reference_mode and not args.no_resume and shard_dir is not None:
+        from mj.training.teacher_generate import completed_reference_groups
+        completed_groups = completed_reference_groups(shard_dir)
+        if completed_groups:
+            specs = [spec for spec in specs
+                     if spec.source_group not in completed_groups]
+            print(json.dumps({"resumed_reference_groups":
+                              len(completed_groups),
+                              "remaining_specs": len(specs)}))
 
     completed = frozenset()
     if (not args.no_resume and not reference_mode and args.out is not None
             and args.out.exists()):
         _, completed = resume_dataset(args.out)
     if reference_mode and args.reference_out.exists() and not args.no_resume:
+        from mj.training.search_data import work_identity
         from mj.training.teacher_generate import read_reference_contexts
         completed = frozenset(
-            row["sample"]["work_id"]
+            work_identity(
+                source_group=row["source_group"],
+                context_hash=row["sample"]["context_hash"],
+                history_hash=row["sample"]["history_hash"],
+                teacher_seed=row["sample"].get("teacher_seed", 0),
+                search_fingerprint=row["sample"]["search_fingerprint"])
             for row in read_reference_contexts(args.reference_out))
 
     result = generate_dataset(
@@ -276,9 +301,21 @@ def main(argv=None):
                          ensure_ascii=False, indent=2), file=sys.stderr)
 
     if reference_mode:
-        write_reference_contexts(args.reference_out, result.reference_rows)
+        from mj.training.teacher_generate import (
+            read_reference_shards, sort_reference_rows)
+        rows = result.reference_rows
+        if shard_dir is not None:
+            rows = read_reference_shards(shard_dir) + rows
+        deduped = {}
+        for row in rows:
+            key = (row["source_group"],
+                   row["sample"].get("fingerprint"))
+            deduped[key] = row
+        rows = sort_reference_rows(deduped.values())
+        write_reference_contexts(args.reference_out, rows)
         summary = {"reference_out": str(args.reference_out),
-                   "rows": len(result.reference_rows),
+                   "rows": len(rows),
+                   "shards": str(shard_dir) if shard_dir else None,
                    "errors": len(result.errors)}
     else:
         if not args.no_resume and args.out.exists():
