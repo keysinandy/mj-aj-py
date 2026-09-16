@@ -31,7 +31,8 @@ SOURCE_FILES = (
     "mj/bot.py", "mj/decision/calibration.py", "mj/decision/context.py",
     "mj/decision/fast_ev.py", "mj/decision/frontier.py",
     "mj/decision/profile.py", "mj/game.py", "mj/hand_eval.py",
-    "mj/rollout/belief.py", "mj/rollout/evaluator.py",
+    "mj/decision/score_value.py", "mj/rollout/belief.py",
+    "mj/rollout/evaluator.py", "mj/rollout/teacher_data.py",
     "mj/rollout/simulator.py", "mj/scoring.py", "mj/shanten.py",
     "rust/src/lib.rs", "docs/ev.md",
 )
@@ -91,7 +92,9 @@ def _artifact_contract(artifact, expected, *, allow_missing_manifest=False):
     fields = ("profile_fingerprint", "rule_version", "kernel_version",
               "scope", "continuation_version", "strategy",
               "reward_units", "belief_version", "tail_version",
-              "horizon", "manifest_fingerprint")
+              "horizon", "bound_version", "bound_mode",
+              "pairwise_racing_version", "resume_schema",
+              "manifest_fingerprint")
     if allow_missing_manifest:
         fields = tuple(field for field in fields
                        if field != "manifest_fingerprint")

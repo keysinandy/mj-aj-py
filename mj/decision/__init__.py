@@ -10,7 +10,12 @@ from .profile import (
     ProfileSpec, ProfileFingerprintError, canonical_json, fingerprint,
     validate_profile_fingerprint, profile_from_json,
 )
-from .score_value import ScoreValue, ScoreBreakdown, theoretical_reward_bound
+from .score_value import (
+    BOUND_MODES, FAST_REWARD_MODEL, REWARD_ENVELOPE_VERSION,
+    ROLLOUT_REWARD_MODEL, RewardCertificate, RewardEnvelope, ScoreValue,
+    ScoreBreakdown, build_reward_envelope, compute_reward_envelope,
+    reward_bound, reward_envelope, theoretical_reward_bound,
+)
 from .report import (
     sanitize_public, compact_evaluation, decision_key,
     associate_counterfactual, build_offline_report,
@@ -44,6 +49,10 @@ __all__ = [
     "canonical_json", "fingerprint", "validate_profile_fingerprint",
     "profile_from_json",
     "ScoreValue", "ScoreBreakdown", "theoretical_reward_bound",
+    "REWARD_ENVELOPE_VERSION", "BOUND_MODES", "FAST_REWARD_MODEL",
+    "ROLLOUT_REWARD_MODEL", "RewardCertificate", "RewardEnvelope",
+    "reward_envelope", "compute_reward_envelope", "build_reward_envelope",
+    "reward_bound",
     "CalibrationError", "CalibrationRow", "LinearModel", "SparseLUT",
     "candidate_features", "fit_global_linear", "fit_sparse_lut",
     "calibrated_profile",

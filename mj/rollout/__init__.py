@@ -5,13 +5,16 @@ from .simulator import (
     RolloutFailure, RolloutOutcome, build_world_game, run_rollout,
     FixedContinuation,
 )
-from .evaluator import PAIRWISE_RACING_VERSION, PairedTeacher, TeacherResult
+from .evaluator import (
+    PAIRWISE_RACING_VERSION, TEACHER_RESUME_SCHEMA, PairedTeacher,
+    TeacherResult, pair_interval,
+)
 from .teacher_data import teacher_artifact, write_teacher_artifact
 
 __all__ = [
     "BeliefSampler", "SampledWorld", "BeliefError", "RolloutFailure",
     "RolloutOutcome", "build_world_game", "run_rollout",
     "FixedContinuation", "PairedTeacher", "TeacherResult",
-    "PAIRWISE_RACING_VERSION",
+    "PAIRWISE_RACING_VERSION", "TEACHER_RESUME_SCHEMA", "pair_interval",
     "teacher_artifact", "write_teacher_artifact",
 ]

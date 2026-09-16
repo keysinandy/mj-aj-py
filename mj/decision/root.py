@@ -767,7 +767,9 @@ def _evaluate_reaction_context(context, profile, budget):
             kernel_calls=budget.kernel_calls,
             elapsed_ms=round(budget.elapsed_ms, 3),
             budget={"node_limit": budget.limit,
-                    "time_limit_ms": budget.time_ms})
+                    "time_limit_ms": budget.time_ms},
+            bound_version=profile.bound_version,
+            bound_mode=profile.bound_mode)
     except (BudgetExceeded, ContextError, ValueError, IndexError):
         return _delegated(context, profile, "reaction_layer_incomplete",
                           budget=budget)
@@ -791,6 +793,8 @@ class RootEvaluation:
     kernel_calls: int = 0
     elapsed_ms: float = 0.0
     budget: dict | None = None
+    bound_version: str = "reward-envelope-v1"
+    bound_mode: str = "unknown"
 
     def as_json(self):
         return {
@@ -805,6 +809,8 @@ class RootEvaluation:
             "complete": self.complete, "counterfactual": self.counterfactual,
             "nodes": self.nodes, "kernel_calls": self.kernel_calls,
             "elapsed_ms": self.elapsed_ms, "budget": self.budget,
+            "bound_version": self.bound_version,
+            "bound_mode": self.bound_mode,
         }
 
 
@@ -820,7 +826,8 @@ def _delegated(context, profile, reason, selected=None, *, budget=None):
         elapsed_ms=round(budget.elapsed_ms, 3) if budget is not None else 0.0,
         budget=({"node_limit": budget.limit,
                  "time_limit_ms": budget.time_ms}
-                if budget is not None else None))
+                if budget is not None else None),
+        bound_version=profile.bound_version, bound_mode=profile.bound_mode)
 
 
 def _discard_profile(profile):
@@ -923,6 +930,19 @@ def evaluate_root_context(context: PublicDecisionContext,
             "post_chain_piao": c.post_chain_piao,
             "is_piao": c.is_piao, "discarded_wild": c.discarded_wild,
             "post_locked": c.post_locked,
+            "reward_envelope": c.reward_envelope,
+            "bound_version": ((c.reward_envelope or {}).get("version")
+                              if c.reward_envelope else None),
+            "bound_mode": ((c.reward_envelope or {}).get("mode")
+                            if c.reward_envelope else None),
+            "fast_upper": ((c.reward_envelope or {}).get("fast_upper")
+                            if c.reward_envelope else None),
+            "rollout_lower": ((c.reward_envelope or {}).get("rollout_lower")
+                              if c.reward_envelope else None),
+            "rollout_upper": ((c.reward_envelope or {}).get("rollout_upper")
+                              if c.reward_envelope else None),
+            "rollout_abs": ((c.reward_envelope or {}).get("rollout_abs")
+                            if c.reward_envelope else None),
             "transition": _discard_transition(
                 context, c.tile, c.post_chain, c.post_chain_piao, c.is_piao),
             "source": "discard_scope",
@@ -974,7 +994,8 @@ def evaluate_root_context(context: PublicDecisionContext,
         nodes=budget.nodes, kernel_calls=budget.kernel_calls,
         elapsed_ms=round(budget.elapsed_ms, 3),
         budget={"node_limit": budget.limit,
-                "time_limit_ms": budget.time_ms})
+                "time_limit_ms": budget.time_ms},
+        bound_version=profile.bound_version, bound_mode=profile.bound_mode)
 
 
 def choose_root_game_action(game, seat, profile=None):

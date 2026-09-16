@@ -20,6 +20,8 @@ from .profile import canonical_json, fingerprint
 
 
 CALIBRATION_SCHEMA = "bot-ev-discard/calibration-v1"
+PAIRWISE_RACING_VERSION = "paired-racing-v3"
+TEACHER_RESUME_SCHEMA = "rollout-teacher-resume-v2"
 FEATURE_NAMES = (
     "shanten", "U1", "p1", "I", "EV1", "EV2", "B", "C",
     "structure_ukeire", "visible_unknown", "live_wall", "dealer",
@@ -801,7 +803,11 @@ def freeze_split_manifest(*, train_start=240000, train_games=1024,
                           kernel_version="python-frontier-v1",
                           scope="discard",
                           continuation_version="frozen_shape_v1_self_kong_v1",
-                          strategy="shape-v2"):
+                          strategy="shape-v2",
+                          bound_version="reward-envelope-v1",
+                          bound_mode="derived",
+                          pairwise_racing_version=PAIRWISE_RACING_VERSION,
+                          resume_schema=TEACHER_RESUME_SCHEMA):
     """Create and validate the non-overlapping source-seed split manifest."""
     specs = {
         "train": (int(train_start), int(train_games)),
@@ -833,6 +839,10 @@ def freeze_split_manifest(*, train_start=240000, train_games=1024,
             "scope": scope,
             "continuation_version": continuation_version,
             "strategy": strategy,
+            "bound_version": bound_version,
+            "bound_mode": bound_mode,
+            "pairwise_racing_version": pairwise_racing_version,
+            "resume_schema": resume_schema,
         },
     }
     manifest["fingerprint"] = fingerprint(manifest)
@@ -1033,6 +1043,11 @@ def evidence_contract(profile=None, *, manifest=None, strategy="shape-v2",
         "belief_version": profile.belief_version,
         "tail_version": profile.tail_version,
         "horizon": profile.horizon,
+        "bound_version": getattr(profile, "bound_version", None),
+        "bound_mode": getattr(profile, "bound_mode", None),
+        "bound_override": getattr(profile, "effective_bound_override", None),
+        "pairwise_racing_version": PAIRWISE_RACING_VERSION,
+        "resume_schema": TEACHER_RESUME_SCHEMA,
         "manifest_fingerprint": ((manifest or {}).get("fingerprint")
                                   if manifest is not None else None),
     }
@@ -1058,7 +1073,10 @@ def calibration_evidence_manifest(profile=None, *, split_manifest=None,
         rule_version=profile.rules_version,
         kernel_version=profile.kernel_version, scope=scope,
         continuation_version=profile.continuation_version,
-        strategy=strategy)
+        strategy=strategy, bound_version=profile.bound_version,
+        bound_mode=profile.bound_mode,
+        pairwise_racing_version=PAIRWISE_RACING_VERSION,
+        resume_schema=TEACHER_RESUME_SCHEMA)
     expected = evidence_contract(
         profile, manifest=split_manifest, strategy=strategy, scope=scope)
     split_payload = dict(split_manifest)
@@ -1070,13 +1088,25 @@ def calibration_evidence_manifest(profile=None, *, split_manifest=None,
         "supplied": supplied_split_fingerprint,
         "actual": actual_split_fingerprint,
     }
+    split_contract_fields = (
+        "profile_fingerprint", "rule_version", "kernel_version", "scope",
+        "continuation_version", "strategy", "bound_version", "bound_mode",
+        "pairwise_racing_version", "resume_schema")
+    split_contract_check = validate_evidence_fingerprint(
+        split_manifest.get("contract", {}), expected,
+        fields=split_contract_fields)
     base_fields = ("profile_fingerprint", "rule_version", "kernel_version",
-                   "scope", "continuation_version", "strategy")
+                   "scope", "continuation_version", "strategy",
+                   "bound_version", "bound_mode",
+                   "pairwise_racing_version", "resume_schema")
     strict_fields = base_fields + (
         "reward_units", "belief_version", "tail_version", "horizon",
         "manifest_fingerprint")
     artifacts = {}
     invalidated = []
+    if not split_contract_check["valid"]:
+        invalidated.append({"artifact": "split_manifest",
+                            "reason": "contract_mismatch"})
     for name, artifact in (("calibration", calibration_artifact),
                            ("teacher", teacher_artifact),
                            ("score_evidence", score_evidence)):
@@ -1147,6 +1177,7 @@ def calibration_evidence_manifest(profile=None, *, split_manifest=None,
         "contract": expected,
         "split_manifest": split_manifest,
         "split_manifest_self_check": split_self_check,
+        "split_contract": split_contract_check,
         "profile": profile.as_json(),
         "artifacts": artifacts,
         "strict": bool(strict),

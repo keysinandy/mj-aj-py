@@ -12,7 +12,7 @@ from ..decision.report import sanitize_public
 def teacher_artifact(result, *, context=None, profile=None, metadata=None):
     """Create a JSON-compatible, replayable teacher report."""
     value = sanitize_public(result.as_json())
-    value["artifact_schema"] = "rollout-ev-teacher-v1"
+    value["artifact_schema"] = "rollout-ev-teacher-v2"
     value["counterfactual"] = True
     value["counterfactual_evaluation"] = True
     value["online_decision"] = False
@@ -21,6 +21,17 @@ def teacher_artifact(result, *, context=None, profile=None, metadata=None):
     value["finite_sample_estimate"] = True
     value["real_wall_optimal"] = False
     value["model_error_free"] = False
+    value["bound_version"] = value.get("bound_version", "reward-envelope-v1")
+    value["bound_mode"] = value.get("bound_mode", "unknown")
+    value["pairwise_racing_version"] = value.get(
+        "pairwise_racing_version", "paired-racing-v3")
+    value["resume_schema"] = value.get(
+        "resume_schema", "rollout-teacher-resume-v2")
+    # Keep candidate bounds as a separate public section so a report reader
+    # does not need to infer the statistical support from observed rewards.
+    value["reward_bounds"] = sanitize_public(value.get("reward_bounds", {}))
+    value["candidate_envelopes"] = sanitize_public(
+        value.get("candidate_envelopes", ()))
     value["metadata"] = sanitize_public(dict(metadata or {}))
     if context is not None:
         value["context"] = sanitize_public(context.as_json())
@@ -37,6 +48,10 @@ def teacher_artifact(result, *, context=None, profile=None, metadata=None):
             "belief_version": profile.belief_version,
             "tail_version": profile.tail_version,
             "horizon": profile.horizon,
+            "bound_version": value.get("bound_version"),
+            "bound_mode": value.get("bound_mode"),
+            "pairwise_racing_version": value.get("pairwise_racing_version"),
+            "resume_schema": value.get("resume_schema"),
         }
     # A context contains public material only; rows contain world hashes and
     # rewards, not hidden hands or wall order.
@@ -45,6 +60,15 @@ def teacher_artifact(result, *, context=None, profile=None, metadata=None):
         "context_hash": value.get("context_hash"),
         "profile": value.get("profile_fingerprint"),
         "rows": value.get("rows", ()),
+        "stop_reason": value.get("stop_reason"),
+        "elimination_history": value.get("elimination_history", ()),
+        "pairwise_deltas": value.get("pairwise_deltas", ()),
+        "bound_version": value.get("bound_version"),
+        "bound_mode": value.get("bound_mode"),
+        "pairwise_racing_version": value.get("pairwise_racing_version"),
+        "resume_schema": value.get("resume_schema"),
+        "reward_bounds": value.get("reward_bounds", {}),
+        "candidate_envelopes": value.get("candidate_envelopes", ()),
     }, 24)
     return value
 

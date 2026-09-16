@@ -18,7 +18,9 @@ from .frontier import (discard_frontier, discard_frontier_batch,
                         DiscardFrontierItem,
                         DISCARD_FRONTIER_BATCH_KERNEL_VERSION)
 from .profile import ProfileSpec
-from .score_value import ScoreValue, theoretical_reward_bound
+from .score_value import (
+    REWARD_ENVELOPE_VERSION, ScoreValue, reward_envelope,
+)
 from ..tiles import W
 from ..win import is_win
 
@@ -89,6 +91,7 @@ class V2Candidate:
     is_piao: Optional[bool] = None
     discarded_wild: Optional[bool] = None
     post_locked: Optional[int] = None
+    reward_envelope: Optional[dict] = None
 
     def as_json(self):
         return {
@@ -114,6 +117,21 @@ class V2Candidate:
             "q_upper_bound": self.upper_bound,
             "q_pruned": self.pruned, "cache_key": list(self.cache_key)
             if self.cache_key is not None else None, "level": self.level,
+            "reward_envelope": self.reward_envelope,
+            "certificate_fingerprint": ((self.reward_envelope or {}).get(
+                "certificate_fingerprint") if self.reward_envelope else None),
+            "bound_version": ((self.reward_envelope or {}).get("version")
+                              if self.reward_envelope else None),
+            "bound_mode": ((self.reward_envelope or {}).get("mode")
+                            if self.reward_envelope else None),
+            "fast_upper": ((self.reward_envelope or {}).get("fast_upper")
+                            if self.reward_envelope else None),
+            "rollout_lower": ((self.reward_envelope or {}).get(
+                "rollout_lower") if self.reward_envelope else None),
+            "rollout_upper": ((self.reward_envelope or {}).get(
+                "rollout_upper") if self.reward_envelope else None),
+            "rollout_abs": ((self.reward_envelope or {}).get("rollout_abs")
+                            if self.reward_envelope else None),
         }
 
 
@@ -148,6 +166,8 @@ class FastEvaluation:
     horizon: int = 2
     calibrated: bool = False
     runtime_kernel: str = "python-frontier-v1"
+    bound_version: str = REWARD_ENVELOPE_VERSION
+    bound_mode: str = "unknown"
 
     def as_json(self):
         selected = next((c for c in self.candidates if c.tile == self.selected), None)
@@ -176,6 +196,17 @@ class FastEvaluation:
             "delegated_reason": self.delegated_reason,
             "nodes": self.nodes, "kernel_calls": self.kernel_calls,
             "elapsed_ms": self.elapsed_ms, "budget": self.budget,
+            "bound_version": self.bound_version,
+            "bound_mode": self.bound_mode,
+            "reward_bounds": {
+                str(c.tile): (c.reward_envelope or {}).get("fast_upper")
+                for c in self.candidates
+            },
+            "bound_certificates": {
+                str(c.tile): (c.reward_envelope or {}).get(
+                    "certificate_fingerprint")
+                for c in self.candidates
+            },
         }
 
     to_json = as_json
@@ -394,7 +425,59 @@ def _legacy_fallback_result(context, profile, reason, selected=None,
         continuation_version=profile.continuation_version,
         tail_version=profile.tail_version,
         horizon=profile.horizon,
-        calibrated=profile.calibrated, runtime_kernel=profile.kernel_version)
+        calibrated=profile.calibrated, runtime_kernel=profile.kernel_version,
+        bound_version=profile.bound_version,
+        bound_mode=("legacy_conservative_fallback"
+                    if profile.allow_legacy_bound_fallback else "unknown"))
+
+
+def _candidate_envelope(context, candidate, profile):
+    """Return the public reward envelope for one root candidate."""
+    override = profile.effective_bound_override
+    allow_legacy = (bool(profile.allow_legacy_bound_fallback) or
+                    profile.bound_mode == "legacy_conservative_fallback")
+    # A profile naming a proof version that this runtime does not implement
+    # cannot silently use the current formula.  Explicit legacy fallback is
+    # still available for compatibility diagnostics.
+    if profile.bound_version != REWARD_ENVELOPE_VERSION:
+        if allow_legacy:
+            return reward_envelope(
+                context, candidate, scalar_override=None,
+                allow_legacy_fallback=True,
+                bound_mode="legacy_conservative_fallback",
+                fast_horizon=profile.horizon)
+        return reward_envelope(
+            context, candidate, bound_mode="unknown",
+            fast_horizon=profile.horizon)
+    if profile.bound_mode == "override" and override is None:
+        return reward_envelope(
+            context, candidate, bound_mode="unknown",
+            fast_horizon=profile.horizon)
+    return reward_envelope(
+        context, candidate, scalar_override=override,
+        allow_legacy_fallback=allow_legacy,
+        bound_mode=profile.bound_mode, fast_horizon=profile.horizon)
+
+
+def _envelope_mode(candidates, profile):
+    modes = {
+        (candidate.reward_envelope or {}).get("mode")
+        for candidate in candidates
+    }
+    modes.discard(None)
+    if len(modes) == 1:
+        return next(iter(modes))
+    if not modes:
+        return profile.bound_mode if profile.bound_mode else "unknown"
+    return "mixed"
+
+
+def _bound_missing(envelope):
+    if not envelope or envelope.get("fast_upper") is None:
+        return ("reward_bound",)
+    if envelope.get("mode") == "unknown":
+        return ("reward_bound",)
+    return ()
 
 
 def evaluate_discard_context(context: PublicDecisionContext,
@@ -417,8 +500,16 @@ def evaluate_discard_context(context: PublicDecisionContext,
         # present, which is useful for a standalone discard context but would
         # manufacture candidates for a special-action-only root.  The root
         # caller therefore supplies its explicit ordinary subset here.
+        frontier_legal = legal_discards
+        if frontier_legal is None and context.legal_actions:
+            # An explicit root action set containing only special actions must
+            # not be widened to every tile in the hero hand by the standalone
+            # discard frontier fallback.  An omitted action set still means
+            # the value-object caller wants all ordinary discards.
+            frontier_legal = tuple(action for action in context.legal_actions
+                                   if 0 <= int(action) < 34)
         frontier = discard_frontier(
-            context, legal_discards=legal_discards, use_rust=True)
+            context, legal_discards=frontier_legal, use_rust=True)
         kernels = {item.kernel for item in frontier}
         runtime_kernel = ",".join(sorted(kernels)) or runtime_kernel
         if any(not kernel.startswith("python-") for kernel in kernels):
@@ -431,6 +522,7 @@ def evaluate_discard_context(context: PublicDecisionContext,
                 context.dealer, context.base,
                 bool(context.you_cai_bi_kao), context.hero_seat)
         candidates = []
+        envelope_cache = {}
         for item in frontier:
             started.consume()
             post_chain = post_chain_piao = is_piao = None
@@ -442,17 +534,22 @@ def evaluate_discard_context(context: PublicDecisionContext,
             q0, value, contributions = _candidate_q0(
                 item, context, profile, post_chain=post_chain,
                 post_chain_piao=post_chain_piao)
+            envelope = _candidate_envelope(context, item.tile, profile)
+            envelope_cache[item.tile] = envelope
+            envelope_json = envelope.as_json()
             candidates.append(V2Candidate(
                 item.tile, item.shanten, item.u1, item.p1,
                 item.ukeire_tiles, item.ukeire_bitset,
                 item.structure_ukeire, None, None, q0, value,
-                contributions, missing=("I", "EV1", "EV2"),
+                contributions, missing=("I", "EV1", "EV2") +
+                _bound_missing(envelope_json),
                 level="V2-Q0", waits=item.waits,
                 visible_unknown=item.visible_unknown,
                 risk=max(0, item.visible_unknown - item.u1),
                 post_chain=post_chain, post_chain_piao=post_chain_piao,
                 is_piao=is_piao, discarded_wild=(item.tile == W),
-                post_locked=context.locked))
+                post_locked=context.locked,
+                reward_envelope=envelope_json))
     except BudgetExceeded as exc:
         return _legacy_fallback_result(context, profile, "q0_" + exc.reason,
                                        selected=legacy_best,
@@ -483,28 +580,36 @@ def evaluate_discard_context(context: PublicDecisionContext,
                              candidate.tile, layer, horizon)
                 # The upper bound is used only as a certificate.  With no
                 # completed same-layer value it never removes the first
-                # candidate; equality is deliberately retained.
-                reward_bound = (profile.reward_upper_bound
-                                if profile.reward_upper_bound is not None
-                                else theoretical_reward_bound(context.base or 1))
+                # candidate; equality is deliberately retained.  An unknown
+                # envelope removes only the pruning opportunity, never the
+                # candidate or the complete-layer computation.
+                envelope = envelope_cache[candidate.tile]
+                reward_bound = (envelope.fast_upper
+                                if envelope.safe_for_fast_pruning else None)
                 layer_weight = (profile.q0_ev2_weight if want_ev2
                                 else profile.q0_ev1_weight)
-                if profile.calibrated:
-                    upper = candidate.q0 + abs(layer_weight) * reward_bound
+                if reward_bound is None:
+                    upper = None
+                elif profile.calibrated:
+                    upper = candidate.q0 + max(0.0, layer_weight) * reward_bound
                 else:
                     # Uncalibrated EV1/EV2 is ordered directly in score units;
                     # structural Q0 is only an exact-value tie-break and must
                     # not be folded into the layer's pruning certificate.
                     upper = reward_bound
-                if completed_values and upper < max(completed_values):
+                if (completed_values and upper is not None and
+                        upper < max(completed_values)):
+                    envelope_json = envelope.as_json()
                     evaluated.append(V2Candidate(
                         candidate.tile, candidate.shanten, candidate.u1,
                         candidate.p1, candidate.ukeire_tiles,
                         candidate.ukeire_bitset, candidate.structure_ukeire,
                         None, None, candidate.q0, None,
                         {"upper_bound": upper,
-                         "certificate": "rules_reward_bound_v1"},
-                        ("I", "EV1", "EV2", "pruned_by_upper_bound"),
+                         "certificate": envelope_json.get(
+                             "certificate_fingerprint")},
+                        ("I", "EV1", "EV2", "pruned_by_upper_bound") +
+                        _bound_missing(envelope_json),
                         upper, True, cache_key,
                         "V2-EV2" if want_ev2 else "V2-EV1",
                         waits=frontier_by_tile[candidate.tile].waits,
@@ -514,7 +619,8 @@ def evaluate_discard_context(context: PublicDecisionContext,
                         post_chain_piao=candidate.post_chain_piao,
                         is_piao=candidate.is_piao,
                         discarded_wild=candidate.discarded_wild,
-                        post_locked=candidate.post_locked))
+                        post_locked=candidate.post_locked,
+                        reward_envelope=envelope_json))
                     continue
                 if cache_key in cache:
                     ev1, ev2 = cache[cache_key]
@@ -545,7 +651,8 @@ def evaluate_discard_context(context: PublicDecisionContext,
                     candidate.ukeire_bitset, candidate.structure_ukeire,
                     ev1, ev2, q0, _value, contributions, upper_bound=upper,
                     cache_key=cache_key,
-                    missing=("I",) if ev2 is not None else ("I", "EV2"),
+                    missing=(("I",) if ev2 is not None else ("I", "EV2")) +
+                    _bound_missing(envelope.as_json()),
                     level="V2-EV2" if want_ev2 else "V2-EV1",
                     waits=frontier_by_tile[candidate.tile].waits,
                     visible_unknown=candidate.visible_unknown,
@@ -554,7 +661,8 @@ def evaluate_discard_context(context: PublicDecisionContext,
                     post_chain_piao=candidate.post_chain_piao,
                     is_piao=candidate.is_piao,
                     discarded_wild=candidate.discarded_wild,
-                    post_locked=candidate.post_locked))
+                    post_locked=candidate.post_locked,
+                    reward_envelope=envelope.as_json()))
                 completed_values.append(_value)
             except BudgetExceeded:
                 high_complete = False
@@ -587,7 +695,9 @@ def evaluate_discard_context(context: PublicDecisionContext,
             continuation_version=profile.continuation_version,
             tail_version=profile.tail_version,
             horizon=profile.horizon,
-            calibrated=profile.calibrated, runtime_kernel=runtime_kernel)
+            calibrated=profile.calibrated, runtime_kernel=runtime_kernel,
+            bound_version=profile.bound_version,
+            bound_mode=_envelope_mode(candidates, profile))
     # High-level computation is transactional: retain the complete Q0 table.
     selected = max(candidates, key=lambda c: (c.q0, -c.tile)).tile
     reason = ("shape_v2_q0_missing_chain" if requested_high and
@@ -615,7 +725,9 @@ def evaluate_discard_context(context: PublicDecisionContext,
         continuation_version=profile.continuation_version,
         tail_version=profile.tail_version,
         horizon=profile.horizon,
-        calibrated=profile.calibrated, runtime_kernel=runtime_kernel)
+        calibrated=profile.calibrated, runtime_kernel=runtime_kernel,
+        bound_version=profile.bound_version,
+        bound_mode=_envelope_mode(candidates, profile))
 
 
 def choose_game_action(game, seat, profile=None):

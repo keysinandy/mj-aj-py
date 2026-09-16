@@ -10,11 +10,16 @@ from __future__ import annotations
 from dataclasses import dataclass, asdict, field
 import hashlib
 import json
+import math
 from typing import Any, Mapping
 
 
 PROFILE_SCHEMA = "bot-ev-discard/profile-v1"
 VALID_SCOPES = ("discard", "hu-piao", "all-root")
+DEFAULT_BOUND_VERSION = "reward-envelope-v1"
+VALID_BOUND_MODES = (
+    "derived", "override", "legacy_conservative_fallback", "unknown",
+)
 
 
 class ProfileFingerprintError(ValueError):
@@ -71,11 +76,22 @@ class ProfileSpec:
     q0_fan_weight: float = 0.0
     q0_risk_weight: float = 0.0
     reward_upper_bound: float | None = None
+    # Reward bounds are part of the evaluator contract.  ``reward_upper_bound``
+    # remains as the historical scalar override; the explicit fields make its
+    # semantics visible in profile fingerprints and artifacts.
+    bound_version: str = DEFAULT_BOUND_VERSION
+    bound_mode: str = "derived"
+    bound_override: float | None = None
+    allow_legacy_bound_fallback: bool = False
     tau: Mapping[str, float] = field(default_factory=dict)
     lut_buckets: tuple = ()
     min_bucket_samples: int = 64
 
     def __post_init__(self):
+        if self.bound_version is None or not str(self.bound_version):
+            raise ValueError("bound_version must not be empty")
+        object.__setattr__(self, "bound_version", str(self.bound_version))
+        object.__setattr__(self, "bound_mode", str(self.bound_mode))
         if self.scope not in VALID_SCOPES:
             raise ValueError(f"unknown evaluator scope: {self.scope}")
         if self.horizon < 0:
@@ -84,12 +100,49 @@ class ProfileSpec:
             raise ValueError("budgets must be non-negative")
         if self.min_bucket_samples < 0:
             raise ValueError("min_bucket_samples must be non-negative")
-        if self.reward_upper_bound is not None and self.reward_upper_bound <= 0:
-            raise ValueError("reward_upper_bound must be positive when supplied")
+        for name in ("reward_upper_bound", "bound_override"):
+            value = getattr(self, name)
+            if value is None:
+                continue
+            try:
+                value = float(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{name} must be a finite positive number") from exc
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError(f"{name} must be a finite positive number")
+            object.__setattr__(self, name, value)
+        if self.bound_mode not in VALID_BOUND_MODES:
+            raise ValueError(f"unknown bound_mode: {self.bound_mode}")
+        if (self.reward_upper_bound is not None and
+                self.bound_override is not None and
+                float(self.reward_upper_bound) != float(self.bound_override)):
+            raise ValueError(
+                "reward_upper_bound and bound_override disagree")
+        if (self.reward_upper_bound is not None or
+                self.bound_override is not None):
+            object.__setattr__(self, "bound_mode", "override")
         if not self.rules_version:
             raise ValueError("rules_version must not be empty")
         object.__setattr__(self, "tau", dict(sorted(self.tau.items())))
         object.__setattr__(self, "lut_buckets", tuple(self.lut_buckets or ()))
+
+    @property
+    def effective_bound_override(self):
+        """Return the explicit scalar override, if this profile has one."""
+        if self.bound_override is not None:
+            return float(self.bound_override)
+        if self.reward_upper_bound is not None:
+            return float(self.reward_upper_bound)
+        return None
+
+    @property
+    def reward_bound_version(self):
+        """Compatibility spelling used by early offline experiments."""
+        return self.bound_version
+
+    @property
+    def reward_bound_mode(self):
+        return self.bound_mode
 
     @classmethod
     def shape_v2(cls, **changes) -> "ProfileSpec":
