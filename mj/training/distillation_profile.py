@@ -452,8 +452,10 @@ def select_strongest_fast_policy(candidates: Iterable[PolicyCandidate], *,
     for candidate in candidates:
         passed, reasons = candidate.passes_runtime_gate(
             max_latency_ms=max_latency_ms, max_p95_regret=max_p95_regret)
+        # A missing paired CI sorts last but must stay JSON-finite so the
+        # selection fingerprint can be serialized before paired evidence exists.
         ci_lower = (float(candidate.paired_score_ci[0])
-                    if candidate.paired_score_ci else float("-inf"))
+                    if candidate.paired_score_ci else -1e18)
         rows.append({
             "name": candidate.name,
             "eligible": passed,

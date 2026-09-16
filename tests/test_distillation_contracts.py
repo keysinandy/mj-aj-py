@@ -220,6 +220,14 @@ class TestPi0Selection(unittest.TestCase):
         ], max_latency_ms=36.0, max_p95_regret=24.0)
         self.assertIsNone(result["selected"])
 
+    def test_missing_paired_ci_is_json_safe(self):
+        result = select_strongest_fast_policy([
+            PolicyCandidate("shape-v1", 1.6, 8.0, None, 18.0),
+            PolicyCandidate("shape-v2", 1.7, 8.2, None, 46.0),
+        ], max_latency_ms=36.0)
+        self.assertEqual(result["selected"], "shape-v1")
+        json.dumps(result)
+
     def test_illegal_or_nonfinite_candidates_excluded(self):
         result = select_strongest_fast_policy([
             PolicyCandidate("broken", 0.0, 0.0, (5.0, 6.0), 1.0,
