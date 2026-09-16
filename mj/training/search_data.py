@@ -63,6 +63,15 @@ def _action_to_flat(action):
     raise ValueError(f"unsupported engine action: {action}")
 
 
+def state_identity(context_hash, history_hash):
+    """Stable information-state identity shared by samples and caches."""
+    return fingerprint({
+        "schema": "search-distillation-state-v1",
+        "context_hash": str(context_hash),
+        "history_hash": str(history_hash),
+    }, 24)
+
+
 def work_identity(*, source_group, context_hash, history_hash, teacher_seed,
                   search_fingerprint):
     """Stable resume identity shared by the generator and the sample type."""
@@ -141,6 +150,14 @@ class SearchSample:
     you_cai_bi_kao: bool = False
     shanten: int | None = None
     wall_remaining: int | None = None
+    # Regret-aware active distillation provenance (conditional in as_json).
+    state_source: str = ""
+    policy_action: int | None = None
+    policy_prob_by_action: Mapping[int, float] = field(default_factory=dict)
+    policy_entropy: float | None = None
+    policy_regret: float | None = None
+    importance_factor: float = 1.0
+    teacher_confidence: float | None = None
     schema: str = "search-distillation-sample-v1"
 
     def __post_init__(self):
@@ -238,6 +255,44 @@ class SearchSample:
         object.__setattr__(self, "dealer", int(self.dealer))
         object.__setattr__(self, "hero_seat", int(self.hero_seat))
         object.__setattr__(self, "you_cai_bi_kao", bool(self.you_cai_bi_kao))
+        source = str(self.state_source or "")
+        if source and source not in ("normal", "disagreement", "hard",
+                                     "special", "random", "forced",
+                                     "reference"):
+            raise ValueError(f"unknown state_source: {source}")
+        object.__setattr__(self, "state_source", source)
+        if self.policy_action is not None:
+            action = int(self.policy_action)
+            if not 0 <= action < 109 or not mask[action]:
+                raise ValueError("policy_action must be a legal action index")
+            object.__setattr__(self, "policy_action", action)
+        probabilities = _action_mapping(self.policy_prob_by_action)
+        for action, value in probabilities.items():
+            if not 0 <= action < 109 or not mask[action]:
+                raise ValueError("policy probability on an illegal action")
+            if value < 0:
+                raise ValueError("policy probabilities must be non-negative")
+        object.__setattr__(self, "policy_prob_by_action", probabilities)
+        entropy = _finite(self.policy_entropy, "policy_entropy")
+        if entropy is not None and entropy < 0:
+            raise ValueError("policy_entropy must be non-negative")
+        object.__setattr__(self, "policy_entropy", entropy)
+        regret_value = _finite(self.policy_regret, "policy_regret")
+        if regret_value is not None and regret_value < 0:
+            raise ValueError("policy_regret must be non-negative")
+        object.__setattr__(self, "policy_regret", regret_value)
+        importance = _finite(self.importance_factor, "importance_factor")
+        if importance is None or importance <= 0:
+            raise ValueError("importance_factor must be positive")
+        object.__setattr__(self, "importance_factor", importance)
+        object.__setattr__(self, "teacher_confidence",
+                           _finite(self.teacher_confidence,
+                                   "teacher_confidence"))
+
+    @property
+    def state_id(self):
+        """Stable information-state identity for dedupe/cache/hard tracking."""
+        return state_identity(self.context_hash, self.history_hash)
 
     @property
     def work_id(self):
@@ -320,6 +375,23 @@ class SearchSample:
                 value["planes"] = self.planes.tolist() if hasattr(self.planes, "tolist") else self.planes
             if self.scalars is not None:
                 value["scalars"] = self.scalars.tolist() if hasattr(self.scalars, "tolist") else self.scalars
+        # Regret-aware fields are emitted only when set so pre-existing
+        # datasets keep their original fingerprints.
+        if self.state_source:
+            value["state_source"] = self.state_source
+        if self.policy_action is not None:
+            value["policy_action"] = self.policy_action
+        if self.policy_prob_by_action:
+            value["policy_prob_by_action"] = {
+                str(key): item for key, item in self.policy_prob_by_action.items()}
+        if self.policy_entropy is not None:
+            value["policy_entropy"] = self.policy_entropy
+        if self.policy_regret is not None:
+            value["policy_regret"] = self.policy_regret
+        if self.importance_factor != 1.0:
+            value["importance_factor"] = self.importance_factor
+        if self.teacher_confidence is not None:
+            value["teacher_confidence"] = self.teacher_confidence
         value["fingerprint"] = fingerprint(value, 24)
         return value
 

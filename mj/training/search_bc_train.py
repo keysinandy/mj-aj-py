@@ -25,6 +25,11 @@ from .policy_value_train import (
     unit_safe_weight,
     value_target,
 )
+from .regret_training import (
+    RegretAwareLossProfile,
+    regret_aware_policy_value_loss,
+    regret_aware_weight,
+)
 from .search_data import SearchDataset
 
 TRAIN_SCHEMA = "search-bc-train-profile-v1"
@@ -100,6 +105,7 @@ class TrainingRow:
     mask: Any
     target: Any
     q_values: Any
+    q_mask: Any
     value: float
     weight: float
 
@@ -116,7 +122,8 @@ class TrainingRows:
 def build_training_rows(dataset: SearchDataset, *,
                         profile: SearchDistillationProfile,
                         train: SearchBCTrainProfile | None = None,
-                        value_contract_fingerprint: str = ""):
+                        value_contract_fingerprint: str = "",
+                        loss_profile: RegretAwareLossProfile | None = None):
     """Featureize usable samples; audit every skipped row by reason."""
     train = train or SearchBCTrainProfile()
     rows = []
@@ -130,7 +137,9 @@ def build_training_rows(dataset: SearchDataset, *,
         if sample.planes is None or sample.scalars is None:
             skipped["features"] += 1
             continue
-        weight = unit_safe_weight(sample, profile)
+        weight = (regret_aware_weight(sample, loss_profile)
+                  if loss_profile is not None
+                  else unit_safe_weight(sample, profile))
         if weight <= 0:
             skipped["zero_weight"] += 1
             continue
@@ -148,16 +157,18 @@ def build_training_rows(dataset: SearchDataset, *,
                 raise ValueError("value training requires a Value v2 contract")
         target_vector = np.zeros(109, dtype=np.float32)
         q_vector = np.zeros(109, dtype=np.float32)
+        q_mask = np.zeros(109, dtype=bool)
         for action, probability in target.items():
             target_vector[action] = float(probability)
         for action, q_value in sample.q_by_action.items():
             q_vector[int(action)] = float(q_value)
+            q_mask[int(action)] = True
         rows.append(TrainingRow(
             work_id=sample.work_id, source_group=sample.source_group,
             planes=np.asarray(sample.planes, dtype=np.float32),
             scalars=np.asarray(sample.scalars, dtype=np.float32),
             mask=np.asarray(sample.legal_mask, dtype=bool),
-            target=target_vector, q_values=q_vector,
+            target=target_vector, q_values=q_vector, q_mask=q_mask,
             value=float(value) if value is not None else 0.0,
             weight=float(weight)))
     return TrainingRows(rows, skipped)
@@ -177,10 +188,12 @@ def _permuted(row: TrainingRow, permutation: int):
     target[action_map] = row.target
     q_values = np.zeros_like(row.q_values)
     q_values[action_map] = row.q_values
+    q_mask = np.empty_like(row.q_mask)
+    q_mask[action_map] = row.q_mask
     return TrainingRow(
         work_id=row.work_id, source_group=row.source_group,
         planes=planes, scalars=row.scalars, mask=mask, target=target,
-        q_values=q_values, value=row.value, weight=row.weight)
+        q_values=q_values, q_mask=q_mask, value=row.value, weight=row.weight)
 
 
 def _permutation_for(row, *, seed, epoch):
@@ -209,9 +222,13 @@ def collate_rows(rows, *, augmentation="none", seed=0, epoch=0):
                            dtype=torch.bool)
     target = torch.as_tensor(np.stack([row.target for row in rows]),
                              dtype=torch.float32)
+    q_values = torch.as_tensor(np.stack([row.q_values for row in rows]),
+                               dtype=torch.float32)
+    q_valid = torch.as_tensor(np.stack([row.q_mask for row in rows]),
+                              dtype=torch.bool)
     value = torch.as_tensor([row.value for row in rows], dtype=torch.float32)
     weight = torch.as_tensor([row.weight for row in rows], dtype=torch.float32)
-    return planes, scalars, mask, target, value, weight
+    return (planes, scalars, mask, target, q_values, q_valid, value, weight)
 
 
 def epoch_order(count, *, seed, epoch, shuffle=True):
@@ -297,6 +314,7 @@ def save_checkpoint(path, model, *, profile, train, dataset, epoch, generation,
 def train_search_bc(model, dataset: SearchDataset, *,
                     profile: SearchDistillationProfile,
                     train: SearchBCTrainProfile | None = None,
+                    loss_profile: RegretAwareLossProfile | None = None,
                     value_contract_fingerprint: str = "",
                     rows: TrainingRows | None = None,
                     output_dir=None, generation=0, model_version="",
@@ -311,7 +329,8 @@ def train_search_bc(model, dataset: SearchDataset, *,
     rows = rows or build_training_rows(
         dataset, profile=profile, train=train,
         value_contract_fingerprint=(value_contract_fingerprint or
-                                    profile.value_contract_fingerprint))
+                                    profile.value_contract_fingerprint),
+        loss_profile=loss_profile)
     if not rows.rows:
         raise ValueError("no usable training rows")
     device = train.device
@@ -326,19 +345,30 @@ def train_search_bc(model, dataset: SearchDataset, *,
         for start in range(0, len(order), train.batch_size):
             batch = [rows.rows[index]
                      for index in order[start:start + train.batch_size]]
-            planes, scalars, mask, target, value, weight = collate_rows(
+            (planes, scalars, mask, target, q_values, q_valid, value,
+             weight) = collate_rows(
                 batch, augmentation=train.augmentation, seed=train.seed,
                 epoch=epoch)
             planes = planes.to(device)
             scalars = scalars.to(device)
             mask = mask.to(device)
             target = target.to(device)
+            q_values = q_values.to(device)
+            q_valid = q_valid.to(device)
             value = value.to(device)
             weight = weight.to(device)
             logits, values = model(planes, scalars)
-            loss, metrics = policy_value_loss(
-                logits, values, target, value, mask, weights=weight,
-                policy_weight=1.0, value_weight=float(profile.value_weight))
+            if loss_profile is not None:
+                loss, _metrics = regret_aware_policy_value_loss(
+                    logits, values, target, value, mask,
+                    q_values=q_values, q_valid=q_valid, weights=weight,
+                    profile=loss_profile,
+                    value_weight=float(profile.value_weight))
+            else:
+                loss, _metrics = policy_value_loss(
+                    logits, values, target, value, mask, weights=weight,
+                    policy_weight=1.0,
+                    value_weight=float(profile.value_weight))
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -347,6 +377,8 @@ def train_search_bc(model, dataset: SearchDataset, *,
         record = {"epoch": epoch + 1, "loss": total / max(1, count),
                   "samples": count, "target_mode": profile.target_mode,
                   "augmentation": train.augmentation}
+        if loss_profile is not None:
+            record["loss_profile"] = loss_profile.fingerprint
         history.append(record)
         if output_dir is not None:
             save_checkpoint(
