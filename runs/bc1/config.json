@@ -1,0 +1,15 @@
+{
+  "data": "data/bc_full*/shard_*.npz",
+  "epochs": 20,
+  "bs": 512,
+  "lr": 0.0003,
+  "blocks": 15,
+  "width": 256,
+  "value_w": 0.5,
+  "out": "runs/bc1",
+  "init": null,
+  "seed": 0,
+  "device": "cuda",
+  "threads": 0,
+  "best_val_top1": 0.9863855780305677
+}

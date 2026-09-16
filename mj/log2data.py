@@ -8,7 +8,7 @@
 - 对局:无 illegal、无 reset(镜像失步)、有终局积分(end 记录);
 - 样本:决策配对的 action 提交成功(非 409;未提交的隐式过窗不收)。
 
-npz 与 mj.bc_data 同构(75 平面;bc_train._pad_oracle 补零到 91),
+npz 与 mj.bc_data 同构(75 平面;bc_train 训练时批内补零到 91),
 planes float16 / mask bool / action int16 / seat int8;value 目标
 = 终局四家分(score 列,与 bc_data 口径一致)。
 """

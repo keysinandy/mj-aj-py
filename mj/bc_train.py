@@ -17,18 +17,18 @@ import time
 import numpy as np
 import torch
 
-from .features import N_PLANES_ORACLE, SUIT_PERMS
+from .features import N_PLANES, N_PLANES_ORACLE, SUIT_PERMS
 from .model import Net, masked_ce
 
 
-def _pad_oracle(planes):
-    """75 平面 → 91:oracle 段零填充(与 PPO 网络同构,checkpoint 互通)。"""
-    n = planes.shape[0]
+def pad_batch(planes):
+    """75 平面批次 → 91:oracle 段零填充(与 PPO 网络同构,checkpoint 互通)。"""
     if planes.shape[1] >= N_PLANES_ORACLE:
         return planes
-    pad = np.zeros((n, N_PLANES_ORACLE - planes.shape[1], planes.shape[2]),
+    out = np.zeros((planes.shape[0], N_PLANES_ORACLE, planes.shape[2]),
                    dtype=planes.dtype)
-    return np.concatenate([planes, pad], axis=1)
+    out[:, :planes.shape[1]] = planes
+    return out
 
 
 def load_shards(pattern, val_ratio=0.1, seed=0):
@@ -41,13 +41,27 @@ def load_shards(pattern, val_ratio=0.1, seed=0):
     train_paths = [paths[i] for i in idx[n_val:]]
 
     def stack(paths_):
-        d = {k: [] for k in ("planes", "scalars", "mask", "action", "seat", "score")}
+        """流式装载:planes 预分配逐分片拷贝(保持 75 平面,批时补零),
+        小键 concat。内存峰值 ≈ planes 全量 + 小键两份——旧实现
+        (分片列表 → 全量 concat → pad 再 concat)峰值约为数据量 3 倍,
+        3 万局(550 万样本)需 >100GB,32GB 级内存不可行。
+        """
+        counts = []
         for p in paths_:
-            z = np.load(p)
-            for k in d:
-                d[k].append(z[k])
-        out = {k: np.concatenate(v) for k, v in d.items()}
-        out["planes"] = _pad_oracle(out["planes"])
+            with np.load(p) as z:
+                counts.append(len(z["action"]))
+        n = sum(counts)
+        planes = np.zeros((n, N_PLANES, 34), dtype=np.float16)
+        smalls = {k: [] for k in ("scalars", "mask", "action", "seat", "score")}
+        i = 0
+        for p, m in zip(paths_, counts):
+            with np.load(p) as z:
+                planes[i:i + m] = z["planes"]
+                for k in smalls:
+                    smalls[k].append(z[k])
+            i += m
+        out = {k: np.concatenate(v) for k, v in smalls.items()}
+        out["planes"] = planes
         return out
 
     return stack(train_paths), stack(val_paths)
@@ -60,13 +74,15 @@ def value_target(score, seat):
 
 
 def augment_batch(planes, mask, action, rng):
-    """批次内逐样本随机花色置换(×6 增广)。"""
-    out_p = np.empty_like(planes)
+    """批次内逐样本随机花色置换(×6 增广);输出补零到 91 平面。"""
+    n_in = planes.shape[1]
+    out_p = np.zeros((len(action), N_PLANES_ORACLE, planes.shape[2]),
+                     dtype=planes.dtype)
     out_m = np.empty_like(mask)
     out_a = np.empty_like(action)
     for i in range(len(action)):
         q, a = SUIT_PERMS[rng.integers(len(SUIT_PERMS))]
-        out_p[i] = planes[i][..., q]
+        out_p[i, :n_in] = planes[i][..., q]
         out_m[i][a] = mask[i]
         out_a[i] = a[action[i]]
     return out_p, out_m, out_a
@@ -86,7 +102,8 @@ def evaluate(model, d, device, bs=1024):
     correct = 0
     with torch.no_grad():
         for sl in iterate(len(tgt), bs, shuffle=False):
-            planes = torch.as_tensor(d["planes"][sl], dtype=torch.float32, device=device)
+            planes = torch.as_tensor(pad_batch(d["planes"][sl]),
+                                     dtype=torch.float32, device=device)
             scalars = torch.as_tensor(d["scalars"][sl], dtype=torch.float32, device=device)
             mask = torch.as_tensor(d["mask"][sl], device=device)
             action = torch.as_tensor(d["action"][sl], dtype=torch.long, device=device)
