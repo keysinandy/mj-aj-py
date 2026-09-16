@@ -192,6 +192,43 @@ class TestRoundBoundarySkip(unittest.TestCase):
                             for i in rep["illegal"]))
 
 
+class TestDecisionDiagnostics(unittest.TestCase):
+    """11.2: replay/logview carry student action + confidence/fallback/regret."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+
+    def test_evaluation_diagnostics_are_preserved(self):
+        from mj.logview import render, summarize
+        import io
+        from contextlib import redirect_stdout
+
+        path, _, _ = _record_game(self._tmp.name)
+        recs = _load(path)
+        decision = next(r for r in recs if r["type"] == "decision")
+        decision["evaluation"] = {
+            "level": "network", "network_confidence": 0.42,
+            "fallback_reason": None, "suggested_action": decision["action"],
+            "reference_regret": 3.5, "profile": "policy-v3",
+        }
+        rep = replay_game(recs, want_samples=False)
+        row = rep["evaluations"][0]
+        self.assertEqual(row["student_action"], decision["action"])
+        self.assertEqual(row["level"], "network")
+        self.assertAlmostEqual(row["network_confidence"], 0.42)
+        self.assertAlmostEqual(row["reference_regret"], 3.5)
+        text = render(decision, 0.0)
+        self.assertIn("regret=3.5000", text)
+        self.assertIn("conf=0.4200", text)
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            summarize(recs)
+        summary = buffer.getvalue()
+        self.assertIn("策略诊断", summary)
+        self.assertIn("reference regret", summary)
+
+
 class TestLog2Data(unittest.TestCase):
     def test_shard_written(self):
         with tempfile.TemporaryDirectory() as root:

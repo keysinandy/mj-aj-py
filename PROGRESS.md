@@ -462,6 +462,30 @@ extract 含 oracle ~1.6ms/决策点。
 - 吞吐预估:单 GPU 1-2 局/秒 ≈ 10-17 万局/天;
   参照 Suphx 150 万局,预计 20-50 万局超越 BC
 
+### 3. Search Teacher Distillation BC(2026-09-16 落地,待生成/训练/评估)
+- 基线 `8a94fdeb`;OpenSpec change `search-teacher-distillation-bc`,
+  文档 `docs/search-distillation.md`,冻结清单
+  `openspec/changes/search-teacher-distillation-bc/artifacts/baseline_freeze.json`
+  (rules v34 / 分单位 hero_round_score_points / 各 profile fingerprint)。
+- 流程:`search_teacher_generate.py`(policies×冻结对手池轨迹 → 信息集
+  teacher 自适应预算 512/2048/8192/16000,forced 只留 1-5% sanity;可断点
+  续跑 by work_id)→ `search_bc_train.py`(visit soft CE 默认,Q-soft/hybrid
+  版本化;unit-safe 权重;花色增广仅在与掩码/目标同向时启用;逐 epoch
+  存 provenance checkpoint)→ `search_bc_eval.py`(8k/16k reference 上
+  mean/p50/p95 regret、catastrophic、KL、top1、分桶 + batch=1 全路径
+  延迟,`best-by-regret.pt`,top1 仅诊断)。
+- 升级/发布门:`scripts/search_bc_paired.py`(pair 同 seed/座位/庄家/YCBK/
+  对手;按源局 cluster bootstrap,CI95_lower>0 才算 superior;self_play/
+  legacy_shape_v1/frozen_population 分矩阵)+ `PolicyIterationRunner`
+  stop/rollback;`mj.decision.release` release manifest 固定 checkpoint
+  hash/profile、保留 shape-v2/legacy kill switch 与回滚点,
+  `release_gate_report` 验 illegal/NaN/emergency=0。
+- 契约要点:policy-v3 新增 `calibration_policy`(policy-only 允许未校准
+  纯策略 checkpoint,value 叶仍强制 calibrated);value 目标统一走
+  `ValueTransformContract`(tanh,scale=96,修复旧 24 分歧)。
+- 状态:代码与单测完成(579+ 用例);`dataset0` 200k-500k、4096 对局、
+  平台十场并发/三房间等待算力与房间,属显式 blocker。
+
 ## 四、待办清单
 
 ### P1.5 引擎收尾(优先)

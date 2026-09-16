@@ -202,9 +202,18 @@ def _settle_own_hu_round_ended(rep, mirror, ev):
 
 def _on_decision(rep, mirror, r, want_samples, ok_ids):
     if r.get("evaluation") is not None:
+        evaluation = r["evaluation"]
         rep["evaluations"].append({
             "decision_id": r.get("id"), "seq": r.get("seq"),
-            "phase": r.get("phase"), "evaluation": r.get("evaluation")})
+            "phase": r.get("phase"),
+            "student_action": r.get("action"),
+            "level": evaluation.get("level"),
+            "network_confidence": evaluation.get("network_confidence"),
+            "fallback_reason": evaluation.get("fallback_reason"),
+            "suggested_action": evaluation.get("suggested_action"),
+            "reference_regret": evaluation.get(
+                "reference_regret", evaluation.get("teacher_regret")),
+            "evaluation": evaluation})
     try:
         g = mirror.build_game(r["phase"])
     except MirrorInconsistent as e:

@@ -1,0 +1,66 @@
+{
+  "schema": "search-teacher-distillation-bc/evaluation-plan-v1",
+  "baseline_git": "8a94fdeb1a7801289f2bd707b24b271d99bb8961",
+  "optimization_metric": "hero_round_score_points",
+  "teacher": {
+    "type": "information-set-search",
+    "training_simulation_tiers": [
+      512,
+      2048,
+      8192,
+      16000
+    ],
+    "reference_simulations": [
+      8000,
+      16000
+    ],
+    "oracle": false
+  },
+  "generation0": {
+    "useful_multi_action_samples_target": [
+      200000,
+      500000
+    ],
+    "forced_state_high_budget_search": false
+  },
+  "policy_targets": [
+    "visit-distribution-v1",
+    "q-soft-v1-optional"
+  ],
+  "value_phase1": {
+    "enabled": false,
+    "reason": "policy-first until value-v2 units frozen"
+  },
+  "checkpoint_selector": {
+    "primary": "mean_reference_regret",
+    "secondary": [
+      "p95_reference_regret",
+      "catastrophic_regret_rate",
+      "policy_kl",
+      "batch1_latency_ms"
+    ]
+  },
+  "paired_games": {
+    "minimum_pairs": 4096,
+    "cluster": "source_game_seed",
+    "alpha": 0.05,
+    "comparisons": [
+      "student-vs-previous",
+      "student-vs-shape-v2",
+      "student-vs-shape-v1"
+    ]
+  },
+  "opponent_splits": [
+    "self_play",
+    "legacy_shape_v1",
+    "frozen_population"
+  ],
+  "promotion": {
+    "require_reference_regret_gate": true,
+    "require_paired_score_gate": true,
+    "require_population_gate": true,
+    "require_special_state_gate": true,
+    "require_runtime_gate": true,
+    "require_online_window_gate": true
+  }
+}

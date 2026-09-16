@@ -114,6 +114,78 @@ def evaluate_value_predictions(samples, predictions, *, source=None):
                               (row[1] for row in pairs))
 
 
+USABLE_TEACHER_STATUSES = ("ok", "ambiguous", "incomplete_budget",
+                           "forced-sanity")
+
+
+def is_usable_sample(sample):
+    """Search evidence safe to train on (failed/unsupported rows are audit)."""
+    status = getattr(sample, "teacher_status", "")
+    if status and status not in USABLE_TEACHER_STATUSES:
+        return False
+    legal = sum(1 for value in sample.legal_mask if value)
+    if legal <= 0:
+        return False
+    if sample.forced:
+        return True
+    return int(sample.simulations) > 0
+
+
+def search_policy_target(sample, profile):
+    """Versioned soft target: visit distribution, Q-soft or their mixture."""
+    legal = [action for action, ok in enumerate(sample.legal_mask) if ok]
+    if not legal:
+        raise ValueError("sample has no legal action")
+    visits = {action: float(sample.visit_counts.get(action, 0))
+              for action in legal}
+    total = sum(visits.values())
+    if total > 0:
+        p_visit = {action: visits[action] / total for action in legal}
+    else:
+        p_visit = {action: 1.0 / len(legal) for action in legal}
+    if profile.target_mode == "visit":
+        return p_visit
+    missing = [action for action in legal
+               if action not in sample.q_by_action]
+    if missing:
+        raise ValueError("Q-soft target requires q_by_action for every legal action")
+    q_values = {action: float(sample.q_by_action[action]) for action in legal}
+    q_max = max(q_values.values())
+    weights = {action: math.exp((q_values[action] - q_max) / float(profile.tau_q))
+               for action in legal}
+    total_weight = sum(weights.values())
+    p_q = {action: weights[action] / total_weight for action in legal}
+    if profile.target_mode == "q-soft":
+        return p_q
+    norm = float(profile.lambda_visit) + float(profile.lambda_q)
+    return {action: (float(profile.lambda_visit) * p_visit[action] +
+                     float(profile.lambda_q) * p_q[action]) / norm
+            for action in legal}
+
+
+def unit_safe_weight(sample, profile):
+    """Unit-safe sample weight: evidence x ambiguity x reset x importance.
+
+    Raw score variance only enters through an explicitly declared score scale
+    (``variance_scale``); an undeclared zero scale disables variance
+    weighting instead of silently suppressing high-value states.
+    """
+    full = float(profile.full_evidence_simulations)
+    evidence = min(1.0, max(0.0, sample.simulations) / full) if full > 0 else 1.0
+    ambiguity = float(profile.ambiguity_weight) if sample.ambiguous else 1.0
+    reset = float(profile.reset_weight) ** max(0, int(sample.reset_count))
+    importance = 1.0
+    gap = getattr(sample, "teacher_q_gap", None)
+    if gap is not None:
+        importance = min(1.0, max(float(profile.min_importance_weight),
+                                  float(gap) / float(profile.tau_gap)))
+    variance = 1.0
+    if profile.variance_scale is not None and sample.search_variance is not None:
+        variance = 1.0 / (1.0 + max(0.0, float(sample.search_variance)) /
+                          float(profile.variance_scale))
+    return max(0.0, evidence * ambiguity * reset * importance * variance)
+
+
 def inference_benchmark(infer, inputs, *, repeats=1):
     """Measure a complete callable path, not only a model forward.
 
@@ -173,6 +245,9 @@ def policy_value_loss(logits, values, target_policy, target_value, legal_mask,
     import torch.nn.functional as F
 
     target, log_probs = masked_soft_targets(logits, target_policy, legal_mask)
+    # Illegal log-probs are -inf; zero-target entries must not create 0*-inf
+    # NaNs, so keep only the entries that actually contribute to the loss.
+    log_probs = torch.where(target > 0, log_probs, torch.zeros_like(log_probs))
     policy_loss = -(target * log_probs).sum(dim=-1)
     value_target = torch.as_tensor(target_value, dtype=torch.float32,
                                   device=values.device)
@@ -190,13 +265,18 @@ def policy_value_loss(logits, values, target_policy, target_value, legal_mask,
 
 
 def train_policy_value(model, dataset, *, epochs=1, lr=3e-4, device="cpu",
-                       batch_size=64, value_scale=24.0,
+                       batch_size=64, contract=None,
                        target_source="search-root-v1"):
-    """Small deterministic training loop for an already featureized dataset."""
+    """Small deterministic training loop for an already featureized dataset.
+
+    Value targets always pass through the declared
+    :class:`ValueTransformContract`, never an ad-hoc divisor.
+    """
     import torch
 
-    if not math.isfinite(float(value_scale)) or float(value_scale) <= 0:
-        raise ValueError("value_scale must be finite and positive")
+    from ..models.policy_value import ValueTransformContract
+
+    contract = contract or ValueTransformContract()
     samples = [sample for sample in dataset.samples
                if sample.planes is not None and sample.scalars is not None
                and value_target(sample, source=target_source) is not None]
@@ -221,8 +301,8 @@ def train_policy_value(model, dataset, *, epochs=1, lr=3e-4, device="cpu",
                 [[sample.policy_target.get(action, 0.0) for action in range(109)]
                  for sample in batch], dtype=torch.float32, device=device)
             target_value = torch.as_tensor(
-                [value_target(sample, source=target_source) /
-                 float(value_scale) for sample in batch],
+                [contract.forward(value_target(sample, source=target_source))
+                 for sample in batch],
                 dtype=torch.float32, device=device)
             mask = torch.as_tensor([sample.legal_mask for sample in batch],
                                    dtype=torch.bool, device=device)

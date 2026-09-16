@@ -3,12 +3,38 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import hashlib
 import json
 import math
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from ..decision.profile import fingerprint
+
+
+FEATURE_FINGERPRINT_PREFIX = "search-distill-features-v1"
+
+
+def feature_fingerprint(planes, scalars=None):
+    """Content digest of one sample's feature arrays.
+
+    The digest lets the dataset quality report detect feature/target
+    collisions and verify that a resumed run reproduced identical features.
+    An empty string means the sample carries no features.
+    """
+    if planes is None and scalars is None:
+        return ""
+    import numpy as np
+
+    digest = hashlib.sha256(FEATURE_FINGERPRINT_PREFIX.encode("utf-8"))
+    for value in (planes, scalars):
+        if value is None:
+            digest.update(b"none")
+            continue
+        array = np.ascontiguousarray(np.asarray(value, dtype=np.float32))
+        digest.update(repr(tuple(array.shape)).encode("utf-8"))
+        digest.update(array.tobytes())
+    return digest.hexdigest()[:24]
 
 
 def _action_to_flat(action):
@@ -35,6 +61,19 @@ def _action_to_flat(action):
     elif action == HU:
         return 108
     raise ValueError(f"unsupported engine action: {action}")
+
+
+def work_identity(*, source_group, context_hash, history_hash, teacher_seed,
+                  search_fingerprint):
+    """Stable resume identity shared by the generator and the sample type."""
+    return fingerprint({
+        "schema": "search-distillation-work-v1",
+        "source_group": str(source_group),
+        "context_hash": str(context_hash),
+        "history_hash": str(history_hash),
+        "teacher_seed": int(teacher_seed),
+        "search_fingerprint": str(search_fingerprint),
+    }, 24)
 
 
 def _finite(value, name):
@@ -80,6 +119,28 @@ class SearchSample:
     oracle: bool = False
     value_target_source: str = "search-root-v1"
     terminal_reward: float | None = None
+    # Generation and teacher-budget provenance.
+    generation: int = 0
+    feature_fingerprint: str = ""
+    forced: bool = False
+    special_state_tags: tuple[str, ...] = ()
+    teacher_budget_tier: int = 0
+    teacher_requested_simulations: int = 0
+    teacher_completed_simulations: int = 0
+    teacher_failed_simulations: int = 0
+    teacher_seed: int = 0
+    teacher_status: str = ""
+    teacher_stop_reason: str = ""
+    teacher_top1_q: float | None = None
+    teacher_top2_q: float | None = None
+    teacher_q_gap: float | None = None
+    # Public decision-bucket metadata (never hidden identities).
+    phase: str = ""
+    dealer: int = 0
+    hero_seat: int = 0
+    you_cai_bi_kao: bool = False
+    shanten: int | None = None
+    wall_remaining: int | None = None
     schema: str = "search-distillation-sample-v1"
 
     def __post_init__(self):
@@ -122,7 +183,74 @@ class SearchSample:
                            _finite(self.search_variance, "search_variance"))
         object.__setattr__(self, "simulations", int(self.simulations))
         object.__setattr__(self, "reset_count", int(self.reset_count))
+        if int(self.generation) < 0:
+            raise ValueError("generation must be non-negative")
+        legal_count = sum(1 for value in mask if value)
+        if bool(self.forced) and legal_count != 1:
+            raise ValueError("forced samples must have exactly one legal action")
+        if int(self.teacher_budget_tier) < -1:
+            raise ValueError("teacher_budget_tier must be -1 (skip) or non-negative")
+        requested = int(self.teacher_requested_simulations)
+        completed = int(self.teacher_completed_simulations)
+        failed = int(self.teacher_failed_simulations)
+        if requested < 0 or completed < 0 or failed < 0:
+            raise ValueError("teacher simulation counters must be non-negative")
+        if completed > requested:
+            raise ValueError("teacher completed simulations exceed the request")
+        if int(self.teacher_seed) < 0:
+            raise ValueError("teacher_seed must be non-negative")
+        if self.teacher_status and self.teacher_status not in (
+                "ok", "ambiguous", "incomplete_budget", "failed", "unsupported",
+                "forced", "forced-sanity"):
+            raise ValueError(f"unknown teacher status: {self.teacher_status}")
+        top1 = _finite(self.teacher_top1_q, "teacher_top1_q")
+        top2 = _finite(self.teacher_top2_q, "teacher_top2_q")
+        gap = _finite(self.teacher_q_gap, "teacher_q_gap")
+        if gap is not None and gap < 0:
+            raise ValueError("teacher_q_gap must be non-negative")
+        if gap is not None and top1 is not None and top2 is not None:
+            if abs((top1 - top2) - gap) > 1e-9:
+                raise ValueError("teacher_q_gap disagrees with top1/top2 Q values")
+        object.__setattr__(self, "teacher_top1_q", top1)
+        object.__setattr__(self, "teacher_top2_q", top2)
+        object.__setattr__(self, "teacher_q_gap", gap)
+        tags = tuple(sorted(str(tag) for tag in (self.special_state_tags or ())))
+        if any(not tag for tag in tags):
+            raise ValueError("special_state_tags must be non-empty strings")
+        object.__setattr__(self, "special_state_tags", tags)
+        object.__setattr__(self, "generation", int(self.generation))
+        object.__setattr__(self, "teacher_requested_simulations", requested)
+        object.__setattr__(self, "teacher_completed_simulations", completed)
+        object.__setattr__(self, "teacher_failed_simulations", failed)
+        object.__setattr__(self, "teacher_seed", int(self.teacher_seed))
+        if int(self.dealer) not in range(4) or int(self.hero_seat) not in range(4):
+            raise ValueError("dealer/hero_seat must be a seat index")
+        if self.shanten is not None:
+            shanten = int(self.shanten)
+            if shanten < -1:
+                raise ValueError("shanten must be -1 or non-negative")
+            object.__setattr__(self, "shanten", shanten)
+        if self.wall_remaining is not None:
+            remaining = int(self.wall_remaining)
+            if remaining < 0:
+                raise ValueError("wall_remaining must be non-negative")
+            object.__setattr__(self, "wall_remaining", remaining)
+        object.__setattr__(self, "dealer", int(self.dealer))
+        object.__setattr__(self, "hero_seat", int(self.hero_seat))
+        object.__setattr__(self, "you_cai_bi_kao", bool(self.you_cai_bi_kao))
 
+    @property
+    def work_id(self):
+        """Stable resume identity for one teacher work item.
+
+        Two generator runs that declare the same source group, information
+        state, teacher seed and search profile must produce the same identity
+        so an interrupted run can resume without double-counting rows.
+        """
+        return work_identity(
+            source_group=self.source_group, context_hash=self.context_hash,
+            history_hash=self.history_hash, teacher_seed=self.teacher_seed,
+            search_fingerprint=self.search_fingerprint)
     @property
     def policy_target(self):
         total = sum(self.visit_counts.get(action, 0)
@@ -135,15 +263,15 @@ class SearchSample:
 
     @property
     def sample_weight(self):
-        # Low evidence, ambiguity, resets and high variance are down-weighted
-        # rather than discarded so the dataset retains the true uncertainty.
+        # Low evidence, ambiguity and resets are down-weighted rather than
+        # discarded.  Score variance is deliberately absent here: raw
+        # score-squared units must never silently suppress a critical state.
+        # Unit-safe variance/Q-gap weighting belongs to the versioned
+        # SearchDistillationProfile used by the trainer.
         simulation_factor = min(1.0, self.simulations / 2048.0)
         ambiguity_factor = 0.5 if self.ambiguous else 1.0
         reset_factor = 0.5 ** max(0, self.reset_count)
-        variance_factor = (1.0 / (1.0 + max(0.0, self.search_variance))
-                           if self.search_variance is not None else 1.0)
-        return max(0.0, simulation_factor * ambiguity_factor *
-                   reset_factor * variance_factor)
+        return max(0.0, simulation_factor * ambiguity_factor * reset_factor)
 
     def as_json(self, *, include_features=True):
         value = {
@@ -165,6 +293,26 @@ class SearchSample:
             "leaf_version": self.leaf_version,
             "policy_version_source": self.policy_version_source,
             "reset_count": self.reset_count, "search_variance": self.search_variance,
+            "generation": self.generation,
+            "feature_fingerprint": self.feature_fingerprint,
+            "forced": bool(self.forced),
+            "special_state_tags": list(self.special_state_tags),
+            "teacher_budget_tier": self.teacher_budget_tier,
+            "teacher_requested_simulations": self.teacher_requested_simulations,
+            "teacher_completed_simulations": self.teacher_completed_simulations,
+            "teacher_failed_simulations": self.teacher_failed_simulations,
+            "teacher_seed": self.teacher_seed,
+            "teacher_status": self.teacher_status,
+            "teacher_stop_reason": self.teacher_stop_reason,
+            "teacher_top1_q": self.teacher_top1_q,
+            "teacher_top2_q": self.teacher_top2_q,
+            "teacher_q_gap": self.teacher_q_gap,
+            "phase": self.phase,
+            "dealer": self.dealer,
+            "hero_seat": self.hero_seat,
+            "you_cai_bi_kao": bool(self.you_cai_bi_kao),
+            "shanten": self.shanten,
+            "wall_remaining": self.wall_remaining,
             "oracle": False,
         }
         if include_features:
@@ -198,7 +346,14 @@ class SearchSample:
     def from_search_result(cls, result, *, source_group, context=None,
                            history=None, belief=None,
                            opponent_policy_version="", policy_version_source="",
-                           actual_round_score=None, planes=None, scalars=None):
+                           actual_round_score=None, planes=None, scalars=None,
+                           generation=0, feature_fingerprint_value=None,
+                           forced=False, special_state_tags=(),
+                           teacher_seed=0, teacher_stop_reason="",
+                           teacher_tier=None, teacher_status=None,
+                           phase="", dealer=0, hero_seat=0,
+                           you_cai_bi_kao=False, shanten=None,
+                           wall_remaining=None):
         legal_mask = [False] * 109
         for action in result.legal_actions:
             legal_mask[_action_to_flat(action)] = True
@@ -209,6 +364,13 @@ class SearchSample:
         search_variance = (sum(result.variance_by_action.values()) /
                            len(result.variance_by_action)
                            if result.variance_by_action else None)
+        ranked = sorted(q_values.values(), reverse=True)
+        top1 = ranked[0] if ranked else None
+        top2 = ranked[1] if len(ranked) > 1 else None
+        gap = (float(top1) - float(top2) if top1 is not None and
+               top2 is not None else None)
+        if teacher_tier is None:
+            teacher_tier = -1 if forced and not result.simulations else 0
         return cls(
             context_hash=result.context_hash,
             history_hash=result.history_hash,
@@ -225,6 +387,23 @@ class SearchSample:
             policy_version_source=policy_version_source, planes=planes,
             scalars=scalars, search_variance=search_variance,
             reset_count=(getattr(belief, "reset_count", 0) if belief else 0),
+            generation=int(generation),
+            feature_fingerprint=(feature_fingerprint_value
+                                 if feature_fingerprint_value is not None
+                                 else feature_fingerprint(planes, scalars)),
+            forced=bool(forced), special_state_tags=special_state_tags,
+            teacher_budget_tier=int(teacher_tier),
+            teacher_requested_simulations=int(result.requested_simulations),
+            teacher_completed_simulations=int(result.simulations),
+            teacher_failed_simulations=int(result.failed_simulations),
+            teacher_seed=int(teacher_seed),
+            teacher_status=(teacher_status if teacher_status is not None
+                            else result.status),
+            teacher_stop_reason=str(teacher_stop_reason),
+            teacher_top1_q=top1, teacher_top2_q=top2, teacher_q_gap=gap,
+            phase=str(phase), dealer=int(dealer), hero_seat=int(hero_seat),
+            you_cai_bi_kao=bool(you_cai_bi_kao), shanten=shanten,
+            wall_remaining=wall_remaining,
         )
 
 
@@ -242,6 +421,10 @@ class SearchDataset:
     def __len__(self):
         return len(self.samples)
 
+    @property
+    def fingerprint(self):
+        return dataset_fingerprint(self)
+
     def split_by_source_group(self, assignments: Mapping[str, str]):
         groups = {str(key): str(value) for key, value in assignments.items()}
         output = {}
@@ -252,12 +435,13 @@ class SearchDataset:
             output.setdefault(split, SearchDataset()).append(sample)
         return output
 
-    def as_json(self):
+    def as_json(self, *, include_features=True):
         return {"schema": "search-distillation-dataset-v1",
                 "count": len(self.samples),
                 "source_groups": sorted({s.source_group for s in self.samples}),
                 "oracle": False,
-                "samples": [sample.as_json() for sample in self.samples]}
+                "samples": [sample.as_json(include_features=include_features)
+                            for sample in self.samples]}
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]):
@@ -306,11 +490,13 @@ def freeze_source_splits(source_groups: Iterable[str], *, seed=0,
                    "final-test") for index, group in enumerate(ordered)}
 
 
-def write_search_dataset(path, dataset: SearchDataset | Iterable[SearchSample]):
+def write_search_dataset(path, dataset: SearchDataset | Iterable[SearchSample],
+                         *, include_features=True):
     if not isinstance(dataset, SearchDataset):
         dataset = SearchDataset(dataset)
     Path(path).write_text(
-        "".join(json.dumps(sample.as_json(), ensure_ascii=False) + "\n"
+        "".join(json.dumps(sample.as_json(include_features=include_features),
+                           ensure_ascii=False) + "\n"
                 for sample in dataset.samples), encoding="utf-8")
     return path
 
@@ -321,3 +507,34 @@ def read_search_dataset(path):
         if line.strip():
             samples.append(SearchSample.from_json(json.loads(line)))
     return SearchDataset(samples)
+
+
+def iter_work_ids(path):
+    """Stream stable work identities from a JSONL dataset without features.
+
+    Resume must not double-count completed work, and the identity only needs
+    the provenance fields, so this avoids constructing full samples.
+    """
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        data = json.loads(line)
+        yield work_identity(
+            source_group=data["source_group"],
+            context_hash=data["context_hash"],
+            history_hash=data["history_hash"],
+            teacher_seed=data.get("teacher_seed", 0),
+            search_fingerprint=data["search_fingerprint"])
+
+
+def dataset_fingerprint(dataset: SearchDataset):
+    """Stable digest over sample identities and feature-free sample hashes."""
+    digest = hashlib.sha256(b"search-distillation-dataset-v1")
+    rows = sorted(
+        (sample.work_id,
+         sample.as_json(include_features=False)["fingerprint"])
+        for sample in dataset.samples)
+    for work_id, sample_hash in rows:
+        digest.update(work_id.encode("utf-8"))
+        digest.update(sample_hash.encode("utf-8"))
+    return digest.hexdigest()[:24]

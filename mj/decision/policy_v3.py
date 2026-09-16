@@ -33,6 +33,7 @@ class PolicyV3Profile:
     fallback_chain: tuple[str, ...] = ("shape-v2", "legacy")
     confidence_threshold: float = 0.0
     confidence_definition: str = "probability-margin-v1"
+    calibration_policy: str = "value-contract-v1"
     shadow_belief: bool = True
     max_shadow_particles: int = 32
     search_level: str = "policy-only-v1"
@@ -46,6 +47,10 @@ class PolicyV3Profile:
             raise ValueError("policy runtime version must not be empty")
         if self.confidence_definition != "probability-margin-v1":
             raise ValueError("unsupported confidence definition")
+        if self.calibration_policy not in ("value-contract-v1",
+                                           "policy-only-v1"):
+            raise ValueError(f"unsupported calibration policy: "
+                             f"{self.calibration_policy}")
         threshold = float(self.confidence_threshold)
         if not math.isfinite(threshold) or not 0 <= threshold <= 1:
             raise ValueError("confidence_threshold must be in [0, 1]")
@@ -98,6 +103,24 @@ def _finite(value, name):
     return value
 
 
+class ModelOutputError(ValueError):
+    """A model output failed a declared safety check (auditable kind)."""
+
+    def __init__(self, message, *, kind):
+        super().__init__(message)
+        self.kind = str(kind)
+
+
+def _empty_runtime_stats():
+    return {
+        "decisions": 0, "network": 0, "only_legal_action": 0,
+        "fallbacks": 0, "fallback_by_reason": {}, "emergency": 0,
+        "illegal_selected": 0, "model_output_errors": 0,
+        "model_output_error_kinds": {},
+        "no_search": 0,
+    }
+
+
 class PolicyV3Runtime:
     """Run a policy/value model and fall back without changing legality."""
 
@@ -124,6 +147,7 @@ class PolicyV3Runtime:
         self.device = device
         self.model = model
         self.model_error = None
+        self.stats = _empty_runtime_stats()
         self._belief = None
         self._history_hash = None
         self._context_hash = None
@@ -146,7 +170,8 @@ class PolicyV3Runtime:
             return
         if getattr(manifest, "oracle", True):
             self.model_error = "model_oracle_forbidden"
-        elif not getattr(manifest, "calibrated", False):
+        elif (not getattr(manifest, "calibrated", False) and
+              self.profile.calibration_policy == "value-contract-v1"):
             self.model_error = "model_not_calibrated"
         elif (self.profile.model_version and
               getattr(manifest, "model_version", None) != self.profile.model_version):
@@ -291,21 +316,36 @@ class PolicyV3Runtime:
     def _pick_distribution(distribution, legal):
         actions = tuple(int(action) for action in getattr(distribution, "actions", ()))
         if set(actions) != set(legal) or len(actions) != len(legal):
-            raise ValueError("model distribution does not match legal action set")
+            raise ModelOutputError(
+                "model distribution does not match legal action set",
+                kind="legal_set_mismatch")
         probabilities = tuple(float(value) for value in
                              getattr(distribution, "probabilities", ()))
         if len(probabilities) != len(actions) or not probabilities:
-            raise ValueError("model distribution is empty")
+            raise ModelOutputError("model distribution is empty",
+                                   kind="empty_distribution")
         if any(not math.isfinite(value) or value < 0 for value in probabilities):
-            raise ValueError("model distribution contains non-finite probability")
+            raise ModelOutputError(
+                "model distribution contains non-finite probability",
+                kind="nonfinite_probability")
         ranked = sorted(zip(actions, probabilities), key=lambda item: (
             -item[1], legal.index(item[0])))
         best = ranked[0]
         second = ranked[1][1] if len(ranked) > 1 else 0.0
         total = sum(probabilities)
         if total <= 0 or not math.isfinite(total):
-            raise ValueError("model distribution has no finite mass")
+            raise ModelOutputError("model distribution has no finite mass",
+                                   kind="no_finite_mass")
         return best[0], max(0.0, best[1] / total - second / total)
+
+    def _record_fallback(self, level, reason):
+        """Count every fallback so release evidence can prove None occurred."""
+        self.stats["fallbacks"] += 1
+        key = str(reason or level)
+        counts = self.stats["fallback_by_reason"]
+        counts[key] = counts.get(key, 0) + 1
+        if str(level) == "legal-order-emergency":
+            self.stats["emergency"] += 1
 
     def _fallback(self, game, seat, legal, reason):
         from ..bot import choose_action
@@ -347,6 +387,8 @@ class PolicyV3Runtime:
         fallback_errors = []
         evaluation = None
         level = "network"
+        self.stats["decisions"] += 1
+        self.stats["no_search"] += 1
         model_version = getattr(getattr(self.model, "manifest", None),
                                 "model_version", None)
         if len(legal) == 1:
@@ -354,9 +396,11 @@ class PolicyV3Runtime:
             suggested = action
             confidence = 1.0
             level = "only-legal-action"
+            self.stats["only_legal_action"] += 1
         elif self.model_error is not None:
             action, level, evaluation, fallback_reason, fallback_errors = \
                 self._fallback(game, seat, legal, self.model_error)
+            self._record_fallback(level, fallback_reason)
         else:
             try:
                 distribution = self._distribution(
@@ -366,15 +410,23 @@ class PolicyV3Runtime:
                 if confidence < self.profile.confidence_threshold:
                     action, level, evaluation, fallback_reason, fallback_errors = \
                         self._fallback(game, seat, legal, "low_network_confidence")
+                    self._record_fallback(level, fallback_reason)
                 else:
                     action = suggested
+                    self.stats["network"] += 1
                     model_version = (getattr(distribution, "version", None)
                                      or model_version)
             except Exception as exc:
+                if isinstance(exc, ModelOutputError):
+                    self.stats["model_output_errors"] += 1
+                    kinds = self.stats["model_output_error_kinds"]
+                    kinds[exc.kind] = kinds.get(exc.kind, 0) + 1
                 fallback_reason = f"model_error:{type(exc).__name__}"
                 action, level, evaluation, fallback_reason, fallback_errors = \
                     self._fallback(game, seat, legal, fallback_reason)
+                self._record_fallback(level, fallback_reason)
         if action not in legal:
+            self.stats["illegal_selected"] += 1
             raise ValueError("policy-v3 produced an illegal selected action")
         belief = belief_summary or {}
         result = {
@@ -417,6 +469,7 @@ class PolicyV3Runtime:
             "model_fingerprint": self.model_fingerprint,
             "model_error": self.model_error,
             "shadow_belief": self.shadow_belief,
+            "stats": dict(self.stats),
             "oracle": False,
         }
 

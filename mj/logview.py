@@ -117,12 +117,23 @@ def render(rec, t0):
                 evtxt += f" fallback={ev['fallback_reason']}"
         else:
             evtxt = " eval=legacy_unrecorded"
-        if rec.get("network_confidence") is not None:
-            evtxt += f" conf={rec['network_confidence']:.4f}"
+        confidence = rec.get("network_confidence",
+                             ev.get("network_confidence"))
+        if confidence is not None:
+            evtxt += f" conf={confidence:.4f}"
         if rec.get("fallback_reason") and "fallback=" not in evtxt:
             evtxt += f" fallback={rec['fallback_reason']}"
-        if rec.get("suggested_action") is not None:
-            evtxt += f" suggested={action_name(rec['suggested_action'])}"
+        suggested = rec.get("suggested_action", ev.get("suggested_action"))
+        if suggested is not None:
+            evtxt += f" suggested={action_name(suggested)}"
+        regret = rec.get("reference_regret")
+        if regret is None:
+            regret = ev.get("reference_regret", ev.get("teacher_regret"))
+        if regret is not None:
+            try:
+                evtxt += f" regret={float(regret):.4f}"
+            except (TypeError, ValueError):
+                evtxt += f" regret={regret}"
         if rec.get("history_hash"):
             evtxt += f" history={str(rec['history_hash'])[:8]}"
         return (f"{pre} DECIDE #{rec.get('id')} {rec.get('phase')} "
@@ -229,6 +240,41 @@ def summarize(recs):
                     if r.get("latency_ms") is not None)
         print(f"决策: {len(dec)} 次, decide p50="
               f"{dl[len(dl) // 2] if dl else '?'}ms max={dl[-1] if dl else '?'}ms")
+        levels = {}
+        fallbacks = {}
+        confidences = []
+        regrets = []
+        for r in dec:
+            ev = r.get("evaluation") or {}
+            level = ev.get("level") or r.get("level") or "unknown"
+            levels[level] = levels.get(level, 0) + 1
+            reason = ev.get("fallback_reason") or r.get("fallback_reason")
+            if reason:
+                fallbacks[reason] = fallbacks.get(reason, 0) + 1
+            confidence = ev.get("network_confidence",
+                                r.get("network_confidence"))
+            if confidence is not None:
+                confidences.append(float(confidence))
+            regret = ev.get("reference_regret", ev.get("teacher_regret",
+                            r.get("reference_regret")))
+            if regret is not None:
+                regrets.append(float(regret))
+        level_text = " ".join(f"{key}×{value}"
+                              for key, value in sorted(levels.items()))
+        print(f"策略诊断: {level_text}")
+        if fallbacks:
+            detail = " ".join(f"{key}×{value}"
+                              for key, value in sorted(fallbacks.items()))
+            print(f"  回退: {detail}")
+        if confidences:
+            confidences.sort()
+            print(f"  network conf p50={confidences[len(confidences) // 2]:.4f} "
+                  f"min={confidences[0]:.4f}")
+        if regrets:
+            regrets.sort()
+            print(f"  reference regret: n={len(regrets)} "
+                  f"mean={sum(regrets) / len(regrets):.4f} "
+                  f"p95={regrets[min(len(regrets) - 1, int(len(regrets) * .95))]:.4f}")
     cf = [r for r in recs if r["type"] == "counterfactual_evaluation"]
     if cf:
         print(f"反事实评价: {len(cf)} 次(不计入线上 decision/action)")

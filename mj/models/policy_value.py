@@ -144,6 +144,91 @@ def policy_value_manifest_from_json(data: Mapping[str, Any]) -> PolicyValueModel
     return manifest
 
 
+VALUE_CONTRACT_SCHEMA = "value-transform-contract-v1"
+
+
+@dataclass(frozen=True)
+class ValueTransformContract:
+    """Frozen score transform for the tanh value head.
+
+    ``forward`` normalizes raw round-score points into the declared target
+    range; ``inverse_transform_value`` maps a network prediction back to
+    points.  Training, calibration reporting and the search leaf must all use
+    this single contract (a mismatch was the historical value_scale=24 bug).
+    """
+
+    schema: str = VALUE_CONTRACT_SCHEMA
+    version: str = "value-v2"
+    score_units: str = "hero_round_score_points"
+    scale: float = 96.0
+    clip_normalized: float = 1.0
+    output_activation: str = "tanh"
+    inverse_transform: str = "multiply-scale-v1"
+
+    def __post_init__(self):
+        if self.schema != VALUE_CONTRACT_SCHEMA:
+            raise ValueError(f"unsupported value contract schema: {self.schema}")
+        if not str(self.version):
+            raise ValueError("value contract version must not be empty")
+        if self.score_units != "hero_round_score_points":
+            raise ValueError("value contract must target round-score points")
+        scale = float(self.scale)
+        if not math.isfinite(scale) or scale <= 0:
+            raise ValueError("value contract scale must be finite and positive")
+        clip = float(self.clip_normalized)
+        if not math.isfinite(clip) or clip <= 0:
+            raise ValueError("value contract clip must be finite and positive")
+        if self.output_activation != "tanh":
+            raise ValueError("value contract supports only the tanh head")
+        if self.inverse_transform != "multiply-scale-v1":
+            raise ValueError("unsupported value inverse transform")
+        object.__setattr__(self, "scale", scale)
+        object.__setattr__(self, "clip_normalized", clip)
+
+    @property
+    def output_range(self):
+        return (-float(self.clip_normalized), float(self.clip_normalized))
+
+    def forward(self, score):
+        """Raw round-score points -> declared normalized target."""
+        value = float(score) / self.scale
+        clip = float(self.clip_normalized)
+        return min(clip, max(-clip, value))
+
+    def inverse_transform_value(self, prediction):
+        """Declared normalized prediction -> raw round-score points."""
+        prediction = float(prediction)
+        if not math.isfinite(prediction):
+            raise ValueError("value prediction must be finite")
+        return prediction * self.scale
+
+    def payload(self):
+        return asdict(self)
+
+    @property
+    def fingerprint(self):
+        return fingerprint(self.payload(), 24)
+
+    def as_json(self):
+        value = self.payload()
+        value["fingerprint"] = self.fingerprint
+        return value
+
+
+def value_contract_from_json(data: Mapping[str, Any]) -> ValueTransformContract:
+    value = dict(data)
+    supplied = value.pop("fingerprint", None)
+    allowed = set(ValueTransformContract.__dataclass_fields__)
+    unknown = set(value) - allowed
+    if unknown:
+        raise ValueError("unknown value contract fields: " +
+                         ", ".join(sorted(unknown)))
+    contract = ValueTransformContract(**value)
+    if supplied is not None and supplied != contract.fingerprint:
+        raise ValueError("value contract fingerprint mismatch")
+    return contract
+
+
 def _public_game_from_context(context):
     """Construct a feature-only Game with all hidden material zeroed."""
     from ..game import Game

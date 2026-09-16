@@ -95,15 +95,20 @@ class ValueNetLeafEvaluator:
 
     def __init__(self, model, *, expected_belief_fingerprint="",
                  expected_search_fingerprint="",
-                 expected_feature_contract_fingerprint="", value_scale=24.0,
-                 terminal_evaluator=None):
+                 expected_feature_contract_fingerprint="", value_scale=None,
+                 contract=None, terminal_evaluator=None):
+        from ..models.policy_value import ValueTransformContract
+
         self.model = model
         self.expected_belief_fingerprint = expected_belief_fingerprint
         self.expected_search_fingerprint = expected_search_fingerprint
-        self.value_scale = float(value_scale)
+        self.contract = contract or ValueTransformContract()
+        if value_scale is not None and abs(
+                float(value_scale) - float(self.contract.scale)) > 1e-9:
+            raise ValueError(
+                "value_scale contradicts the declared value transform contract")
+        self.contract_fingerprint = self.contract.fingerprint
         self.terminal_evaluator = terminal_evaluator or TerminalRolloutEvaluator()
-        if not math.isfinite(self.value_scale) or self.value_scale <= 0:
-            raise ValueError("value_scale must be finite and positive")
         manifest = getattr(model, "manifest", None)
         if manifest is None or not getattr(manifest, "calibrated", False):
             raise LeafModelMismatch("value model is not calibrated")
@@ -135,7 +140,8 @@ class ValueNetLeafEvaluator:
                 _, value = self.model(
                     torch.as_tensor(planes[None], dtype=torch.float32),
                     torch.as_tensor(scalars[None], dtype=torch.float32))
-            reward = float(value[0].item()) * self.value_scale
+            reward = self.contract.inverse_transform_value(
+                float(value[0].item()))
             if not math.isfinite(reward):
                 raise LeafModelMismatch("value model returned non-finite value")
             return LeafEvaluation("ok", reward, self.version)

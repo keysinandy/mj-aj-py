@@ -1,0 +1,195 @@
+{
+  "fingerprint": "0499522c1df50f8d0ba9980e",
+  "fingerprints": {
+    "belief_profile": "5b033e43c96714aa723a2ef8",
+    "feature_contract": "4b25b32cf4a3fbe5ca876a3a",
+    "model_manifest": "b3bfb95d60cc72f8f3f12d60",
+    "opponent_population": "eb8361a529b814880b2b6428",
+    "runtime_profile": "491906c0f2ca5f23898c947e",
+    "search_distillation": "aa19862bf92b1e7a6e19b43b",
+    "search_profile": "25d10ea812a3cf8a877a1947",
+    "teacher_budget": "fb19c9d1f68acc424e4467e4"
+  },
+  "git_revision": "8a94fdeb1a7801289f2bd707b24b271d99bb8961",
+  "oracle": false,
+  "profiles": {
+    "opponent_population": {
+      "fingerprint": "eb8361a529b814880b2b6428",
+      "members": [
+        [
+          "legacy",
+          1.0
+        ],
+        [
+          "shape-v1",
+          1.0
+        ],
+        [
+          "shape-v2",
+          1.0
+        ]
+      ],
+      "schema": "opponent-population-profile-v1",
+      "version": "opponent-population-v1"
+    },
+    "search_distillation": {
+      "ambiguity_weight": 0.5,
+      "belief_profile_fingerprint": "",
+      "catastrophic_regret_threshold": 24.0,
+      "continuation_version": "heuristic-likelihood-v1",
+      "critical_bucket_minimums": [
+        [
+          "hu",
+          128
+        ],
+        [
+          "piao",
+          16
+        ],
+        [
+          "baotou",
+          16
+        ],
+        [
+          "four-white-boards",
+          8
+        ],
+        [
+          "seven-pairs",
+          32
+        ],
+        [
+          "luxury-seven-pairs",
+          4
+        ],
+        [
+          "kong-closed",
+          16
+        ],
+        [
+          "kong-add",
+          16
+        ],
+        [
+          "kong-open",
+          16
+        ],
+        [
+          "pong-pass",
+          32
+        ],
+        [
+          "chow-pass",
+          32
+        ],
+        [
+          "zhuada-quan",
+          16
+        ],
+        [
+          "wall-tail",
+          64
+        ],
+        [
+          "reaction-cursor",
+          64
+        ],
+        [
+          "wild-discard-possible",
+          32
+        ]
+      ],
+      "feature_contract_fingerprint": "",
+      "fingerprint": "aa19862bf92b1e7a6e19b43b",
+      "full_evidence_simulations": 2048,
+      "generation": 0,
+      "lambda_q": 0.0,
+      "lambda_visit": 1.0,
+      "leaf_version": "terminal-rollout-v1",
+      "min_importance_weight": 0.25,
+      "opponent_population_fingerprint": "",
+      "oracle": false,
+      "policy_version_source": "",
+      "reset_weight": 0.5,
+      "rules_version": "hangzhou-platform-guide-v34",
+      "schema": "search-distillation-profile-v1",
+      "score_units": "hero_round_score_points",
+      "search_profile_fingerprint": "",
+      "target_mode": "visit",
+      "tau_gap": 2.0,
+      "tau_q": 4.0,
+      "teacher_budget_fingerprint": "",
+      "value_contract_fingerprint": "",
+      "value_weight": 0.0,
+      "variance_scale": null,
+      "version": "search-distill-v1"
+    },
+    "teacher_budget": {
+      "critical_tags": [
+        "baotou",
+        "four-white-boards",
+        "hu",
+        "kong-add",
+        "kong-closed",
+        "kong-open",
+        "luxury-seven-pairs",
+        "piao",
+        "zhuada-quan"
+      ],
+      "default_tier": 1,
+      "escalate_on_ambiguous": true,
+      "escalate_on_baseline_disagreement": true,
+      "escalate_on_critical_state": true,
+      "escalate_on_failure": true,
+      "escalate_on_incomplete": true,
+      "fingerprint": "fb19c9d1f68acc424e4467e4",
+      "forced_sanity_ratio": 0.03,
+      "hard_state_tier": 2,
+      "max_mean_variance": 144.0,
+      "min_q_gap": 2.0,
+      "min_visit_share": 0.55,
+      "reference_tier": 3,
+      "schema": "teacher-budget-profile-v1",
+      "search_seed": 0,
+      "tiers": [
+        512,
+        2048,
+        8192,
+        16000
+      ],
+      "version": "teacher-budget-v1"
+    }
+  },
+  "rules_version": "hangzhou-platform-guide-v34",
+  "schema": "search-teacher-distillation-bc/baseline-freeze-v1",
+  "score_units": "hero_round_score_points",
+  "source_sha256": {
+    "mj/decision/policy_v3.py": "7eabde680ac326a703ad9d87ae0bfe63717e6c012f20cbac77944db30c46ccf9",
+    "mj/decision/profile.py": "2fff69e9f01bd17d2f9522218d64673dba44a78f30ee0336c4ae80bd1f1819d7",
+    "mj/features.py": "e12901c40743a0c014bae2e8f58e56c6c7bcb8087fef418600316693e645ad56",
+    "mj/game.py": "433eae9c5a9fb8ce2c01b3293d0a6d67976f467e516d6766db902d6ab091bb72",
+    "mj/model.py": "a7c7d355925eb2e65dfd55f6c68f98096ec4c0b1fe3ddbf1a5b933a07449ac44",
+    "mj/models/policy_value.py": "5605c636594ef944c35992e1308e9bb57ae474c792b96beb0ff424e51e13ec43",
+    "mj/scoring.py": "4d44bda2eb95d0fc97a1e55d87a3215efed685edae576e1be159754dee6b3af6",
+    "mj/search/pomcp.py": "4f9755bacab1b85a8374f7aa49254e87cb4b702a019e6dd0fdac606ca7be99b6",
+    "mj/search/profile.py": "9423e150ee8db15aa6e2716cdbf747e4a7425ac00dace816f32c37eee812d9ef",
+    "mj/search/report.py": "a9cb5a95806f5fad30d413279135165b7f8438272ca9d4e0fec61b3dcf75cd04",
+    "mj/training/policy_value_train.py": "76bda81b8157c85eba88927463ca557f2be4578e9f83cb8ab61edc99afcdbb66",
+    "mj/training/search_data.py": "8b502dd0c13c974cb4df1869cbdf3ea674a1e485fa8406f7d6a873539711ad48",
+    "mj/win.py": "fdcab977393cbd89e509038c492489d809ab5ad2fb1a1d54f66548c8d53696fe"
+  },
+  "splits": {
+    "final_test": {
+      "games": 8192,
+      "seed_start": 242048
+    },
+    "train": {
+      "games": 1024,
+      "seed_start": 240000
+    },
+    "validation": {
+      "games": 1024,
+      "seed_start": 241024
+    }
+  }
+}

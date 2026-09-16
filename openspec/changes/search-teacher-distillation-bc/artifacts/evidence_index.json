@@ -1,0 +1,68 @@
+{
+  "schema": "search-teacher-distillation-bc/evidence-index-v1",
+  "baseline_freeze": {
+    "path": "openspec/changes/search-teacher-distillation-bc/artifacts/baseline_freeze.json",
+    "fingerprint": "0499522c1df50f8d0ba9980e",
+    "git_revision": "8a94fdeb1a7801289f2bd707b24b271d99bb8961",
+    "rules_version": "hangzhou-platform-guide-v34",
+    "score_units": "hero_round_score_points"
+  },
+  "artifacts": [
+    {
+      "kind": "teacher_dataset",
+      "produced_by": "scripts/search_teacher_generate.py --manifest-out",
+      "expected_path": "openspec/changes/search-teacher-distillation-bc/artifacts/dataset<k>.manifest.json",
+      "status": "code_ready_blocked_on_compute",
+      "contents": ["teacher_budget", "search_profile", "belief_profile", "population", "source_group_splits", "dataset_fingerprint", "report", "coverage", "feature_contract_fingerprint"]
+    },
+    {
+      "kind": "reference_context_set",
+      "produced_by": "scripts/search_teacher_generate.py --reference-out",
+      "expected_path": "data/distill/reference.jsonl",
+      "status": "code_ready_blocked_on_compute",
+      "constraint": "validation/final-test source groups only; freeze_reference_contexts rejects train leakage"
+    },
+    {
+      "kind": "bc_training",
+      "produced_by": "scripts/search_bc_train.py",
+      "expected_path": "runs/search_bc/gen<k>/training_manifest.json",
+      "status": "code_ready_blocked_on_compute",
+      "contents": ["distillation_profile", "train_profile", "dataset_fingerprint", "source_groups", "generations", "history", "skipped_rows", "model_manifest"]
+    },
+    {
+      "kind": "checkpoints",
+      "produced_by": "scripts/search_bc_train.py",
+      "expected_path": "runs/search_bc/gen<k>/epoch_<NNN>.pt",
+      "status": "code_ready_blocked_on_compute",
+      "contents": ["model", "manifest", "provenance", "history"]
+    },
+    {
+      "kind": "regret_selection",
+      "produced_by": "scripts/search_bc_eval.py",
+      "expected_path": "runs/search_bc/gen<k>/selection_report.json",
+      "status": "code_ready_blocked_on_compute",
+      "contents": ["mean/p50/p95 regret", "catastrophic rate", "KL", "top1 agreement", "bucket regret", "batch1 latency", "selection"]
+    },
+    {
+      "kind": "paired_score_and_population",
+      "produced_by": "scripts/search_bc_paired.py",
+      "expected_path": "runs/search_bc/gen<k>/paired_report.json",
+      "status": "code_ready_blocked_on_compute",
+      "requirements": ["minimum 4096 pairs", "source-game clustered bootstrap", "CI95_lower > 0 for superiority", "self_play/legacy_shape_v1/frozen_population reported separately"]
+    },
+    {
+      "kind": "release",
+      "produced_by": "mj.decision.release.write_release_manifest",
+      "expected_path": "openspec/changes/search-teacher-distillation-bc/artifacts/release.json",
+      "status": "blocked_on_compute_and_platform",
+      "requirements": ["illegal=0", "non-finite=0", "emergency=0", "batch1 p95 inside window", "ten-game concurrency", "three platform rooms", "kill switch and rollback checkpoint"]
+    }
+  ],
+  "promotion_evidence": {
+    "primary": "frozen_reference_mean_regret",
+    "paired_superiority": "CI95_lower(hero_round_score_points) > 0",
+    "gates": ["reference_regret", "paired_score", "population", "special_state", "runtime", "online_window"],
+    "rollback": "last-all-gates-passed"
+  },
+  "oracle": false
+}
