@@ -48,6 +48,164 @@ def _legal_post_kong_discards(context, hand, drawn):
     return tuple(tile for tile, count in enumerate(hand) if count > 0)
 
 
+def _ordinary_actions(context):
+    """Return only ordinary discards authorised by the current root set."""
+    if context.legal_actions:
+        return tuple(action for action in context.legal_actions
+                     if 0 <= int(action) < 34)
+    # An empty legal set is not a wildcard for root evaluation.  This fallback
+    # is retained only for value-object callers that explicitly omit a legal
+    # set; ``evaluate_root_context`` rejects that state before reaching here.
+    return tuple(tile for tile, count in enumerate(context.hand) if count > 0)
+
+
+def _discard_transition(context, tile, chain, chain_piao, is_piao):
+    """Serialize the rule-owned chain/catch-play part of a discard root.
+
+    The EV model intentionally does not simulate opponent actions.  It still
+    records the exact Game transition that determines the next legal window:
+    W starts a three-response catch-play ring, while a non-W discard consumes
+    one existing freeze slot.  Chain values come from ``ScoreValue.discard``
+    (the same adapter used by ``Game._do_discard``).
+    """
+    wild = int(tile) == 33
+    freeze_before = max(0, int(context.freeze))
+    freeze_after = 3 if wild else max(0, freeze_before - 1)
+    return {
+        "kind": "discard", "tile": int(tile),
+        "is_piao": bool(is_piao),
+        "chain": chain, "chain_piao": chain_piao,
+        "catch_play": wild,
+        "freezer_after_discard": (context.hero_seat if wild
+                                   else context.freezer),
+        "freeze_after_discard": freeze_after,
+        "live_wall_after_discard": context.live_wall,
+        "next_hero_draws": 4,
+    }
+
+
+def _chow_start(tile, action):
+    if tile < 0 or tile >= 27:
+        return None
+    pos = CHOW_LOW - int(action)
+    start = int(tile) - pos
+    suit_start = int(tile) - int(tile) % 9
+    if start < suit_start or start + 2 >= suit_start + 9:
+        return None
+    return start
+
+
+def _root_action_errors(context, actions):
+    """Check supplied candidates without replacing Game's legal authority.
+
+    Contexts are allowed to carry a deliberately narrowed candidate subset
+    for offline comparison, so this is a structural/rule check rather than an
+    equality check against a newly fabricated Game.  It prevents a malformed
+    public snapshot (for example a KONG in the dead-wall tail) from becoming a
+    seemingly valid one-action root.
+    """
+    errors = []
+    reaction = context.phase == "react" or str(context.phase).startswith(
+        "response")
+    if not actions:
+        return ("legal_actions_missing",)
+    if reaction:
+        if context.phase not in ("react", "response_peng", "response_chi"):
+            return ("unknown_reaction_window",)
+        ready = _reaction_context_ready(context)
+        # A missing cursor is a delegation condition, not a reason to infer a
+        # response order.  Keep all details in the explanation while using a
+        # stable root reason at the dispatch boundary.
+        if ready:
+            errors.extend(ready)
+        if (context.freeze > 0 and
+                context.hero_seat != context.freezer):
+            errors.append("reaction_frozen_actor")
+        tile = context.pending_tile
+        mode = None
+        if context.react_index is not None and context.react_claim_count is not None:
+            mode = ("claim" if int(context.react_index) < int(
+                context.react_claim_count) else "chow")
+        for action in actions:
+            action = int(action)
+            if action == PASS:
+                continue
+            if tile is None or tile == 33:
+                errors.append("wild_reaction_action")
+                continue
+            if mode == "claim":
+                if action == PONG and context.hand[tile] < 2:
+                    errors.append("illegal_pong")
+                elif action == KONG_OPEN and (
+                        context.hand[tile] != 3 or
+                        context.live_wall is None or context.live_wall <= 0):
+                    errors.append("illegal_open_kong")
+                elif action not in (PONG, KONG_OPEN):
+                    errors.append("reaction_action_mode_mismatch")
+            elif mode == "chow":
+                start = _chow_start(tile, action)
+                if action in (CHOW_LOW, CHOW_MID, CHOW_HIGH):
+                    if (start is None or
+                            context.chows[context.hero_seat] >= 2 or
+                            any(context.hand[value] <= 0 for value in
+                                (start, start + 1, start + 2)
+                                if value != tile)):
+                        errors.append("illegal_chow")
+                else:
+                    errors.append("reaction_action_mode_mismatch")
+            else:
+                errors.append("response_cursor_missing")
+        return tuple(sorted(set(errors)))
+
+    if context.phase not in ("discard", "draw"):
+        return ("unknown_root_phase",)
+    for action in actions:
+        action = int(action)
+        if 0 <= action < 34:
+            if context.hand[action] <= 0:
+                errors.append("discard_not_in_hand")
+            elif (context.freeze > 0 and
+                  context.hero_seat != context.freezer and
+                  context.drawn != action):
+                errors.append("freeze_discard_mismatch")
+            continue
+        if action == HU:
+            if context.drawn is None:
+                errors.append("hu_without_draw")
+            elif all(value is not None for value in (
+                    context.dealer, context.base, context.chain_count,
+                    context.chain_piao)):
+                scorer = ScoreValue(
+                    context.dealer, context.base,
+                    bool(context.you_cai_bi_kao), context.hero_seat)
+                breakdown = scorer.hu(
+                    context.hand,
+                    scorer.standing_before_draw(context.hand, context.drawn),
+                    context.locked, context.drawn, context.kong_draw,
+                    context.chain_count, context.chain_piao)
+                if not breakdown.legal:
+                    errors.append("hu_not_legal")
+            continue
+        decoded = _decode_kong(action)
+        if decoded is None:
+            errors.append("unknown_root_action")
+            continue
+        kind, tile = decoded
+        if tile >= 33 or context.drawn is None:
+            errors.append("illegal_kong_tile_or_draw")
+        elif context.live_wall is None or context.live_wall <= 0:
+            errors.append("kong_wall_tail")
+        elif kind == "closed" and context.hand[tile] != 4:
+            errors.append("illegal_closed_kong")
+        elif kind == "add" and (
+                context.hand[tile] != 1 or
+                not any(meld == ("pong", tile)
+                        for meld in context.melds[context.hero_seat]) or
+                (context.freeze > 0 and context.hero_seat != context.freezer)):
+            errors.append("illegal_add_kong")
+    return tuple(sorted(set(errors)))
+
+
 def _context_after_kong_draw(context, kind, tile, draw):
     """Project a public KONG plus replacement draw transition.
 
@@ -55,6 +213,9 @@ def _context_after_kong_draw(context, kind, tile, draw):
     count is unchanged until the replacement tile is drawn.  No wall order or
     opponent hand identity is copied into this value object.
     """
+    if (context.live_wall is None or context.live_wall <= 0 or
+            not 0 <= int(draw) < 34 or context.remaining[int(draw)] <= 0):
+        return None
     hand = list(context.hand)
     remove = 4 if kind == "closed" else 1
     if hand[tile] < remove:
@@ -209,7 +370,9 @@ def _context_after_claim(context, action):
 
 def _context_after_open_kong_draw(context, tile, draw):
     """Project a KONG_OPEN claim followed by its replacement draw."""
-    if context.pending_tile != tile or context.pending_owner is None:
+    if (context.pending_tile != tile or context.pending_owner is None or
+            context.live_wall is None or context.live_wall <= 0 or
+            not 0 <= int(draw) < 34 or context.remaining[int(draw)] <= 0):
         return None
     hand = list(context.hand)
     if hand[tile] < 3:
@@ -281,7 +444,7 @@ def _evaluate_claim_context(context, action, profile, budget):
         ev1, ev2 = future_values(
             child, next_hand, post.locked, chain, piao,
             horizon=profile.horizon, budget=budget)
-        value = ev2 if profile.horizon >= 2 else ev1
+        value = (ev2 if profile.horizon >= 2 else ev1)
         if value is None:
             return None
         values.append((float(value), int(discard), bool(is_piao)))
@@ -293,6 +456,8 @@ def _evaluate_claim_context(context, action, profile, budget):
         "value": best[0], "best_discard": best[1],
         "is_piao": best[2], "post_locked": post.locked,
         "post_chain": post.chain_count, "post_chain_piao": post.chain_piao,
+        "transition": _discard_transition(
+            post, best[1], post.chain_count, post.chain_piao, best[2]),
         "source": "reaction_claim_transition",
         "evaluated_discards": len(values),
     }
@@ -344,7 +509,9 @@ def _evaluate_open_kong_reaction(context, profile, budget):
         if drawn is None:
             return None
         best = 0.0
-        for discard in drawn.legal_discards:
+        legal_discards = _legal_post_kong_discards(
+            drawn, hand_draw, draw)
+        for discard in legal_discards:
             budget.consume()
             next_hand, next_chain, next_piao, _ = scorer.discard(
                 hand_draw, discard, locked, chain, piao)
@@ -367,6 +534,12 @@ def _evaluate_open_kong_reaction(context, profile, budget):
         "source": "reaction_kong_transition",
         "post_locked": locked, "post_chain": chain,
         "post_chain_piao": piao,
+        "transition": {
+            "kind": "kong_open", "replacement_draw": True,
+            "locked": locked, "chain": chain, "chain_piao": piao,
+            "live_wall_after_replacement": max(
+                0, int(context.live_wall) - 1),
+        },
     }
 
 
@@ -380,7 +553,8 @@ def _evaluate_kong_context(context, action, profile, budget):
     hero draws, so a KONG replacement consumes the first one.
     """
     decoded = _decode_kong(action)
-    if decoded is None or context.live_wall is None or context.live_wall <= 0:
+    if (decoded is None or context.drawn is None or
+            context.live_wall is None or context.live_wall <= 0):
         return None
     if (context.dealer is None or context.base is None or
             context.chain_count is None or context.chain_piao is None):
@@ -388,11 +562,14 @@ def _evaluate_kong_context(context, action, profile, budget):
     kind, kong_tile = decoded
     before = list(context.hand)
     remove = 4 if kind == "closed" else 1
-    if before[kong_tile] < remove:
+    if kong_tile >= 33 or before[kong_tile] < remove:
         return None
     if kind == "add" and not any(
             meld == ("pong", kong_tile)
             for meld in context.melds[context.hero_seat]):
+        return None
+    if (kind == "add" and context.freeze > 0 and
+            context.hero_seat != context.freezer):
         return None
     before[kong_tile] -= remove
     locked = context.locked + (1 if kind == "closed" else 0)
@@ -469,7 +646,9 @@ def _evaluate_kong_context(context, action, profile, budget):
         "winning_tiles": tuple(winning_tiles),
         "win_probability": winning_mass / total_mass,
         "source": "public_kong_transition",
-        "transition": {"locked": locked, "chain": chain,
+        "transition": {"kind": "kong_" + kind,
+                        "replacement_draw": True, "locked": locked,
+                        "chain": chain,
                         "chain_piao": chain_piao,
                         "live_wall_after_replacement": max(
                             0, int(context.live_wall) - 1)},
@@ -486,10 +665,12 @@ def _evaluate_reaction_context(context, profile, budget):
     """
     reasons = _reaction_context_ready(context)
     if reasons:
-        return _delegated(context, profile, "reaction_context_incomplete")
+        return _delegated(context, profile, "reaction_context_incomplete",
+                          budget=budget)
     if (context.chain_count is None or context.chain_piao is None or
             context.dealer is None or context.base is None):
-        return _delegated(context, profile, "reaction_score_context_missing")
+        return _delegated(context, profile, "reaction_score_context_missing",
+                          budget=budget)
     try:
         owner = int(context.pending_owner)
         first_draws = (int(context.hero_seat) - owner) % 4
@@ -499,13 +680,18 @@ def _evaluate_reaction_context(context, profile, budget):
             context, context.hand, context.locked, context.chain_count,
             context.chain_piao, horizon=profile.horizon, budget=budget,
             first_draws=first_draws)
-        pass_value = pass_ev2 if profile.horizon >= 2 else pass_ev1
+        pass_value = (pass_ev2 if profile.horizon >= 2 else pass_ev1)
         if pass_value is None:
-            return _delegated(context, profile, "reaction_pass_layer_incomplete")
+            return _delegated(context, profile,
+                              "reaction_pass_layer_incomplete", budget=budget)
+        unknown = context.unknown_pool
         candidates = [{
             "action": PASS, "name": "PASS", "legal": True,
             "value": float(pass_value), "Q": float(pass_value),
             "source": "reaction_pass_baseline",
+            "threshold_unit": profile.reward_units,
+            "threshold_formula": "Q_claim-Q_pass >= tau[action]",
+            "unknown_pool": unknown,
             "response_index": int(context.react_index),
             "remaining_response_order": list(
                 context.react_seq[int(context.react_index) + 1:]),
@@ -521,13 +707,16 @@ def _evaluate_reaction_context(context, profile, budget):
                 candidate = _evaluate_claim_context(
                     context, action, profile, budget)
             else:
-                return _delegated(context, profile,
-                                  "reaction_unknown_action")
+                return _delegated(context, profile, "reaction_unknown_action",
+                                  budget=budget)
             if candidate is None or not math.isfinite(float(candidate["value"])):
                 return _delegated(context, profile,
-                                  "reaction_layer_incomplete")
+                                  "reaction_layer_incomplete", budget=budget)
             candidate.update({
                 "legal": True, "Q": candidate["value"],
+                "threshold_unit": profile.reward_units,
+                "threshold_formula": "Q_claim-Q_pass >= tau[action]",
+                "unknown_pool": context.unknown_pool,
                 "response_index": int(context.react_index),
                 "remaining_response_order": list(
                     context.react_seq[int(context.react_index) + 1:]),
@@ -541,7 +730,6 @@ def _evaluate_reaction_context(context, profile, budget):
                     return float(profile.tau[key])
             return 0.0
 
-        unknown = context.unknown_pool
         accepted = []
         for candidate in candidates:
             if candidate["action"] == PASS:
@@ -575,9 +763,14 @@ def _evaluate_reaction_context(context, profile, budget):
             scope=profile.scope, context_hash=context.context_hash,
             level="V2-ROOT", selected=int(selected),
             candidates=tuple(candidates), reason="shape_v2_reaction_same_unit",
-            missing_fields=(), complete=True)
+            missing_fields=(), complete=True, nodes=budget.nodes,
+            kernel_calls=budget.kernel_calls,
+            elapsed_ms=round(budget.elapsed_ms, 3),
+            budget={"node_limit": budget.limit,
+                    "time_limit_ms": budget.time_ms})
     except (BudgetExceeded, ContextError, ValueError, IndexError):
-        return _delegated(context, profile, "reaction_layer_incomplete")
+        return _delegated(context, profile, "reaction_layer_incomplete",
+                          budget=budget)
 
 
 @dataclass(frozen=True)
@@ -594,6 +787,10 @@ class RootEvaluation:
     missing_fields: tuple = ()
     complete: bool = True
     counterfactual: bool = False
+    nodes: int = 0
+    kernel_calls: int = 0
+    elapsed_ms: float = 0.0
+    budget: dict | None = None
 
     def as_json(self):
         return {
@@ -606,15 +803,24 @@ class RootEvaluation:
             "delegated_reason": self.delegated_reason,
             "missing_fields": list(self.missing_fields),
             "complete": self.complete, "counterfactual": self.counterfactual,
+            "nodes": self.nodes, "kernel_calls": self.kernel_calls,
+            "elapsed_ms": self.elapsed_ms, "budget": self.budget,
         }
 
 
-def _delegated(context, profile, reason, selected=None):
+def _delegated(context, profile, reason, selected=None, *, budget=None):
     return RootEvaluation(
         profile=profile.name, profile_fingerprint=profile.fingerprint,
         scope=profile.scope, context_hash=context.context_hash,
         level="legacy", selected=selected, candidates=(), reason=reason,
-        delegated_reason=reason, missing_fields=tuple(context.missing_fields))
+        delegated_reason=reason, missing_fields=tuple(context.missing_fields),
+        complete=(reason == "only_legal_action"),
+        nodes=budget.nodes if budget is not None else 0,
+        kernel_calls=budget.kernel_calls if budget is not None else 0,
+        elapsed_ms=round(budget.elapsed_ms, 3) if budget is not None else 0.0,
+        budget=({"node_limit": budget.limit,
+                 "time_limit_ms": budget.time_ms}
+                if budget is not None else None))
 
 
 def _discard_profile(profile):
@@ -627,11 +833,44 @@ def evaluate_root_context(context: PublicDecisionContext,
                           profile: ProfileSpec | None = None,
                           *, legacy_action=None):
     """Evaluate a supported root or return an explicit scope delegation."""
-    profile = profile or ProfileSpec.shape_v2(scope="all-root")
+    profile = profile or ProfileSpec.shape_v2_all_root()
     if profile.scope == "discard":
         raise ContextError("root evaluator requires hu-piao or all-root scope")
-    context.validate_for("fast")
+    try:
+        context.validate_for("fast")
+    except ContextError:
+        # Unsupported public windows (notably an unknown/partial reaction
+        # snapshot) are a normal delegation boundary.  Truly malformed
+        # material still raises so a caller cannot mistake corruption for a
+        # valid legacy decision.
+        if context.missing_fields or context.unsupported:
+            return _delegated(context, profile, "context_unsupported",
+                              legacy_action)
+        raise
     actions = tuple(context.legal_actions)
+    if not actions:
+        return _delegated(context, profile, "legal_actions_missing",
+                          legacy_action)
+    if context.phase in ("react", "response_peng", "response_chi"):
+        # A complete response action set is still not enough to evaluate the
+        # root when the ordered cursor/pending river is missing.  Check this
+        # before the one-action shortcut and before action-shape validation so
+        # an incomplete snapshot cannot be mislabeled as an authoritative
+        # special-action decision.
+        readiness = _reaction_context_ready(context)
+        context_reasons = {
+            "pending_missing", "hero_not_response_actor",
+            "response_order_missing", "response_cursor_invalid",
+            "response_cursor_not_hero", "response_claim_count_missing",
+            "hero_pending_owner", "pending_not_river",
+        }
+        if any(reason in context_reasons for reason in readiness):
+            return _delegated(context, profile,
+                              "reaction_context_incomplete", legacy_action)
+    action_errors = _root_action_errors(context, actions)
+    if action_errors:
+        return _delegated(context, profile, "root_legal_action_invalid",
+                          legacy_action)
     if len(actions) == 1:
         return _delegated(context, profile, "only_legal_action", actions[0])
     if context.phase not in ("discard", "draw"):
@@ -658,30 +897,36 @@ def evaluate_root_context(context: PublicDecisionContext,
         return _delegated(context, profile, "root_compare_uncalibrated",
                           legacy_action)
     budget = DecisionBudget(profile.node_budget, profile.time_budget_ms)
-    try:
-        discard_result = evaluate_discard_context(
-            context, _discard_profile(profile), level="EV2", budget=budget,
-            legacy_best=(legacy_action if legacy_action is not None and
-                         0 <= int(legacy_action) < 34 else None))
-    except BudgetExceeded:
-        return _delegated(context, profile, "root_budget_exceeded",
-                          legacy_action)
-    if discard_result.level not in ("V2-EV1", "V2-EV2") or any(
-            c.value is None for c in discard_result.candidates):
-        return _delegated(context, profile, "root_discard_layer_incomplete",
-                          legacy_action)
-
-    candidates = [{
-        "action": c.tile, "legal": True, "value": c.value,
-        "Q": c.value, "EV1": c.ev1, "EV2": c.ev2,
-        "shanten": c.shanten, "U1": c.u1,
-        "waits": list(c.waits), "q0": c.q0,
-        "post_chain": c.post_chain,
-        "post_chain_piao": c.post_chain_piao,
-        "is_piao": c.is_piao, "discarded_wild": c.discarded_wild,
-        "post_locked": c.post_locked,
-        "source": "discard_scope",
-    } for c in discard_result.candidates]
+    ordinary = _ordinary_actions(context)
+    candidates = []
+    if ordinary:
+        try:
+            discard_result = evaluate_discard_context(
+                context, _discard_profile(profile), level="EV2", budget=budget,
+                legacy_best=(legacy_action if legacy_action is not None and
+                             0 <= int(legacy_action) < 34 else None),
+                legal_discards=ordinary)
+        except BudgetExceeded:
+            return _delegated(context, profile, "root_budget_exceeded",
+                              legacy_action, budget=budget)
+        if discard_result.level not in ("V2-EV1", "V2-EV2") or any(
+                c.value is None for c in discard_result.candidates):
+            return _delegated(context, profile,
+                              "root_discard_layer_incomplete", legacy_action,
+                              budget=budget)
+        candidates.extend({
+            "action": c.tile, "legal": True, "value": c.value,
+            "Q": c.value, "EV1": c.ev1, "EV2": c.ev2,
+            "shanten": c.shanten, "U1": c.u1,
+            "waits": list(c.waits), "q0": c.q0,
+            "post_chain": c.post_chain,
+            "post_chain_piao": c.post_chain_piao,
+            "is_piao": c.is_piao, "discarded_wild": c.discarded_wild,
+            "post_locked": c.post_locked,
+            "transition": _discard_transition(
+                context, c.tile, c.post_chain, c.post_chain_piao, c.is_piao),
+            "source": "discard_scope",
+        } for c in discard_result.candidates)
     if HU in actions:
         scorer = ScoreValue(context.dealer, context.base,
                             bool(context.you_cai_bi_kao), context.hero_seat)
@@ -692,10 +937,12 @@ def evaluate_root_context(context: PublicDecisionContext,
             context.chain_count, context.chain_piao)
         if not breakdown.legal:
             return _delegated(context, profile, "hu_context_not_legal",
-                              legacy_action)
+                              legacy_action, budget=budget)
         candidates.append({
             "action": HU, "legal": True, "value": breakdown.reward,
             "Q": breakdown.reward, "instant_hu": breakdown.as_json(),
+            "transition": {"kind": "hu", "immediate": True,
+                           "live_wall_after_action": context.live_wall},
             "source": "score_value",
         })
     for action in actions:
@@ -705,10 +952,10 @@ def evaluate_root_context(context: PublicDecisionContext,
             kong = _evaluate_kong_context(context, action, profile, budget)
         except (BudgetExceeded, ContextError, ValueError):
             return _delegated(context, profile, "root_kong_layer_incomplete",
-                              legacy_action)
+                              legacy_action, budget=budget)
         if kong is None or not math.isfinite(float(kong["value"])):
             return _delegated(context, profile, "root_kong_layer_incomplete",
-                              legacy_action)
+                              legacy_action, budget=budget)
         candidates.append({
             "action": int(action), "legal": True,
             "value": float(kong["value"]), "Q": float(kong["value"]),
@@ -723,12 +970,16 @@ def evaluate_root_context(context: PublicDecisionContext,
         profile=profile.name, profile_fingerprint=profile.fingerprint,
         scope=profile.scope, context_hash=context.context_hash,
         level="V2-ROOT", selected=selected, candidates=tuple(candidates),
-        reason="shape_v2_root_same_unit", missing_fields=(), complete=True)
+        reason="shape_v2_root_same_unit", missing_fields=(), complete=True,
+        nodes=budget.nodes, kernel_calls=budget.kernel_calls,
+        elapsed_ms=round(budget.elapsed_ms, 3),
+        budget={"node_limit": budget.limit,
+                "time_limit_ms": budget.time_ms})
 
 
 def choose_root_game_action(game, seat, profile=None):
     """Project a game, obtain a legacy fallback, then evaluate the root."""
-    profile = profile or ProfileSpec.shape_v2(scope="all-root")
+    profile = profile or ProfileSpec.shape_v2_all_root()
     context = PublicDecisionContext.from_game(game, seat)
     from ..bot import choose_action
     legacy = choose_action(game, seat, evaluator="legacy")

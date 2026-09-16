@@ -460,17 +460,17 @@ def choose_shape_action(g, seat):
     return evaluate_reaction(g, seat)
 
 
-def choose_shape_v2_action(g, seat):
-    """Opt-in shape-v2 ordinary-discard evaluator.
+def choose_shape_v2_action(g, seat, profile=None):
+    """Opt-in shape-v2 evaluator using the profile's explicit action scope.
 
-    The v2 scope is deliberately narrow in this first release.  HU/piao,
-    KONG, and reaction actions are delegated to the legacy path (which now
-    evaluates self-kong choices using the v33 draw-window helper); the returned
-    explanation records that delegation explicitly.
+    The default remains ``discard``.  Calibrated ``hu-piao`` and ``all-root``
+    profiles are available to offline/root callers; unsupported or incomplete
+    transitions return a legacy action with an explicit delegation reason.
     """
     from .decision.fast_ev import choose_game_action
     from .decision.profile import ProfileSpec
-    return choose_game_action(g, seat, ProfileSpec.shape_v2_discard())
+    return choose_game_action(
+        g, seat, profile or ProfileSpec.shape_v2_discard())
 
 
 def choose_action(g, seat, evaluator="legacy", return_evaluation=False):

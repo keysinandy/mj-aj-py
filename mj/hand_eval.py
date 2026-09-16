@@ -1732,6 +1732,25 @@ def evaluate_reaction(g, seat, profile=None):
     level = "Q" if q_complete else "Q0"
     pass_ev = next(item[1] for item in options if item[0] == PASS)
     pass_s = pass_ev.shanten
+    # Keep the shape-v1 boundary explicit in the explanation.  The threshold
+    # is a versioned normalized-Q comparison, not a hidden hard filter; the
+    # same value helper is used by selection and serialization so a logged
+    # decision can be recomputed without guessing which layer ran.
+    unknown_pool = max(0, sum(max(0, 4 - x) for x in ctx.visible))
+
+    def option_value(ev):
+        value = (ev.q if level == "Q" and ev.q is not None else ev.q0)
+        return float(value)
+
+    pass_value = option_value(pass_ev)
+
+    def threshold_for(action):
+        if action == PASS or unknown_pool <= 0:
+            return None
+        base = (2 if action == PONG else 4) / unknown_pool
+        multiplier = (profile.tau_pong_multiplier if action == PONG
+                      else profile.tau_chow_multiplier)
+        return float(base * multiplier)
 
     def allowed(item):
         action, ev, _discard, _ci, _spec, _hand = item
@@ -1741,16 +1760,10 @@ def evaluate_reaction(g, seat, profile=None):
             return True
         if ev.shanten > pass_s:
             return False
-        n = max(0, sum(max(0, 4 - x) for x in ctx.visible))
-        if n <= 0:
+        threshold = threshold_for(action)
+        if threshold is None:
             return False
-        tau = (2 if action == PONG else 4) / n
-        mult = (profile.tau_pong_multiplier if action == PONG
-                else profile.tau_chow_multiplier)
-        value = ev.q if level == "Q" and ev.q is not None else ev.q0
-        pass_value = (pass_ev.q if level == "Q" and pass_ev.q is not None
-                      else pass_ev.q0)
-        return value - pass_value >= tau * mult
+        return option_value(ev) - pass_value >= threshold
 
     accepted = [item for item in options if allowed(item)]
     if not accepted:
@@ -1774,6 +1787,18 @@ def evaluate_reaction(g, seat, profile=None):
         data.update({"action": item_action, "best_discard": discard,
                      "accepted": any(item_action == x[0]
                                      for x in accepted)})
+        if item_action != PASS:
+            value = option_value(ev)
+            threshold = threshold_for(item_action)
+            data.update({
+                "pass_shanten": pass_s,
+                "pass_value": pass_value,
+                "delta_vs_pass": value - pass_value,
+                "tau": threshold,
+                "threshold_unit": "normalized_Q",
+                "threshold_formula": "Q_claim-Q_pass >= tau[action]",
+                "unknown_pool": unknown_pool,
+            })
         serialized.append(data)
     return action, {
         "version": profile.name, "profile": profile.name,
@@ -1781,6 +1806,11 @@ def evaluate_reaction(g, seat, profile=None):
         "level": level, "reason": "shape_reaction" if q_complete
         else "shape_reaction_q0_fallback", "selected": action,
         "candidates": serialized, "pass": pass_ev.as_json(),
+        "threshold": {
+            "unit": "normalized_Q", "formula":
+            "Q_claim-Q_pass >= tau[action]", "unknown_pool": unknown_pool,
+            "layer": level,
+        },
         "nodes": budget.nodes, "kernel_calls": budget.kernel_calls,
         "elapsed_ms": round(budget.elapsed_ms, 3),
         "fallback_reason": None if q_complete

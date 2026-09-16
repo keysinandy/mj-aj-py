@@ -156,8 +156,10 @@ P5 的模型增加合法 HU 与继续动作价值比较；P6 补充不同 action
 evidence manifest 的 strict 模式还会校验 split 自身 fingerprint 以及完整
 reward/belief/tail 契约。校准 `all-root` helper 已覆盖自摸暗杠/加杠的公开
 补牌层，并对完整权威响应游标提供 PASS/CHOW/PONG/明杠的本家 fast comparison；
-未知或模式不一致的响应上下文仍 legacy。反应窗口的完整多玩家 continuation、
-独立 teacher 和对应 P5/P6 闸门仍未完成。
+`bot_ev_root_teacher.py` 固定 public fixture 的 paired teacher，
+`bot_react_perf.py` 单独报告反应 p95、完整层级和十窗口并发回退率。未知或模式
+不一致的响应上下文仍 legacy。反应窗口的完整多玩家 continuation 与对应
+P5/P6 线上发布闸门仍未完成。
 
 序贯淘汰和“置信胜出”需要预先冻结、控制多候选/多次查看错误率的方法。实现首个正确参考可采用有界收益的同时区间，为有限检查点和候选对分配总 alpha=0.05；收益界必须来自规则证明，不能取观测最大值或裁剪大番。普通 t/正态区间重复检查只能作诊断，不能授权置信淘汰。若正确区间因高番过宽，达到 Nmax 输出 `ambiguous=true`，不强造标签；后续更紧方法需独立统计验证和新版本。
 

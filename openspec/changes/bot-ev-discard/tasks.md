@@ -47,10 +47,10 @@
 
 ## 7. HU/财飘、KONG 和反应动作扩展
 
-- [ ] 7.1 在普通舍牌 scope 通过后实现 hu-piao 根动作即时 HU vs 财飘继续价值，复用规则链/抓打圈并建立专用 fixture/teacher。
-- [ ] 7.2 在 hu-piao 闸门通过后实现 all-root 暗杠/加杠补牌、墙尾限制和根动作同单位比较；保持合法动作权威。
-- [ ] 7.3 为反应窗口恢复完整响应顺序和上下文适配，比较 PASS/CHOW/PONG/KONG_OPEN，未知窗口拒绝 teacher 并保留 legacy。
-- [ ] 7.4 重基 `bot-react-decision` delta，逐项验证 shape-v1/legacy 与 v2 scope 的门槛、七对、visible 和性能边界。
+- [x] 7.1 在普通舍牌 scope 通过后实现 hu-piao 根动作即时 HU vs 财飘继续价值，复用规则链/抓打圈并建立专用 fixture/teacher。
+- [x] 7.2 在 hu-piao 闸门通过后实现 all-root 暗杠/加杠补牌、墙尾限制和根动作同单位比较；保持合法动作权威。
+- [x] 7.3 为反应窗口恢复完整响应顺序和上下文适配，比较 PASS/CHOW/PONG/KONG_OPEN，未知窗口拒绝 teacher 并保留 legacy。
+- [x] 7.4 重基 `bot-react-decision` delta，逐项验证 shape-v1/legacy 与 v2 scope 的门槛、七对、visible 和性能边界。
 
 ## 8. 性能、线上验收与发布
 

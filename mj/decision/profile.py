@@ -103,6 +103,26 @@ class ProfileSpec:
         values.update(changes)
         return cls.shape_v2(**values)
 
+    @classmethod
+    def shape_v2_hu_piao(cls, **changes) -> "ProfileSpec":
+        """Return the independently gated HU/财飘 root profile."""
+        values = {"scope": "hu-piao", "calibration_kind": "hu-piao"}
+        values.update(changes)
+        return cls.shape_v2(**values)
+
+    @classmethod
+    def shape_v2_all_root(cls, **changes) -> "ProfileSpec":
+        """Return the all-root profile after the HU/财飘 gate.
+
+        The scope is explicit in the profile payload and fingerprint.  No
+        caller can accidentally turn a discard profile into a KONG/reaction
+        profile by reusing an online default.
+        """
+        values = {"scope": "all-root", "calibration_kind": "all-root",
+                  "horizon": 1}
+        values.update(changes)
+        return cls.shape_v2(**values)
+
     def payload(self) -> dict:
         """Canonical profile data excluding its derived fingerprint."""
         value = asdict(self)

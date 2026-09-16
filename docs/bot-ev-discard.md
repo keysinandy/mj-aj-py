@@ -3,8 +3,10 @@
 `shape-v2` 默认是保持关闭的 `discard`-scope opt-in 评价器。它枚举所有合法
 普通舍牌，使用公开信息、规则计分适配器和最多两次本家未来摸牌的 EV2 特征；
 默认入口中的 HU/财飘、KONG 和反应窗口仍由 legacy 委托路径处理。显式的
-校准 `all-root` profile 另有公开 HU/财飘、KONG 和完整响应游标 fast helper，
-但尚未满足独立 teacher、性能和线上发布闸门，不能当作默认全动作策略。
+`hu-piao`/`all-root` profile 另有公开 HU/财飘、KONG 和完整响应游标 fast helper，
+并配有专用 public fixture/teacher 与反应压测探针；独立收益、性能和线上发布
+闸门仍未全部满足，不能当作默认全动作策略。`all-root` 工厂 profile 默认用一
+次未来本家摸牌的反应层，若要做更深离线比较可显式提高 `horizon`。
 其中 v33 杠后补牌的暗杠/补杠会在公开信息下比较下一张补牌的积分期望，
 shape-v2 本身仍只评价普通舍牌，不把该策略升级宣称为 EV2 全动作评价。
 
@@ -64,6 +66,17 @@ python3 scripts/bot_shape_perf.py --interleaved \
 `performance_gate_passed` 会保持 false，不能用回退路径的吞吐替代完整 EV2
 覆盖。校准证据需要额外使用 `--strict-evidence` 检查 split/profile/kernel
 指纹自洽。
+
+HU/财飘、KONG 和反应根动作使用独立的 public fixture/teacher 与反应窗口
+scope 探针：
+
+```shell
+PYTHONPATH=. python3 scripts/bot_ev_root_teacher.py --n0 32 --batch 32 --nmax 512
+PYTHONPATH=. python3 scripts/bot_react_perf.py --repetitions 3 --concurrent-games 10
+```
+
+反应报告必须同时查看 `level`、`fallback_rate`、`nodes`、`kernel_calls` 和
+`p50/p95/p99/max`；legacy 委托或不完整 v2 不能被当成性能通过。
 
 `bot_ev_score_eval.py` 和 `bot_ev_regret.py` 产生的比较均带有
 `counterfactual_evaluation=true`、`oracle=false`，不能当作线上实际动作证据。

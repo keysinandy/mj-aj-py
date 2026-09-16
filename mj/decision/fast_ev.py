@@ -20,6 +20,7 @@ from .frontier import (discard_frontier, discard_frontier_batch,
 from .profile import ProfileSpec
 from .score_value import ScoreValue, theoretical_reward_bound
 from ..tiles import W
+from ..win import is_win
 
 
 MODEL_ASSUMPTION = "uniform_unseen_no_opponent_actions_score_v1"
@@ -292,6 +293,16 @@ def future_values(context: PublicDecisionContext, root_hand, locked,
             continue
         budget.consume()
         hand2, rem2 = _apply_draw(root_hand, rem, tile)
+        # Avoid constructing a full ScoreValue gate for the overwhelmingly
+        # common non-winning draw.  The exact ScoreValue path remains the
+        # authority for winning tiles (including YCBK, standing13 and the
+        # settlement multiplier).
+        if not is_win(hand2, locked):
+            if horizon < 2 or live_after < 4:
+                continue
+            pending.append((tile, left, hand2, rem2,
+                            tuple(4 - value for value in rem2)))
+            continue
         breakdown = scorer.hu(
             hand2, scorer.standing_before_draw(hand2, tile), locked,
             tile, False, chain_count, chain_piao)
@@ -388,7 +399,8 @@ def _legacy_fallback_result(context, profile, reason, selected=None,
 
 def evaluate_discard_context(context: PublicDecisionContext,
                              profile: ProfileSpec | None = None,
-                             *, level="EV2", budget=None, legacy_best=None):
+                             *, level="EV2", budget=None, legacy_best=None,
+                             legal_discards=None):
     """Evaluate every legal ordinary discard from a public context."""
     profile = profile or ProfileSpec.shape_v2_discard()
     if profile.scope != "discard":
@@ -399,7 +411,14 @@ def evaluate_discard_context(context: PublicDecisionContext,
     started = budget or DecisionBudget(profile.node_budget, profile.time_budget_ms)
     runtime_kernel = profile.kernel_version
     try:
-        frontier = discard_frontier(context, use_rust=True)
+        # Root scopes may carry HU/KONG/reaction actions beside ordinary
+        # discards.  ``PublicDecisionContext.legal_discards`` deliberately
+        # falls back to every tile in the hand when no ordinary action is
+        # present, which is useful for a standalone discard context but would
+        # manufacture candidates for a special-action-only root.  The root
+        # caller therefore supplies its explicit ordinary subset here.
+        frontier = discard_frontier(
+            context, legal_discards=legal_discards, use_rust=True)
         kernels = {item.kernel for item in frontier}
         runtime_kernel = ",".join(sorted(kernels)) or runtime_kernel
         if any(not kernel.startswith("python-") for kernel in kernels):

@@ -72,6 +72,13 @@ class Mirror:
         # 已响应窗口:(round_no, 弃牌事件序号, 窗口种类)
         self._responded = set()
         self._n_discard_events = 0
+        # Optional authoritative response cursor.  ``responding_seats`` is
+        # only an authorization projection and is deliberately not enough to
+        # reconstruct priority order or completed responses.
+        self.response_order = ()
+        self.response_index = None
+        self.response_claim_count = None
+        self.response_source = None
 
     # ---------- 锚点:全量快照(实测字段,2026-09-08 探针) ----------
 
@@ -120,9 +127,10 @@ class Mirror:
             self._pops = 84 - snap["wall_remaining"]
         # 响应窗:pending = (出牌者, last_discard);turn 实测为出牌者
         phase = snap.get("phase")
+        self._restore_response_cursor(snap, phase)
         self._restore_draw_origin(snap, god, phase)
         ld = snap.get("last_discard")
-        if phase in ("response_peng", "response_chi") and ld:
+        if phase in ("react", "response_peng", "response_chi") and ld:
             owner = snap.get("turn")
             if owner is not None and 0 <= owner <= 3:
                 self.pending = (owner, tidx(ld))
@@ -148,6 +156,64 @@ class Mirror:
                 self.freeze, self.freezer = 3, -1
         elif self.freezer == -1 and self.freeze > 0:
             self.freeze = 0
+
+    def _restore_response_cursor(self, snap, phase):
+        """Restore an explicit ordered response cursor when the protocol has one.
+
+        A snapshot's ``responding_seats`` may omit seats that already passed,
+        so deriving ``react_seq`` from it would manufacture a different
+        continuation.  Unknown/partial response metadata remains unsupported
+        for v2 teacher evaluation and keeps the legacy placeholder path.
+        """
+        if phase not in ("react", "response_peng", "response_chi"):
+            self.response_order = ()
+            self.response_index = None
+            self.response_claim_count = None
+            self.response_source = None
+            return
+        nested = snap.get("response")
+        nested = nested if isinstance(nested, dict) else {}
+        missing = object()
+
+        def pick(*names):
+            for name in names:
+                if name in snap:
+                    return snap[name]
+                if name in nested:
+                    return nested[name]
+            return missing
+
+        order = pick("response_order", "responseOrder", "react_seq",
+                     "reactSeq", "order")
+        index = pick("response_index", "responseIndex", "react_index",
+                     "reactIndex", "react_idx", "reactIdx", "index")
+        claim_count = pick("response_claim_count", "responseClaimCount",
+                           "react_claim_count", "reactClaimCount",
+                           "claim_count", "claimCount", "n_claim", "nClaim")
+        if order is missing or index is missing or claim_count is missing:
+            self.response_order = ()
+            self.response_index = None
+            self.response_claim_count = None
+            self.response_source = None
+            return
+        try:
+            order = tuple(int(x) for x in order)
+            index = int(index)
+            claim_count = int(claim_count)
+        except (TypeError, ValueError) as exc:
+            raise MirrorInconsistent(
+                f"响应游标字段格式错误: order={order!r}, index={index!r}, "
+                f"claim_count={claim_count!r}") from exc
+        if (not order or any(x < 0 or x >= 4 for x in order) or
+                not 0 <= index < len(order) or
+                not 0 <= claim_count <= len(order)):
+            raise MirrorInconsistent(
+                f"响应游标越界: order={order!r}, index={index}, "
+                f"claim_count={claim_count}")
+        self.response_order = order
+        self.response_index = index
+        self.response_claim_count = claim_count
+        self.response_source = "explicit_snapshot"
 
     def _restore_draw_origin(self, snap, god, phase):
         """Restore the current draw source across FULL/gap snapshots.
@@ -456,7 +522,7 @@ class Mirror:
     def build_game(self, phase):
         """按决策阶段构建引擎 Game(仅当前决策所需字段,他家暗手置零)。
 
-        phase ∈ {"draw", "response_peng", "response_chi"}。
+        phase ∈ {"draw", "react", "response_peng", "response_chi"}。
         """
         g = Game.__new__(Game)
         g.dealer = self.dealer
@@ -488,7 +554,7 @@ class Mirror:
             g.react_seq = [self.me]
             g.react_idx = 0
             g._n_claim = 0
-        elif phase in ("response_peng", "response_chi"):
+        elif phase in ("react", "response_peng", "response_chi"):
             if self.pending is None:
                 raise MirrorInconsistent(f"{phase} 无 pending")
             if self.pending[0] == self.me:
@@ -508,9 +574,24 @@ class Mirror:
                     f"{phase} pending 非下家(陈旧/失效窗口)")
             g.phase = "react"
             g.pending = self.pending
-            g.react_seq = [self.me]
-            g.react_idx = 0
-            g._n_claim = 1 if phase == "response_peng" else 0
+            if (self.response_order and self.response_index is not None and
+                    self.response_claim_count is not None):
+                g.react_seq = list(self.response_order)
+                g.react_idx = int(self.response_index)
+                g._n_claim = int(self.response_claim_count)
+            else:
+                if phase == "react":
+                    # Unlike the platform-specific response_peng/chi phases,
+                    # the generic engine phase carries no claim/chow boundary
+                    # by itself.  Do not guess one for a public adapter.
+                    raise MirrorInconsistent(
+                        "react 缺少显式响应游标/碰吃边界")
+                # Legacy placeholder retained for online legality checks. It
+                # is not a complete rollout cursor; the public context
+                # adapter marks the response order unsupported in this case.
+                g.react_seq = [self.me]
+                g.react_idx = 0
+                g._n_claim = 1 if phase == "response_peng" else 0
         else:
             raise ValueError(f"未知决策阶段 {phase}")
         return g

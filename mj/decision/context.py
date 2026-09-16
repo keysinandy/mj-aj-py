@@ -14,7 +14,8 @@ import hashlib
 import json
 from typing import Any, Mapping, Optional
 
-from ..game import DEAD_WALL
+from ..game import (DEAD_WALL, PASS, PONG, KONG_OPEN, CHOW_LOW, CHOW_MID,
+                    CHOW_HIGH)
 
 
 class ContextError(ValueError):
@@ -25,6 +26,63 @@ def _is_reaction_phase(phase):
     """Return whether a context is inside a pending claim response."""
     value = str(phase)
     return value == "react" or value.startswith("response")
+
+
+_KNOWN_REACTION_PHASES = frozenset(("react", "response_peng", "response_chi"))
+
+
+def _reaction_context_errors(context):
+    """Return errors for a response cursor that can be replayed exactly.
+
+    ``responding_seats`` is an authorization hint, not a response history.  A
+    rollout therefore needs the ordered cursor and the claim/chow boundary
+    supplied explicitly; deriving either from a partial snapshot would make
+    an earlier PASS indistinguishable from a still-pending response.
+    """
+    errors = []
+    if str(context.phase) not in _KNOWN_REACTION_PHASES:
+        return ("unknown_reaction_window",)
+    if context.pending_owner is None or context.pending_tile is None:
+        errors.append("pending")
+    elif context.pending_owner == context.hero_seat:
+        errors.append("hero_pending_owner")
+    if (context.freeze > 0 and context.hero_seat != context.freezer):
+        errors.append("reaction_frozen_actor")
+    if not context.react_seq or context.react_index is None:
+        errors.append("response_order")
+    else:
+        index = int(context.react_index)
+        if not 0 <= index < len(context.react_seq):
+            errors.append("response_cursor")
+        elif context.turn is None or context.turn != context.react_seq[index]:
+            errors.append("response_cursor_actor")
+        elif context.turn != context.hero_seat:
+            errors.append("hero_not_response_actor")
+    if context.react_claim_count is None:
+        errors.append("response_claim_boundary")
+    else:
+        boundary = int(context.react_claim_count)
+        if not 0 <= boundary <= len(context.react_seq):
+            errors.append("response_claim_boundary")
+        elif context.react_index is not None and 0 <= int(context.react_index) < len(context.react_seq):
+            in_claim = int(context.react_index) < boundary
+            if (context.phase == "response_peng" and not in_claim) or (
+                    context.phase == "response_chi" and in_claim):
+                errors.append("response_phase_cursor_mismatch")
+    legal = set(int(action) for action in context.legal_actions)
+    if legal and PASS not in legal:
+        errors.append("pass_missing_from_legal_set")
+    if context.react_index is not None and context.react_claim_count is not None:
+        in_claim = int(context.react_index) < int(context.react_claim_count)
+        allowed = ({PASS, PONG, KONG_OPEN} if in_claim else
+                   {PASS, CHOW_LOW, CHOW_MID, CHOW_HIGH})
+        if not legal.issubset(allowed):
+            errors.append("response_action_mode")
+    if context.pending_owner is not None and context.pending_tile is not None:
+        river = context.discards[context.pending_owner]
+        if not river or river[-1] != context.pending_tile:
+            errors.append("pending_not_river_top")
+    return tuple(sorted(set(errors)))
 
 
 def _tuple34(value, name):
@@ -320,9 +378,11 @@ class PublicDecisionContext:
                         in enumerate(self.chain_counts) if value is None]
             missing += [f"chain_piao_counts[{seat}]" for seat, value
                         in enumerate(self.chain_piao_counts) if value is None]
-            if _is_reaction_phase(self.phase) and (
-                    not self.react_seq or self.react_claim_count is None):
-                missing.append("response_order")
+            if _is_reaction_phase(self.phase):
+                response_errors = _reaction_context_errors(self)
+                missing.extend(response_errors)
+                if response_errors:
+                    missing.append("response_order")
             if missing:
                 raise ContextError("rollout fields are missing: " +
                                    ", ".join(missing))
@@ -438,9 +498,14 @@ class PublicDecisionContext:
         chain_piao[seat] = int(getattr(game, "chain_piao", [0] * 4)[seat])
         missing = ["opponent_chain", "opponent_chain_piao"]
         unsupported = []
-        if _is_reaction_phase(phase) and not getattr(game, "react_seq", None):
-            missing.append("react_sequence")
-            unsupported.append("response_order")
+        if _is_reaction_phase(phase):
+            if not getattr(game, "react_seq", None):
+                missing.append("react_sequence")
+                unsupported.append("response_order")
+            if getattr(game, "react_idx", None) is None:
+                missing.append("react_index")
+            if getattr(game, "_n_claim", None) is None:
+                missing.append("react_claim_count")
         # ``Game.legal_actions()`` reads the current actor's concealed hand.
         # If the requested hero is not that actor, do not accidentally make a
         # public context depend on another player's hidden tiles.
@@ -489,9 +554,53 @@ class PublicDecisionContext:
 
     @classmethod
     def from_mirror(cls, mirror, phase=None, *, gid=None, round_no=None,
-                    seq=None, decision_id=None):
-        """Project the online Mirror; its placeholder world stays excluded."""
+                    seq=None, decision_id=None, response_order=None,
+                    response_index=None, response_claim_count=None,
+                    response=None):
+        """Project the online Mirror; its placeholder world stays excluded.
+
+        A platform snapshot may expose only ``responding_seats``.  That field
+        authorises a request but does not say which higher-priority responses
+        have already completed, so it is intentionally not converted into a
+        fake ``react_seq``.  Integrations that have an authoritative ordered
+        cursor can pass it explicitly (or expose the corresponding fields on
+        ``Mirror``) and receive the same response context as ``from_game``.
+        """
         phase = phase or "draw"
+        response_data = dict(response or {})
+
+        def response_value(current, *names):
+            if current is not None:
+                return current
+            for name in names:
+                if name in response_data:
+                    return response_data[name]
+            return None
+
+        response_order = response_value(
+            response_order, "response_order", "responseOrder", "react_seq",
+            "reactSeq", "order")
+        if response_order is None:
+            response_order = getattr(mirror, "response_order", ())
+        response_index = response_value(
+            response_index, "response_index", "responseIndex", "react_index",
+            "reactIndex", "react_idx", "reactIdx", "index")
+        if response_index is None:
+            response_index = getattr(mirror, "response_index", None)
+        response_claim_count = response_value(
+            response_claim_count, "response_claim_count",
+            "responseClaimCount", "react_claim_count", "reactClaimCount",
+            "claim_count", "claimCount", "n_claim", "nClaim")
+        if response_claim_count is None:
+            response_claim_count = getattr(mirror, "response_claim_count", None)
+        try:
+            response_order = tuple(int(x) for x in (response_order or ()))
+            response_complete = bool(response_order) and (
+                response_index is not None and
+                response_claim_count is not None)
+        except (TypeError, ValueError):
+            response_order = ()
+            response_complete = False
         melds = tuple(tuple((str(kind), int(tile)) for kind, tile in row)
                       for row in mirror.melds)
         discards = tuple(tuple(int(t) for t in row) for row in mirror.discards)
@@ -510,12 +619,26 @@ class PublicDecisionContext:
         chain_piao[mirror.me] = int(mirror.chain_piao)
         missing = ["opponent_chain", "opponent_chain_piao"]
         unsupported = []
-        if _is_reaction_phase(phase) and mirror.pending is None:
-            missing.append("pending")
-            unsupported.append("response_order")
+        if _is_reaction_phase(phase):
+            if mirror.pending is None:
+                missing.append("pending")
+            if not response_complete:
+                missing.append("response_order")
+                unsupported.append("response_order")
         legal = ()
         try:
-            g = mirror.build_game(phase)
+            # Mirror's public API has two named platform response phases, but
+            # an engine-style ``react`` snapshot can also be adapted when it
+            # supplies the explicit cursor above.  Use the construction path
+            # only to materialize the public hand/pending state, then install
+            # the authoritative mode boundary before asking for legality.
+            build_phase = "response_peng" if phase == "react" else phase
+            g = mirror.build_game(build_phase)
+            if response_complete and _is_reaction_phase(phase):
+                g.react_seq = list(response_order)
+                g.react_idx = int(response_index)
+                g._n_claim = int(response_claim_count)
+                g.turn = mirror.me
             legal = tuple(int(x) for x in g.legal_actions())
         except Exception:
             missing.append("legal_actions")
@@ -532,8 +655,11 @@ class PublicDecisionContext:
             chain_counts=tuple(chains), chain_piao_counts=tuple(chain_piao),
             chain_count=chains[mirror.me], chain_piao=chain_piao[mirror.me],
             live_wall=live, dead_wall=DEAD_WALL,
-            react_seq=(), react_index=None, legal_actions=legal,
-            react_claim_count=None,
+            react_seq=(response_order if response_complete else ()),
+            react_index=(int(response_index) if response_complete else None),
+            legal_actions=legal,
+            react_claim_count=(int(response_claim_count)
+                               if response_complete else None),
             gid=gid, round_no=round_no if round_no is not None else mirror.round_no,
             seq=seq, decision_id=decision_id, fast_valid="legal_actions" not in missing,
             rollout_valid=False, missing_fields=tuple(missing),
