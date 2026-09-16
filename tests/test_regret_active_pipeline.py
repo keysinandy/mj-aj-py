@@ -320,5 +320,77 @@ def _sample(seed=0, *, generation=0, regret=None, tags=(), q_gap=4.0):
         scalars=np.zeros(12, dtype=np.float32))
 
 
+class TestRunSummary(unittest.TestCase):
+    def test_summary_reports_existing_artifacts(self):
+        import json
+        import tempfile
+        from pathlib import Path
+
+        from mj.training.run_summary import build_summary, render_markdown
+
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            run = root / "gen0"
+            run.mkdir()
+            (root / "pi0.json").write_text(json.dumps({
+                "selection": {"selected": "heuristic:shape-v1",
+                              "reason": "lowest_regret"},
+                "evaluations": [{"path": "heuristic:shape-v1",
+                                 "mean_reference_regret": 1.5,
+                                 "p95_reference_regret": 8.0,
+                                 "top1_action_agreement": 0.5,
+                                 "latency": {"p95_ms": 10.0}}]}))
+            (root / "dataset.json").write_text(json.dumps({
+                "count": 100, "dataset_fingerprint": "fp",
+                "coverage": {"passed": False, "missing": ["hu"]},
+                "report": {"teacher_status": {"ok": 100}}}))
+            (run / "training_manifest.json").write_text(json.dumps({
+                "history": [{"epoch": 1, "loss": 1.0}], "usable_rows": 90,
+                "skipped_rows": {}, "dataset_fingerprint": "fp"}))
+            (run / "selection_report.json").write_text(json.dumps({
+                "selection": {"selected": "a.pt", "promoted": True,
+                              "reason": "reference_regret_improved"},
+                "evaluations": [{"path": "a.pt",
+                                 "mean_reference_regret": 1.2,
+                                 "p95_reference_regret": 7.0,
+                                 "catastrophic_regret_rate": 0.0,
+                                 "top1_action_agreement": 0.5,
+                                 "policy_kl": 0.1,
+                                 "latency": {"p95_ms": 5.0}}]}))
+            (run / "paired_shape_v2.json").write_text(json.dumps({
+                "pairs": 1024, "mean_delta": 1.5, "ci95": [0.2, 3.0],
+                "verdict": "superior",
+                "secondary_diagnostics": {"candidate_win_rate": 0.3}}))
+            summary = build_summary(
+                run_dir=run, dataset_manifest=root / "dataset.json",
+                pi0_selection=root / "pi0.json",
+                pipeline_log=root / "missing.log")
+            self.assertEqual(summary["pi0"]["selected"], "heuristic:shape-v1")
+            self.assertEqual(summary["dataset"]["rows"], 100)
+            self.assertTrue(summary["offline"]["promoted"])
+            self.assertEqual(summary["paired"]["shape_v2"]["verdict"],
+                             "superior")
+            markdown = render_markdown(summary)
+            self.assertIn("heuristic:shape-v1", markdown)
+            self.assertIn("superior", markdown)
+            self.assertIn("pi1", markdown)
+
+    def test_summary_marks_missing_artifacts_pending(self):
+        import tempfile
+        from pathlib import Path
+
+        from mj.training.run_summary import build_summary
+
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            summary = build_summary(
+                run_dir=root, dataset_manifest=root / "missing.json",
+                pi0_selection=root / "missing-pi0.json",
+                pipeline_log=root / "missing.log")
+            self.assertIsNone(summary["dataset"]["rows"])
+            self.assertEqual(summary["paired"], {})
+            self.assertIsNone(summary["offline"]["selected"])
+
+
 if __name__ == "__main__":
     unittest.main()

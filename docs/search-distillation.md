@@ -203,6 +203,10 @@ PYTHONPATH=. python3 scripts/search_bc_train.py \
 PYTHONPATH=. bash scripts/search_distill_pipeline.sh \
   runs/search_bc/gen1/best-by-regret.pt data/distill/reference_gen0.jsonl \
   runs/search_bc/gen1/gates
+
+# 5. one-file run summary (works while the pipeline is still progressing)
+PYTHONPATH=. python3 scripts/search_distill_report.py \
+  --out runs/search_bc/gen0/SUMMARY.md --json-out runs/search_bc/gen0/summary.json
 ```
 
 Experiment order is one variable per run: E0 baseline → E1 active sampling
