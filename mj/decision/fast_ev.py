@@ -490,8 +490,17 @@ def evaluate_discard_context(context: PublicDecisionContext,
         raise ContextError("discard evaluator requires discard scope")
     if context.phase not in ("discard", "draw"):
         raise ContextError("discard evaluator requires a discard context")
-    context.validate_for("fast")
     started = budget or DecisionBudget(profile.node_budget, profile.time_budget_ms)
+    try:
+        context.validate_for("fast")
+    except ContextError as exc:
+        if ("public_hand_counts_unknown" in context.missing_fields
+                and legacy_best is not None):
+            return _legacy_fallback_result(
+                context, profile, "context_material_unknown",
+                selected=legacy_best, legacy_best=legacy_best,
+                budget=started)
+        raise
     runtime_kernel = profile.kernel_version
     try:
         # Root scopes may carry HU/KONG/reaction actions beside ordinary

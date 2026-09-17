@@ -30,6 +30,29 @@ class BotEvDiscardTests(unittest.TestCase):
             chain_counts=chains, chain_piao_counts=piao,
             rollout_valid=True, missing_fields=(), unsupported=())
 
+    def test_platform_material_unknown_delegates_fast_ev(self):
+        context = self._complete_context(seed=31).replace(
+            concealed_counts=(None,) * 4,
+            missing_fields=("public_hand_counts_unknown",),
+            fast_valid=False,
+            rollout_valid=False)
+        result = evaluate_discard_context(
+            context, ProfileSpec.shape_v2_discard(), legacy_best=0)
+        self.assertEqual(result.level, "legacy")
+        self.assertEqual(result.selected, 0)
+        self.assertEqual(result.reason, "context_material_unknown")
+        self.assertEqual(result.candidates, ())
+
+    def test_platform_material_malformed_rejects_fast_ev(self):
+        context = self._complete_context(seed=32).replace(
+            concealed_counts=(None,) * 4,
+            missing_fields=("public_hand_counts_malformed",),
+            fast_valid=False,
+            rollout_valid=False)
+        with self.assertRaises(ContextError):
+            evaluate_discard_context(
+                context, ProfileSpec.shape_v2_discard(), legacy_best=1)
+
     def test_context_ignores_hidden_hands_and_wall_order(self):
         a = Game(seed=17)
         seat = a.current_seat()

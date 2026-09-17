@@ -114,6 +114,51 @@ class TestMirrorProperties(unittest.TestCase):
                     ev = dict(ev, tile=tname((tidx(ev["tile"]) + 1) % 34))
                 mir.apply_event(ev)
 
+    def test_snapshot_hand_counts_project_public_material(self):
+        mir = Mirror(my_seat=1, dealer=0)
+        mir.apply_snapshot({
+            "seat": 1, "phase": "draw", "turn": 0,
+            "drawn_tile": "", "my_hand": [
+                "1w", "2w", "3w", "4w", "5w", "6w", "7w",
+                "8w", "9w", "1b", "2b", "3b", "东",
+            ],
+            "hand_counts": [14, 13, 13, 13],
+            "wall_remaining": 83,
+            "discards": [[], [], [], []], "melds": [[], [], [], []],
+        })
+        self.assertEqual(mir.public_material_projection(),
+                         ((14, 13, 13, 13), "snapshot", "verified"))
+        g = mir.build_game("draw")
+        self.assertEqual(g.public_hand_counts, (14, 13, 13, 13))
+        self.assertEqual(sum(mir.my_hand) + sum(
+            x for i, x in enumerate(g.public_hand_counts) if i != mir.me)
+            + len(g.wall), 136)
+        self.assertEqual(sum(sum(row) for row in g.hands[0:1]), 0)
+
+    def test_snapshot_hand_counts_invalidates_without_guessing(self):
+        mir = Mirror(my_seat=1, dealer=0)
+        mir.apply_snapshot({
+            "seat": 1, "phase": "draw", "turn": 0,
+            "my_hand": ["1w"] * 13,
+            "hand_counts": [14, 12, 13, 13],
+            "discards": [[], [], [], []], "melds": [[], [], [], []],
+        })
+        counts, source, status = mir.public_material_projection()
+        self.assertIsNone(counts)
+        self.assertEqual((source, status), ("unknown", "malformed"))
+
+    def test_opponent_draw_invalidates_public_count_anchor(self):
+        mir = Mirror(my_seat=1, dealer=0)
+        mir.apply_snapshot({
+            "seat": 1, "phase": "draw", "turn": 0,
+            "my_hand": ["1w"] * 13,
+            "hand_counts": [14, 13, 13, 13],
+            "discards": [[], [], [], []], "melds": [[], [], [], []],
+        })
+        mir.apply_event({"type": "tile_drawn", "seat": 0, "tile": "2w"})
+        self.assertEqual(mir.public_material_projection(),
+                         (None, "unknown", "unknown"))
+
     def test_snapshot_rebuild_restores_catch_play_circle(self):
         """gap 快照位于抓打圈中时，后续冻结不能在首张弃牌后丢失。
 

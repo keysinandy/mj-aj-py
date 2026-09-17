@@ -846,10 +846,16 @@ def evaluate_root_context(context: PublicDecisionContext,
     try:
         context.validate_for("fast")
     except ContextError:
-        # Unsupported public windows (notably an unknown/partial reaction
-        # snapshot) are a normal delegation boundary.  Truly malformed
-        # material still raises so a caller cannot mistake corruption for a
-        # valid legacy decision.
+        # Unsupported public windows and an explicitly unknown platform
+        # material projection are normal delegation boundaries. Truly
+        # malformed value-object material still raises here so offline callers
+        # cannot mistake corruption for a valid root evaluation.
+        if "public_hand_counts_unknown" in context.missing_fields:
+            return _delegated(context, profile, "context_material_unknown",
+                              legacy_action)
+        if "public_hand_counts_malformed" in context.missing_fields:
+            return _delegated(context, profile, "context_material_malformed",
+                              legacy_action)
         if context.missing_fields or context.unsupported:
             return _delegated(context, profile, "context_unsupported",
                               legacy_action)

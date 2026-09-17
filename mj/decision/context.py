@@ -341,6 +341,8 @@ class PublicDecisionContext:
         errors = []
         if any(x < 0 or x > 4 for x in self.visible):
             errors.append("visible_count")
+        if sum(self.visible) > 136:
+            errors.append("visible_total")
         if self.live_wall is not None and self.live_wall < 0:
             errors.append("live_wall")
         if any(x is not None and x < 0 for x in self.concealed_counts):
@@ -486,10 +488,29 @@ class PublicDecisionContext:
         # This is a phase/locked-count derivation, not a read of the other
         # hands.  The current actor may hold the extra post-draw/post-claim
         # tile; all other concealed sizes are standing counts.
+        public_counts = getattr(game, "public_hand_counts", None)
+        public_source = getattr(game, "public_hand_counts_source", None)
+        public_status = getattr(game, "public_hand_counts_status", None)
+        public_projection_present = hasattr(game, "public_hand_counts_status")
+        if public_status in ("unknown", "malformed"):
+            missing_material = "public_hand_counts_" + public_status
+        else:
+            missing_material = None
+        use_public_counts = (
+            public_status == "verified" and public_counts is not None
+            and len(public_counts) == 4
+            and all(isinstance(x, int) and x >= 0 for x in public_counts))
         concealed = []
-        for s in range(4):
-            need = max(0, 13 - 3 * len(melds[s]))
-            concealed.append(need + 1 if phase == "discard" and s == turn else need)
+        if use_public_counts:
+            concealed = list(public_counts)
+        elif public_projection_present:
+            # 镜像明确报告 unknown/malformed 时不能退回阶段猜测，
+            # 否则会重新制造第 14 张导致的守恒假象。
+            concealed = [None] * 4
+        else:
+            for s in range(4):
+                need = max(0, 13 - 3 * len(melds[s]))
+                concealed.append(need + 1 if phase == "discard" and s == turn else need)
         pending = getattr(game, "pending", None)
         owner, tile = pending if pending is not None else (None, None)
         chains = [None] * 4
@@ -497,6 +518,8 @@ class PublicDecisionContext:
         chains[seat] = int(getattr(game, "chain", [0] * 4)[seat])
         chain_piao[seat] = int(getattr(game, "chain_piao", [0] * 4)[seat])
         missing = ["opponent_chain", "opponent_chain_piao"]
+        if missing_material is not None:
+            missing.append(missing_material)
         unsupported = []
         if _is_reaction_phase(phase):
             if not getattr(game, "react_seq", None):
@@ -530,7 +553,9 @@ class PublicDecisionContext:
             concealed_counts=tuple(concealed), turn=turn, phase=phase,
             pending_owner=owner, pending_tile=tile,
             freeze=int(getattr(game, "freeze", 0)),
-            freezer=getattr(game, "freezer", None),
+            freezer=(getattr(game, "freezer", None)
+                     if getattr(game, "freezer", None) in (None, 0, 1, 2, 3)
+                     else None),
             chain_counts=tuple(chains), chain_piao_counts=tuple(chain_piao),
             chain_count=chains[seat], chain_piao=chain_piao[seat],
             live_wall=live, dead_wall=DEAD_WALL,
@@ -539,13 +564,17 @@ class PublicDecisionContext:
             react_claim_count=getattr(game, "_n_claim", None), legal_actions=legal,
             gid=gid, round_no=round_no, seq=seq, decision_id=decision_id,
             fast_valid=not any(x in missing for x in
-                               ("legal_actions", "legal_actions_for_hero")),
+                               ("legal_actions", "legal_actions_for_hero",
+                                "public_hand_counts_unknown",
+                                "public_hand_counts_malformed")),
             rollout_valid=False,
             missing_fields=tuple(missing), unsupported=tuple(unsupported),
             provenance=(
                 ("hand", "hero_private_game_state"),
                 ("visible", "derived_from_hero_hand_public_rivers_melds"),
-                ("concealed_counts", "public_phase_and_meld_count_derivation"),
+                ("concealed_counts", ("public_hand_counts:" + str(public_source)
+                                      if use_public_counts else
+                                      "public_phase_and_meld_count_derivation")),
                 ("live_wall", "public_wall_length"),
                 ("chain_count", "hero_game_state"),
                 ("opponent_chain", "unknown_not_read_from_game"),
@@ -631,16 +660,34 @@ class PublicDecisionContext:
         visible = _visible(hand, discards, melds)
         locked = len(melds[mirror.me])
         turn = mirror.me
+        public_counts, public_source, public_status = (
+            mirror.public_material_projection())
+        use_public_counts = (
+            public_status == "verified" and public_counts is not None
+            and len(public_counts) == 4
+            and all(isinstance(x, int) and x >= 0 for x in public_counts))
         concealed = []
-        for s in range(4):
-            need = max(0, 13 - 3 * len(melds[s]))
-            concealed.append(need + 1 if s == mirror.me and phase == "draw" else need)
+        if use_public_counts:
+            concealed = list(public_counts)
+        elif public_status in ("unknown", "malformed"):
+            concealed = [None] * 4
+        else:
+            for s in range(4):
+                need = max(0, 13 - 3 * len(melds[s]))
+                concealed.append(need + 1 if s == mirror.me and phase == "draw" else need)
+        if public_status in ("unknown", "malformed"):
+            missing_material = "public_hand_counts_" + public_status
+        else:
+            missing_material = None
+
         owner, tile = mirror.pending if mirror.pending is not None else (None, None)
         chains = [None] * 4
         chain_piao = [None] * 4
         chains[mirror.me] = int(mirror.chain)
         chain_piao[mirror.me] = int(mirror.chain_piao)
         missing = ["opponent_chain", "opponent_chain_piao"]
+        if missing_material is not None:
+            missing.append(missing_material)
         unsupported = []
         if _is_reaction_phase(phase):
             if mirror.pending is None:
@@ -689,6 +736,9 @@ class PublicDecisionContext:
             unsupported=tuple(unsupported), provenance=(
                 ("hand", "hero_private_mirror"),
                 ("visible", "derived_from_hero_hand_public_rivers_melds"),
+                ("concealed_counts", ("public_hand_counts:" + str(public_source)
+                                      if use_public_counts else
+                                      "public_phase_and_meld_count_derivation")),
                 ("wall_material", "placeholder_excluded"),
                 ("opponent_chain", "unknown_not_read_from_mirror"),
             ),

@@ -79,6 +79,77 @@ class Mirror:
         self.response_index = None
         self.response_claim_count = None
         self.response_source = None
+        # 四家公开暗手张数：只保存计数，不保存对手牌面。全量快照是
+        # 唯一的权威锚点；事件只能在变化可证明时推进，否则失效等待重锚。
+        self.public_hand_counts = None
+        self.public_hand_counts_source = None
+        self.public_hand_counts_status = "unknown"
+
+    # ---------- 锚点:全量快照(实测字段,2026-09-08 探针) ----------
+
+    def _set_public_hand_counts(self, snap):
+        """校验快照公开张数并建立新的物料锚点。"""
+        raw = snap.get("hand_counts")
+        if raw is None:
+            self.public_hand_counts = None
+            self.public_hand_counts_source = "unknown"
+            self.public_hand_counts_status = "unknown"
+            return
+        try:
+            raw_counts = tuple(raw)
+        except TypeError:
+            raw_counts = ()
+        valid = (len(raw_counts) == 4
+                 and all(type(x) is int and x >= 0 for x in raw_counts))
+        counts = tuple(raw_counts) if valid else ()
+        if valid:
+            hand_count = sum(self.my_hand)
+            valid = counts[self.me] == hand_count
+        meld_counts = [len(row) for row in self.melds]
+        phase = snap.get("phase")
+        turn = snap.get("turn")
+        if valid:
+            for seat, count in enumerate(counts):
+                base = max(0, 13 - 3 * meld_counts[seat])
+                # 快照可能落在任一家的摸后弃牌前；除当前 draw actor
+                # 外，平台没有公开摸牌事件，故允许两种站牌长度，随后由
+                # 事件状态机决定是否还能继续使用该锚点。
+                allowed = {base, base + 1}
+                if count not in allowed:
+                    valid = False
+                    break
+        self.public_hand_counts = counts if valid else None
+        self.public_hand_counts_source = "snapshot" if valid else "unknown"
+        self.public_hand_counts_status = "verified" if valid else "malformed"
+
+    def _advance_public_hand_count(self, seat, delta):
+        """推进可证明的计数；不确定或越界时整组标为 unknown。"""
+        if self.public_hand_counts_status != "verified":
+            return
+        if not 0 <= int(seat) < 4:
+            self.public_hand_counts = None
+            self.public_hand_counts_source = "unknown"
+            self.public_hand_counts_status = "unknown"
+            return
+        counts = list(self.public_hand_counts)
+        counts[seat] += int(delta)
+        if counts[seat] < 0:
+            self.public_hand_counts = None
+            self.public_hand_counts_source = "unknown"
+            self.public_hand_counts_status = "malformed"
+            return
+        self.public_hand_counts = tuple(counts)
+        self.public_hand_counts_source = "event_advanced"
+
+    def _invalidate_public_hand_counts(self, status="unknown"):
+        self.public_hand_counts = None
+        self.public_hand_counts_source = status
+        self.public_hand_counts_status = status
+
+    def public_material_projection(self):
+        """返回不含牌面身份的公开计数投影。"""
+        return (self.public_hand_counts, self.public_hand_counts_source,
+                self.public_hand_counts_status)
 
     # ---------- 锚点:全量快照(实测字段,2026-09-08 探针) ----------
 
@@ -122,6 +193,7 @@ class Mirror:
             self.melds = [self._parse_melds(ms) for ms in snap["melds"]]
             self.chows = [sum(1 for kind, _ in ms if kind == "chow")
                           for ms in self.melds]
+        self._set_public_hand_counts(snap)
         if snap.get("wall_remaining") is not None:
             # wall_remaining 含死墙(开局 83);_pops 含庄家直抽(=1)
             self._pops = 84 - snap["wall_remaining"]
@@ -349,11 +421,14 @@ class Mirror:
 
     def _on_tile_drawn(self, e):
         if e["seat"] != self.me:
-            return  # 他家摸牌不可见(墙数在其打牌时补计)
+            # 他家摸牌不可见，不能据此把公开计数推进到某个确定值。
+            self._invalidate_public_hand_counts("unknown")
+            return  # 墙数在其打牌时补计
         t = e["tile"]
         if t is None:
             raise MirrorInconsistent(f"tile_drawn 缺牌: {e}")
         self.my_hand[t] += 1
+        self._advance_public_hand_count(self.me, 1)
         self.drawn = t
         self._pops += 1
         self.draw_origin = (DRAW_ORIGIN_KONG_REPLACEMENT
@@ -372,6 +447,7 @@ class Mirror:
         if s == self.me:
             self._check(self.my_hand[t] > 0, f"自家打牌不在手: {e}")
             self.my_hand[t] -= 1
+            self._advance_public_hand_count(s, -1)
             self.drawn = None
             self.draw_origin = None
             self.kong_draw = False
@@ -389,8 +465,10 @@ class Mirror:
                 self.chain = 0
                 self.chain_piao = 0
         else:
+            self._advance_public_hand_count(s, -1)
             if self._expects_draw[s]:
                 self._pops += 1  # 他家摸牌不可见,打牌时补计
+            self._invalidate_public_hand_counts("unknown")
         self._expects_draw[s] = True
         # 冻结语义与引擎 _do_discard 同序:先减后设
         if self.freeze > 0:
@@ -422,11 +500,13 @@ class Mirror:
                 for x in tiles:
                     self._check(self.my_hand[x] > 0, f"chi 手牌不足: {e}")
                     self.my_hand[x] -= 1
+                self._advance_public_hand_count(s, -2)
         else:
             self.melds[s].append(("pong", t))
             if s == self.me:
                 self._check(self.my_hand[t] >= 2, f"peng 手牌不足: {e}")
                 self.my_hand[t] -= 2
+                self._advance_public_hand_count(s, -2)
         if s == self.me:
             self.drawn = None
             self.draw_origin = None
@@ -452,12 +532,14 @@ class Mirror:
             if s == self.me:
                 self._check(self.my_hand[t] >= 3, f"明杠手牌不足: {e}")
                 self.my_hand[t] -= 3
+                self._advance_public_hand_count(s, -3)
             self.pending = None
         elif kind == "an":
             self.melds[s].append(("kong_closed", t))
             if s == self.me:
                 self._check(self.my_hand[t] == 4, f"暗杠手牌不足: {e}")
                 self.my_hand[t] -= 4
+                self._advance_public_hand_count(s, -4)
         else:  # bu 加杠
             found = False
             for i, m in enumerate(self.melds[s]):
@@ -469,6 +551,7 @@ class Mirror:
             if s == self.me:
                 self._check(self.my_hand[t] >= 1, f"加杠手牌不足: {e}")
                 self.my_hand[t] -= 1
+                self._advance_public_hand_count(s, -1)
         if s == self.me:
             self.chain += 1
             self._own_gang_replacement = True  # 补牌将以自家 tile_drawn 到达
@@ -531,6 +614,11 @@ class Mirror:
         g.rng = random.Random(0)
         g.hands = [[0] * 34 for _ in range(4)]
         g.hands[self.me] = list(self.my_hand)
+        # 仅传递公开张数及其状态；对手牌面仍保持全零占位。
+        counts, source, status = self.public_material_projection()
+        g.public_hand_counts = counts
+        g.public_hand_counts_source = source
+        g.public_hand_counts_status = status
         g.wall = [0] * (20 + self.live_wall_left())
         g.melds = [list(m) for m in self.melds]
         g.discards = [list(d) for d in self.discards]

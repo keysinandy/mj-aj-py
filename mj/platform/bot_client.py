@@ -212,7 +212,7 @@ class BotClient:
         # 长轮询模式(v11 语义,2026-09-09 活体实验确认):空闲批次不再
         # 等待直接再发 /state——服务端挂起至事件刷新(~0.5s 粒度)后带
         # 事件返回,观测迟到硬上界 ~0.6s 无尾部;请求率=事件簇率(~1/s/
-        # 场次),首次低于 12.5/s 限速与 16/s 服务端墙。SSE 在场会禁用
+        # 场次),首次低于 16/s 限速(与服务端墙同值)。SSE 在场会禁用
         # 挂起(3 房日志 0 次 pending),故本模式不兼容 use_notify
         self.long_poll = long_poll and not use_notify
         self._tid = None
@@ -3555,10 +3555,15 @@ class BotClient:
                 deadline_left_at_finish_ms=self._deadline_left_ms(
                     authorization.get("exact_deadline_at")))
         if self.recorder is not None:
+            material_counts, material_source, material_status = (
+                mirror.public_material_projection())
             kwargs = {"digest": {
                 "hand": int(sum(mirror.my_hand)),
                 "wall": mirror.live_wall_left(),
-                "round_no": mirror.round_no}}
+                "round_no": mirror.round_no,
+                "public_material_status": material_status,
+                "public_material_source": material_source,
+            }}
             if isinstance(key, WindowAttemptKey):
                 kwargs.update({
                     "window_id": key.window_id.as_json(),
