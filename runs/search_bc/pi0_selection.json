@@ -1,0 +1,320 @@
+{
+  "evaluations": [
+    {
+      "bucket_regret": {
+        "phase:discard": {
+          "count": 201,
+          "mean": 1.6847501989744487,
+          "p95": 7.801628052598622
+        },
+        "phase:react": {
+          "count": 46,
+          "mean": 2.136994566418683,
+          "p95": 8.440180022502814
+        },
+        "tag:chow-pass": {
+          "count": 31,
+          "mean": 1.4446550633041264,
+          "p95": 8.440180022502814
+        },
+        "tag:dealer": {
+          "count": 65,
+          "mean": 3.8793408895484514,
+          "p95": 13.050595630577167
+        },
+        "tag:hu": {
+          "count": 6,
+          "mean": 0.0,
+          "p95": 0.0
+        },
+        "tag:kong-closed": {
+          "count": 1,
+          "mean": 0.0,
+          "p95": 0.0
+        },
+        "tag:kong-open": {
+          "count": 1,
+          "mean": 0.0,
+          "p95": 0.0
+        },
+        "tag:non-dealer": {
+          "count": 182,
+          "mean": 1.0152713309256827,
+          "p95": 6.116117729502453
+        },
+        "tag:pong-pass": {
+          "count": 15,
+          "mean": 3.5678295395221,
+          "p95": 38.02475309413677
+        },
+        "tag:reaction-cursor": {
+          "count": 46,
+          "mean": 2.136994566418683,
+          "p95": 8.440180022502814
+        },
+        "tag:wild-discard-possible": {
+          "count": 84,
+          "mean": 1.8958390334900945,
+          "p95": 10.130232558139536
+        },
+        "tag:ycbk-off": {
+          "count": 247,
+          "mean": 1.768973846352727,
+          "p95": 8.21115139392424
+        }
+      },
+      "catastrophic_regret_rate": 0.008097165991902834,
+      "count": 247,
+      "fingerprint": "b107178a5df2baa416674400",
+      "latency": {
+        "count": 64,
+        "max_ms": 0.7447979878634214,
+        "p50_ms": 0.2342000079806894,
+        "p95_ms": 0.5466990114655346,
+        "p99_ms": 0.7447979878634214,
+        "repeats": 2
+      },
+      "mean_reference_regret": 1.768973846352727,
+      "oracle": false,
+      "p50_reference_regret": 0.0,
+      "p95_reference_regret": 8.21115139392424,
+      "path": "heuristic:legacy",
+      "policy_kl": null,
+      "schema": "search-bc-regret-report-v1",
+      "skipped": {
+        "forced": 0,
+        "missing_features": 0,
+        "missing_q": 3,
+        "model_error": 0,
+        "no_legal_action": 0
+      },
+      "top1_action_agreement": 0.5222672064777328
+    },
+    {
+      "bucket_regret": {
+        "phase:discard": {
+          "count": 201,
+          "mean": 1.7505917930986923,
+          "p95": 8.185953009172007
+        },
+        "phase:react": {
+          "count": 47,
+          "mean": 1.2824892970451627,
+          "p95": 8.21115139392424
+        },
+        "tag:chow-pass": {
+          "count": 32,
+          "mean": 1.3995095925758725,
+          "p95": 8.440180022502814
+        },
+        "tag:dealer": {
+          "count": 66,
+          "mean": 3.335605055850894,
+          "p95": 12.652300524170064
+        },
+        "tag:hu": {
+          "count": 6,
+          "mean": 0.0,
+          "p95": 0.0
+        },
+        "tag:kong-closed": {
+          "count": 1,
+          "mean": 0.0,
+          "p95": 0.0
+        },
+        "tag:kong-open": {
+          "count": 1,
+          "mean": 0.0,
+          "p95": 0.0
+        },
+        "tag:non-dealer": {
+          "count": 182,
+          "mean": 1.0549231521307736,
+          "p95": 6.116117729502453
+        },
+        "tag:pong-pass": {
+          "count": 15,
+          "mean": 1.0328459999129822,
+          "p95": 6.61482685335667
+        },
+        "tag:reaction-cursor": {
+          "count": 47,
+          "mean": 1.2824892970451627,
+          "p95": 8.21115139392424
+        },
+        "tag:wild-discard-possible": {
+          "count": 84,
+          "mean": 2.1418068754542268,
+          "p95": 10.322904499694088
+        },
+        "tag:ycbk-off": {
+          "count": 248,
+          "mean": 1.6618788200562895,
+          "p95": 8.21115139392424
+        }
+      },
+      "catastrophic_regret_rate": 0.004032258064516129,
+      "count": 248,
+      "fingerprint": "3adc943d4db638fd83135277",
+      "latency": {
+        "count": 64,
+        "max_ms": 18.620754999574274,
+        "p50_ms": 8.370979994651861,
+        "p95_ms": 18.35025601030793,
+        "p99_ms": 18.620754999574274,
+        "repeats": 2
+      },
+      "mean_reference_regret": 1.6618788200562895,
+      "oracle": false,
+      "p50_reference_regret": 0.0,
+      "p95_reference_regret": 8.21115139392424,
+      "path": "heuristic:shape-v1",
+      "policy_kl": null,
+      "schema": "search-bc-regret-report-v1",
+      "skipped": {
+        "forced": 0,
+        "missing_features": 0,
+        "missing_q": 2,
+        "model_error": 0,
+        "no_legal_action": 0
+      },
+      "top1_action_agreement": 0.5282258064516129
+    },
+    {
+      "bucket_regret": {
+        "phase:discard": {
+          "count": 201,
+          "mean": 1.65477063359074,
+          "p95": 7.801628052598622
+        },
+        "phase:react": {
+          "count": 46,
+          "mean": 2.136994566418683,
+          "p95": 8.440180022502814
+        },
+        "tag:chow-pass": {
+          "count": 31,
+          "mean": 1.4446550633041264,
+          "p95": 8.440180022502814
+        },
+        "tag:dealer": {
+          "count": 65,
+          "mean": 3.8004332306876005,
+          "p95": 13.050595630577167
+        },
+        "tag:hu": {
+          "count": 6,
+          "mean": 0.0,
+          "p95": 0.0
+        },
+        "tag:kong-closed": {
+          "count": 1,
+          "mean": 0.0,
+          "p95": 0.0
+        },
+        "tag:kong-open": {
+          "count": 1,
+          "mean": 0.0,
+          "p95": 0.0
+        },
+        "tag:non-dealer": {
+          "count": 182,
+          "mean": 1.0103433374302424,
+          "p95": 6.116117729502453
+        },
+        "tag:pong-pass": {
+          "count": 15,
+          "mean": 3.5678295395221,
+          "p95": 38.02475309413677
+        },
+        "tag:reaction-cursor": {
+          "count": 46,
+          "mean": 2.136994566418683,
+          "p95": 8.440180022502814
+        },
+        "tag:wild-discard-possible": {
+          "count": 84,
+          "mean": 1.8659147262536837,
+          "p95": 10.130232558139536
+        },
+        "tag:ycbk-off": {
+          "count": 247,
+          "mean": 1.744577519866389,
+          "p95": 8.21115139392424
+        }
+      },
+      "catastrophic_regret_rate": 0.008097165991902834,
+      "count": 247,
+      "fingerprint": "eb7e65bdba28d30cfa03d50f",
+      "latency": {
+        "count": 64,
+        "max_ms": 105.72937701363117,
+        "p50_ms": 39.09616199962329,
+        "p95_ms": 49.38098799902946,
+        "p99_ms": 105.72937701363117,
+        "repeats": 2
+      },
+      "mean_reference_regret": 1.744577519866389,
+      "oracle": false,
+      "p50_reference_regret": 0.0,
+      "p95_reference_regret": 8.21115139392424,
+      "path": "heuristic:shape-v2",
+      "policy_kl": null,
+      "schema": "search-bc-regret-report-v1",
+      "skipped": {
+        "forced": 0,
+        "missing_features": 0,
+        "missing_q": 3,
+        "model_error": 0,
+        "no_legal_action": 0
+      },
+      "top1_action_agreement": 0.5344129554655871
+    }
+  ],
+  "fingerprint": "db7c6c0d5d62a45b9b8e9cad",
+  "oracle": false,
+  "schema": "search-bc-selection-report-v1",
+  "selection": {
+    "fingerprint": "0f623ce149d9f61b61d04ad0",
+    "ranking": [
+      {
+        "batch1_latency_ms": 18.35025601030793,
+        "eligible": true,
+        "mean_reference_regret": 1.6618788200562895,
+        "name": "heuristic:shape-v1",
+        "p95_reference_regret": 8.21115139392424,
+        "paired_score_ci": null,
+        "reasons": []
+      },
+      {
+        "batch1_latency_ms": 0.5466990114655346,
+        "eligible": true,
+        "mean_reference_regret": 1.768973846352727,
+        "name": "heuristic:legacy",
+        "p95_reference_regret": 8.21115139392424,
+        "paired_score_ci": null,
+        "reasons": []
+      },
+      {
+        "batch1_latency_ms": 49.38098799902946,
+        "eligible": false,
+        "mean_reference_regret": 1.744577519866389,
+        "name": "heuristic:shape-v2",
+        "p95_reference_regret": 8.21115139392424,
+        "paired_score_ci": null,
+        "reasons": [
+          "latency"
+        ],
+        "sort_key": [
+          1.744577519866389,
+          1e+18,
+          49.38098799902946,
+          "heuristic:shape-v2"
+        ]
+      }
+    ],
+    "reason": "lowest_reference_regret_with_paired_score_tiebreak",
+    "schema": "pi0-selection-v1",
+    "selected": "heuristic:shape-v1"
+  }
+}
