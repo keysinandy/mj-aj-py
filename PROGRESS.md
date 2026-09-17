@@ -49,6 +49,35 @@
 > 0.25s、最小间隔 0.12s、每窗上限 8 次，截止不可评估则退回原语义）。
 > 离线仿真按实测延迟复现失败并验证修复（T+1.11 提交）；线上复测待做。
 
+> **弱键决策（window-snapshot-identity-decision，2026-09-17）**：服务端
+> 不部署窗口身份字段（guide v34 全字段普查零命中，见
+> `openspec/changes/window-identity-protocol/artifacts/`）。线上快照首见
+> 的 `legacy_unresolved` 窗口全部走同一条损失链：确认循环烧完 8 次拉取
+> 预算后 `identity_confirmation_budget_exhausted`，策略从未被调用（一天
+> 6 个合规窗、5 个真损失）。新契约把“决策授权”与“证据归因”拆开：
+> ① 快照首见、无协议身份的 legacy 窗口在首个权威快照上即可用弱键
+> `(round_id, discard_owner, tile, 弃牌家牌河尾位置)` 决策提交（
+> `_resolve_window_confirm` UNKNOWN→weak_key_open；`_act_window` 快照授权
+> 门放行 legacy key）——弱窗永不升级为 authoritative、不计强完备；错误
+> 弱键提交由服务端 409 + 既有同环恢复兜底。② 确认预算改为截止驱动：
+> 剩余窗口时间 < 一次确认往返 + decide+POST 余量即停止排确认拉取；连
+> 决策余量都没有时仍落 `identity_confirmation_budget_exhausted` 记录。
+> ③ 弱键去重 epoch 内用牌河尾位置（fallback 额外带副露计数——认领会
+> 弹牌河,不带则同牌重弃会撞键）；跨重锚仅“round/owner/tile 匹配 + 牌河
+> 尾位置一致”才保守携带。④ `window_confirm_weak_open` /
+> `weak_key_decisions` 计数与 decision/action/claim_miss 上的
+> `identity_status=legacy_unresolved` 使弱键结果可单独归因，验收分母不变。
+> 测试：`tests/test_window_identity_protocol.py` 扩 5 例（快照首见 chi/peng
+> 决策提交、409 恢复不重发、同牌重弃不撞键 + 跨重锚携带边界、近截止停
+> 确认改决策/预算记录）。**线上验证（2026-09-17 测试房 `t_772639fd4c27`，
+> 4 令牌×10 局 legacy/16/s）**：`identity_unknown` 确认拉取 59→0、
+> `identity_confirmation_budget_exhausted` 7→0、legacy `server_timeout_*`
+> miss 7→0；唯一出现的快照首见弱键窗口（白虎 b5，response_peng）弱键授权
+> → 决策 → POST 成功并获服务端 `peng` 回声。既有 peng 409 关窗竞速
+> （authoritative 身份、决策余量 100-500ms、三家 timeout 同秒）两房同量
+> （10 vs 9），与弱键无关。证据：`openspec/changes/
+> window-snapshot-identity-decision/artifacts/online_validation_20260917.md`。
+
 ## 一、规则定稿(与需求方逐条确认)
 
 ### 平台固有规则(指南 v34,2026-09-15 在线拉取;服务端 `updated_at=2026-09-14`;本节同时保留 v26-v34 变更记录)
@@ -913,6 +942,20 @@ extract 含 oracle ~1.6ms/决策点。
     默认客户端配置;`--no-notify` 仅用于普通轮询排障,对局异常仍需按日志归因**。旧
     长轮询实测结论保留为历史基线。* * * 2026-09-10 方案切换记录。**
   ```
+  **shape-v2 公共物料修复验收(2026-09-17)**:
+  `Mirror` 现保存平台快照公开的 `hand_counts`（只含四家张数，不含
+  对手牌面），并投影给 `PublicDecisionContext`；第 14 张快照
+  `[14,13,13,13]` 可闭合 full wall 物料 136 张。无法确认的事件流将
+  计数标为 unknown，shape-v2 受控回退 legacy，并记录
+  `context_material_unknown`，不再以阶段公式造成 `material_conservation`
+  崩溃；legacy/shape-v1/GEN0 原生 Game 训练路径不变。
+  聚焦 52 passed、全量 650 passed + Rust 对拍/30 局轨迹一致。200 局×3
+  轮离线性能报告显示 shape-v2 相对 shape-v1 总耗时 +182.85%、弃牌
+  p95 中位约 69.14ms、回退率 97.41%，性能门禁失败，继续 offline-only，
+  不切默认。第一 canary 房 `a_47fda164e28e` 10 场对账 3256 动作 0 非法，
+  但 1 次 409/1 次 deadline_missed；第二房因房间生命周期中止而对账
+  106 非法级联；用户要求不再启动新房，线上门禁未通过。证据与完整日志
+  见 `openspec/changes/shape-v2-platform-material-context/`。
   **实测协议发现(2026-09-08,均已消化)**:
   - 快照(seq=0/gap)远比文档丰富:含四家牌河 discards/副露 melds/
     手牌数 hand_counts/wall_remaining(含死墙,开局 83)/last_discard/

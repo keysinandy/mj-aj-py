@@ -1,0 +1,2090 @@
+{
+ "room": "a_47fda164e28e",
+ "games": [
+  {
+   "batch": 0,
+   "round": 1,
+   "game_id": "a_47fda164e28e_r1_b0_t0",
+   "rounds": [
+    {
+     "round_no": 1,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 157,
+     "actions_checked": 47,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       10,
+       -1,
+       -1
+      ],
+      [
+       1,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 2,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 234,
+     "actions_checked": 68,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       24,
+       -8,
+       -8
+      ],
+      [
+       1,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 3,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 110,
+     "actions_checked": 35,
+     "settle": null,
+     "engine_result": [
+      [
+       -1,
+       -8,
+       -1,
+       10
+      ],
+      [
+       3,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 4,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 112,
+     "actions_checked": 38,
+     "settle": null,
+     "engine_result": [
+      [
+       -1,
+       10,
+       -1,
+       -8
+      ],
+      [
+       1,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 5,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 99,
+     "actions_checked": 29,
+     "settle": null,
+     "engine_result": [
+      [
+       10,
+       -8,
+       -1,
+       -1
+      ],
+      [
+       0,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 6,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 91,
+     "actions_checked": 27,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       -1,
+       -1,
+       10
+      ],
+      [
+       3,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 7,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 93,
+     "actions_checked": 28,
+     "settle": null,
+     "engine_result": [
+      [
+       10,
+       -1,
+       -1,
+       -8
+      ],
+      [
+       0,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 8,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 89,
+     "actions_checked": 35,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       -1,
+       -1,
+       10
+      ],
+      [
+       3,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "batch": 1,
+   "round": 1,
+   "game_id": "a_47fda164e28e_r1_b1_t0",
+   "rounds": [
+    {
+     "round_no": 1,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 46,
+     "actions_checked": 16,
+     "settle": null,
+     "engine_result": [
+      [
+       24,
+       -8,
+       -8,
+       -8
+      ],
+      [
+       0,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 2,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 156,
+     "actions_checked": 56,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       -1,
+       -1,
+       10
+      ],
+      [
+       3,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 3,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 170,
+     "actions_checked": 56,
+     "settle": null,
+     "engine_result": [
+      [
+       20,
+       -2,
+       -2,
+       -16
+      ],
+      [
+       0,
+       2,
+       [
+        "平胡",
+        "杠开"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 4,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 80,
+     "actions_checked": 23,
+     "settle": null,
+     "engine_result": [
+      [
+       48,
+       -16,
+       -16,
+       -16
+      ],
+      [
+       0,
+       2,
+       [
+        "平胡",
+        "杠开"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 5,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 96,
+     "actions_checked": 30,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       -1,
+       10,
+       -1
+      ],
+      [
+       2,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 6,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 67,
+     "actions_checked": 21,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       -8,
+       24,
+       -8
+      ],
+      [
+       2,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 7,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 83,
+     "actions_checked": 26,
+     "settle": null,
+     "engine_result": [
+      [
+       -4,
+       40,
+       -32,
+       -4
+      ],
+      [
+       1,
+       4,
+       [
+        "七对",
+        "爆头"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 8,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 76,
+     "actions_checked": 23,
+     "settle": null,
+     "engine_result": [
+      [
+       -1,
+       -8,
+       -1,
+       10
+      ],
+      [
+       3,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "batch": 2,
+   "round": 1,
+   "game_id": "a_47fda164e28e_r1_b2_t0",
+   "rounds": [
+    {
+     "round_no": 1,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 213,
+     "actions_checked": 66,
+     "settle": null,
+     "engine_result": [
+      [
+       -16,
+       -2,
+       20,
+       -2
+      ],
+      [
+       2,
+       2,
+       [
+        "七对"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 2,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 88,
+     "actions_checked": 30,
+     "settle": null,
+     "engine_result": [
+      [
+       -1,
+       10,
+       -8,
+       -1
+      ],
+      [
+       1,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 3,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 78,
+     "actions_checked": 24,
+     "settle": null,
+     "engine_result": [
+      [
+       -1,
+       -8,
+       -1,
+       10
+      ],
+      [
+       3,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 4,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 169,
+     "actions_checked": 51,
+     "settle": null,
+     "engine_result": [
+      [
+       -1,
+       -1,
+       10,
+       -8
+      ],
+      [
+       2,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 5,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 126,
+     "actions_checked": 38,
+     "settle": null,
+     "engine_result": [
+      [
+       -16,
+       -16,
+       48,
+       -16
+      ],
+      [
+       2,
+       2,
+       [
+        "平胡",
+        "爆头"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 6,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 103,
+     "actions_checked": 34,
+     "settle": null,
+     "engine_result": [
+      [
+       -2,
+       -2,
+       -16,
+       20
+      ],
+      [
+       3,
+       2,
+       [
+        "平胡",
+        "爆头"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 7,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 165,
+     "actions_checked": 51,
+     "settle": null,
+     "engine_result": [
+      [
+       10,
+       -1,
+       -1,
+       -8
+      ],
+      [
+       0,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 8,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 91,
+     "actions_checked": 33,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       -1,
+       -1,
+       10
+      ],
+      [
+       3,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "batch": 3,
+   "round": 1,
+   "game_id": "a_47fda164e28e_r1_b3_t0",
+   "rounds": [
+    {
+     "round_no": 1,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 212,
+     "actions_checked": 66,
+     "settle": null,
+     "engine_result": [
+      [
+       -16,
+       20,
+       -2,
+       -2
+      ],
+      [
+       1,
+       2,
+       [
+        "平胡",
+        "爆头"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 2,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 188,
+     "actions_checked": 59,
+     "settle": null,
+     "engine_result": [
+      [
+       -1,
+       -8,
+       -1,
+       10
+      ],
+      [
+       3,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 3,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 108,
+     "actions_checked": 35,
+     "settle": null,
+     "engine_result": [
+      [
+       -1,
+       10,
+       -1,
+       -8
+      ],
+      [
+       1,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 4,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 147,
+     "actions_checked": 50,
+     "settle": null,
+     "engine_result": [
+      [
+       20,
+       -16,
+       -2,
+       -2
+      ],
+      [
+       0,
+       2,
+       [
+        "平胡",
+        "爆头"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 5,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 81,
+     "actions_checked": 27,
+     "settle": null,
+     "engine_result": [
+      [
+       24,
+       -8,
+       -8,
+       -8
+      ],
+      [
+       0,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 6,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 139,
+     "actions_checked": 41,
+     "settle": null,
+     "engine_result": [
+      [
+       24,
+       -8,
+       -8,
+       -8
+      ],
+      [
+       0,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 7,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 114,
+     "actions_checked": 38,
+     "settle": null,
+     "engine_result": [
+      [
+       -32,
+       -4,
+       40,
+       -4
+      ],
+      [
+       2,
+       4,
+       [
+        "平胡",
+        "杠开",
+        "爆头"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 8,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 140,
+     "actions_checked": 45,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       -8,
+       24,
+       -8
+      ],
+      [
+       2,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "batch": 4,
+   "round": 1,
+   "game_id": "a_47fda164e28e_r1_b4_t0",
+   "rounds": [
+    {
+     "round_no": 1,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 122,
+     "actions_checked": 37,
+     "settle": null,
+     "engine_result": [
+      [
+       24,
+       -8,
+       -8,
+       -8
+      ],
+      [
+       0,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 2,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 72,
+     "actions_checked": 25,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       10,
+       -1,
+       -1
+      ],
+      [
+       1,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 3,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 119,
+     "actions_checked": 45,
+     "settle": null,
+     "engine_result": [
+      [
+       -2,
+       -16,
+       20,
+       -2
+      ],
+      [
+       2,
+       2,
+       [
+        "平胡",
+        "爆头"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 4,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 154,
+     "actions_checked": 47,
+     "settle": null,
+     "engine_result": [
+      [
+       -1,
+       10,
+       -8,
+       -1
+      ],
+      [
+       1,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 5,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 99,
+     "actions_checked": 35,
+     "settle": null,
+     "engine_result": [
+      [
+       -1,
+       -8,
+       -1,
+       10
+      ],
+      [
+       3,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 6,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 143,
+     "actions_checked": 45,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       -8,
+       -8,
+       24
+      ],
+      [
+       3,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 7,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 126,
+     "actions_checked": 43,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       -8,
+       -8,
+       24
+      ],
+      [
+       3,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 8,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 66,
+     "actions_checked": 22,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       -8,
+       -8,
+       24
+      ],
+      [
+       3,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "batch": 5,
+   "round": 1,
+   "game_id": "a_47fda164e28e_r1_b5_t0",
+   "rounds": [
+    {
+     "round_no": 1,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 136,
+     "actions_checked": 45,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       -1,
+       -1,
+       10
+      ],
+      [
+       3,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 2,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 70,
+     "actions_checked": 26,
+     "settle": null,
+     "engine_result": [
+      [
+       -1,
+       -1,
+       10,
+       -8
+      ],
+      [
+       2,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 3,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 161,
+     "actions_checked": 51,
+     "settle": null,
+     "engine_result": [
+      [
+       -2,
+       20,
+       -16,
+       -2
+      ],
+      [
+       1,
+       2,
+       [
+        "平胡",
+        "爆头"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 4,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 133,
+     "actions_checked": 44,
+     "settle": null,
+     "engine_result": [
+      [
+       -1,
+       -8,
+       -1,
+       10
+      ],
+      [
+       3,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 5,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 102,
+     "actions_checked": 36,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       -8,
+       -8,
+       24
+      ],
+      [
+       3,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 6,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 112,
+     "actions_checked": 34,
+     "settle": null,
+     "engine_result": [
+      [
+       -1,
+       -1,
+       10,
+       -8
+      ],
+      [
+       2,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 7,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 56,
+     "actions_checked": 20,
+     "settle": null,
+     "engine_result": [
+      [
+       -2,
+       -2,
+       -16,
+       20
+      ],
+      [
+       3,
+       2,
+       [
+        "平胡",
+        "爆头"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 8,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 213,
+     "actions_checked": 72,
+     "settle": null,
+     "engine_result": [
+      [
+       -1,
+       10,
+       -1,
+       -8
+      ],
+      [
+       1,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "batch": 6,
+   "round": 1,
+   "game_id": "a_47fda164e28e_r1_b6_t0",
+   "rounds": [
+    {
+     "round_no": 1,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 146,
+     "actions_checked": 39,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       -1,
+       -1,
+       10
+      ],
+      [
+       3,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 2,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 116,
+     "actions_checked": 42,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       -8,
+       -8,
+       24
+      ],
+      [
+       3,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 3,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 214,
+     "actions_checked": 69,
+     "settle": null,
+     "engine_result": [
+      [
+       -1,
+       10,
+       -1,
+       -8
+      ],
+      [
+       1,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 4,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 101,
+     "actions_checked": 37,
+     "settle": null,
+     "engine_result": [
+      [
+       -2,
+       -16,
+       -2,
+       20
+      ],
+      [
+       3,
+       2,
+       [
+        "平胡",
+        "杠开"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 5,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 84,
+     "actions_checked": 25,
+     "settle": null,
+     "engine_result": [
+      [
+       -1,
+       -1,
+       10,
+       -8
+      ],
+      [
+       2,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 6,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 171,
+     "actions_checked": 48,
+     "settle": null,
+     "engine_result": [
+      [
+       10,
+       -1,
+       -8,
+       -1
+      ],
+      [
+       0,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 7,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 45,
+     "actions_checked": 18,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       -1,
+       -1,
+       10
+      ],
+      [
+       3,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 8,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 59,
+     "actions_checked": 22,
+     "settle": null,
+     "engine_result": [
+      [
+       -1,
+       -1,
+       10,
+       -8
+      ],
+      [
+       2,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "batch": 7,
+   "round": 1,
+   "game_id": "a_47fda164e28e_r1_b7_t0",
+   "rounds": [
+    {
+     "round_no": 1,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 142,
+     "actions_checked": 45,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       -1,
+       -1,
+       10
+      ],
+      [
+       3,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 2,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 89,
+     "actions_checked": 29,
+     "settle": null,
+     "engine_result": [
+      [
+       -2,
+       -2,
+       20,
+       -16
+      ],
+      [
+       2,
+       2,
+       [
+        "平胡",
+        "爆头"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 3,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 55,
+     "actions_checked": 18,
+     "settle": null,
+     "engine_result": [
+      [
+       10,
+       -1,
+       -8,
+       -1
+      ],
+      [
+       0,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 4,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 113,
+     "actions_checked": 36,
+     "settle": null,
+     "engine_result": [
+      [
+       -16,
+       20,
+       -2,
+       -2
+      ],
+      [
+       1,
+       2,
+       [
+        "平胡",
+        "爆头"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 5,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 113,
+     "actions_checked": 39,
+     "settle": null,
+     "engine_result": [
+      [
+       -16,
+       48,
+       -16,
+       -16
+      ],
+      [
+       1,
+       2,
+       [
+        "平胡",
+        "爆头"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 6,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 224,
+     "actions_checked": 68,
+     "settle": null,
+     "engine_result": [
+      [
+       -16,
+       48,
+       -16,
+       -16
+      ],
+      [
+       1,
+       2,
+       [
+        "平胡",
+        "爆头"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 7,
+     "illegal": [],
+     "warnings": [],
+     "auto_pass": 250,
+     "actions_checked": 82,
+     "settle": null,
+     "engine_result": [
+      [
+       0,
+       0,
+       0,
+       0
+      ],
+      null
+     ]
+    },
+    {
+     "round_no": 8,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 159,
+     "actions_checked": 47,
+     "settle": null,
+     "engine_result": [
+      [
+       -2,
+       -16,
+       20,
+       -2
+      ],
+      [
+       2,
+       2,
+       [
+        "平胡",
+        "爆头"
+       ]
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "batch": 8,
+   "round": 1,
+   "game_id": "a_47fda164e28e_r1_b8_t0",
+   "rounds": [
+    {
+     "round_no": 1,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 125,
+     "actions_checked": 39,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       -1,
+       10,
+       -1
+      ],
+      [
+       2,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 2,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 157,
+     "actions_checked": 54,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       -8,
+       24,
+       -8
+      ],
+      [
+       2,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 3,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 115,
+     "actions_checked": 36,
+     "settle": null,
+     "engine_result": [
+      [
+       10,
+       -1,
+       -8,
+       -1
+      ],
+      [
+       0,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 4,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 151,
+     "actions_checked": 54,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       -1,
+       -1,
+       10
+      ],
+      [
+       3,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 5,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 181,
+     "actions_checked": 54,
+     "settle": null,
+     "engine_result": [
+      [
+       -1,
+       10,
+       -1,
+       -8
+      ],
+      [
+       1,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 6,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 84,
+     "actions_checked": 33,
+     "settle": null,
+     "engine_result": [
+      [
+       -1,
+       -8,
+       -1,
+       10
+      ],
+      [
+       3,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 7,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 89,
+     "actions_checked": 28,
+     "settle": null,
+     "engine_result": [
+      [
+       10,
+       -1,
+       -1,
+       -8
+      ],
+      [
+       0,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 8,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 75,
+     "actions_checked": 26,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       10,
+       -1,
+       -1
+      ],
+      [
+       1,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "batch": 9,
+   "round": 1,
+   "game_id": "a_47fda164e28e_r1_b9_t0",
+   "rounds": [
+    {
+     "round_no": 1,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 76,
+     "actions_checked": 24,
+     "settle": null,
+     "engine_result": [
+      [
+       -16,
+       20,
+       -2,
+       -2
+      ],
+      [
+       1,
+       2,
+       [
+        "平胡",
+        "爆头"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 2,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 250,
+     "actions_checked": 84,
+     "settle": null,
+     "engine_result": [
+      [
+       -1,
+       -8,
+       10,
+       -1
+      ],
+      [
+       2,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 3,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 173,
+     "actions_checked": 52,
+     "settle": null,
+     "engine_result": [
+      [
+       20,
+       -2,
+       -16,
+       -2
+      ],
+      [
+       0,
+       2,
+       [
+        "平胡",
+        "爆头"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 4,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 166,
+     "actions_checked": 47,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       10,
+       -1,
+       -1
+      ],
+      [
+       1,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 5,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 155,
+     "actions_checked": 51,
+     "settle": null,
+     "engine_result": [
+      [
+       -1,
+       -8,
+       10,
+       -1
+      ],
+      [
+       2,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 6,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 174,
+     "actions_checked": 55,
+     "settle": null,
+     "engine_result": [
+      [
+       10,
+       -1,
+       -8,
+       -1
+      ],
+      [
+       0,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 7,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 144,
+     "actions_checked": 48,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       -1,
+       -1,
+       10
+      ],
+      [
+       3,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 8,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 111,
+     "actions_checked": 34,
+     "settle": null,
+     "engine_result": [
+      [
+       -2,
+       -2,
+       20,
+       -16
+      ],
+      [
+       2,
+       2,
+       [
+        "平胡",
+        "爆头"
+       ]
+      ]
+     ]
+    }
+   ]
+  }
+ ],
+ "total_illegal": 0,
+ "total_actions": 3256
+}

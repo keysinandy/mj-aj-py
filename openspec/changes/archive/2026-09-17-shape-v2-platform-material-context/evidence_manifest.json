@@ -1,0 +1,146 @@
+{
+  "schema": "shape-v2-platform-material-context/evidence-v1",
+  "captured_at": "2026-09-17",
+  "status": "implementation-in-progress",
+  "repository": {
+    "working_tree": "modified",
+    "note": "Implementation evidence is partial; no online canary claimed."
+  },
+  "protocol": {
+    "guide_version": 34,
+    "public_snapshot_fields": [
+      "hand_counts",
+      "wall_remaining",
+      "discards",
+      "melds",
+      "my_hand"
+    ],
+    "hand_counts_semantics": "public per-seat tile counts, no tile identities",
+    "full_wall_definition": "live wall plus 20-tile dead wall",
+    "initial_hand_counts_example": [
+      14,
+      13,
+      13,
+      13
+    ],
+    "initial_example_hero_seat": 1,
+    "initial_example_material_total": 136
+  },
+  "implementation": {
+    "public_count_statuses": [
+      "verified",
+      "unknown",
+      "malformed"
+    ],
+    "sources": [
+      "snapshot",
+      "event_advanced",
+      "unknown",
+      "malformed"
+    ],
+    "offline_native_game_compatibility": true,
+    "hidden_tile_identity_access": false,
+    "new_platform_requests": false
+  },
+  "tests": {
+    "focused_command": "python3 -m pytest tests/test_platform_mirror.py tests/test_bot_ev_discard.py tests/test_bot_ev_root.py -q -p no:cacheprovider",
+    "focused_result": "52 passed",
+    "full_command": "python3 -m pytest tests/ -q -p no:cacheprovider",
+    "full_result": "650 passed, 1 skipped, 1 warning, 9 subtests passed",
+    "rust_parity": "passed: shanten=600, ukeire=600, 30-game trajectory equal",
+    "online_canary": "partial: 2 rooms run; gate failed; no further rooms after user interruption",
+    "read_only_replay_scan": {
+      "root": "local/games/20260917",
+      "files": 40,
+      "snapshot_status": {
+        "verified": 1561,
+        "unknown": 0,
+        "malformed": 0
+      },
+      "context_material_errors": 0,
+      "decision_scan": {
+        "decisions": 3264,
+        "verified_contexts": 1266,
+        "unknown_contexts": 1998,
+        "legacy_material_fallbacks": 1893,
+        "v2_q0": 639,
+        "v2_ev2": 3,
+        "local_decision_errors_before_followup_guard": 8,
+        "local_decision_errors_after_followup_guard": 0,
+        "error_sample": "invalid freezer=-1 from historical catch-play snapshot was normalized to unknown freezer"
+      },
+      "note": "Read-only local decisions; no actions submitted and no hidden payload exported. The freezer=-1 compatibility issue remains to be fixed/verified."
+    }
+  },
+  "gates": {
+    "shape_v2_default_switch": false,
+    "score_gate": "not revalidated",
+    "calibration_gate": "not revalidated",
+    "online_gate": "not revalidated",
+    "performance_gate": {
+      "artifact": "bot_shape_perf_20260917.json",
+      "command": "python3 scripts/bot_shape_perf.py --interleaved --games 200 --repetitions 3 --evaluators shape-v1,shape-v2",
+      "shape_v1_median_elapsed_per_game_s": 0.6734786509201512,
+      "shape_v2_median_elapsed_per_game_s": 1.9049046659251325,
+      "shape_v2_elapsed_increase": 1.828455903275516,
+      "shape_v2_discard_p95_median_ms": 69.14307700935751,
+      "shape_v2_discard_fallback_rate_median": 0.9741390346946613,
+      "shape_v2_discard_complete_level_rate_median": 0.02483676865958264,
+      "passed": false,
+      "reason": "shape-v2 exceeds 15 percent elapsed gate and has high fallback/latency"
+    }
+  },
+  "canary": {
+    "room_1": {
+      "room": "a_47fda164e28e",
+      "games": 10,
+      "runner_summary": {
+        "actions": 838,
+        "err409": 1,
+        "decide_errors": 0,
+        "mirror_resets": 0,
+        "auto_played": 0,
+        "deadline_missed": 1
+      },
+      "replay_exit": 0,
+      "replay_actions": 3256,
+      "replay_illegal": 0,
+      "material_status": {
+        "decisions": 891,
+        "verified": 338,
+        "unknown": 553,
+        "legacy_material_fallbacks": 534,
+        "v2_q0": 170,
+        "v2_ev2": 2
+      }
+    },
+    "room_2": {
+      "room": "a_b0ab4047643c",
+      "games": 10,
+      "runner_summary": {
+        "actions": 538,
+        "err409": 0,
+        "decide_errors": 0,
+        "mirror_resets": 0,
+        "auto_played": 1,
+        "deadline_missed": 0
+      },
+      "replay_exit": 1,
+      "replay_actions": 1895,
+      "replay_illegal": 106,
+      "material_status": {
+        "decisions": 568,
+        "verified": 213,
+        "unknown": 355,
+        "legacy_material_fallbacks": 336,
+        "v2_q0": 109,
+        "v2_ev2": 0
+      },
+      "failure": "room lifecycle stopped/partially inaccessible; replay cascaded after server state loss"
+    },
+    "rooms_completed": 2,
+    "rooms_required": 3,
+    "online_gate_passed": false,
+    "note": "User interrupted before further rooms; no new rooms started after interruption."
+  }
+}

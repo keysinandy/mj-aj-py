@@ -64,8 +64,16 @@ python3 scripts/bot_shape_perf.py --interleaved \
 
 该报告只表示本机离线计时；如果 shape-v2 主要回退到 Q0，
 `performance_gate_passed` 会保持 false，不能用回退路径的吞吐替代完整 EV2
-覆盖。校准证据需要额外使用 `--strict-evidence` 检查 split/profile/kernel
-指纹自洽。
+覆盖。2026-09-17 的 200 局×3 轮实测中，shape-v2 相对 shape-v1
+总耗时增加 182.85%，弃牌 p95 中位约 69.14ms，弃牌回退率约 97.41%，
+性能门禁失败，继续 offline-only，不得切换默认。校准证据需要额外使用
+`--strict-evidence` 检查 split/profile/kernel 指纹自洽。
+
+平台镜像的 `hand_counts` 修复已单独落地：可信快照用于公开四家张数，
+不可确认的事件流标为 unknown 并以 `context_material_unknown` 受控回退
+legacy；该修复不改变原生 Game/GEN0 训练路径。线上 canary 证据仍须同时
+满足逐窗、对账和性能门禁，不能以一次无非法对账房间替代完整发布条件。
+详见 `openspec/changes/shape-v2-platform-material-context/`。
 
 HU/财飘、KONG 和反应根动作使用独立的 public fixture/teacher 与反应窗口
 scope 探针：

@@ -1,0 +1,1858 @@
+{
+ "room": "a_b0ab4047643c",
+ "games": [
+  {
+   "batch": 0,
+   "round": 1,
+   "game_id": "a_b0ab4047643c_r1_b0_t0",
+   "rounds": [
+    {
+     "round_no": 1,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 119,
+     "actions_checked": 45,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       -1,
+       -1,
+       10
+      ],
+      [
+       3,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 2,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 63,
+     "actions_checked": 20,
+     "settle": null,
+     "engine_result": [
+      [
+       -1,
+       -1,
+       10,
+       -8
+      ],
+      [
+       2,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 3,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 116,
+     "actions_checked": 37,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       -8,
+       24,
+       -8
+      ],
+      [
+       2,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 4,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 109,
+     "actions_checked": 41,
+     "settle": null,
+     "engine_result": [
+      [
+       -4,
+       -4,
+       -32,
+       40
+      ],
+      [
+       3,
+       4,
+       [
+        "七对",
+        "爆头"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 5,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 57,
+     "actions_checked": 21,
+     "settle": null,
+     "engine_result": [
+      [
+       10,
+       -1,
+       -1,
+       -8
+      ],
+      [
+       0,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 6,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 70,
+     "actions_checked": 22,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       10,
+       -1,
+       -1
+      ],
+      [
+       1,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "batch": 1,
+   "round": 1,
+   "game_id": "a_b0ab4047643c_r1_b1_t0",
+   "rounds": [
+    {
+     "round_no": 1,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 86,
+     "actions_checked": 30,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       10,
+       -1,
+       -1
+      ],
+      [
+       1,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 2,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 54,
+     "actions_checked": 17,
+     "settle": null,
+     "engine_result": [
+      [
+       -1,
+       -8,
+       10,
+       -1
+      ],
+      [
+       2,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 3,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 47,
+     "actions_checked": 16,
+     "settle": null,
+     "engine_result": [
+      [
+       10,
+       -1,
+       -8,
+       -1
+      ],
+      [
+       0,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 4,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 125,
+     "actions_checked": 42,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       -1,
+       10,
+       -1
+      ],
+      [
+       2,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 5,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 157,
+     "actions_checked": 48,
+     "settle": null,
+     "engine_result": [
+      [
+       -2,
+       -2,
+       -16,
+       20
+      ],
+      [
+       3,
+       2,
+       [
+        "平胡",
+        "爆头"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 6,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 95,
+     "actions_checked": 35,
+     "settle": null,
+     "engine_result": [
+      [
+       10,
+       -1,
+       -1,
+       -8
+      ],
+      [
+       0,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "batch": 2,
+   "round": 1,
+   "game_id": "a_b0ab4047643c_r1_b2_t0",
+   "rounds": [
+    {
+     "round_no": 1,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 82,
+     "actions_checked": 25,
+     "settle": null,
+     "engine_result": [
+      [
+       24,
+       -8,
+       -8,
+       -8
+      ],
+      [
+       0,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 2,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 170,
+     "actions_checked": 64,
+     "settle": null,
+     "engine_result": [
+      [
+       -64,
+       80,
+       -8,
+       -8
+      ],
+      [
+       1,
+       8,
+       [
+        "平胡",
+        "双财飘",
+        "爆头"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 3,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 95,
+     "actions_checked": 32,
+     "settle": null,
+     "engine_result": [
+      [
+       10,
+       -8,
+       -1,
+       -1
+      ],
+      [
+       0,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 4,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 110,
+     "actions_checked": 35,
+     "settle": null,
+     "engine_result": [
+      [
+       48,
+       -16,
+       -16,
+       -16
+      ],
+      [
+       0,
+       2,
+       [
+        "平胡",
+        "杠开"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 5,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 88,
+     "actions_checked": 30,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       -1,
+       10,
+       -1
+      ],
+      [
+       2,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": null,
+     "illegal": [
+      {
+       "seq": 939,
+       "msg": "出牌时机不符: seat=2 引擎 turn=0 phase=discard"
+      },
+      {
+       "seq": 941,
+       "msg": "peng 时机不符: seat=0 引擎 turn=0 phase=discard"
+      }
+     ],
+     "warnings": [],
+     "auto_pass": 74,
+     "actions_checked": 25,
+     "settle": null,
+     "engine_result": null
+    }
+   ]
+  },
+  {
+   "batch": 3,
+   "round": 1,
+   "game_id": "a_b0ab4047643c_r1_b3_t0",
+   "rounds": [
+    {
+     "round_no": 1,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 107,
+     "actions_checked": 39,
+     "settle": null,
+     "engine_result": [
+      [
+       -16,
+       -2,
+       -2,
+       20
+      ],
+      [
+       3,
+       2,
+       [
+        "平胡",
+        "爆头"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 2,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 54,
+     "actions_checked": 19,
+     "settle": null,
+     "engine_result": [
+      [
+       20,
+       -2,
+       -2,
+       -16
+      ],
+      [
+       0,
+       2,
+       [
+        "平胡",
+        "爆头"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 3,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 149,
+     "actions_checked": 52,
+     "settle": null,
+     "engine_result": [
+      [
+       -16,
+       20,
+       -2,
+       -2
+      ],
+      [
+       1,
+       2,
+       [
+        "平胡",
+        "爆头"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 4,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 153,
+     "actions_checked": 57,
+     "settle": null,
+     "engine_result": [
+      [
+       40,
+       -32,
+       -4,
+       -4
+      ],
+      [
+       0,
+       4,
+       [
+        "平胡",
+        "财飘",
+        "爆头"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 5,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 48,
+     "actions_checked": 19,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       10,
+       -1,
+       -1
+      ],
+      [
+       1,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "batch": 4,
+   "round": 1,
+   "game_id": "a_b0ab4047643c_r1_b4_t0",
+   "rounds": [
+    {
+     "round_no": 1,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 102,
+     "actions_checked": 30,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       10,
+       -1,
+       -1
+      ],
+      [
+       1,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 2,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 91,
+     "actions_checked": 29,
+     "settle": null,
+     "engine_result": [
+      [
+       -1,
+       -8,
+       -1,
+       10
+      ],
+      [
+       3,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 3,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 148,
+     "actions_checked": 45,
+     "settle": null,
+     "engine_result": [
+      [
+       -1,
+       10,
+       -1,
+       -8
+      ],
+      [
+       1,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 4,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 64,
+     "actions_checked": 20,
+     "settle": null,
+     "engine_result": [
+      [
+       -32,
+       96,
+       -32,
+       -32
+      ],
+      [
+       1,
+       4,
+       [
+        "七对",
+        "爆头"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 5,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 100,
+     "actions_checked": 33,
+     "settle": null,
+     "engine_result": [
+      [
+       10,
+       -8,
+       -1,
+       -1
+      ],
+      [
+       0,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 6,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 102,
+     "actions_checked": 38,
+     "settle": null,
+     "engine_result": [
+      [
+       -16,
+       -2,
+       20,
+       -2
+      ],
+      [
+       2,
+       2,
+       [
+        "平胡",
+        "杠开"
+       ]
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "batch": 5,
+   "round": 1,
+   "game_id": "a_b0ab4047643c_r1_b5_t0",
+   "rounds": [
+    {
+     "round_no": 1,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 150,
+     "actions_checked": 51,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       -1,
+       -1,
+       10
+      ],
+      [
+       3,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 2,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 79,
+     "actions_checked": 25,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       -8,
+       -8,
+       24
+      ],
+      [
+       3,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 3,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 84,
+     "actions_checked": 31,
+     "settle": null,
+     "engine_result": [
+      [
+       10,
+       -1,
+       -1,
+       -8
+      ],
+      [
+       0,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 4,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 104,
+     "actions_checked": 36,
+     "settle": null,
+     "engine_result": [
+      [
+       48,
+       -16,
+       -16,
+       -16
+      ],
+      [
+       0,
+       2,
+       [
+        "平胡",
+        "爆头"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 5,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 121,
+     "actions_checked": 36,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       -1,
+       -1,
+       10
+      ],
+      [
+       3,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": null,
+     "illegal": [
+      {
+       "seq": 957,
+       "msg": "出牌时机不符: seat=3 引擎 turn=0 phase=discard"
+      },
+      {
+       "seq": 958,
+       "msg": "peng 时机不符: seat=2 引擎 turn=0 phase=discard"
+      },
+      {
+       "seq": 959,
+       "msg": "出牌时机不符: seat=2 引擎 turn=0 phase=discard"
+      },
+      {
+       "seq": 964,
+       "msg": "摸牌不符: 事件 seat=3 13,引擎 turn=0 drawn=None"
+      },
+      {
+       "seq": 965,
+       "msg": "出牌时机不符: seat=3 引擎 turn=0 phase=discard"
+      },
+      {
+       "seq": 970,
+       "msg": "摸牌不符: 事件 seat=0 12,引擎 turn=0 drawn=28"
+      },
+      {
+       "seq": 976,
+       "msg": "摸牌不符: 事件 seat=1 2,引擎 turn=1 drawn=13"
+      },
+      {
+       "seq": 982,
+       "msg": "摸牌不符: 事件 seat=2 25,引擎 turn=2 drawn=12"
+      },
+      {
+       "seq": 988,
+       "msg": "摸牌不符: 事件 seat=3 7,引擎 turn=3 drawn=2"
+      },
+      {
+       "seq": 996,
+       "msg": "摸牌不符: 事件 seat=3 24,引擎 turn=3 drawn=25"
+      },
+      {
+       "seq": 1002,
+       "msg": "摸牌不符: 事件 seat=0 13,引擎 turn=0 drawn=7"
+      },
+      {
+       "seq": 1008,
+       "msg": "摸牌不符: 事件 seat=1 5,引擎 turn=1 drawn=24"
+      },
+      {
+       "seq": 1014,
+       "msg": "摸牌不符: 事件 seat=2 32,引擎 turn=2 drawn=13"
+      },
+      {
+       "seq": 1015,
+       "msg": "非法弃牌 发: 合法集 [0, 12, 13, 18, 20, 22, 26, 27]"
+      },
+      {
+       "seq": 1020,
+       "msg": "摸牌不符: 事件 seat=3 1,引擎 turn=2 drawn=None"
+      },
+      {
+       "seq": 1021,
+       "msg": "出牌时机不符: seat=3 引擎 turn=2 phase=discard"
+      },
+      {
+       "seq": 1026,
+       "msg": "摸牌不符: 事件 seat=0 31,引擎 turn=2 drawn=None"
+      },
+      {
+       "seq": 1027,
+       "msg": "出牌时机不符: seat=0 引擎 turn=2 phase=discard"
+      },
+      {
+       "seq": 1032,
+       "msg": "摸牌不符: 事件 seat=1 20,引擎 turn=2 drawn=None"
+      },
+      {
+       "seq": 1033,
+       "msg": "出牌时机不符: seat=1 引擎 turn=2 phase=discard"
+      },
+      {
+       "seq": 1038,
+       "msg": "摸牌不符: 事件 seat=2 25,引擎 turn=2 drawn=13"
+      },
+      {
+       "seq": 1040,
+       "msg": "非法 peng: -5 不在 [-1]"
+      },
+      {
+       "seq": 1041,
+       "msg": "非法弃牌 7t: 合法集 [2, 5, 6, 8, 11, 13, 14, 16, 17, 19, 25, 27, 28, 33]"
+      },
+      {
+       "seq": 1046,
+       "msg": "摸牌不符: 事件 seat=0 14,引擎 turn=3 drawn=None"
+      },
+      {
+       "seq": 1047,
+       "msg": "出牌时机不符: seat=0 引擎 turn=3 phase=discard"
+      },
+      {
+       "seq": 1052,
+       "msg": "摸牌不符: 事件 seat=1 21,引擎 turn=3 drawn=None"
+      },
+      {
+       "seq": 1053,
+       "msg": "出牌时机不符: seat=1 引擎 turn=3 phase=discard"
+      },
+      {
+       "seq": 1058,
+       "msg": "摸牌不符: 事件 seat=2 0,引擎 turn=3 drawn=None"
+      },
+      {
+       "seq": 1059,
+       "msg": "出牌时机不符: seat=2 引擎 turn=3 phase=discard"
+      },
+      {
+       "seq": 1064,
+       "msg": "摸牌不符: 事件 seat=3 4,引擎 turn=3 drawn=5"
+      },
+      {
+       "seq": 1070,
+       "msg": "摸牌不符: 事件 seat=0 28,引擎 turn=0 drawn=32"
+      },
+      {
+       "seq": 1071,
+       "msg": "非法弃牌 南: 合法集 [4, 5, 6, 7, 18, 23, 24, 25, 32, 33]"
+      },
+      {
+       "seq": 1076,
+       "msg": "摸牌不符: 事件 seat=1 1,引擎 turn=0 drawn=None"
+      },
+      {
+       "seq": 1077,
+       "msg": "出牌时机不符: seat=1 引擎 turn=0 phase=discard"
+      },
+      {
+       "seq": 1082,
+       "msg": "摸牌不符: 事件 seat=2 15,引擎 turn=0 drawn=None"
+      },
+      {
+       "seq": 1083,
+       "msg": "出牌时机不符: seat=2 引擎 turn=0 phase=discard"
+      }
+     ],
+     "warnings": [],
+     "auto_pass": 33,
+     "actions_checked": 11,
+     "settle": null,
+     "engine_result": null
+    }
+   ]
+  },
+  {
+   "batch": 6,
+   "round": 1,
+   "game_id": "a_b0ab4047643c_r1_b6_t0",
+   "rounds": [
+    {
+     "round_no": 1,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 80,
+     "actions_checked": 24,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       -1,
+       -1,
+       10
+      ],
+      [
+       3,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 2,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 88,
+     "actions_checked": 29,
+     "settle": null,
+     "engine_result": [
+      [
+       -1,
+       10,
+       -1,
+       -8
+      ],
+      [
+       1,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 3,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 110,
+     "actions_checked": 38,
+     "settle": null,
+     "engine_result": [
+      [
+       -2,
+       -16,
+       -2,
+       20
+      ],
+      [
+       3,
+       2,
+       [
+        "平胡",
+        "爆头"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 4,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 94,
+     "actions_checked": 31,
+     "settle": null,
+     "engine_result": [
+      [
+       10,
+       -1,
+       -1,
+       -8
+      ],
+      [
+       0,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 5,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 103,
+     "actions_checked": 37,
+     "settle": null,
+     "engine_result": [
+      [
+       24,
+       -8,
+       -8,
+       -8
+      ],
+      [
+       0,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 6,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 64,
+     "actions_checked": 23,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       -1,
+       10,
+       -1
+      ],
+      [
+       2,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "batch": 7,
+   "round": 1,
+   "game_id": "a_b0ab4047643c_r1_b7_t0",
+   "rounds": [
+    {
+     "round_no": 1,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 84,
+     "actions_checked": 28,
+     "settle": null,
+     "engine_result": [
+      [
+       -16,
+       -2,
+       -2,
+       20
+      ],
+      [
+       3,
+       2,
+       [
+        "平胡",
+        "爆头"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 2,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 74,
+     "actions_checked": 25,
+     "settle": null,
+     "engine_result": [
+      [
+       -1,
+       10,
+       -1,
+       -8
+      ],
+      [
+       1,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 3,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 178,
+     "actions_checked": 58,
+     "settle": null,
+     "engine_result": [
+      [
+       10,
+       -8,
+       -1,
+       -1
+      ],
+      [
+       0,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 4,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 148,
+     "actions_checked": 49,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       10,
+       -1,
+       -1
+      ],
+      [
+       1,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": null,
+     "illegal": [
+      {
+       "seq": 836,
+       "msg": "出牌时机不符: seat=1 引擎 turn=0 phase=discard"
+      },
+      {
+       "seq": 841,
+       "msg": "摸牌不符: 事件 seat=2 27,引擎 turn=0 drawn=None"
+      },
+      {
+       "seq": 842,
+       "msg": "出牌时机不符: seat=2 引擎 turn=0 phase=discard"
+      },
+      {
+       "seq": 847,
+       "msg": "摸牌不符: 事件 seat=3 33,引擎 turn=0 drawn=None"
+      },
+      {
+       "seq": 848,
+       "msg": "出牌时机不符: seat=3 引擎 turn=0 phase=discard"
+      },
+      {
+       "seq": 849,
+       "msg": "peng 时机不符: seat=1 引擎 turn=0 phase=discard"
+      },
+      {
+       "seq": 850,
+       "msg": "出牌时机不符: seat=1 引擎 turn=0 phase=discard"
+      },
+      {
+       "seq": 855,
+       "msg": "摸牌不符: 事件 seat=2 33,引擎 turn=0 drawn=None"
+      },
+      {
+       "seq": 856,
+       "msg": "出牌时机不符: seat=2 引擎 turn=0 phase=discard"
+      },
+      {
+       "seq": 861,
+       "msg": "摸牌不符: 事件 seat=3 26,引擎 turn=0 drawn=None"
+      },
+      {
+       "seq": 862,
+       "msg": "出牌时机不符: seat=3 引擎 turn=0 phase=discard"
+      },
+      {
+       "seq": 867,
+       "msg": "摸牌不符: 事件 seat=0 4,引擎 turn=0 drawn=0"
+      },
+      {
+       "seq": 873,
+       "msg": "摸牌不符: 事件 seat=1 4,引擎 turn=1 drawn=27"
+      },
+      {
+       "seq": 876,
+       "msg": "非法 peng: -5 不在 [-1]"
+      },
+      {
+       "seq": 877,
+       "msg": "出牌时机不符: seat=3 引擎 turn=2 phase=discard"
+      },
+      {
+       "seq": 882,
+       "msg": "摸牌不符: 事件 seat=0 20,引擎 turn=2 drawn=None"
+      },
+      {
+       "seq": 883,
+       "msg": "出牌时机不符: seat=0 引擎 turn=2 phase=discard"
+      },
+      {
+       "seq": 888,
+       "msg": "摸牌不符: 事件 seat=1 10,引擎 turn=2 drawn=None"
+      },
+      {
+       "seq": 889,
+       "msg": "出牌时机不符: seat=1 引擎 turn=2 phase=discard"
+      },
+      {
+       "seq": 894,
+       "msg": "摸牌不符: 事件 seat=2 6,引擎 turn=2 drawn=33"
+      },
+      {
+       "seq": 900,
+       "msg": "摸牌不符: 事件 seat=3 24,引擎 turn=3 drawn=33"
+      },
+      {
+       "seq": 906,
+       "msg": "摸牌不符: 事件 seat=0 30,引擎 turn=0 drawn=26"
+      },
+      {
+       "seq": 907,
+       "msg": "非法弃牌 北: 合法集 [5, 7, 9, 11, 14, 15, 24, 26, 27, 28, 32]"
+      },
+      {
+       "seq": 912,
+       "msg": "摸牌不符: 事件 seat=1 13,引擎 turn=0 drawn=None"
+      },
+      {
+       "seq": 913,
+       "msg": "出牌时机不符: seat=1 引擎 turn=0 phase=discard"
+      },
+      {
+       "seq": 918,
+       "msg": "摸牌不符: 事件 seat=2 22,引擎 turn=0 drawn=None"
+      },
+      {
+       "seq": 919,
+       "msg": "出牌时机不符: seat=2 引擎 turn=0 phase=discard"
+      },
+      {
+       "seq": 924,
+       "msg": "摸牌不符: 事件 seat=3 0,引擎 turn=0 drawn=None"
+      },
+      {
+       "seq": 925,
+       "msg": "出牌时机不符: seat=3 引擎 turn=0 phase=discard"
+      },
+      {
+       "seq": 930,
+       "msg": "摸牌不符: 事件 seat=0 29,引擎 turn=0 drawn=26"
+      },
+      {
+       "seq": 936,
+       "msg": "摸牌不符: 事件 seat=1 29,引擎 turn=1 drawn=4"
+      },
+      {
+       "seq": 943,
+       "msg": "摸牌不符: 事件 seat=2 10,引擎 turn=2 drawn=4"
+      },
+      {
+       "seq": 944,
+       "msg": "非法弃牌 2b: 合法集 [0, 1, 3, 4, 11, 13, 20, 25, 26, 27, 33]"
+      },
+      {
+       "seq": 949,
+       "msg": "摸牌不符: 事件 seat=3 16,引擎 turn=2 drawn=None"
+      },
+      {
+       "seq": 950,
+       "msg": "出牌时机不符: seat=3 引擎 turn=2 phase=discard"
+      },
+      {
+       "seq": 954,
+       "msg": "chi 时机不符: seat=0 引擎 turn=2 phase=discard"
+      },
+      {
+       "seq": 955,
+       "msg": "出牌时机不符: seat=0 引擎 turn=2 phase=discard"
+      },
+      {
+       "seq": 960,
+       "msg": "摸牌不符: 事件 seat=1 11,引擎 turn=2 drawn=None"
+      },
+      {
+       "seq": 961,
+       "msg": "出牌时机不符: seat=1 引擎 turn=2 phase=discard"
+      }
+     ],
+     "warnings": [],
+     "auto_pass": 21,
+     "actions_checked": 6,
+     "settle": null,
+     "engine_result": null
+    }
+   ]
+  },
+  {
+   "batch": 8,
+   "round": 1,
+   "game_id": "a_b0ab4047643c_r1_b8_t0",
+   "rounds": [
+    {
+     "round_no": 1,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 84,
+     "actions_checked": 27,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       -1,
+       -1,
+       10
+      ],
+      [
+       3,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 2,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 57,
+     "actions_checked": 24,
+     "settle": null,
+     "engine_result": [
+      [
+       10,
+       -1,
+       -1,
+       -8
+      ],
+      [
+       0,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 3,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 91,
+     "actions_checked": 37,
+     "settle": null,
+     "engine_result": [
+      [
+       48,
+       -16,
+       -16,
+       -16
+      ],
+      [
+       0,
+       2,
+       [
+        "平胡",
+        "杠开"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 4,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 140,
+     "actions_checked": 48,
+     "settle": null,
+     "engine_result": [
+      [
+       -16,
+       -2,
+       -2,
+       20
+      ],
+      [
+       3,
+       2,
+       [
+        "平胡",
+        "爆头"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 5,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 129,
+     "actions_checked": 45,
+     "settle": null,
+     "engine_result": [
+      [
+       -1,
+       -1,
+       10,
+       -8
+      ],
+      [
+       2,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 6,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 77,
+     "actions_checked": 25,
+     "settle": null,
+     "engine_result": [
+      [
+       -1,
+       10,
+       -8,
+       -1
+      ],
+      [
+       1,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "batch": 9,
+   "round": 1,
+   "game_id": "a_b0ab4047643c_r1_b9_t0",
+   "rounds": [
+    {
+     "round_no": 1,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 193,
+     "actions_checked": 65,
+     "settle": null,
+     "engine_result": [
+      [
+       24,
+       -8,
+       -8,
+       -8
+      ],
+      [
+       0,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 2,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 183,
+     "actions_checked": 65,
+     "settle": null,
+     "engine_result": [
+      [
+       -8,
+       -1,
+       10,
+       -1
+      ],
+      [
+       2,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": 3,
+     "illegal": [],
+     "warnings": [
+      "round_ended 无 hu 事件,补试 HU 通过"
+     ],
+     "auto_pass": 117,
+     "actions_checked": 40,
+     "settle": null,
+     "engine_result": [
+      [
+       10,
+       -1,
+       -8,
+       -1
+      ],
+      [
+       0,
+       1,
+       [
+        "平胡"
+       ]
+      ]
+     ]
+    },
+    {
+     "round_no": null,
+     "illegal": [
+      {
+       "seq": 885,
+       "msg": "出牌时机不符: seat=0 引擎 turn=2 phase=discard"
+      },
+      {
+       "seq": 890,
+       "msg": "摸牌不符: 事件 seat=1 24,引擎 turn=2 drawn=None"
+      },
+      {
+       "seq": 891,
+       "msg": "出牌时机不符: seat=1 引擎 turn=2 phase=discard"
+      },
+      {
+       "seq": 896,
+       "msg": "摸牌不符: 事件 seat=2 18,引擎 turn=2 drawn=26"
+      },
+      {
+       "seq": 908,
+       "msg": "摸牌不符: 事件 seat=0 31,引擎 turn=0 drawn=18"
+      },
+      {
+       "seq": 914,
+       "msg": "摸牌不符: 事件 seat=1 7,引擎 turn=1 drawn=24"
+      },
+      {
+       "seq": 920,
+       "msg": "摸牌不符: 事件 seat=2 29,引擎 turn=2 drawn=31"
+      },
+      {
+       "seq": 926,
+       "msg": "摸牌不符: 事件 seat=3 21,引擎 turn=3 drawn=7"
+      },
+      {
+       "seq": 932,
+       "msg": "摸牌不符: 事件 seat=0 8,引擎 turn=0 drawn=29"
+      },
+      {
+       "seq": 938,
+       "msg": "摸牌不符: 事件 seat=1 9,引擎 turn=1 drawn=21"
+      },
+      {
+       "seq": 944,
+       "msg": "摸牌不符: 事件 seat=2 17,引擎 turn=2 drawn=8"
+      },
+      {
+       "seq": 945,
+       "msg": "非法弃牌 西: 合法集 [4, 6, 8, 10, 15, 17, 20, 21, 22, 23, 28, 31]"
+      },
+      {
+       "seq": 950,
+       "msg": "摸牌不符: 事件 seat=3 8,引擎 turn=2 drawn=None"
+      },
+      {
+       "seq": 951,
+       "msg": "出牌时机不符: seat=3 引擎 turn=2 phase=discard"
+      },
+      {
+       "seq": 956,
+       "msg": "摸牌不符: 事件 seat=0 21,引擎 turn=2 drawn=None"
+      },
+      {
+       "seq": 957,
+       "msg": "出牌时机不符: seat=0 引擎 turn=2 phase=discard"
+      },
+      {
+       "seq": 961,
+       "msg": "chi 时机不符: seat=1 引擎 turn=2 phase=discard"
+      },
+      {
+       "seq": 962,
+       "msg": "出牌时机不符: seat=1 引擎 turn=2 phase=discard"
+      },
+      {
+       "seq": 967,
+       "msg": "摸牌不符: 事件 seat=2 15,引擎 turn=2 drawn=8"
+      },
+      {
+       "seq": 973,
+       "msg": "摸牌不符: 事件 seat=3 7,引擎 turn=3 drawn=9"
+      },
+      {
+       "seq": 979,
+       "msg": "摸牌不符: 事件 seat=0 20,引擎 turn=0 drawn=17"
+      },
+      {
+       "seq": 992,
+       "msg": "摸牌不符: 事件 seat=0 0,引擎 turn=0 drawn=8"
+      },
+      {
+       "seq": 993,
+       "msg": "非法弃牌 1w: 合法集 [1, 3, 6, 8, 10, 11, 12, 17, 18, 19, 23, 25, 29]"
+      },
+      {
+       "seq": 998,
+       "msg": "摸牌不符: 事件 seat=1 5,引擎 turn=0 drawn=None"
+      },
+      {
+       "seq": 999,
+       "msg": "出牌时机不符: seat=1 引擎 turn=0 phase=discard"
+      },
+      {
+       "seq": 1004,
+       "msg": "摸牌不符: 事件 seat=2 30,引擎 turn=0 drawn=None"
+      },
+      {
+       "seq": 1005,
+       "msg": "出牌时机不符: seat=2 引擎 turn=0 phase=discard"
+      },
+      {
+       "seq": 1009,
+       "msg": "chi 时机不符: seat=3 引擎 turn=0 phase=discard"
+      },
+      {
+       "seq": 1010,
+       "msg": "出牌时机不符: seat=3 引擎 turn=0 phase=discard"
+      }
+     ],
+     "warnings": [],
+     "auto_pass": 40,
+     "actions_checked": 15,
+     "settle": null,
+     "engine_result": null
+    }
+   ]
+  }
+ ],
+ "total_illegal": 106,
+ "total_actions": 1895
+}
