@@ -27,7 +27,7 @@ class StateThrottle:
     的刷新按 EDF 运行，避免 10 局并发时普通 SSE 唤醒挤掉反应窗口。
     """
 
-    def __init__(self, rate=15.0, burst=2, clock=time.monotonic,
+    def __init__(self, rate=16.0, burst=2, clock=time.monotonic,
                  max_normal_wait=0.5):
         if rate <= 0:
             raise ValueError("rate 必须大于 0")

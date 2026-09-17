@@ -1,0 +1,34 @@
+{
+ "scenario": "event says seq 42, snapshot says 43: MISMATCH, never promoted",
+ "event": {
+  "seq": 42,
+  "type": "tile_discarded",
+  "seat": 3,
+  "tile": "6b",
+  "data": null
+ },
+ "snapshot": {
+  "phase": "response_chi",
+  "window_deadline_ms": 1002000,
+  "discards": [
+   [],
+   [],
+   [],
+   [
+    "6b"
+   ]
+  ],
+  "last_discard": "6b",
+  "responding": [
+   0
+  ],
+  "turn": 3,
+  "round_no": 1,
+  "source_discard_seq": 43
+ },
+ "expect": {
+  "resolution": "MISMATCH",
+  "strong_window_key": false
+ },
+ "$schema": "window-identity-protocol/fixture-v1"
+}

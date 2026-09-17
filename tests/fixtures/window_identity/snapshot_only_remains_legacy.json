@@ -1,0 +1,28 @@
+{
+ "scenario": "no protocol field, no observed discard event: legacy_unresolved",
+ "snapshot": {
+  "phase": "response_chi",
+  "window_deadline_ms": 1002000,
+  "discards": [
+   [],
+   [],
+   [],
+   [
+    "6b"
+   ]
+  ],
+  "last_discard": "6b",
+  "responding": [
+   0
+  ],
+  "turn": 3,
+  "round_no": 1
+ },
+ "expect": {
+  "identity_status": "legacy_unresolved",
+  "identity_origin": "legacy_snapshot",
+  "strong_window_key": false,
+  "logical_key_kind": "legacy"
+ },
+ "$schema": "window-identity-protocol/fixture-v1"
+}

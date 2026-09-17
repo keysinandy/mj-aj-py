@@ -57,6 +57,12 @@ EAGER_CHI_LEAD = 0.25  # 吃窗快照提前量:临近开窗才抓,避免长时�
 EAGER_CHI_GAP = 0.12   # 同一吃窗两次快照抓取的最小间隔(限速 ~8/s)
 EAGER_CHI_MAX = 8      # 同一吃窗最多抓取次数(无截止/相位不推进时的兜底界)
 MAX_WINDOW_CONFIRM_PENDING_RETRIES = 8
+# window-snapshot-identity-decision: deadline-driven confirmation budget.
+# Another WINDOW_CONFIRM pull is worth scheduling only while the remaining
+# window time still affords the round trip plus the decide+POST margin;
+# below that the pending action path decides under the weak epoch key.
+CONFIRM_PULL_MARGIN = 0.3   # one /state confirm round-trip estimate
+WEAK_DECIDE_MARGIN = 0.12  # decide + POST margin (mirrors DEADLINE_MARGIN)
 
 
 class _ActionResync(Exception):
@@ -293,6 +299,10 @@ class BotClient:
             # 维持原有口径。
             "window_confirm_requests": 0,
             "window_confirm_open": 0,
+            # window-snapshot-identity-decision: 弱键决策/授权计数,与
+            # authoritative open 分开,线上对账时可单独归因。
+            "window_confirm_weak_open": 0,
+            "weak_key_decisions": 0,
             "window_confirm_closed": 0,
             "window_confirm_stale": 0,
             "window_confirm_unconfirmed": 0,
@@ -1147,6 +1157,10 @@ class BotClient:
                 self.stats["window_confirm_requests"] += 1
             elif outcome in ("open", "confirmed"):
                 self.stats["window_confirm_open"] += 1
+                if outcome == "open" and reason == "weak_key_open":
+                    # window-snapshot-identity-decision: authorized under a
+                    # weak epoch key; kept separate for online attribution.
+                    self.stats["window_confirm_weak_open"] += 1
             elif outcome in ("closed", "expired", "not_responding",
                              "deadline_missing"):
                 self.stats["window_confirm_closed"] += 1
@@ -1607,7 +1621,27 @@ class BotClient:
             return True
         return cls._window_decision_for_key(mirror, key) == -1
 
-    def _window_confirm_retry_expired(self, confirm):
+    def _confirm_pull_budget_expired(self, confirm, snap=None):
+        """Deadline-driven budget: stop scheduling confirm pulls.
+
+        Another WINDOW_CONFIRM round-trip is only worth scheduling while
+        the remaining window time still affords the pull plus the
+        decide+POST margin.  The exact snapshot deadline tightens the
+        schedule estimate, but only for a same-phase snapshot: the
+        response_peng deadline does not bound the following chi window.
+        """
+        window_end = None
+        if (isinstance(snap, dict)
+                and snap.get("phase") == getattr(confirm, "phase", None)):
+            window_end = self._mono_deadline(self._snapshot_deadline(snap))
+        if window_end is None:
+            window_end = getattr(confirm, "retry_deadline", None)
+        if window_end is None:
+            return False
+        return (time.monotonic()
+                >= window_end - CONFIRM_PULL_MARGIN - WEAK_DECIDE_MARGIN)
+
+    def _window_confirm_retry_expired(self, confirm, snap=None):
         """Bound unresolved confirmation without claiming a server miss."""
         confirm.pending_retries = getattr(confirm, "pending_retries", 0) + 1
         retry_deadline = getattr(confirm, "retry_deadline", None)
@@ -1616,7 +1650,8 @@ class BotClient:
                 WINDOW_SEC * 2, self.window_wait * 2, 0.5)
             confirm.retry_deadline = retry_deadline
         expired = (confirm.pending_retries > MAX_WINDOW_CONFIRM_PENDING_RETRIES
-                   or time.monotonic() >= retry_deadline)
+                   or time.monotonic() >= retry_deadline
+                   or self._confirm_pull_budget_expired(confirm, snap=snap))
         lifecycle_confirmation = getattr(confirm, "confirmation", None)
         if lifecycle_confirmation is not None:
             lifecycle_confirmation.pending_retries = confirm.pending_retries
@@ -1631,6 +1666,43 @@ class BotClient:
                 lifecycle_confirmation.observe(
                     "confirmation_observation_budget_exhausted")
         return expired
+
+    def _weak_key_open_observation(self, mirror, snap, confirm):
+        """Return ``(weak key, legal)`` when this snapshot may decide now.
+
+        window-snapshot-identity-decision: the confirmation's expected
+        identity is itself legacy (a snapshot-first window: no protocol
+        field, no observed source event) and this fresh authoritative
+        snapshot exposes that pending window -- matching phase, our seat
+        responding, an exact deadline that the submit guard can still
+        meet, and non-empty legal options.  An authoritative expected
+        identity that the snapshot cannot reproduce is weak evidence and
+        must stay PENDING; it is never downgraded to a weak decision.
+        """
+        if not isinstance(snap, dict) or mirror is None or confirm is None:
+            return None
+        expected_key = getattr(confirm, "window_key", None)
+        if (isinstance(expected_key, WindowAttemptKey)
+                and expected_key.window_id.authoritative):
+            return None
+        if getattr(confirm, "source_seq", None) is not None:
+            return None
+        phase = snap.get("phase")
+        if phase != confirm.phase:
+            return None
+        if mirror.me not in (snap.get("responding_seats") or []):
+            return None
+        exact = self._snapshot_deadline(snap)
+        if exact is None or exact - time.time() <= SUBMIT_EPS:
+            return None
+        legal = (self._claim_legal(mirror, phase)
+                 if phase in ("response_peng", "response_chi") else [])
+        if not legal:
+            return None
+        key = self._window_key(mirror, phase, snap=snap)
+        if key is None or self._strong_window_key(key):
+            return None
+        return key, legal
 
     def _resolve_window_confirm(self, gid, mirror, snap, confirm, seq=None):
         """统一解析 peng/chi 窗口确认，返回 ``confirmed`` 或最终结果。
@@ -1675,7 +1747,23 @@ class BotClient:
                                             reason=reason, snap=snap, seq=seq)
             return "stale"
         if identity == "UNKNOWN":
-            if self._window_confirm_retry_expired(confirm):
+            # Decision/evidence split: a snapshot-first window with no
+            # protocol identity may be decided under the weak epoch key
+            # when this fresh authoritative snapshot exposes the open
+            # window.  The window is never promoted to authoritative and
+            # stays excluded from strong completeness; a wrong weak-key
+            # decision is bounded by the server's 409 validation and the
+            # existing same-loop recovery.
+            weak = self._weak_key_open_observation(mirror, snap, confirm)
+            if weak is not None:
+                weak_key, weak_legal = weak
+                self._set_window_authorization(
+                    mirror, weak_key, snap, seq=seq, legal=weak_legal)
+                self._record_window_confirm(
+                    gid, confirm, "open", reason="weak_key_open",
+                    snap=snap, seq=seq, legal=weak_legal)
+                return "confirmed"
+            if self._window_confirm_retry_expired(confirm, snap=snap):
                 self._record_window_confirm(
                     gid, confirm, "unconfirmed",
                     reason="identity_confirmation_budget_exhausted",
@@ -1705,7 +1793,8 @@ class BotClient:
             pending_deadline = (confirm.schedule_deadline
                                 if confirm.schedule_deadline is not None
                                 else getattr(confirm, "retry_deadline", None))
-            retry_expired = self._window_confirm_retry_expired(confirm)
+            retry_expired = self._window_confirm_retry_expired(
+                confirm, snap=snap)
             if pending_deadline is None:
                 pending_deadline = getattr(confirm, "retry_deadline", None)
             if (pending_deadline is not None
@@ -1746,7 +1835,7 @@ class BotClient:
         # 缺少精确 deadline 只能说明无法授权动作，不能推断服务端已
         # 关闭窗口；这类结果保持 unconfirmed，不记最终 miss。
         if outcome in ("deadline_missing", "identity_unconfirmed"):
-            if not self._window_confirm_retry_expired(confirm):
+            if not self._window_confirm_retry_expired(confirm, snap=snap):
                 self._record_window_confirm(gid, confirm, "unconfirmed",
                                             reason=reason, snap=snap, seq=seq,
                                             legal=current_legal)
@@ -1907,8 +1996,14 @@ class BotClient:
         else:
             # This is useful for diagnostics and best-effort legacy dedupe,
             # but it is deliberately not an authoritative source identity.
+            # window-snapshot-identity-decision: the pending tile sits at
+            # the tail of the discarder's river until it is claimed, so the
+            # owner's river length pins the instance within one snapshot
+            # epoch.  The meld lengths stay in the weak key because a claim
+            # pops the river: without them a claimed-then-repeated same
+            # tile would alias two real windows onto one weak key.
             identity_status = "legacy_unresolved"
-            fallback = (mirror.n_discards(),
+            fallback = (len(mirror.discards[owner]),
                         tuple(len(m) for m in mirror.melds))
             identity_origin = "legacy_snapshot"
             first_seen_via = "snapshot" if snap is not None else "unknown"
@@ -2009,7 +2104,10 @@ class BotClient:
         """Check action safety without turning legacy fallback into identity.
 
         Authoritative keys use the shared cross-reanchor set.  Legacy keys
-        are only deduped within the current non-reanchor snapshot epoch; a
+        are deduped by the weak epoch key ``(round_id, discard_owner,
+        tile, river tail position)``: within the current snapshot epoch
+        unconditionally, and across a re-anchor only when round/owner/tile
+        still match and the discard-river tail position is consistent.  A
         transport-failed legacy action remains blocked separately so an
         unknown/409 POST is never blindly replayed.
         """
@@ -2019,9 +2117,48 @@ class BotClient:
             return key in (attempted_keys or set())
         legacy_attempts = getattr(mirror, "_legacy_attempts", {})
         legacy_failed = getattr(mirror, "_legacy_failed", set())
-        return bool((legacy_failed and key in legacy_failed) or (
-            key in legacy_attempts
-            and legacy_attempts[key] == getattr(mirror, "_legacy_epoch", None)))
+        if legacy_failed and key in legacy_failed:
+            return True
+        if key in legacy_attempts:
+            if legacy_attempts[key] == getattr(mirror, "_legacy_epoch", None):
+                return True
+            # Conservative cross-reanchor carry: the river must still pin
+            # this weak key's tail.  A same-tile re-discard after a claim
+            # pops the river first and changes a meld length, so the key
+            # itself differs and no carry happens -- the 409 backstop
+            # covers a guessed resubmission instead.
+            return cls._weak_key_still_pinned(mirror, key)
+        return False
+
+    @classmethod
+    def _weak_key_still_pinned(cls, mirror, key):
+        """Whether the mirror's river still pins this weak key's discard.
+
+        Cross-reanchor carry requires round/owner/tile to match and the
+        pending tile to sit at the recorded tail position of the owner's
+        river.  Key equality alone is not enough here because the caller
+        may query with a stale wait-state key against a rebuilt mirror.
+        """
+        if not isinstance(key, WindowAttemptKey):
+            return False
+        window_id = key.window_id
+        fallback = window_id.fallback
+        if not isinstance(fallback, tuple) or not fallback:
+            return False
+        pending = getattr(mirror, "pending", None)
+        if pending is None or tuple(pending) != (
+                window_id.discard_owner, window_id.tile):
+            return False
+        if mirror.round_no != window_id.round_id:
+            return False
+        rivers = getattr(mirror, "discards", None)
+        owner = window_id.discard_owner
+        if not isinstance(rivers, list) or not isinstance(owner, int) \
+                or not (0 <= owner < len(rivers)):
+            return False
+        river = rivers[owner]
+        return (bool(river) and river[-1] == window_id.tile
+                and len(river) == fallback[0])
 
     def _make_chi_pending(self, mirror, ev=None, snap=None,
                           passed_explicitly=False, responded_keys=None,
@@ -3554,6 +3691,12 @@ class BotClient:
                 deadline_left_at_start_ms=deadline_left_at_start_ms,
                 deadline_left_at_finish_ms=self._deadline_left_ms(
                     authorization.get("exact_deadline_at")))
+            if key.window_id.identity_status == "legacy_unresolved":
+                # window-snapshot-identity-decision: the deciding key was a
+                # weak epoch key, not a protocol identity.  Counted apart so
+                # acceptance can distinguish weak-key decision outcomes.
+                with self._stats_lock:
+                    self.stats["weak_key_decisions"] += 1
         if self.recorder is not None:
             material_counts, material_source, material_status = (
                 mirror.public_material_projection())
@@ -4169,12 +4312,23 @@ class BotClient:
                                   if confirm_window is not None else
                                   ("event" if self._source_identity(ev)[0]
                                    is not None else "unknown"))
+            # window-snapshot-identity-decision: a snapshot that exposes the
+            # pending window with an exact deadline authorizes the decision
+            # even under a weak epoch key -- the window is ledgered as
+            # legacy_unresolved and never promoted, and a wrong weak-key
+            # POST is bounded by the server's 409 validation plus the
+            # existing same-loop recovery.  Without this leg a snapshot-
+            # first peng window would raise a fresh confirmation per pull
+            # and never reach the policy at all.
             snapshot_authoritative = (
                 isinstance(ev, dict)
                 and ev.get("phase") in ("response_peng", "response_chi")
                 and self._snapshot_deadline(ev) is not None
                 and mirror.me in (ev.get("responding_seats") or [])
-                and self._strong_window_key(confirm_key))
+                and (self._strong_window_key(confirm_key)
+                     or (isinstance(confirm_key, WindowAttemptKey)
+                         and confirm_key.window_id.identity_status
+                         == "legacy_unresolved")))
             if snapshot_authoritative:
                 self._set_window_authorization(
                     mirror, confirm_key, ev, seq=snapshot_seq,

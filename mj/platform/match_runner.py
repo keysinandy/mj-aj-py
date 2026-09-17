@@ -54,8 +54,8 @@ def main(argv=None):
                     help="policy 策略 checkpoint(BC best.pt 或 PPO ckpt)")
     ap.add_argument("--games", type=int, default=10,
                     help="打满场数(以整房为退出粒度,1 房 = 10 场)")
-    ap.add_argument("--state-rate", type=float, default=15.0,
-                    help="每令牌 /state 主动限速(默认 15/s)")
+    ap.add_argument("--state-rate", type=float, default=16.0,
+                    help="每令牌 /state 主动限速(默认 16/s)")
     ap.add_argument("--no-state-throttle", action="store_true",
                     help="关闭 /state 主动限速(仅排障/回滚)")
     ap.add_argument("--no-notify", action="store_true",

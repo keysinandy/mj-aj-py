@@ -156,7 +156,7 @@ def _dump_error(exc, secrets=()):
 
 
 def run_room(cfg, strategy="policy", ckpt=None, games=1, dump=False,
-             dump_dir="local/logs", record=True, state_rate=15.0,
+             dump_dir="local/logs", record=True, state_rate=16.0,
              evaluator="legacy", replay_trace=False, trace_root=None):
     tokens = cfg["tokens"]
     stop = threading.Event()
@@ -214,8 +214,8 @@ def main(argv=None):
     ap.add_argument("--no-recorder", action="store_true",
                     help="关闭结构化对局日志(默认写 local/games/,"
                          "正式赛数据不可再生,建议保持开启)")
-    ap.add_argument("--state-rate", type=float, default=15.0,
-                    help="每令牌 /state 主动限速(默认 15/s)")
+    ap.add_argument("--state-rate", type=float, default=16.0,
+                    help="每令牌 /state 主动限速(默认 16/s)")
     ap.add_argument("--no-state-throttle", action="store_true",
                     help="关闭 /state 主动限速(仅排障/回滚)")
     ap.add_argument("--replay-trace", action="store_true",

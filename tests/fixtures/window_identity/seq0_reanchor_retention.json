@@ -1,0 +1,49 @@
+{
+ "scenario": "seq=0 full re-anchor retains the open window identity",
+ "source_discard_seq": 42,
+ "pending_snapshot": {
+  "phase": "response_chi",
+  "window_deadline_ms": 1002000,
+  "discards": [
+   [],
+   [],
+   [],
+   [
+    "6b"
+   ]
+  ],
+  "last_discard": "6b",
+  "responding": [
+   0
+  ],
+  "turn": 3,
+  "round_no": 1,
+  "source_discard_seq": 42,
+  "seq": 8
+ },
+ "reanchor_snapshot": {
+  "phase": "response_chi",
+  "window_deadline_ms": 1002000,
+  "discards": [
+   [],
+   [],
+   [],
+   [
+    "6b"
+   ]
+  ],
+  "last_discard": "6b",
+  "responding": [
+   0
+  ],
+  "turn": 3,
+  "round_no": 1,
+  "source_discard_seq": 42,
+  "seq": 0
+ },
+ "expect": {
+  "identity_status": "authoritative",
+  "identity_survives_reanchor": true
+ },
+ "$schema": "window-identity-protocol/fixture-v1"
+}

@@ -72,7 +72,10 @@ def probe(args):
     print(json.dumps(results, ensure_ascii=False, indent=1))
 
     print("\n== 5) 免认证数据端点 + replay 对账 ==")
-    games = room_games(server, tid)
+    room_doc = room_games(server, tid)
+    # v34 的局列表端点返回 {'games': [...], 'room_id', 'status'} 包装;
+    # 旧版本直接返回列表,两种格式都兼容。
+    games = (room_doc.get("games") if isinstance(room_doc, dict) else room_doc) or []
     print(f"局列表: {games}")
     for g in games:
         doc = room_events(server, tid, g["batch"])

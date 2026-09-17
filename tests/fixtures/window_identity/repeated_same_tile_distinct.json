@@ -1,0 +1,46 @@
+{
+ "scenario": "same seat discards the same tile again with a new identity",
+ "first_window": {
+  "phase": "response_chi",
+  "window_deadline_ms": 1001000,
+  "discards": [
+   [],
+   [],
+   [],
+   [
+    "6b"
+   ]
+  ],
+  "last_discard": "6b",
+  "responding": [
+   0
+  ],
+  "turn": 3,
+  "round_no": 1,
+  "source_discard_seq": 42
+ },
+ "second_window": {
+  "phase": "response_chi",
+  "window_deadline_ms": 1002000,
+  "discards": [
+   [],
+   [],
+   [],
+   [
+    "6b"
+   ]
+  ],
+  "last_discard": "6b",
+  "responding": [
+   0
+  ],
+  "turn": 3,
+  "round_no": 1,
+  "source_discard_seq": 57
+ },
+ "expect": {
+  "distinct_identities": true,
+  "same_window_identity": false
+ },
+ "$schema": "window-identity-protocol/fixture-v1"
+}

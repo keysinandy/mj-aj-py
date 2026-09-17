@@ -72,10 +72,12 @@
 > 确认改决策/预算记录）。**线上验证（2026-09-17 测试房 `t_772639fd4c27`，
 > 4 令牌×10 局 legacy/16/s）**：`identity_unknown` 确认拉取 59→0、
 > `identity_confirmation_budget_exhausted` 7→0、legacy `server_timeout_*`
-> miss 7→0；唯一出现的快照首见弱键窗口（白虎 b5，response_peng）弱键授权
-> → 决策 → POST 成功并获服务端 `peng` 回声。既有 peng 409 关窗竞速
-> （authoritative 身份、决策余量 100-500ms、三家 timeout 同秒）两房同量
-> （10 vs 9），与弱键无关。证据：`openspec/changes/
+> miss 7→0;唯一出现的快照首见弱键窗口(青龙 worker,gid r1_b5,
+> response_peng)弱键授权 → 决策 → POST 成功并获服务端 `peng` 回声。
+> 既有 peng 409 关窗竞速(authoritative 身份、决策余量 100-500ms、
+> 三家 timeout 同秒)两房同量(10 vs 9),与弱键无关;其余:14 条
+> claim_miss 全为 response_peng 且牌均无人认领,服务器弃牌窗代打
+> 9 次/40 局。证据:`openspec/changes/
 > window-snapshot-identity-decision/artifacts/online_validation_20260917.md`。
 
 ## 一、规则定稿(与需求方逐条确认)

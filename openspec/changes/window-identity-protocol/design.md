@@ -1,79 +1,52 @@
+# Design
+
 ## Context
 
-The client can establish authoritative identity from an explicit source field
-or the `tile_discarded` event sequence, and can carry that identity through a
-safe re-anchor. Five eligible baseline windows were first observed from a
-snapshot without either fact. Their current fallback is intentionally marked
-`legacy_unresolved`, which is correct but prevents strong completeness.
+客户端可以从显式 source 字段或 `tile_discarded` 事件序号建立 authoritative 身份，并能在安全重锚后携带该身份。五个合规基线窗口首次观测时两者皆无。它们当前的回退被有意标记为 `legacy_unresolved`——这是正确的，但阻碍了强完备性。
 
-The identity must therefore be supplied and preserved by the protocol. The
-client-side change should remain a consumer and validator, not a generator of
-guessed identity.
+因此身份必须由协议提供并保留。客户端侧改动应保持为消费者与校验者，而不是身份的猜测生成者。
 
 ## Goals / Non-Goals
 
 **Goals:**
 
-- Define one stable identity field for a discard response window.
-- Preserve the same identity for peng and chi phases and across `seq=0`.
-- Make identity origin and first-seen path observable in client logs.
-- Reject malformed, changing, or watermark-derived identities.
-- Permit an explicit protocol-skipped status where a deployed protocol version
-  cannot provide the field.
+- 为弃牌反应窗口定义一个稳定的身份字段。
+- 碰/吃两相与跨 `seq=0` 保留同一身份。
+- 使身份来源与首见路径在客户端日志中可观测。
+- 拒绝畸形、变化或由 watermark 派生的身份。
+- 允许已部署协议版本确实无法提供该字段时的显式 `protocol_skipped` 状态。
 
 **Non-Goals:**
 
-- Deriving identity from snapshot watermark, discard-list length, meld count,
-  owner/tile, or timestamps.
-- Changing action rules, StateDemand scheduling, rate, retry, or margins.
-- Upgrading legacy windows to authoritative evidence without a server contract.
+- 从快照 watermark、弃牌列表长度、副露计数、owner/tile 或时间戳派生身份。
+- 改动动作规则、StateDemand 调度、限速、重试或余量。
+- 在没有服务端契约的情况下把 legacy 窗口升级为 authoritative 证据。
 
 ## Decisions
 
-### 1. Accept either explicit source sequence or opaque response_window_id
+### 1. 接受显式来源序号或不透明 response_window_id 二者之一
 
-The preferred field is `source_discard_seq` because the current event protocol
-already has a monotonic sequence. An opaque `response_window_id` is an equally
-valid alternative when the server cannot expose the source sequence. A
-deployment MUST choose one stable field and document its scope; the client will
-not combine two potentially different identities.
+首选字段是 `source_discard_seq`，因为当前事件协议已经带有单调序号。当服务端无法暴露来源序号时，不透明的 `response_window_id` 是同等有效的替代。一次部署 MUST 选择一个稳定字段并写明其范围；客户端不会把两个可能不同的身份合并使用。
 
-Alternative considered: use the `/state` watermark. Rejected because it changes
-on unrelated events and is not the identity of the discard.
+备选方案：使用 `/state` watermark。被否决——它会因无关事件变化，且不是弃牌本身的身份。
 
-### 2. Attach identity to both event and snapshot representations
+### 2. 身份同时附着在事件与快照两种表示上
 
-`tile_discarded` and authoritative response snapshots MUST carry or refer to
-the same identity. A `seq=0` snapshot MUST retain the identity of the pending
-window when that window is still open. After a claim, new discard, or round
-transition, the old identity MUST not be reused.
+`tile_discarded` 与权威反应快照 MUST 携带或引用同一身份。`seq=0` 快照 MUST 在窗口仍开启时保留该 pending 窗口的身份。认领、新弃牌或轮次迁移之后，旧身份 MUST 不被复用。
 
-Alternative considered: carry only client-side event state. Rejected because a
-full re-anchor intentionally replaces the mirror and must remain independently
-auditable.
+备选方案：仅在客户端携带事件状态。被否决——全量重锚有意替换镜像，必须保持可独立审计。
 
-### 3. Validate identity server-side and client-side
+### 3. 服务端与客户端双侧校验身份
 
-The server owns identity allocation and uniqueness. The client validates that
-peng/chi agree, that a new source does not reuse an active identity, and that
-the field is independent of watermark. A mismatch downgrades the observation
-to weak/invalid evidence and MUST be logged with both values.
+服务端负责身份分配与唯一性。客户端校验碰/吃一致、新来源不复用活跃身份、字段独立于 watermark。不一致时把该观测降级为弱/无效证据，并 MUST 同时记录两个值。
 
-### 4. Preserve legacy exclusion during migration
+### 4. 迁移期保留 legacy 排除
 
-Until protocol coverage is verified, snapshot-only records remain
-`legacy_unresolved`. Acceptance reports `protocol_skipped_identity` only when
-the protocol version explicitly declares that identity is unavailable; the
-client cannot set that status based on a missing field alone.
+协议覆盖得到验证之前，快照首见的记录保持 `legacy_unresolved`。验收仅在协议版本显式声明身份不可用时报告 `protocol_skipped_identity`；客户端不能仅凭字段缺失设置该状态。
 
 ## Risks / Trade-offs
 
-- [Server rollout is partial] → Accept both old and new schema versions while
-  keeping separate coverage counters and strong-completeness gates.
-- [Identity field is accidentally tied to watermark] → Add replay tests with
-  unrelated events and seq=0 re-anchors, and reject changes for one active
-  window.
-- [Opaque IDs are not retained in historical snapshots] → Require the field in
-  every authoritative response snapshot before enabling strong gate.
-- [Protocol cannot be changed immediately] → Keep legacy evidence useful for
-  diagnostics and weak statistics, but do not weaken the current safety rule.
+- [服务端灰度发布] → 同时接受新旧 schema 版本，并保留分开的覆盖计数与强完备门。
+- [身份字段意外绑定 watermark] → 增加无关事件与 seq=0 重锚的回放测试，拒绝同一活跃窗口上的变化。
+- [不透明 ID 未在历史快照中保留] → 启用强门之前要求每个权威反应快照都带该字段。
+- [协议无法立即修改] → 保留 legacy 证据用于诊断与弱统计，但不削弱现有安全规则。

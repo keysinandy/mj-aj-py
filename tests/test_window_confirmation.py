@@ -245,9 +245,14 @@ def test_window_confirmation_distinguishes_unknown_identity_from_mismatch():
         phase="response_chi", pending=mirror.pending, round_no=1,
         legal=[CHOW_LOW], window_key=legacy_key)
     with mock.patch.object(module.time, "time", return_value=1000.0):
+        # window-snapshot-identity-decision: a snapshot-first legacy window
+        # is decided under the weak epoch key instead of staying PENDING;
+        # the outcome stays distinguishable from an authoritative open.
         assert bot._resolve_window_confirm(
             "g1", mirror, snap, legacy_confirm, seq=42) \
-            == "identity_unconfirmed"
+            == "confirmed"
+    assert bot.stats["window_confirm_weak_open"] == 1
+    assert bot.stats["window_confirm_miss"] == 0
 
 def test_chi_confirmation_keeps_old_peng_phase_pending_until_chi_opens():
     clock = FakeClock(monotonic=100.0, epoch=1000.0)

@@ -98,7 +98,7 @@ class TournamentWorker:
     """Run one scoped registration token until its tournament outcome."""
 
     def __init__(self, label, server, token, strategy="policy", ckpt=None,
-                 evaluator="legacy", state_rate=15.0, dump=False,
+                 evaluator="legacy", state_rate=16.0, dump=False,
                  dump_dir="local/logs", recorder=True,
                  replay_trace=False, trace_root=None, stop=None,
                  recorder_root="local/games", api_factory=None,
@@ -310,7 +310,7 @@ class TournamentWorker:
 
 
 def run_tournament(cfg, *, strategy="policy", ckpt=None, evaluator="legacy",
-                   state_rate=15.0, dump=False, no_recorder=False,
+                   state_rate=16.0, dump=False, no_recorder=False,
                    replay_trace=False, trace_root=None,
                    max_games_debug=None, stop=None, **worker_kwargs):
     """Run configured token workers concurrently and return safe results."""
@@ -361,8 +361,8 @@ def build_parser():
     parser.add_argument("--bot-evaluator", default="legacy",
                     choices=("legacy", "shape-v1", "shape-v2", "policy-v3"),
                         help="strategy=bot 时的评价器")
-    parser.add_argument("--state-rate", type=float, default=15.0,
-                        help="每 token /state 主动限速(默认 15/s)")
+    parser.add_argument("--state-rate", type=float, default=16.0,
+                        help="每 token /state 主动限速(默认 16/s)")
     parser.add_argument("--dump", action="store_true",
                         help="安全的 state/action 原始摘要写入 local/logs/")
     parser.add_argument("--no-recorder", action="store_true",

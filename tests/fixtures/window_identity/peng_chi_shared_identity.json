@@ -1,0 +1,49 @@
+{
+ "scenario": "peng and chi phases of one discard share one identity",
+ "source_discard_seq": 42,
+ "peng_snapshot": {
+  "phase": "response_peng",
+  "window_deadline_ms": 1001000,
+  "discards": [
+   [],
+   [],
+   [],
+   [
+    "6b"
+   ]
+  ],
+  "last_discard": "6b",
+  "responding": [
+   0
+  ],
+  "turn": 3,
+  "round_no": 1,
+  "source_discard_seq": 42
+ },
+ "chi_snapshot": {
+  "phase": "response_chi",
+  "window_deadline_ms": 1002000,
+  "discards": [
+   [],
+   [],
+   [],
+   [
+    "6b"
+   ]
+  ],
+  "last_discard": "6b",
+  "responding": [
+   0
+  ],
+  "turn": 3,
+  "round_no": 1,
+  "source_discard_seq": 42
+ },
+ "expect": {
+  "identity_status": "authoritative",
+  "identity_origin": "explicit_source_field",
+  "same_window_id": true,
+  "chi_submitted": true
+ },
+ "$schema": "window-identity-protocol/fixture-v1"
+}

@@ -621,7 +621,7 @@ class Api:
     """一个参赛令牌的玩家 API(多场次线程共享，/state 限速按实例)。"""
 
     def __init__(self, server: str, token: str, timeout: float = 35.0,
-                 state_rate: float | None = 15.0, state_throttle=None):
+                 state_rate: float | None = 16.0, state_throttle=None):
         self.base = server.rstrip("/")
         self.token = token
         self.timeout = timeout
@@ -676,7 +676,7 @@ class Api:
                    cancel_check=None):
         """拉取状态；只有该端点消耗每令牌共享的 /state 预算。
 
-        服务端上限约为 16/s，客户端默认以 15/s 主动限速；收到真实
+        服务端上限约为 16/s，客户端默认以 16/s 主动限速；收到真实
         429 时，内置限速器只对后续许可做一次短暂冷却。
 
         ``request_timeout`` 是本次 urllib 调用的单次 timeout 上限，

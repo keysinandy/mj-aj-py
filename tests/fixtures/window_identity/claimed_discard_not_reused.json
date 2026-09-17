@@ -1,0 +1,41 @@
+{
+ "scenario": "claimed discard pops the river; the next window gets a new identity",
+ "claimed_seq": 42,
+ "claim_event": {
+  "seq": 43,
+  "type": "peng",
+  "seat": 1,
+  "tile": "6b",
+  "data": null
+ },
+ "next_discard_event": {
+  "seq": 57,
+  "type": "tile_discarded",
+  "seat": 3,
+  "tile": "6b",
+  "data": null
+ },
+ "next_window": {
+  "phase": "response_chi",
+  "window_deadline_ms": 1002000,
+  "discards": [
+   [],
+   [],
+   [],
+   [
+    "6b"
+   ]
+  ],
+  "last_discard": "6b",
+  "responding": [
+   0
+  ],
+  "turn": 3,
+  "round_no": 1,
+  "source_discard_seq": 57
+ },
+ "expect": {
+  "old_identity_not_reused": true
+ },
+ "$schema": "window-identity-protocol/fixture-v1"
+}
