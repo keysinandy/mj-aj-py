@@ -233,6 +233,12 @@ class TournamentWorker:
                 "tournament_warnings": stats.get("tournament_warnings", []),
                 "tournament_diagnostic": stats.get(
                     "tournament_diagnostic", {}),
+                # window-snapshot-identity-decision: formal-tournament
+                # summaries must expose weak-key behavior on their own
+                # (acceptance attribution), not only via per-game JSONL.
+                "window_confirm_weak_open": stats.get(
+                    "window_confirm_weak_open", 0),
+                "weak_key_decisions": stats.get("weak_key_decisions", 0),
             },
             error=(str(stats["error"]) if stats.get("error") is not None
                    else None),

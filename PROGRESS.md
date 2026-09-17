@@ -64,7 +64,7 @@
 > 决策余量都没有时仍落 `identity_confirmation_budget_exhausted` 记录。
 > ③ 弱键去重 epoch 内用牌河尾位置（fallback 额外带副露计数——认领会
 > 弹牌河,不带则同牌重弃会撞键）；跨重锚仅“round/owner/tile 匹配 + 牌河
-> 尾位置一致”才保守携带。④ `window_confirm_weak_open` /
+> 尾位置与副露计数均一致”才保守携带。④ `window_confirm_weak_open` /
 > `weak_key_decisions` 计数与 decision/action/claim_miss 上的
 > `identity_status=legacy_unresolved` 使弱键结果可单独归因，验收分母不变。
 > 测试：`tests/test_window_identity_protocol.py` 扩 5 例（快照首见 chi/peng
@@ -79,6 +79,39 @@
 > claim_miss 全为 response_peng 且牌均无人认领,服务器弃牌窗代打
 > 9 次/40 局。证据:`openspec/changes/
 > window-snapshot-identity-decision/artifacts/online_validation_20260917.md`。
+
+> **平台共用层代码审查修复(2026-09-17)**:锦标赛/自由对战/测试房共用的
+> bot_client 层 review 后修九项——① `/state` 客户端默认限速维持 **16/s**
+> (用户决策;沿革 12.5/s(09-09)→15/s→16/s,此前未同步文档,**当前
+> 限速结论以本条为准**。16/s 与服务端墙同值,429 级联风险与退避历史见
+> 09-08/09-09 记录,可 `--state-rate` 回调);② 跨重锚弱键携带补齐副露
+> 计数比对(漏看 claim 事件后陈旧 fallback 撞上同长牌河,不再把真实
+> 新窗当作已尝试静默跳过——该方向无 409 兜底);③ `_act_window` 快照
+> 授权门补 last_discard-vs-pending 交叉检查(已结算旧窗的快照回到确认
+> 环,不再直接 POST 必 409 动作、把 miss 归因洗成“服务端拒绝”);
+> ④ 弱键授权计数收口到 `_set_window_authorization` 单点(`_act_window`
+> 直达腿不再漏计),`window_confirm_open` 权威桶不再混入弱开启;⑤
+> recorder 弱键授权记 `outcome=weak_key_open`,不再伪装
+> `authoritative_open`(对局日志是正式赛唯一复盘数据源;logview/验收
+> 可区分,`scripts/window_acceptance.py` 两口径均认且弱开启不单独触发
+> DECISION 归因);⑥ 弱键确认记账挂实际授权的 key(`_record_window_confirm`
+> 的 `window_key` 覆盖,同环第二实例不再错账到旧 window_id);⑦ 快照
+> 暴露判定统一为 `_window_snapshot_exposure` 共享梯(确认 MATCH 腿与
+> 弱键观察腿,新增守卫自动双边生效),`WEAK_DECIDE_MARGIN` 改引用
+> `DEADLINE_MARGIN` 锁同步;⑧ 弱键计数进 `TournamentResult.diagnostics`
+> (`window_confirm_weak_open`/`weak_key_decisions`,锦标赛汇总单独可
+> 归因);⑨ probe 局列表解析对未知包装响亮报错(不再静默空列表放行
+> 协议漂移)。测试:`tests/test_window_identity_protocol.py` 扩 4 例
+> (携带副露钉、last_discard 门、recorder 弱口径、弱键记账身份)+
+> `tests/test_tournament_runner.py` 1 例(诊断计数透出)。
+> ⑩ **正式赛轮询 404 容错(2026-09-17 19:23 实弹,「1024杭麻竞技二测」
+> `t_65d538e905c5`)**:registering 期 `/api/tournaments/{tid}` 间歇性
+> 404 `TOURNAMENT_GONE`(直连抽查 12/12 成功,但 runner 轮询流里偶发,
+> 前两次运行均被单次 404 以 PROTOCOL_FATAL 错杀)。修复:轮询循环对
+> 404+TOURNAMENT_GONE 有界退避重试(`FORMAL_TOURNAMENT_GONE_RETRY_MAX=12`,
+> 累计 ~80s,成功即清零;持续 404 仍按真离赛致命)。
+> `tests/test_tournament_runner.py` 扩 2 例(瞬时 404 恢复 FINISHED/
+> 持续 404 仍 PROTOCOL_FATAL)。运行手册:`docs/锦标赛README.md`。
 
 ## 一、规则定稿(与需求方逐条确认)
 

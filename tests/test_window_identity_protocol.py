@@ -11,6 +11,8 @@ import json
 import os
 from unittest import mock
 
+import pytest
+
 import mj.platform.bot_client as module
 from mj.game import CHOW_LOW
 from mj.platform.bot_client import BotClient
@@ -303,3 +305,103 @@ def test_near_deadline_unresolved_window_stops_confirming_and_decides():
             "g1", mirror2, gone, confirm2, seq=42) == "expired"
     assert bot2.stats["confirmation_observation_budget_exhausted"] == 1
     assert bot2.stats["window_confirm_miss"] == 0
+
+
+def test_cross_reanchor_carry_requires_meld_lengths_to_pin():
+    """跨重锚携带必须同时钉住副露计数。
+
+    漏看他家 claim 事件后陈旧 fallback 的 (河长, 副露元组) 可能与重建
+    镜像的牌河恰好一致(同牌重弃弹回同长度);只查牌河会把真实新窗
+    当作已尝试静默跳过(此方向无 409 兜底)。
+    """
+    fx = _load("claimed_discard_not_reused.json")
+    bot = _bot()
+    snap0 = _snapshot(phase="response_chi", turn=3, responding=[0],
+                      discards=[[], [], [], ["6b"]], last_discard="6b")
+    mirror = bot._mirror_from_snapshot(snap0, gid="g1")
+    first = bot._window_key(mirror, "response_chi", snap=snap0)
+    assert first.window_id.fallback == (1, (0, 0, 0, 0))
+
+    # 他家已碰走 6b 后同一座再弃 6b:牌河长度回到 1,但副露计数已变。
+    drifted = _snapshot(phase="response_chi", turn=3, responding=[0],
+                        discards=[[], [], [], ["6b"]], last_discard="6b",
+                        melds=[[], [], [], [{"kind": "pong",
+                                             "tiles": ["6b", "6b"]}]])
+    mirror2 = bot._mirror_from_snapshot(drifted, gid="g1")
+    mirror2._legacy_epoch = 2
+    mirror2._legacy_attempts = {first: 1}
+    assert bot._weak_key_still_pinned(mirror2, first) is False
+    assert bot._window_was_attempted(mirror2, first, set()) is False
+
+
+def test_act_window_snapshot_authorization_requires_last_discard_match():
+    """快照授权门必须校验 last_discard 与 pending 牌一致。
+
+    已结算旧窗的快照(phase/deadline/responding 齐备但 last_discard
+    已翻页)不得直接授权决策提交,必须回到确认环重新拉取。
+    """
+    hand = ["5b", "5b", "1w", "2w", "3w", "4w", "5w", "6w",
+            "1t", "2t", "3t", "7t", "8t"]
+    snap = _snapshot(hand, phase="response_peng", turn=1, responding=[0],
+                     discards=[[], ["5b"], [], []], last_discard="5b",
+                     window_deadline_ms=1001800)
+    bot = BotClient(mock.Mock(), "b",
+                    lambda g, _: next(a for a in g.legal_actions()
+                                      if a != -1),
+                    log=lambda _: None)
+    mirror = bot._mirror_from_snapshot(snap, gid="g1")
+    assert mirror.pending == (1, 13)  # owner=1, tile 5b
+
+    settled = dict(snap, last_discard="9t")
+    with mock.patch.object(module.time, "time", return_value=1000.0):
+        with pytest.raises(module._WindowConfirm):
+            bot._act_window(mirror, settled, "g", snapshot_seq=1)
+
+
+def test_set_window_authorization_records_weak_outcome():
+    """弱键授权在对局日志中记为 weak_key_open,不得伪装成权威开启。"""
+    recorder = mock.Mock()
+    recorder.window_authorization = mock.Mock()
+    bot = BotClient(mock.Mock(), "b", lambda *_: -1, log=lambda _: None,
+                    recorder=recorder)
+    snap = _snapshot(phase="response_chi", turn=3, responding=[0],
+                     discards=[[], [], [], ["6b"]], last_discard="6b")
+    mirror = bot._mirror_from_snapshot(snap, gid="g1")
+    weak_key = bot._window_key(mirror, "response_chi", snap=snap)
+    assert weak_key.window_id.identity_status == "legacy_unresolved"
+
+    bot._set_window_authorization(mirror, weak_key, snap, seq=7)
+    outcome = recorder.window_authorization.call_args.kwargs["outcome"]
+    assert outcome == "weak_key_open"
+    # 弱键授权在授权收口处计数(直达腿同样覆盖),不混入权威开启桶。
+    assert bot.stats["window_confirm_weak_open"] == 1
+    assert bot.stats["window_confirm_open"] == 0
+
+
+def test_resolve_window_confirm_accounts_under_authorized_weak_key():
+    """弱键确认记账挂在实际授权的 key 上,而非 confirm 携带的旧实例。"""
+    bot = _bot()
+    fx = _load("snapshot_only_remains_legacy.json")
+    snap = _merge(fx["snapshot"])
+    mirror = bot._mirror_from_snapshot(snap, gid="g1")
+    stale_key = bot._window_key(mirror, "response_chi", snap=snap)
+    confirm = module._WindowConfirm(
+        phase="response_chi", pending=mirror.pending, round_no=1,
+        legal=[CHOW_LOW], window_key=stale_key)
+
+    rows = []
+    recorder = mock.Mock()
+    recorder.window_confirm = (
+        lambda gid, **fields: rows.append(fields))
+    bot.recorder = recorder
+    near = dict(snap, window_deadline_ms=1000200)
+    with mock.patch.object(module.time, "time", return_value=1000.0):
+        assert bot._resolve_window_confirm(
+            "g1", mirror, near, confirm, seq=42) == "confirmed"
+    weak_rows = [row for row in rows if row.get("outcome") == "open"]
+    assert len(weak_rows) == 1
+    assert weak_rows[0]["reason"] == "weak_key_open"
+    # 记账身份 = 实际授权的弱键(本例与 confirm 同 key;断言防回退)。
+    assert weak_rows[0]["window_id"]["identity_status"] == "legacy_unresolved"
+    assert bot.stats["window_confirm_weak_open"] == 1
+    assert bot.stats["window_confirm_open"] == 0

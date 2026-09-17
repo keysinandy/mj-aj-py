@@ -13,7 +13,8 @@ from contextlib import redirect_stdout
 from unittest import mock
 
 from mj.platform.api import Api, ApiError
-from mj.platform.bot_client import BotClient, FORMAL_POLL_INTERVAL
+from mj.platform.bot_client import (
+    BotClient, FORMAL_POLL_INTERVAL, FORMAL_TOURNAMENT_GONE_RETRY_MAX)
 from mj.platform.config import TournamentConfigError, load_tournament_config
 from mj.platform.recorder import Recorder
 from mj.platform.runner import DumpingApi
@@ -336,6 +337,38 @@ class TestFormalLifecycle(unittest.TestCase):
         self.assertEqual(sleeps[:2], [0.5, 1.0])
         self.assertTrue(all(value <= 8.0 for value in sleeps))
 
+    def test_transient_tournament_gone_404_is_retried_not_fatal(self):
+        """registering 期的瞬时 404 TOURNAMENT_GONE 必须有界重试。
+
+        2026-09-17 实弹:房间仍在(/me 正常)但轮询偶发 404,直接
+        PROTOCOL_FATAL 会把 worker 错杀出赛。
+        """
+        api = self._make_api(
+            statuses=[{"status": "finished", "stage_id": "final"}],
+            tournament_failures=[_api_error(404, "TOURNAMENT_GONE"),
+                                 _api_error(404, "TOURNAMENT_GONE")])
+        bot = _formal_bot(api)
+        with mock.patch.object(
+                BotClient, "_sleep_stop",
+                side_effect=lambda seconds, stop: False):
+            stats = bot.run()
+        self.assertEqual(stats["termination_reason"], "FINISHED")
+        self.assertEqual(api.tournament_calls, 3)
+
+    def test_persistent_tournament_gone_404_is_still_fatal(self):
+        api = self._make_api(
+            statuses=[{"status": "finished", "stage_id": "final"}],
+            tournament_failures=[_api_error(404, "TOURNAMENT_GONE")]
+                                * (FORMAL_TOURNAMENT_GONE_RETRY_MAX + 1))
+        bot = _formal_bot(api)
+        with mock.patch.object(
+                BotClient, "_sleep_stop",
+                side_effect=lambda seconds, stop: False):
+            stats = bot.run()
+        self.assertEqual(stats["termination_reason"], "PROTOCOL_FATAL")
+        self.assertEqual(api.tournament_calls,
+                         FORMAL_TOURNAMENT_GONE_RETRY_MAX + 1)
+
     def test_fallback_stage_key_spans_registering_and_stage_open(self):
         api = self._make_api(
             statuses=["registering", "stage_open", "stage_done",
@@ -481,6 +514,42 @@ class TestWorkerAndIsolation(unittest.TestCase):
         self.assertIsNone(calls["max_games"])
         self.assertTrue(calls["rules"].you_cai_bi_kao)
         self.assertNotIn("vendor_extra", calls["rules"].config)
+
+    def test_weak_key_counters_surface_in_result_diagnostics(self):
+        """弱键计数必须进 TournamentResult.diagnostics。
+
+        正式锦标赛的可复盘产物只有 per-token 汇总;弱键行为若只在
+        per-game JSONL 里可见,验收无法从锦标赛产物单独归因。
+        """
+        token = "weak-key-secret"
+        FakeTournamentApi.plans[token] = {
+            "tournament_id": "tid-weak", "user_id": "u-weak",
+            "rules": {"M": 4, "Rounds": 2, "BaseScore": 1},
+        }
+
+        class FakeBot:
+            def __init__(self, api, name, decide, **kwargs):
+                self.context = None
+
+            def configure_tournament(self, context):
+                self.context = context
+
+            def run(self, max_games=None, stop=None):
+                return {
+                    "termination_reason": "FINISHED",
+                    "final_status": "finished",
+                    "games": 1, "actions": 5, "hu": 0,
+                    "window_confirm_weak_open": 2,
+                    "weak_key_decisions": 1,
+                }
+
+        worker = TournamentWorker(
+            "weak", "https://server", token, strategy="random",
+            recorder=False, api_factory=FakeTournamentApi,
+            bot_factory=FakeBot)
+        result = worker.run()
+        self.assertEqual(result.diagnostics["window_confirm_weak_open"], 2)
+        self.assertEqual(result.diagnostics["weak_key_decisions"], 1)
 
     def test_recorder_is_default_and_closed_after_worker_result(self):
         token = "recorder-secret"

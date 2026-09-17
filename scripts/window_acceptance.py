@@ -358,7 +358,7 @@ def _eligible_window_identity(row):
         return None, None
     outcome = row.get("outcome", row.get("stage", "observed"))
     if outcome not in ("requested", "open", "confirmed", "observed",
-                       "authoritative_open", "AUTHORIZED"):
+                       "authoritative_open", "weak_key_open", "AUTHORIZED"):
         return None, None
     window_id = _window_id_from_row(row)
     logical = _logical_window_key(row)
@@ -994,10 +994,16 @@ def _canonical_window_resolutions(records, claim_events=None, my_seat=None):
         misses = [row for row in rows if row.get("type") == "claim_miss"]
         terminals = [row for row in rows if row.get("type") == "window_terminal"]
 
-        authoritative_open = bool(authorizations) or any(
-            row.get("outcome") in ("open", "confirmed",
-                                    "authoritative_open", "AUTHORIZED")
-            for row in confirms + lifecycle)
+        # A weak-key authorization (outcome="weak_key_open") is a guessed
+        # epoch-key decision, not an authoritative open; it must not flip a
+        # window into the DECISION loss bucket on its own.
+        authorization_outcomes = {row.get("outcome") for row in authorizations}
+        authoritative_open = (
+            any(outcome != "weak_key_open"
+                for outcome in authorization_outcomes)
+            or any(row.get("outcome") in ("open", "confirmed",
+                                          "authoritative_open", "AUTHORIZED")
+                   for row in confirms + lifecycle))
         success = any(row.get("ok") is True
                       or row.get("outcome") == "SUCCESS"
                       for row in actions + lifecycle)

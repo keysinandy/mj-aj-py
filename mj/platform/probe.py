@@ -74,8 +74,16 @@ def probe(args):
     print("\n== 5) 免认证数据端点 + replay 对账 ==")
     room_doc = room_games(server, tid)
     # v34 的局列表端点返回 {'games': [...], 'room_id', 'status'} 包装;
-    # 旧版本直接返回列表,两种格式都兼容。
-    games = (room_doc.get("games") if isinstance(room_doc, dict) else room_doc) or []
+    # 旧版本直接返回列表,两种格式都兼容。其他形状(错误包装/字段漂移)
+    # 必须响亮失败——探针的意义就是发现漂移,静默空列表会放行一个
+    # 无法解析真实局列表的客户端。
+    if isinstance(room_doc, dict):
+        if "games" not in room_doc:
+            raise RuntimeError(
+                f"room_games 返回未知包装,顶层键: {sorted(room_doc)}")
+        games = room_doc["games"] or []
+    else:
+        games = room_doc
     print(f"局列表: {games}")
     for g in games:
         doc = room_events(server, tid, g["batch"])
