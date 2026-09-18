@@ -1,0 +1,192 @@
+{
+  "dataset": {
+    "coverage_missing": [
+      "piao",
+      "four-white-boards",
+      "seven-pairs",
+      "luxury-seven-pairs",
+      "zhuada-quan",
+      "wall-tail"
+    ],
+    "coverage_passed": false,
+    "dataset_fingerprint": "ef0c9449f3e0a684bda77faa",
+    "generation": {
+      "0": 11189
+    },
+    "rows": 11189,
+    "special_state_tags": {
+      "baotou": 22,
+      "chow-pass": 1131,
+      "dealer": 2935,
+      "hu": 231,
+      "kong-add": 46,
+      "kong-closed": 16,
+      "kong-open": 37,
+      "non-dealer": 8254,
+      "piao": 2,
+      "pong-pass": 754,
+      "reaction-cursor": 2725,
+      "seven-pairs": 6,
+      "seven-pairs-shape": 254,
+      "wall-tail": 33,
+      "wild-discard-possible": 3376,
+      "ycbk-off": 11189,
+      "zhuada-quan": 1
+    },
+    "teacher_status": {
+      "forced-sanity": 840,
+      "ok": 10349
+    }
+  },
+  "offline": {
+    "checkpoints": [
+      {
+        "catastrophic_rate": 0.0,
+        "kl": 1.5842512227726815,
+        "latency_p95_ms": 21.60728399758227,
+        "mean_regret": 2.31169319232815,
+        "p95_regret": 9.927918781725888,
+        "path": "runs/search_bc/gen0/epoch_001.pt",
+        "top1_agreement": 0.39572192513368987
+      },
+      {
+        "catastrophic_rate": 0.005154639175257732,
+        "kl": 1.5062039969749028,
+        "latency_p95_ms": 17.689612999674864,
+        "mean_regret": 2.323412463007656,
+        "p95_regret": 11.648490912122728,
+        "path": "runs/search_bc/gen0/epoch_002.pt",
+        "top1_agreement": 0.422680412371134
+      },
+      {
+        "catastrophic_rate": 0.004975124378109453,
+        "kl": 1.4753975993862993,
+        "latency_p95_ms": 25.597015002858825,
+        "mean_regret": 2.0792184845421926,
+        "p95_regret": 8.185953009172007,
+        "path": "runs/search_bc/gen0/epoch_003.pt",
+        "top1_agreement": 0.42786069651741293
+      }
+    ],
+    "promoted": true,
+    "reason": "reference_regret_improved",
+    "selected": "runs/search_bc/gen0/epoch_003.pt"
+  },
+  "oracle": false,
+  "paired": {
+    "previous": {
+      "ci95": null,
+      "mean_delta": null,
+      "pairs": null,
+      "secondary": null,
+      "verdict": null
+    },
+    "shape_v1": {
+      "ci95": null,
+      "mean_delta": null,
+      "pairs": null,
+      "secondary": null,
+      "verdict": null
+    },
+    "shape_v2": {
+      "ci95": null,
+      "mean_delta": null,
+      "pairs": null,
+      "secondary": null,
+      "verdict": null
+    }
+  },
+  "pi0": {
+    "candidates": [
+      {
+        "latency_p95_ms": 0.5466990114655346,
+        "mean_regret": 1.768973846352727,
+        "p95_regret": 8.21115139392424,
+        "path": "heuristic:legacy",
+        "top1_agreement": 0.5222672064777328
+      },
+      {
+        "latency_p95_ms": 18.35025601030793,
+        "mean_regret": 1.6618788200562895,
+        "p95_regret": 8.21115139392424,
+        "path": "heuristic:shape-v1",
+        "top1_agreement": 0.5282258064516129
+      },
+      {
+        "latency_p95_ms": 49.38098799902946,
+        "mean_regret": 1.744577519866389,
+        "p95_regret": 8.21115139392424,
+        "path": "heuristic:shape-v2",
+        "top1_agreement": 0.5344129554655871
+      }
+    ],
+    "reason": "lowest_reference_regret_with_paired_score_tiebreak",
+    "selected": "heuristic:shape-v1"
+  },
+  "pipeline_tail": [
+    "epoch_001.pt",
+    "epoch_002.pt",
+    "epoch_003.pt",
+    "paired_previous.json",
+    "paired_shape_v1.json",
+    "paired_shape_v2.json",
+    "selection_report.json",
+    "training_manifest.json"
+  ],
+  "schema": "search-distill-gen0-summary-v1",
+  "training": {
+    "dataset_fingerprint": "ef0c9449f3e0a684bda77faa",
+    "epochs": [
+      {
+        "augmentation": "suit",
+        "epoch": 1,
+        "loss": 1.8892303207367789,
+        "samples": 10349,
+        "target_mode": "visit"
+      },
+      {
+        "augmentation": "suit",
+        "epoch": 2,
+        "loss": 1.794321487728369,
+        "samples": 10349,
+        "target_mode": "visit"
+      },
+      {
+        "augmentation": "suit",
+        "epoch": 3,
+        "loss": 1.7447984081061523,
+        "samples": 10349,
+        "target_mode": "visit"
+      }
+    ],
+    "loss_profile": null,
+    "model_manifest": {
+      "action_space": 109,
+      "belief_profile_fingerprint": "5b033e43c96714aa723a2ef8",
+      "blocks": 2,
+      "calibrated": false,
+      "calibration_fingerprint": "",
+      "feature_contract_fingerprint": "4b25b32cf4a3fbe5ca876a3a",
+      "fingerprint": "3dd9e3eaceec4fad05b425f7",
+      "leaf_version": "terminal-rollout-v1",
+      "model_version": "search-bc-gen0",
+      "opponent_policy_version": "eb8361a529b814880b2b6428",
+      "oracle": false,
+      "policy_iteration": 0,
+      "rules_version": "hangzhou-platform-guide-v34",
+      "schema": "policy-value-model-manifest-v1",
+      "search_profile_fingerprint": "44fa1fcff239081581e49468",
+      "training_source": "search-distillation",
+      "width": 64
+    },
+    "replay": null,
+    "skipped_rows": {
+      "features": 0,
+      "missing_q": 0,
+      "missing_value": 0,
+      "status": 0,
+      "zero_weight": 840
+    },
+    "usable_rows": 10349
+  }
+}

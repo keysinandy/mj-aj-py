@@ -1,0 +1,319 @@
+{
+  "evaluations": [
+    {
+      "bucket_regret": {
+        "phase:discard": {
+          "count": 138,
+          "mean": 2.9190227889985194,
+          "p95": 11.53786456377519
+        },
+        "phase:react": {
+          "count": 49,
+          "mean": 0.6012547363993543,
+          "p95": 3.8
+        },
+        "tag:chow-pass": {
+          "count": 34,
+          "mean": 0.6316925243376599,
+          "p95": 3.8974862215730797
+        },
+        "tag:dealer": {
+          "count": 57,
+          "mean": 3.1585593327169423,
+          "p95": 13.050595630577167
+        },
+        "tag:hu": {
+          "count": 6,
+          "mean": 0.0,
+          "p95": 0.0
+        },
+        "tag:kong-closed": {
+          "count": 1,
+          "mean": 0.0,
+          "p95": 0.0
+        },
+        "tag:kong-open": {
+          "count": 1,
+          "mean": 3.8,
+          "p95": 3.8
+        },
+        "tag:non-dealer": {
+          "count": 130,
+          "mean": 1.940374961542295,
+          "p95": 8.175465313028765
+        },
+        "tag:pong-pass": {
+          "count": 15,
+          "mean": 0.5322624170725285,
+          "p95": 3.8
+        },
+        "tag:reaction-cursor": {
+          "count": 49,
+          "mean": 0.6012547363993543,
+          "p95": 3.8
+        },
+        "tag:wild-discard-possible": {
+          "count": 42,
+          "mean": 3.308586701450507,
+          "p95": 13.050595630577167
+        },
+        "tag:ycbk-off": {
+          "count": 187,
+          "mean": 2.31169319232815,
+          "p95": 9.927918781725888
+        }
+      },
+      "catastrophic_regret_rate": 0.0,
+      "count": 187,
+      "fingerprint": "ebc9487cbcb5926fb5ce8d82",
+      "latency": {
+        "count": 64,
+        "max_ms": 28.125914992415346,
+        "p50_ms": 1.317432994255796,
+        "p95_ms": 21.60728399758227,
+        "p99_ms": 28.125914992415346,
+        "repeats": 2
+      },
+      "mean_reference_regret": 2.31169319232815,
+      "oracle": false,
+      "p50_reference_regret": 0.42356884992264054,
+      "p95_reference_regret": 9.927918781725888,
+      "path": "runs/search_bc/gen0/epoch_001.pt",
+      "policy_kl": 1.5842512227726815,
+      "schema": "search-bc-regret-report-v1",
+      "skipped": {
+        "forced": 0,
+        "missing_features": 0,
+        "missing_q": 63,
+        "model_error": 0,
+        "no_legal_action": 0
+      },
+      "top1_action_agreement": 0.39572192513368987
+    },
+    {
+      "bucket_regret": {
+        "phase:discard": {
+          "count": 145,
+          "mean": 2.931589901654599,
+          "p95": 13.050595630577167
+        },
+        "phase:react": {
+          "count": 49,
+          "mean": 0.5237037159911911,
+          "p95": 2.999821520644112
+        },
+        "tag:chow-pass": {
+          "count": 34,
+          "mean": 0.6316925243376599,
+          "p95": 3.8974862215730797
+        },
+        "tag:dealer": {
+          "count": 58,
+          "mean": 3.9575802562786175,
+          "p95": 15.810356244206066
+        },
+        "tag:hu": {
+          "count": 6,
+          "mean": 0.0,
+          "p95": 0.0
+        },
+        "tag:kong-closed": {
+          "count": 1,
+          "mean": 0.0,
+          "p95": 0.0
+        },
+        "tag:kong-open": {
+          "count": 1,
+          "mean": 0.0,
+          "p95": 0.0
+        },
+        "tag:non-dealer": {
+          "count": 136,
+          "mean": 1.6264879629362163,
+          "p95": 7.730994152046784
+        },
+        "tag:pong-pass": {
+          "count": 15,
+          "mean": 0.27892908373919517,
+          "p95": 2.425781432073906
+        },
+        "tag:reaction-cursor": {
+          "count": 49,
+          "mean": 0.5237037159911911,
+          "p95": 2.999821520644112
+        },
+        "tag:wild-discard-possible": {
+          "count": 53,
+          "mean": 3.4246360082056233,
+          "p95": 18.404436646196267
+        },
+        "tag:ycbk-off": {
+          "count": 194,
+          "mean": 2.323412463007656,
+          "p95": 11.648490912122728
+        }
+      },
+      "catastrophic_regret_rate": 0.005154639175257732,
+      "count": 194,
+      "fingerprint": "5f5942ffa6531984b7821fc4",
+      "latency": {
+        "count": 64,
+        "max_ms": 26.161180998315103,
+        "p50_ms": 1.2722520041279495,
+        "p95_ms": 17.689612999674864,
+        "p99_ms": 26.161180998315103,
+        "repeats": 2
+      },
+      "mean_reference_regret": 2.323412463007656,
+      "oracle": false,
+      "p50_reference_regret": 0.3008993934323363,
+      "p95_reference_regret": 11.648490912122728,
+      "path": "runs/search_bc/gen0/epoch_002.pt",
+      "policy_kl": 1.5062039969749028,
+      "schema": "search-bc-regret-report-v1",
+      "skipped": {
+        "forced": 0,
+        "missing_features": 0,
+        "missing_q": 56,
+        "model_error": 0,
+        "no_legal_action": 0
+      },
+      "top1_action_agreement": 0.422680412371134
+    },
+    {
+      "bucket_regret": {
+        "phase:discard": {
+          "count": 152,
+          "mean": 2.580667324404029,
+          "p95": 11.53786456377519
+        },
+        "phase:react": {
+          "count": 49,
+          "mean": 0.5237037159911911,
+          "p95": 2.999821520644112
+        },
+        "tag:chow-pass": {
+          "count": 34,
+          "mean": 0.6316925243376599,
+          "p95": 3.8974862215730797
+        },
+        "tag:dealer": {
+          "count": 59,
+          "mean": 3.9117578973073033,
+          "p95": 18.97730407523511
+        },
+        "tag:hu": {
+          "count": 6,
+          "mean": 0.0,
+          "p95": 0.0
+        },
+        "tag:kong-closed": {
+          "count": 1,
+          "mean": 0.0,
+          "p95": 0.0
+        },
+        "tag:kong-open": {
+          "count": 1,
+          "mean": 0.0,
+          "p95": 0.0
+        },
+        "tag:non-dealer": {
+          "count": 142,
+          "mean": 1.3178112637454213,
+          "p95": 6.312300988771577
+        },
+        "tag:pong-pass": {
+          "count": 15,
+          "mean": 0.27892908373919517,
+          "p95": 2.425781432073906
+        },
+        "tag:reaction-cursor": {
+          "count": 49,
+          "mean": 0.5237037159911911,
+          "p95": 2.999821520644112
+        },
+        "tag:wild-discard-possible": {
+          "count": 62,
+          "mean": 3.298940897919456,
+          "p95": 18.404436646196267
+        },
+        "tag:ycbk-off": {
+          "count": 201,
+          "mean": 2.0792184845421926,
+          "p95": 8.185953009172007
+        }
+      },
+      "catastrophic_regret_rate": 0.004975124378109453,
+      "count": 201,
+      "fingerprint": "fec0e3a46ec9e5b3814210ca",
+      "latency": {
+        "count": 64,
+        "max_ms": 30.153319996315986,
+        "p50_ms": 1.3127970014465973,
+        "p95_ms": 25.597015002858825,
+        "p99_ms": 30.153319996315986,
+        "repeats": 2
+      },
+      "mean_reference_regret": 2.0792184845421926,
+      "oracle": false,
+      "p50_reference_regret": 0.35684210526315796,
+      "p95_reference_regret": 8.185953009172007,
+      "path": "runs/search_bc/gen0/epoch_003.pt",
+      "policy_kl": 1.4753975993862993,
+      "schema": "search-bc-regret-report-v1",
+      "skipped": {
+        "forced": 0,
+        "missing_features": 0,
+        "missing_q": 49,
+        "model_error": 0,
+        "no_legal_action": 0
+      },
+      "top1_action_agreement": 0.42786069651741293
+    }
+  ],
+  "fingerprint": "8bb352f02b9cf1e9781a3289",
+  "oracle": false,
+  "schema": "search-bc-selection-report-v1",
+  "selection": {
+    "fingerprint": "8cceff5dbe87d6fa9fb3d8b1",
+    "oracle": false,
+    "primary_selector": "mean_reference_regret",
+    "promoted": true,
+    "ranking": [
+      {
+        "catastrophic_regret_rate": 0.004975124378109453,
+        "eligible": true,
+        "latency_p95_ms": 25.597015002858825,
+        "mean_reference_regret": 2.0792184845421926,
+        "p95_reference_regret": 8.185953009172007,
+        "path": "runs/search_bc/gen0/epoch_003.pt",
+        "reasons": [],
+        "top1_action_agreement": 0.42786069651741293
+      },
+      {
+        "catastrophic_regret_rate": 0.0,
+        "eligible": true,
+        "latency_p95_ms": 21.60728399758227,
+        "mean_reference_regret": 2.31169319232815,
+        "p95_reference_regret": 9.927918781725888,
+        "path": "runs/search_bc/gen0/epoch_001.pt",
+        "reasons": [],
+        "top1_action_agreement": 0.39572192513368987
+      },
+      {
+        "catastrophic_regret_rate": 0.005154639175257732,
+        "eligible": true,
+        "latency_p95_ms": 17.689612999674864,
+        "mean_reference_regret": 2.323412463007656,
+        "p95_reference_regret": 11.648490912122728,
+        "path": "runs/search_bc/gen0/epoch_002.pt",
+        "reasons": [],
+        "top1_action_agreement": 0.422680412371134
+      }
+    ],
+    "reason": "reference_regret_improved",
+    "schema": "search-bc-checkpoint-selection-v1",
+    "selected": "runs/search_bc/gen0/epoch_003.pt",
+    "top1_is_diagnostic_only": true
+  }
+}

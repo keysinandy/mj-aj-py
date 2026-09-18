@@ -1,0 +1,50 @@
+{
+  "baseline": "heuristic:shape-v1",
+  "candidate": "checkpoint:runs/search_bc/gen0/best-by-regret.pt",
+  "fingerprint": "64ddfa3a330448827155185c",
+  "generation": 0,
+  "matrices": {
+    "legacy_shape_v1": {
+      "alpha": 0.05,
+      "bootstrap": {
+        "clusters": 1024,
+        "method": "source-group-bootstrap",
+        "n": 1024,
+        "rounds": 2000,
+        "seed": 240000
+      },
+      "ci95": [
+        -4.8974609375,
+        -3.404296875
+      ],
+      "ci95_lower": -4.8974609375,
+      "cluster": "source_game_seed",
+      "fingerprint": "ed10a193d357799d72e5689f",
+      "matrix": "legacy_shape_v1",
+      "mean_delta": -4.1328125,
+      "meets_required_pairs": true,
+      "oracle": false,
+      "pairs": 1024,
+      "required_pairs": 1024,
+      "schema": "search-bc-paired-score-report-v1",
+      "score_metric": "hero_round_score_points",
+      "secondary_diagnostics": {
+        "baseline_win_rate": 0.2314453125,
+        "candidate_win_rate": 0.0400390625,
+        "draw_rate": 0.013671875
+      },
+      "verdict": "regression"
+    }
+  },
+  "oracle": false,
+  "schedule": {
+    "games": 1024,
+    "pairs": 1024,
+    "seat_dealer": "seat=i%4, dealer=(i//4)%4",
+    "seed_start": 240000,
+    "ycbk_variants": [
+      false
+    ]
+  },
+  "schema": "search-bc-paired-matrix-report-v1"
+}
