@@ -9,3 +9,7 @@ local/
 .venv
 web/replay_debugger/node_modules/
 rust/target/
+client/node_modules/
+client/dist/
+client/src-tauri/target/
+client/*.tsbuildinfo

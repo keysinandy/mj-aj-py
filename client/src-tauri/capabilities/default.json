@@ -1,0 +1,11 @@
+{
+  "identifier": "default",
+  "description": "主窗口默认能力:shell(运行 sidecar)与自建 IPC",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    {
+      "identifier": "shell:allow-spawn"
+    }
+  ]
+}
