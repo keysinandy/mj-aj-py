@@ -2,11 +2,19 @@
 
 决策原则(按优先级):
 0. 摸牌/杠补牌成胡默认提交 HU;爆头态打白板仍听任意牌(财飘)时,
-   墙内活牌足够轮回到自己再摸则弃胡打白飘(×4 起,下次摸牌必胡)。
+   活墙可摸张数 ≥ PIAO_WALL_GUARD(6)则弃胡打白飘(×4 起,下次摸牌
+   必胡);活墙 < 6 落袋为安直接胡——跳过飘与杠的期望比较。
    v33 起杠后补牌仍是普通 draw 决策窗口;暗杠/补杠与 HU/弃牌按
    公开信息下一张摸牌的积分期望比较。
-1. 摸牌阶段弃牌:最小化向听数 → 保护财神 → 最大化进张数 →
-   最小化牌型结构损失 → 少喂下家 → tile 编号(仅稳定排序)。
+1. 摸牌阶段弃牌:最小化向听数 → 保护财神 → [持财神 + 听牌态
+   叠加爆头档(openspec baotou-piao-aware-discard):弃后站立手为
+   爆头听(听任意)的候选整体优先;其余候选进度信号用爆头进张
+   (摸 t 后可弃成爆头听的未见加权数)替代普通胡牌张。受自适应
+   收手调节:X 轮未转化 / 对手副露 ≥ Y / 活墙 < Z 任一触发即回
+   速度线(验收口径 YCBK 关,开启场景不考虑)。爆头进张走 Rust
+   内核(mj_kernels,节点预算,超限整局回退本条普通口径)] →
+   最大化进张数 → 最小化牌型结构损失 → 少喂下家 →
+   tile 编号(仅稳定排序)。
    同向听候选**全部**参与进张比较,不再按编号预截断。
 2. 吃/碰:与 PASS 基准(反应时点站立牌面的 (shanten, ukeire))比较
    "副露 + 最佳弃牌"后的最终站立牌面——向听下降才做;等向听需
@@ -17,9 +25,12 @@
 3. 打牌倾向:少喂牌——避开下家可能吃的相邻牌(简单启发)。
 """
 
+import time
+import weakref
+
 from .tiles import W
 from .shanten import shanten, ukeire
-from .win import is_baotou, is_win
+from .win import is_baotou, is_win, is_baotou_wait
 from .scoring import hand_multiplier, settle
 from .game import (
     PASS, HU, PONG, KONG_OPEN, KONG_CLOSED_BASE, KONG_ADD_BASE,
@@ -27,11 +38,80 @@ from .game import (
 )
 
 
-def choose_discard(g, seat):
-    """返回弃牌 tile。
+# ---------- 爆头推进自适应收手(openspec baotou-piao-aware-discard) ----------
+# 持财神普通听牌态默认推进爆头(倍率优先);下列任一情况收手转速度线
+# (legacy 键排序,且不再弃胡博倍率):
+#   X 轮:进入推进态后自己的第 BAOTOU_PUSH_MAX_ROUNDS 次弃牌决策仍未
+#        转化(爆头听/胡)——倍率等不起;
+#   Y 副露:任意对手副露数 ≥ BAOTOU_PUSH_OPP_MELDS——对手接近听牌,
+#        被先胡的风险压过倍率期望;
+#   Z 活墙:活墙可摸张数(死墙已扣)< BAOTOU_PUSH_MIN_LIVE——剩余
+#        摸牌轮次不够重组。
+# 轮数/副露只增、活墙只减 → 收手是吸收态,不反复摇摆。弃胡打白飘在
+# 收手态同样落袋为安(只看轮数/副露,墙已有 PIAO_WALL_GUARD 硬门)。
+# 轮数记账挂在 Game 实例上(自博弈/rl_env 的 Game 全程同一实例);
+# 平台镜像每决策重建 Game,X 在线上不累积(Y/Z 仍生效),待平台层
+# 接入后再打通。
+# **验收口径:有财必拷响关闭**;YCBK 开场景当前项目不考虑。
+BAOTOU_PUSH_MAX_ROUNDS = 2   # X:网格扫描最优(local/ab_baotou_sweep.py,30720 局)
+BAOTOU_PUSH_OPP_MELDS = 2    # Y:同上;粗筛各 X 下 Y=2 一致优于 Y=99
+BAOTOU_PUSH_MIN_LIVE = 16    # Z:X=2 下不约束(与 Z=0 精跑逐位等值),保留作晚局守卫
+
+_push_rounds = weakref.WeakKeyDictionary()
+
+
+def _bump_push_rounds(g, seat):
+    """推进态轮数 +1 并返回当前值;离开推进态由调用方清零。"""
+    per_game = _push_rounds.setdefault(g, {})
+    per_game[seat] = per_game.get(seat, 0) + 1
+    return per_game[seat]
+
+
+def _clear_push_rounds(g, seat):
+    per_game = _push_rounds.get(g)
+    if per_game and seat in per_game:
+        del per_game[seat]
+
+
+def _max_opp_melds(g, seat):
+    return max((len(g.melds[o]) for o in range(4) if o != seat), default=0)
+
+
+def _push_abort_reason(g, seat, include_live=True):
+    """收手判定:返回触发原因(None=继续推进)。
+
+    ``include_live=False`` 供弃胡打白飘决策复用轮数/副露两个软收手
+    (墙量已有 PIAO_WALL_GUARD 硬门,Z 不重复作用于飘)。
+    """
+    rounds = _push_rounds.get(g, {}).get(seat, 0)
+    if rounds >= BAOTOU_PUSH_MAX_ROUNDS:
+        return "rounds"
+    if _max_opp_melds(g, seat) >= BAOTOU_PUSH_OPP_MELDS:
+        return "opp_melds"
+    if include_live:
+        try:
+            live = g.live_wall_left()
+        except AttributeError:
+            live = 99  # 无墙信息的极简测试局不触发
+        if live < BAOTOU_PUSH_MIN_LIVE:
+            return "live_wall"
+    return None
+
+
+def choose_discard(g, seat, return_info=False):
+    """返回弃牌 tile;``return_info=True`` 时返回 ``(tile, info dict)``。
 
     优先级:向听数(硬约束,不为打风牌让向听倒退)→ 财神保护 →
     进张数 → 牌型结构损失 → 喂牌风险 → tile 编号(仅作稳定排序)。
+
+    持财神 + 听牌态叠加爆头档(openspec baotou-piao-aware-discard):
+    弃后站立手为爆头听(听任意)的候选整体优先;其余候选的进度信号
+    用爆头进张(摸 t 后可弃成爆头听的未见加权数)替代普通胡牌张进张
+    ——爆头路径倍率更高(×2 起),但速度较慢,故受 X/Y/Z 自适应收手
+    调节,任一触发即回本函数的 legacy 键(速度线,info 带 push_abort)。
+    爆头进张计算超预算时整局回退 legacy 键(info 带 fallback_reason),
+    不混用部分结果。不持财神时排序与既有基线逐候选一致。
+    验收口径为有财必拷响**关闭**;YCBK 开场景当前项目不考虑。
 
     所有最小向听候选都参与精确进张比较,不按 tile 编号预截断——
     否则字牌编号靠后会被挤出候选,孤张字牌留着、数牌搭子反被先拆。
@@ -43,10 +123,18 @@ def choose_discard(g, seat):
     locked = len(g.melds[seat])
     vis = g.visible_counts(seat)
 
+    # 冻结态(抓打圈)只能弃刚摸的牌——legal_actions 是合法性唯一
+    # 真源,按 Game._legal_discards 同口径收窄候选(旧实现冻结盲:
+    # 2026-09-18 A/B 实弹暴露,持有暗杠四张时 legacy 键会选非刚摸
+    # 牌,线上同样会触发 409)。口径与 Game.in_freeze 一致,duck-type
+    # 兼容 Game.__new__ 构造的测试局/镜像局。
+    frozen = getattr(g, "freeze", 0) > 0 and seat != getattr(g, "freezer", None)
+    only = g.drawn[seat] if frozen else None
+
     cands = []  # (tile, 去除该牌后的手牌, 牌型损失, 喂牌风险)
     best_s = None
     for t in range(34):
-        if hand[t] == 0:
+        if hand[t] == 0 or (only is not None and t != only):
             continue
         c = list(hand)
         c[t] -= 1
@@ -56,12 +144,80 @@ def choose_discard(g, seat):
         if s == best_s:
             cands.append((t, c, _discard_shape_cost(hand, t), _feed_risk(g, seat, t)))
 
+    info = {}
+    if hand[W] > 0 and best_s == 0:
+        rounds = _bump_push_rounds(g, seat)
+        abort = _push_abort_reason(g, seat)
+        if abort is not None:
+            # 收手:回速度线(legacy 键),可归因。X/Y/Z 语义与验收
+            # 口径均以有财必拷响**关闭**为准;YCBK 开场景当前项目
+            # 不考虑(openspec baotou-piao-aware-discard scope)。
+            info["push_abort"] = abort
+            info["push_rounds"] = rounds
+            # 落到下方 legacy 键(速度线)
+        else:
+            best = _choose_discard_baotou(cands, locked, vis, info)
+            if best is not None:
+                info["push_rounds"] = rounds
+                return (best, info) if return_info else best
+            # 预算回退:整局走下方 legacy 键,info 已带 fallback_reason
+    else:
+        _clear_push_rounds(g, seat)
+
     best, best_key = None, None
     for t, c, shape, feed in cands:
         uke = ukeire(c, locked, vis)[2]
         key = (t == W, -uke, shape, feed, t)
         if best_key is None or key < best_key:
             best, best_key = t, key
+    info.setdefault("reason", "discard_legacy")
+    return (best, info) if return_info else best
+
+
+# 持财神听牌态爆头进张计算的预算:只用**节点数**(确定性,决策可复现
+# ——墙钟预算会让同种子轨迹随负载漂移,shape-v1 的历史教训);墙钟
+# 耗时仅记入 info 作诊断。无 Rust 内核时整档跳过(纯 Python 枚举
+# 90~220ms/决策,不可用),行为回退旧排序。
+BAOTOU_UKE_BUDGET_NODES = 64
+
+
+def _choose_discard_baotou(cands, locked, vis, info):
+    """持财神听牌态的爆头档排序;预算超限返回 None(整局回退 legacy 键)。
+
+    tier 0:弃后站立手为爆头听(听任意牌)——整体优先,档内沿用财神
+    保护次序(不主动弃白;爆头态弃白飘由 _should_piao 在 HU 决策点
+    统一裁决)。tier 1:普通听牌,进度信号用爆头进张替代普通胡牌张
+    (有财必拷响下不可兑现);普通进张不再单独参与该状态排序。
+    仅在 Rust 内核(mj_kernels.baotou_ukeire)可用时启用。
+    """
+    from .shanten import baotou_ukeire, BAOTOU_UKEIRE_RUST
+
+    if not BAOTOU_UKEIRE_RUST:
+        return None
+    started = time.monotonic()
+    nodes = 0
+    ranked = []
+    for t, c, shape, feed in cands:
+        if is_baotou_wait(c, locked):
+            ranked.append((0, t, 0, shape, feed))
+            continue
+        if nodes >= BAOTOU_UKE_BUDGET_NODES:
+            # 整局回退,不混用部分爆头结果(可归因)
+            info["fallback_reason"] = "baotou_budget_exceeded"
+            info["baotou_nodes"] = nodes
+            return None
+        _acc, u1 = baotou_ukeire(c, locked, vis)
+        nodes += 1
+        ranked.append((1, t, u1, shape, feed))
+    best, best_key, best_tier = None, None, None
+    for tier, t, u1, shape, feed in ranked:
+        key = (tier, t == W, -u1, shape, feed, t)
+        if best_key is None or key < best_key:
+            best, best_key, best_tier = t, key, tier
+    info["reason"] = "discard_baotou"
+    info["baotou_tier"] = best_tier
+    info["baotou_nodes"] = nodes
+    info["baotou_elapsed_ms"] = round((time.monotonic() - started) * 1000.0, 3)
     return best
 
 
@@ -220,13 +376,20 @@ def _choose_draw_action(g, seat, actions=None):
     window useful without reducing the policy to ``if kong: return kong``.
     """
     actions = tuple(g.legal_actions() if actions is None else actions)
+    if HU in actions and g.live_wall_left() < PIAO_WALL_GUARD:
+        # 墙量守卫(openspec baotou-piao-aware-discard):活墙可摸不足
+        # 6 张(死墙已扣)时落袋为安,直接胡——不弃胡博爆头/财飘、
+        # 也不让杠的期望比较覆盖确定的 HU。与 _should_piao 同常量。
+        return HU, {"reason": "hu_wall_guard_legacy"}
     kongs = _kong_actions(actions)
     if not kongs:
         if HU in actions:
             return (W if _should_piao(g, seat) else HU), {
                 "reason": "hu_or_piao_legacy",
             }
-        return choose_discard(g, seat), {"reason": "discard_legacy"}
+        tile, info = choose_discard(g, seat, return_info=True)
+        info.setdefault("reason", "discard_legacy")
+        return tile, info
 
     if HU in actions:
         if _should_piao(g, seat):
@@ -348,6 +511,11 @@ def _feed_risk(g, seat, t):
 PONG_UKE_GAIN = 2
 CHOW_UKE_GAIN = 4
 
+# 活墙可摸(已扣死墙)< 此值时落袋为安直接胡:爆头态也不弃胡打
+# 白飘、杠期望比较不覆盖确定 HU;_should_piao 与 choose_action 的
+# HU 短路共用(openspec baotou-piao-aware-discard,2026-09-18)。
+PIAO_WALL_GUARD = 6
+
 
 def _eval_standing(hand, locked, vis):
     """站立暗牌(need 态)的门槛判据 (shanten, ukeire)。
@@ -418,16 +586,26 @@ def _should_piao(g, seat):
     站立手牌仍听任意牌(爆头态保持,下次摸牌必胡,倍率翻倍)。
 
     前提:墙内活牌足够轮回到自己再摸(抓打圈内他家只能自摸胡,
-    被抢胡风险低)。
+    被抢胡风险低)。墙门与 choose_action 的 HU 短路共用
+    ``PIAO_WALL_GUARD``(2026-09-18 由 5 收紧到 6)。
     """
     hand = g.hands[seat]
     if hand[W] == 0:
+        return False
+    # 收手态落袋为安:轮数/副露软收手时不弃胡博倍率(墙量走
+    # PIAO_WALL_GUARD 硬门,Z 不重复作用于飘)
+    if _push_abort_reason(g, seat, include_live=False) is not None:
+        return False
+    # 抓打圈冻结态只能弃刚摸牌——弃白飘仅在刚摸的就是财神时合法
+    # (旧实现冻结盲,2026-09-18 A/B 实弹暴露)。
+    if (getattr(g, "freeze", 0) > 0 and seat != getattr(g, "freezer", None)
+            and g.drawn[seat] != W):
         return False
     after = list(hand)
     after[W] -= 1
     if not is_baotou(after, len(g.melds[seat])):
         return False
-    return g.live_wall_left() >= 5
+    return g.live_wall_left() >= PIAO_WALL_GUARD
 
 
 def choose_shape_action(g, seat):

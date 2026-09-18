@@ -38,6 +38,7 @@ from mj.game import (
 )
 from mj.shanten import shanten
 from mj.tiles import W, counts
+from mj.win import is_baotou_wait
 
 
 def _game(spec):
@@ -151,7 +152,9 @@ class TestDiscardInvariants(unittest.TestCase):
             self.assertEqual(_shanten_after(hand, pick), _min_shanten(hand))
 
     def test_joker_never_discarded_when_alternative(self):
-        """只要存在非财神的最小向听候选,就不该打财神。"""
+        """存在非财神最小向听候选时不打财神;唯一例外是弃白后站立手
+        仍爆头听(财飘形状,爆头档 tier0——openspec
+        baotou-piao-aware-discard 的新语义)。"""
         for hand in self._random_hands(40, 4242, jokers=1):
             g = Game.__new__(Game)
             g.hands = [list(hand), [0] * 34, [0] * 34, [0] * 34]
@@ -161,7 +164,12 @@ class TestDiscardInvariants(unittest.TestCase):
             alts = [t for t in range(33) if hand[t] and _shanten_after(hand, t) == best]
             if not alts:
                 continue
-            self.assertNotEqual(choose_discard(g, 0), W)
+            pick = choose_discard(g, 0)
+            if pick == W:
+                after = list(hand)
+                after[W] -= 1
+                self.assertTrue(is_baotou_wait(after, 0),
+                                f"弃白非爆头形状: {hand}")
 
 
 class TestSelfKongDecision(unittest.TestCase):
@@ -199,6 +207,185 @@ class TestSelfKongDecision(unittest.TestCase):
     def test_immediate_hu_beats_lower_value_self_kong(self):
         """杠后期望不足时仍保留确定 HU,避免写成 if-kong-return-kong。"""
         g = _draw_game("1111m22m33m44m55m66m", 5)
+        acts = g.legal_actions()
+        self.assertIn(HU, acts)
+        self.assertIn(KONG_CLOSED_BASE, acts)
+        self.assertEqual(bot_mod.choose_action(g, 0), HU)
+
+
+class TestBaotouDiscardTier(unittest.TestCase):
+    """持财神听牌态的爆头档排序(openspec baotou-piao-aware-discard)。"""
+
+    def test_tier0_baotou_wait_candidate_wins(self):
+        # 弃 5p 后 567p+财神 = 听任意(tier0);其余候选均为普通听牌。
+        g = _game("123m456m789m55p67pw")
+        pick, info = choose_discard(g, 0, return_info=True)
+        self.assertEqual(pick, 13)
+        self.assertEqual(info["reason"], "discard_baotou")
+        self.assertEqual(info["baotou_tier"], 0)
+        after = list(g.hands[0])
+        after[13] -= 1
+        self.assertTrue(is_baotou_wait(after, 0))
+
+    def test_tier1_baotou_ukeire_outranks_plain_ukeire(self):
+        # 旧键按普通进张选 4p(disc12, uke=22);新排序按爆头进张选
+        # 9s(disc26, baotou_u1=9 > disc12 的 5)——有财必拷响下 4p
+        # 路径的胡牌张一张都提交不了,爆头推进才是真实进度。
+        g = _game("456m224p444s6789sw")
+        pick, info = choose_discard(g, 0, return_info=True)
+        self.assertEqual(pick, 26)
+        self.assertEqual(info["reason"], "discard_baotou")
+        self.assertEqual(info["baotou_tier"], 1)
+
+    def test_budget_fallback_returns_legacy_key(self):
+        # 节点预算超限:整局回退 legacy 键(普通进张排序),可归因、不混用。
+        # 预算只按节点数判定(墙钟仅诊断)——同种子决策不随负载漂移。
+        g = _game("456m224p444s6789sw")
+        with mock.patch.object(bot_mod, "BAOTOU_UKE_BUDGET_NODES", 0):
+            pick, info = choose_discard(g, 0, return_info=True)
+        self.assertEqual(pick, 12)  # 旧键 pick(4p)
+        self.assertEqual(info["reason"], "discard_legacy")
+        self.assertEqual(info["fallback_reason"], "baotou_budget_exceeded")
+
+    def test_no_rust_kernel_skips_tier(self):
+        # 无 Rust 内核(纯 Python 枚举不可用):整档跳过,行为回退旧排序。
+        with mock.patch("mj.shanten.BAOTOU_UKEIRE_RUST", False):
+            pick, info = choose_discard(_game("456m224p444s6789sw"), 0,
+                                        return_info=True)
+        self.assertEqual(pick, 12)
+        self.assertEqual(info["reason"], "discard_legacy")
+        self.assertNotIn("fallback_reason", info)
+
+    def test_freeze_restricts_to_drawn_tile(self):
+        # 抓打圈冻结态只能弃刚摸的牌(legal_actions 唯一真源)。
+        # 旧实现冻结盲:持 8p×4 时 legacy 键/爆头档都会偏爱拆杠
+        # 第 4 张(8p)而非刚摸牌,自博弈 A/B 实弹暴露非法动作。
+        hand = counts("123m456m789m8888pw")
+        g = Game.__new__(Game)
+        g.hands = [list(hand), [0] * 34, [0] * 34, [0] * 34]
+        g.melds = [[] for _ in range(4)]
+        g.discards = [[] for _ in range(4)]
+        g.drawn = [0, None, None, None]  # 刚摸 1m
+        g.freeze = 2
+        g.freezer = 2
+        pick, info = choose_discard(g, 0, return_info=True)
+        self.assertEqual(pick, 0)
+        # 冻结解除后恢复自由排序(弃 8p 成 4 面子+W 爆头听为 tier0);
+        # 收紧 X 避免“轮数收手”掩盖档位断言
+        g.freeze = 0
+        g.freezer = None
+        with mock.patch.object(bot_mod, "BAOTOU_PUSH_MAX_ROUNDS", 99):
+            pick2, info2 = choose_discard(g, 0, return_info=True)
+        self.assertEqual((pick2, info2["baotou_tier"]), (16, 0))  # 8p=16
+
+    def test_push_abort_rounds_reverts_to_speed(self):
+        # X 轮未转化 → 收手回速度线(旧键 pick 4p),可归因
+        g = _game("456m224p444s6789sw")
+        with mock.patch.object(bot_mod, "BAOTOU_PUSH_MAX_ROUNDS", 2):
+            pick1, info1 = choose_discard(g, 0, return_info=True)
+            self.assertEqual(info1.get("reason"), "discard_baotou")
+            self.assertNotIn("push_abort", info1)
+            pick2, info2 = choose_discard(g, 0, return_info=True)
+            self.assertEqual(pick2, 12)
+            self.assertEqual(info2["push_abort"], "rounds")
+            self.assertEqual(info2["push_rounds"], 2)
+
+    def test_push_abort_rounds_resets_on_state_exit(self):
+        # 离开推进态(手牌失去财神)轮数清零,重新进入重新计轮
+        g = _game("456m224p444s6789sw")
+        with mock.patch.object(bot_mod, "BAOTOU_PUSH_MAX_ROUNDS", 2):
+            choose_discard(g, 0, return_info=True)   # rounds=1,仍推进
+            _pick, info2 = choose_discard(g, 0, return_info=True)
+            self.assertEqual(info2["push_abort"], "rounds")  # rounds=2 → 收手
+            g.hands[0][33] = 0                       # 换入 1s:失去财神离开推进态
+            g.hands[0][18] = 1
+            choose_discard(g, 0)
+            g.hands[0][33] = 1                       # 换回财神重新进入推进态
+            g.hands[0][18] = 0
+            pick, info = choose_discard(g, 0, return_info=True)
+            # 轮数从 1 重新起算,不再处于收手态
+            self.assertEqual(info.get("push_rounds"), 1)
+            self.assertEqual(info.get("reason"), "discard_baotou")
+
+    def test_push_abort_opp_melds(self):
+        # 任意对手副露 ≥ Y → 收手
+        g = _game("456m224p444s6789sw")
+        g.melds[1] = [("pong", 0)] * 3
+        pick, info = choose_discard(g, 0, return_info=True)
+        self.assertEqual(pick, 12)
+        self.assertEqual(info["push_abort"], "opp_melds")
+
+    def test_push_abort_live_wall(self):
+        # 活墙 < Z → 收手(需要 live_wall_left 可读的对局)
+        g = _draw_game("456m224p444s6789sw", 33)
+        g.wall = [0] * (20 + 10)  # 活墙 10 < 16
+        pick, info = choose_discard(g, 0, return_info=True)
+        self.assertEqual(info.get("push_abort"), "live_wall")
+
+    def test_piao_suppressed_on_opp_melds(self):
+        # 软收手(对手副露 ≥ Y)时弃胡打白飘同样落袋为安
+        g = _draw_game("123m456m789m5pwwww", W)
+        g.wall = [0] * (20 + 40)
+        g.melds[1] = [("pong", 0)] * 3
+        action, _ = bot_mod._choose_draw_action(g, 0, g.legal_actions())
+        self.assertEqual(action, HU)
+
+    def test_no_wild_hand_unchanged(self):
+        # 不持财神:排序与旧冻结基线一致(既有固定牌例回归)。
+        self.assertEqual(choose_discard(_game("3m44m567m1p5p3689sEF"), 0), 27)
+
+    def test_ycbk_flag_does_not_change_discard(self):
+        # 策略无条件生效:门禁开关只影响 HU 合法性,不影响弃牌选择。
+        g1 = _game("456m224p444s6789sw")
+        g2 = _game("456m224p444s6789sw")
+        g1.you_cai_bi_kao = False
+        g2.you_cai_bi_kao = True
+        self.assertEqual(choose_discard(g1, 0), choose_discard(g2, 0))
+
+
+class TestBaotouPiaoWallGuard(unittest.TestCase):
+    """墙量守卫:活墙可摸(已扣死墙)< 6 落袋为安直接胡。"""
+
+    def _piao_game(self, live):
+        g = _draw_game("123m456m789m5pwwww", W)
+        g.wall = [0] * (20 + live)
+        return g
+
+    def test_wall_below_guard_hu_directly(self):
+        g = self._piao_game(5)
+        acts = g.legal_actions()
+        self.assertIn(HU, acts)
+        action, detail = bot_mod._choose_draw_action(g, 0, acts)
+        self.assertEqual(action, HU)
+        self.assertEqual(detail["reason"], "hu_wall_guard_legacy")
+        self.assertFalse(bot_mod._should_piao(g, 0))
+
+    def test_wall_at_guard_still_piao(self):
+        g = self._piao_game(6)
+        self.assertTrue(bot_mod._should_piao(g, 0))
+        action, detail = bot_mod._choose_draw_action(g, 0, g.legal_actions())
+        self.assertEqual(action, W)
+        self.assertEqual(detail["reason"], "hu_or_piao_legacy")
+
+    def test_freeze_piao_requires_drawn_wild(self):
+        # 抓打圈冻结态只能弃刚摸牌:弃胡打白飘仅在刚摸财神时合法,
+        # 否则必须直接胡或弃刚摸牌(旧 _should_piao 冻结盲)。
+        g = _draw_game("123m456m789m5pwwww", 13)  # 摸 5p 成胡,非财神
+        g.wall = [0] * (20 + 40)
+        g.freeze = 2
+        g.freezer = 2
+        action, detail = bot_mod._choose_draw_action(g, 0, g.legal_actions())
+        self.assertEqual(action, HU)  # 冻结 + 摸的不是白 → 不飘
+        # 未冻结 + 刚摸财神 → 弃白飘仍被选择
+        g2 = _draw_game("123m456m789m5pwwww", W)
+        g2.wall = [0] * (20 + 40)
+        action2, _ = bot_mod._choose_draw_action(g2, 0, g2.legal_actions())
+        self.assertEqual(action2, W)
+
+    def test_guard_beats_kong_comparison(self):
+        # HU 与暗杠同时合法、墙 < 6:守卫短路直接胡,杠期望比较不参与。
+        g = _draw_game("1111m456m789m5pwww", W)
+        g.wall = [0] * (20 + 5)
         acts = g.legal_actions()
         self.assertIn(HU, acts)
         self.assertIn(KONG_CLOSED_BASE, acts)

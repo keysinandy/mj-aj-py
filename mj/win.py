@@ -11,11 +11,13 @@ is_win 结果按 (手牌字节串, locked) 记忆化——听牌/爆头判定各
 from .tiles import W
 
 _win_cache = {}
+_baotou_wait_cache = {}
 _CACHE_CAP = 1 << 20
 
 
 def clear_cache():
     _win_cache.clear()
+    _baotou_wait_cache.clear()
 
 
 def is_win(counts, locked=0):
@@ -146,8 +148,21 @@ def waiting_tiles(counts13, locked=0):
 
 
 def is_baotou_wait(counts13, locked=0):
-    """原始判定:任意牌都能胡(不含 4 白板排除)。"""
-    return all(is_win(add_tile(counts13, t), locked) for t in range(34))
+    """原始判定:任意牌都能胡(不含 4 白板排除)。
+
+    结果按 (手牌字节串, locked) 记忆化——爆头进张枚举
+    (shanten.baotou_ukeire)对每个摸牌候选组合反复查询,
+    与 is_win 共用 clear_cache。
+    """
+    key = (bytes(counts13), locked)
+    hit = _baotou_wait_cache.get(key)
+    if hit is not None:
+        return hit
+    ok = all(is_win(add_tile(counts13, t), locked) for t in range(34))
+    if len(_baotou_wait_cache) >= _CACHE_CAP:
+        _baotou_wait_cache.clear()
+    _baotou_wait_cache[key] = ok
+    return ok
 
 
 def is_baotou(counts13, locked=0):

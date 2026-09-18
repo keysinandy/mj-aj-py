@@ -1,0 +1,44 @@
+{
+ "games": 30720,
+ "new": {
+  "score_total": -528,
+  "score_per_seat_game": -0.00859375,
+  "wins": 15315,
+  "win_rate": 0.49853515625,
+  "draws": 59,
+  "mults": {
+   "4": 41,
+   "2": 2197,
+   "1": 13077
+  }
+ },
+ "old": {
+  "score_total": 528,
+  "score_per_seat_game": 0.00859375,
+  "wins": 15346,
+  "win_rate": 0.49954427083333336,
+  "draws": 59,
+  "mults": {
+   "8": 2,
+   "4": 112,
+   "2": 2140,
+   "1": 13092
+  }
+ },
+ "score_gap": -1056,
+ "paired_diff": {
+  "n": 30720,
+  "total": -1056,
+  "mean": -0.034375,
+  "low": -0.3172526041666667,
+  "high": 0.24765625
+ },
+ "seconds": 537.5,
+ "games_per_second": 57.2,
+ "push_cfg": [
+  0,
+  99,
+  0
+ ],
+ "ycbk": false
+}

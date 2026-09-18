@@ -1,7 +1,9 @@
+import random
 import unittest
 
 from mj.tiles import counts, W
-from mj.shanten import shanten, ukeire, waits
+from mj.shanten import shanten, ukeire, waits, baotou_ukeire
+from mj.win import is_baotou_wait
 
 
 class TestShanten(unittest.TestCase):
@@ -115,6 +117,92 @@ class TestUkeire(unittest.TestCase):
         self.assertEqual((s, acc), (0, [13, 33]))  # 5p / 白
         # 真实未见 5p:4 - 手 1 - 牌河 1 = 2
         self.assertEqual(total, 2 + 4)
+
+
+class TestBaotouUkeire(unittest.TestCase):
+    """爆头进张(openspec baotou-piao-aware-discard):摸 t 后可弃成
+    爆头听(听任意)的集合与未见加权和。"""
+
+    def test_baotou_wait_hand_all_tiles(self):
+        # 3 面子 + 555p + 财神:弃 0 也听任意 → 全部牌是进张
+        hand = counts("123m456m789m555pw")
+        acc, u1 = baotou_ukeire(hand, 0, hand)
+        self.assertEqual(len(acc), 34)
+        self.assertEqual(u1, sum(4 - hand[t] for t in range(34)))
+
+    def test_tier1_hand_known_set(self):
+        # 持财神普通听牌:摸 4p/5p/7p/财神 后弃 5p/6p 可成爆头听,
+        # 6p(补对子)与 8p(拆不出搭子)不在集合内——与普通胡牌张
+        # [4p..8p, W] 交集更窄,度量确实不同。
+        hand = counts("123m456m789m5p5p6pw")
+        self.assertFalse(is_baotou_wait(hand))
+        acc, u1 = baotou_ukeire(hand, 0, hand)
+        self.assertEqual(acc, [12, 13, 15, 33])  # 4p/5p/7p/白
+        # 4p 未见 4,5p 手持 2 → 2,7p 未见 4,白手持 1 → 3
+        self.assertEqual(u1, 4 + 2 + 4 + 3)
+
+    def test_no_wild_prunes_to_same_set(self):
+        # 无财神手牌同样有爆头进张概念(如七对向豪华推进的形状),
+        # 剪枝口径与有财神一致——此处只验证不抛错且自洽。
+        hand = counts("123m456m789m5p5p6p6p")
+        acc, u1 = baotou_ukeire(hand, 0, hand)
+        self.assertIsInstance(acc, list)
+
+    def test_visible_no_double_subtraction(self):
+        # 自持对子的进张(5p)未见 = 2,不是被扣两次的 0
+        hand = counts("123m456m789m5p5p6pw")
+        vis = list(hand)
+        vis[13] += 2  # 牌河再见 2 张 5p → 未见归零,但集合不变
+        acc, u1 = baotou_ukeire(hand, 0, vis)
+        self.assertEqual(acc, [12, 13, 15, 33])
+        self.assertEqual(u1, 4 + 0 + 4 + 3)
+
+    def test_pruning_matches_full_enumeration(self):
+        # 随机差分:剪枝候选与全量 34 枚举的爆头进张集合逐一相等
+        # (CLAUDE.md 铁律——shanten 类优化必须配随机差分验证)。
+        # W<3 剪枝(远离候选集的牌不可能是爆头进张——唯一途径是
+        # (W,W,t) 刻子 + 第 3 财神配对,需 W>=3);W>=3 函数走全量
+        # 枚举,与参考同路径。Rust 版同口径(scripts/rust_parity.py)。
+        rng = random.Random(20260918)
+        tested = 0
+        while tested < 80:
+            locked = rng.randint(0, 3)
+            n = 13 - 3 * locked
+            wilds = rng.choice([0, 1, 2, 3])
+            hand = [0] * 34
+            tiles = [rng.randrange(33) for _ in range(n - wilds)]
+            for t in tiles:
+                hand[t] += 1
+            hand[W] = wilds
+            if any(c > 4 for c in hand):
+                continue  # 物理不可能的手牌
+            tested += 1
+            full = []
+            for t in range(34):
+                if hand[t] >= 4:
+                    continue
+                c = list(hand)
+                c[t] += 1
+                for d in range(34):
+                    if d == t or c[d] == 0:
+                        continue
+                    c[d] -= 1
+                    ok = is_baotou_wait(c, locked)
+                    c[d] += 1
+                    if ok:
+                        full.append(t)
+                        break
+            acc, _u1 = baotou_ukeire(hand, locked)
+            self.assertEqual(acc, full, msg=f"hand={hand} locked={locked}")
+
+    def test_three_wilds_meld_branch_all_wait(self):
+        # W=3 面子路径:3 面子 + 5p + WWW——去一财神后 (5p,W,W→555p)
+        # 补第 4 面子,听任意,全牌进张。W>=3 的全量枚举分支为保守
+        # 冗余(可证:非爆头听的 W=3 手远牌必不进张),差分已覆盖。
+        hand = counts("123m456m789m5pwww")
+        acc, u1 = baotou_ukeire(hand, 0, hand)
+        self.assertEqual(len(acc), 34)
+        self.assertEqual(u1, sum(4 - hand[t] for t in range(34)))
 
 
 if __name__ == "__main__":

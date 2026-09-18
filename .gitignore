@@ -13,3 +13,4 @@ client/node_modules/
 client/dist/
 client/src-tauri/target/
 client/*.tsbuildinfo
+mj/bot_baseline_snapshot.py

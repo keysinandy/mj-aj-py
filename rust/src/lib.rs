@@ -416,6 +416,170 @@ fn ukeire_total_impl(
     Ok((s, total))
 }
 
+/// ``nat``(33 维自然牌) + ``wilds`` 个财神能否恰好组成 ``need`` 个
+/// 面子(win.py::_melds 的逐行移植,含 2026-09-11 的顺子三位枚举
+/// 修复:最小自然牌 t 可位于顺子第 1/2/3 位,t 位必须用真牌)。
+fn melds_complete(nat: &mut [i32; 33], wilds: i32, need: i32) -> bool {
+    let mut t = 0usize;
+    while t < 33 && nat[t] == 0 {
+        t += 1;
+    }
+    if t == 33 {
+        return wilds == 3 * need;
+    }
+    if need == 0 {
+        return false;
+    }
+    // 刻子分支:k 张 t + (3-k) 个财神
+    let kmax = nat[t].min(3);
+    let mut k = kmax;
+    while k > 0 {
+        let w = 3 - k;
+        if wilds >= w {
+            nat[t] -= k;
+            let ok = melds_complete(nat, wilds - w, need - 1);
+            nat[t] += k;
+            if ok {
+                return true;
+            }
+        }
+        k -= 1;
+    }
+    // 顺子分支:t 是当前最小自然牌,可位于顺子第 1/2/3 位——更小的
+    // 起始位只能由财神补(t 之前更小的自然牌必为 0)。
+    for s in [t as i32, t as i32 - 1, t as i32 - 2] {
+        if s < 0 || s >= 27 || s % 9 > 6 {
+            continue;
+        }
+        for u1 in [1, 0] {
+            for u2 in [1, 0] {
+                for u3 in [1, 0] {
+                    // t 所在位必须用真牌(财神与同值真牌可互换)
+                    let units = [u1, u2, u3];
+                    if units[(t as i32 - s) as usize] == 0 {
+                        continue;
+                    }
+                    if u1 == 1 && nat[s as usize] == 0 {
+                        continue;
+                    }
+                    if u2 == 1 && nat[(s + 1) as usize] == 0 {
+                        continue;
+                    }
+                    if u3 == 1 && nat[(s + 2) as usize] == 0 {
+                        continue;
+                    }
+                    let w = 3 - u1 - u2 - u3;
+                    if wilds < w {
+                        continue;
+                    }
+                    nat[s as usize] -= u1;
+                    nat[(s + 1) as usize] -= u2;
+                    nat[(s + 2) as usize] -= u3;
+                    let ok = melds_complete(nat, wilds - w, need - 1);
+                    nat[s as usize] += u1;
+                    nat[(s + 1) as usize] += u2;
+                    nat[(s + 2) as usize] += u3;
+                    if ok {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
+/// 爆头听快判:任意牌摸上即和牌。与 win.is_baotou_wait 的 34 次
+/// is_win 定义等价(差分验收 scripts/rust_parity.py),刻画为:
+/// 持 ≥1 财神,且
+/// (a) 去一张财神后恰组成 4-locked 个面子(财神可入面子)——任意
+///     摸牌 u 以 (u,财神) 雀头入局;
+/// (b) locked=0 七对路径:自然单张数 s 满足 wilds ≥ s+1 且
+///     (wilds-s-1) 为偶——u 配财神成对、余财神两两自配成 7 对。
+/// 无财神不可能听任意(异花色/字牌摸牌无法入局)。
+fn baotou_wait_fast(counts: &[i32; 34], locked: i32) -> bool {
+    let wilds = counts[W];
+    if wilds < 1 {
+        return false;
+    }
+    let need = 4 - locked;
+    let mut nat = [0i32; 33];
+    nat.copy_from_slice(&counts[..33]);
+    if melds_complete(&mut nat, wilds - 1, need) {
+        return true;
+    }
+    if locked == 0 {
+        let s: i32 = nat.iter().map(|&c| c % 2).sum();
+        if wilds >= s + 1 && (wilds - s - 1) % 2 == 0 {
+            return true;
+        }
+    }
+    false
+}
+
+/// 爆头听判定(带 (手牌, locked) 记忆化的快判封装)。
+fn baotou_wait_impl(
+    counts: &[i32; 34],
+    locked: i32,
+    wait_cache: &mut HashMap<ShantenCacheKey, bool>,
+) -> Result<bool, String> {
+    let key = (*counts, locked);
+    if let Some(&value) = wait_cache.get(&key) {
+        return Ok(value);
+    }
+    let ok = baotou_wait_fast(counts, locked);
+    wait_cache.insert(key, ok);
+    Ok(ok)
+}
+
+/// 爆头进张枚举(与 shanten.py::baotou_ukeire_py 逐口径对应):
+/// 摸 t 后存在弃 d 使 S+t-d 为爆头听的 t 集合与未见加权和。
+/// S 自身为爆头听时全部牌计入。候选剪枝:爆头听的自然牌必须互相
+/// 连接,远处孤立牌唯一途径是 (W,W,t) 刻子 + 第 3 个财神配对——
+/// counts[W] >= 3 时不剪(全量),否则用 ukeire_candidates(含财神
+/// 本身);弃掉刚摸的 t 只回到原手(已知非爆头听),跳过。
+fn baotou_ukeire_impl(
+    counts: &[i32; 34],
+    locked: i32,
+    visible: Option<&[i32; 34]>,
+) -> Result<(Vec<usize>, i64), String> {
+    let v = visible.copied().unwrap_or(*counts);
+    let left = |t: usize| (4 - v[t]).max(0) as i64;
+    let mut wait_cache: HashMap<ShantenCacheKey, bool> = HashMap::new();
+    if baotou_wait_impl(counts, locked, &mut wait_cache)? {
+        let acc: Vec<usize> = (0..34).filter(|&t| counts[t] < 4).collect();
+        let total: i64 = acc.iter().map(|&t| left(t)).sum();
+        return Ok((acc, total));
+    }
+    let cands: Vec<usize> = if counts[W] >= 3 {
+        (0..34).collect()
+    } else {
+        ukeire_candidates(counts)
+    };
+    let mut acc: Vec<usize> = Vec::new();
+    for &t in &cands {
+        if counts[t] >= 4 {
+            continue;
+        }
+        let mut c2 = *counts;
+        c2[t] += 1;
+        for d in 0..34 {
+            if d == t || c2[d] == 0 {
+                continue;
+            }
+            c2[d] -= 1;
+            let ok = baotou_wait_impl(&c2, locked, &mut wait_cache);
+            c2[d] += 1;
+            if ok? {
+                acc.push(t);
+                break;
+            }
+        }
+    }
+    let total: i64 = acc.iter().map(|&t| left(t)).sum();
+    Ok((acc, total))
+}
+
 fn best_future_discard_impl_with_cache(
     counts: &[i32; 34],
     locked: i32,
@@ -710,10 +874,29 @@ fn ukeire(
     Ok((s, acc.iter().map(|&t| t as i32).collect(), total))
 }
 
+/// 爆头进张枚举:返回 (进张种类升序列表, 未见加权总数)。
+/// 语义与 mj.shanten.baotou_ukeire 对应(随机差分见 scripts/rust_parity.py)。
+#[pyfunction(signature = (counts, locked=0, visible=None))]
+fn baotou_ukeire(
+    counts: Vec<i32>,
+    locked: i32,
+    visible: Option<Vec<i32>>,
+) -> PyResult<(Vec<i32>, i64)> {
+    let arr = to_arr(counts)?;
+    let vis = match visible {
+        Some(v) => Some(to_arr(v)?),
+        None => None,
+    };
+    let (acc, total) =
+        baotou_ukeire_impl(&arr, locked, vis.as_ref()).map_err(PyValueError::new_err)?;
+    Ok((acc.into_iter().map(|t| t as i32).collect(), total))
+}
+
 #[pymodule]
 fn mj_kernels(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(shanten, m)?)?;
     m.add_function(wrap_pyfunction!(ukeire, m)?)?;
+    m.add_function(wrap_pyfunction!(baotou_ukeire, m)?)?;
     m.add_function(wrap_pyfunction!(best_future_discard, m)?)?;
     m.add_function(wrap_pyfunction!(discard_frontier, m)?)?;
     m.add_function(wrap_pyfunction!(discard_frontier_batch, m)?)?;

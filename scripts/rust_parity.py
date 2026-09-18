@@ -91,6 +91,25 @@ def parity_ukeire(rs, rng, n):
     return checked
 
 
+def parity_baotou(rs, rng, n):
+    """爆头进张(baotou_ukeire):Rust 快判刻画(去财神后面子组/七对
+    路径)与 Python 34 次 is_win 定义版逐位对拍,含 W>=3 不剪枝分支
+    与随机 visible。"""
+    checked = 0
+    for locked in range(5):
+        need = 13 - 3 * locked
+        for wilds in (0, 1, 2, 3, 4):
+            for _ in range(n):
+                c = hand(rng, need, wilds)
+                for vis in (None, vis_variant(rng, c)):
+                    a = rs.baotou_ukeire(c, locked, vis)
+                    b = py_sh.baotou_ukeire_py(c, locked, vis)
+                    assert a == b, f"baotou_ukeire 不符: {c} locked={locked} vis={vis}\n  rust={a}\n  py  ={b}"
+                    assert a[0] == sorted(a[0]), f"acc 非升序: {a}"
+                    checked += 1
+    return checked
+
+
 def bench(rs, rng, n):
     hands = []
     for _ in range(n):
@@ -180,6 +199,8 @@ def main():
     print(f"shanten 对拍通过: {n1} 手(locked×张数×财神 全交叉)")
     n2 = parity_ukeire(rs, rng, args.n)
     print(f"ukeire 对拍通过: {n2} 手(含 None/随机 visible,acc 升序断言)")
+    n3 = parity_baotou(rs, rng, max(60, args.n // 3))
+    print(f"baotou_ukeire 对拍通过: {n3} 手(locked×财神 0..4 × None/随机 visible)")
 
     print(f"\n基准(随机 13 张手 {args.bench} 副,Python 冷缓存):")
     bench(rs, random.Random(99), args.bench)

@@ -237,6 +237,51 @@ def ukeire_py(counts, locked=0, visible=None):
     return s, acc, sum(_left(t, vis) for t in acc)
 
 
+def baotou_ukeire_py(counts, locked=0, visible=None):
+    """爆头进张枚举(纯 Python 回退;对外入口见下方调度器
+    baotou_ukeire,Rust 内核优先)。
+
+    对 13-3*locked 张站立手牌 S:摸 t 后存在弃牌 d 使 S+t-d 为爆头听
+    (``is_baotou_wait``,听任意牌)的 t 集合 acc,及其未见加权和
+    u1 = sum(4 - visible[t])。S 自身已是爆头听时任何摸牌都保持
+    (弃掉刚摸的 t 即回到 S),全部牌计为进张。
+
+    ``d`` 取 S+t 中的任意手牌——freeze 的「只弃刚摸牌」是引擎上下文
+    约束,纯度量不感知;动作合法性以 legal_actions 为准。visible 口径
+    与 ukeire 相同:须含被评估手牌,折算只在 4-visible 一处发生。
+
+    候选剪枝比 ukeire 更激进:爆头听(听任意)的自然牌部分必须全部
+    互相连接(面子/对子/刻子/±2 搭子),远处孤立牌唯一途径是
+    (W,W,t) 刻子 + 第 3 个财神配任意摸牌成对——故 counts[W] >= 3
+    时不剪(全量 34 枚举),否则用 ``_ukeire_candidates``(含财神
+    本身)。W<3 剪枝安全性由随机差分保证(剪枝 vs 全量,含 W=1/2
+    手牌,见 test_shanten;Rust 版同口径,scripts/rust_parity.py)。
+    """
+    from .win import is_baotou_wait
+
+    vis = counts if visible is None else visible
+    if is_baotou_wait(counts, locked):
+        acc = [t for t in range(34) if counts[t] < 4]
+        return acc, sum(_left(t, vis) for t in acc)
+    candidates = range(34) if counts[W] >= 3 else _ukeire_candidates(counts)
+    acc = []
+    for t in candidates:
+        if counts[t] >= 4:
+            continue
+        c = _add(counts, t)
+        for d in range(34):
+            if d == t or c[d] == 0:
+                # 弃掉刚摸的 t 只回到原手 S(已知非爆头听)
+                continue
+            c[d] -= 1
+            ok = is_baotou_wait(c, locked)
+            c[d] += 1
+            if ok:
+                acc.append(t)
+                break
+    return acc, sum(_left(t, vis) for t in acc)
+
+
 # ---------- Rust 内核调度(2026-09-11 接入默认路径) ----------
 # mj_kernels(rust/,pip install -e rust/ 构建)可导入即优先 Rust;
 # 未安装自动回退纯 Python。MJ_KERNELS=python 强制纯 Python(排障/对拍)。
@@ -261,6 +306,11 @@ try:
 except (ImportError, AttributeError):
     _rust_discard_frontier_batch = None
 
+try:
+    from mj_kernels import baotou_ukeire as _rust_baotou_ukeire
+except (ImportError, AttributeError):
+    _rust_baotou_ukeire = None
+
 
 FUTURE_DISCARD_KERNEL_VERSION = (
     "rust-batch-v1" if _rust_best_future_discard is not None
@@ -273,6 +323,10 @@ DISCARD_FRONTIER_BATCH_KERNEL_VERSION = (
     else None)
 
 _FORCE_PY = os.environ.get("MJ_KERNELS", "").lower() == "python"
+
+# bot 的爆头档只在 Rust 内核可用时启用(纯 Python 枚举 90~220ms/决策,
+# 不可用);MJ_KERNELS=python 视同不可用。决策行为因此确定性可复现。
+BAOTOU_UKEIRE_RUST = _rust_baotou_ukeire is not None and not _FORCE_PY
 
 
 def shanten(counts, locked=0):
@@ -287,6 +341,18 @@ def ukeire(counts, locked=0, visible=None):
     if _rust_ukeire is not None and not _FORCE_PY:
         return _rust_ukeire(counts, locked, visible)
     return ukeire_py(counts, locked, visible)
+
+
+def baotou_ukeire(counts, locked=0, visible=None):
+    """爆头进张枚举(调度器:Rust 内核优先,回退 baotou_ukeire_py)。
+
+    语义见 ``baotou_ukeire_py`` docstring;差分验收
+    scripts/rust_parity.py(随机手牌 × 有/无财神 × 随机 visible)。
+    """
+    if _rust_baotou_ukeire is not None and not _FORCE_PY:
+        acc, u1 = _rust_baotou_ukeire(counts, locked, visible)
+        return list(acc), u1
+    return baotou_ukeire_py(counts, locked, visible)
 
 
 def best_future_discard(counts, locked=0, visible=None, include_tiles=True):
