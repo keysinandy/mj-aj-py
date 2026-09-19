@@ -25,7 +25,7 @@ from .records import game_path, load_game_record
 from .seeds import SeedLibrary
 from .service import Router
 
-__all__ = ["api_router"]
+__all__ = ["api_router", "session_router"]
 
 
 def _is_plain_name(name):
@@ -63,7 +63,17 @@ def api_router(arena_root=None, games_root=None, seed_root=None):
         game = _game_index(body.get("game"))
         if not _is_plain_name(batch_id):
             raise ValidationError(f"invalid batch_id {batch_id!r}")
-        path = game_path(os.path.join(arena_root, str(batch_id)), game)
+        # 以索引(读取 batch.json 的 batch_id)做键解析实际目录:竞技场落盘目录
+        # 形如 batch_<id>,而 batch.json 里存的 batch_id 无该前缀;二者必须在
+        # 同一处对齐,否则回放 404。这里统一走 index 解析,与浏览器两级浏览复用
+        # 同一命名来源。
+        entry = next(
+            (e for e in index_local_batches(arena_root)
+             if e["batch_id"] == batch_id),
+            None)
+        if entry is None:
+            raise NotFoundError(f"batch not found: {batch_id}")
+        path = game_path(os.path.join(entry["batch_dir"]), game)
         if not os.path.exists(path):
             raise NotFoundError(f"game record not found: {path}")
         from .replay import local_frames
@@ -99,5 +109,40 @@ def api_router(arena_root=None, games_root=None, seed_root=None):
         except ValidationError:
             raise NotFoundError(f"seed not found: {name}")
         return 200, {"name": name, "deleted": ok}
+
+    return router
+
+
+def session_router(manager):
+    """竞技场会话控制面路由(供 Web 控制台开跑/查询/停止)。
+
+    - POST   /api/sessions            {kind, config} → 会话
+    - GET    /api/sessions            全部会话列表
+    - GET    /api/sessions/:id        单会话(含 progress/result)
+    - POST   /api/sessions/:id/stop   请求停止(局边界生效)
+    """
+    router = Router()
+
+    @router.post("/api/sessions")
+    def _create(request):
+        body = request.body or {}
+        kind = body.get("kind") or "arena"
+        config = body.get("config") or {}
+        if not isinstance(config, dict):
+            raise ValidationError("config must be an object")
+        session = manager.create(kind, config)
+        return 200, session.as_dict()
+
+    @router.get("/api/sessions")
+    def _list(request):
+        return 200, {"sessions": manager.list()}
+
+    @router.get("/api/sessions/:id")
+    def _get(request):
+        return 200, manager.get(request.params["id"]).as_dict()
+
+    @router.post("/api/sessions/:id/stop")
+    def _stop(request):
+        return 200, manager.stop(request.params["id"]).as_dict()
 
     return router

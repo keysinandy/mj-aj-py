@@ -17,6 +17,7 @@ import {
   defaultScheduler,
   wsTransport,
 } from "./transport";
+import { WS_ENDPOINT } from "./config";
 
 export type ConnStatus =
   | "connecting"
@@ -24,21 +25,18 @@ export type ConnStatus =
   | "reconnecting"
   | "disconnected";
 
-let liveFactory: TransportFactory = () => wsTransport(`${endpoint}`);
+let liveFactory: TransportFactory = () => wsTransport(WS_ENDPOINT);
 
 /** 测试 / 换端口时注入传输工厂。 */
 export function setConnectionFactory(f: TransportFactory): void {
   liveFactory = f;
 }
 
-let endpoint = "ws://127.0.0.1:17320/ws";
-
 /**
  * 设置连接端点。桌面形态由 Tauri 侧用 sidecar 实际端口(clientd 发现文件
  * local/clientd.ports.json)调用;Web 开发态默认直连固定端口。
  */
 export function setConnectionEndpoint(url: string): void {
-  endpoint = url;
   liveFactory = () => wsTransport(url);
 }
 

@@ -10,8 +10,10 @@ import argparse
 import signal
 import sys
 
-from .service import Service, DEFAULT_DISCOVERY, health_router
-from .api import api_router
+from .service import Service, DEFAULT_DISCOVERY, health_router, \
+    DEFAULT_CORS_ORIGINS
+from .api import api_router, session_router
+from .arena import make_arena_session_manager
 
 
 def main(argv=None):
@@ -24,18 +26,26 @@ def main(argv=None):
     ap.add_argument("--arena-root", default=None)
     ap.add_argument("--games-root", default=None)
     ap.add_argument("--seed-root", default=None)
+    ap.add_argument("--cors-origins", nargs="*", default=None,
+                    help="放行 CORS 的额外 Origin;缺省用本地开发默认集")
     args = ap.parse_args(argv)
+
+    cors_origins = list(DEFAULT_CORS_ORIGINS)
+    if args.cors_origins:
+        cors_origins.extend(args.cors_origins)
 
     health = health_router()
     api = api_router(arena_root=args.arena_root,
                      games_root=args.games_root,
                      seed_root=args.seed_root)
-    for route in api.get_all():
+    sessions = make_arena_session_manager(arena_root=args.arena_root)
+    api_sessions = session_router(sessions)
+    for route in api.get_all() + api_sessions.get_all():
         health.add(*route)
 
     service = Service(host=args.host, http_port=args.http_port,
                       ws_port=args.ws_port, discovery=args.discovery,
-                      router=health)
+                      router=health, cors_origins=cors_origins)
     service.start()
     print(f"clientd listening http={service.ports['http']} "
           f"ws={service.ports['ws']} discovery={args.discovery}", flush=True)

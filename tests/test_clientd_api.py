@@ -105,6 +105,28 @@ def test_records_local_index_and_frames(tmp_path):
         svc.stop()
 
 
+def test_frames_resolves_dir_via_index(tmp_path):
+    """"竞技场实际落盘形态:目录 batch_<id>,batch.json 里 batch_id 无前缀。
+    回放帧接口必须以索引的 batch_id 定位实际目录,否则真实批次 404。"""
+    svc, arena, _ = _start(tmp_path)
+    batch_id, path = _write_demo_game(str(arena))
+    # 模拟 run_arena:目录改名为 batch_<id>,batch.json 保持 <id>
+    real_dir = os.path.join(str(arena), "batch_" + batch_id)
+    old_dir = os.path.join(str(arena), batch_id)
+    os.rename(old_dir, real_dir)
+    with open(os.path.join(real_dir, "batch.json"), "w", encoding="utf-8") as f:
+        json.dump({"batch_id": batch_id, "seed0": 7, "status": "finished",
+                   "n_games": 1, "completed": 1, "stats": {}}, f)
+    path = os.path.join(real_dir, os.path.basename(path))
+    try:
+        status, body = _post(svc.ports["http"],
+                             "/api/records/local/frames",
+                             {"batch_id": batch_id, "game": 0})
+        assert status == 200 and body["n_frames"] > 1
+    finally:
+        svc.stop()
+
+
 def test_frames_empty_roots(tmp_path):
     svc, arena, _ = _start(tmp_path)
     try:

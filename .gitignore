@@ -12,5 +12,9 @@ rust/target/
 client/node_modules/
 client/dist/
 client/src-tauri/target/
+client/src-tauri/bin/
 client/*.tsbuildinfo
+build/
+dist/
+node_modules/
 mj/bot_baseline_snapshot.py

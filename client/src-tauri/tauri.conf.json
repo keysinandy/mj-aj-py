@@ -19,6 +19,6 @@
     "active": true,
     "targets": "all",
     "externalBin": ["bin/mj-clientd"],
-    "icon": []
+    "icon": ["icons/icon.ico"]
   }
 }

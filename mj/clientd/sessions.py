@@ -44,6 +44,7 @@ class Session:
         self.finished_at = None
         self.result = None
         self.error = None
+        self.progress = None       # 长任务可在运行期更新(由 runner 写入)
         self.stop_event = threading.Event()
         self._runner = runner
 
@@ -58,6 +59,7 @@ class Session:
             "finished_at": round(self.finished_at, 3) if self.finished_at
             else None,
             "result": self.result, "error": self.error,
+            "progress": self.progress,
         }
 
 

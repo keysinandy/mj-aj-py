@@ -70,3 +70,25 @@ body { margin: 0; font-family: system-ui, "Microsoft YaHei", sans-serif; }
 .muted { color: #999; font-size: 0.85rem; margin-left: 0.4rem; }
 .error { color: var(--err); }
 .replay-toolbar { display: flex; gap: 0.8rem; align-items: baseline; margin-bottom: 0.6rem; }
+
+/* 对战控制台(本地竞技场) */
+.arena-form { border: 1px solid #444; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+.form-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.75rem; margin-bottom: 0.9rem; }
+.form-grid label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.85rem; }
+.form-grid input, .form-grid select { padding: 0.35rem; border: 1px solid #bbb; border-radius: 4px; background: #f0f0f0; color: #222; }
+.primary { padding: 0.5rem 1.2rem; border: 0; border-radius: 5px; background: var(--nav-active); color: #fff; cursor: pointer; }
+.primary:disabled { opacity: 0.5; cursor: default; }
+.section-title { font-size: 1.05rem; margin: 1.2rem 0 0.5rem; }
+.session-list { list-style: none; margin: 0; padding: 0; }
+.session { display: flex; align-items: center; gap: 0.7rem; padding: 0.45rem 0.5rem; border-bottom: 1px solid #333; flex-wrap: wrap; }
+.session-id { font-family: ui-monospace, monospace; font-size: 0.8rem; color: #bbb; }
+.session-date { font-size: 0.8rem; color: #bbb; }
+.chip { font-size: 0.75rem; border-radius: 10px; padding: 0.1rem 0.55rem; color: #fff; }
+.chip-running { background: var(--nav-active); }
+.chip-finished { background: var(--ok); }
+.chip-cancelled { background: var(--warn); }
+.chip-error { background: var(--err); }
+.chip-created { background: #6a6f78; }
+.open-replay { color: var(--nav-active); text-decoration: none; margin-left: auto; }
+.open-replay:hover { text-decoration: underline; }
+.stop { margin-left: auto; padding: 0.2rem 0.7rem; border: 1px solid var(--err); color: var(--err); border-radius: 4px; background: transparent; cursor: pointer; }

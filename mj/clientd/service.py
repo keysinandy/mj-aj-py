@@ -20,12 +20,29 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from .errors import ClientdError, NotFoundError
 
 __all__ = ["Router", "Request", "ControlServer", "WsServer", "Service",
-           "health_router", "make_ws_handler"]
+           "health_router", "make_ws_handler", "DEFAULT_CORS_ORIGINS"]
+
+# 本地 Web 开发态默认放行的跨域来源(Tauri webview 与 Vite dev server)。
+# 服务绑定 127.0.0.1,仅当请求 Origin 命中列表才回写 CORS 响应头。
+DEFAULT_CORS_ORIGINS = (
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "tauri://localhost",
+    "http://tauri.localhost",
+)
 
 
 def _json_response(payload):
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     return body, "application/json; charset=utf-8"
+
+
+def _origin_allowed(allowed, origin):
+    if not origin:
+        return None
+    if "*" in allowed:
+        return "*"
+    return origin if origin in allowed else None
 
 
 class Request:
@@ -97,13 +114,19 @@ class Router:
 
 class _ControlHandler(BaseHTTPRequestHandler):
     router = None
+    cors_origins = frozenset()
 
-    def _send(self, status, payload):
-        body, ctype = _json_response(payload)
+    def _send(self, status, payload, body=None):
+        body = body if body is not None else _json_response(payload)[0]
         self.send_response(status)
-        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        origin = _origin_allowed(self.cors_origins,
+                                 self.headers.get("Origin"))
+        if origin:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
         self.end_headers()
         try:
             self.wfile.write(body)
@@ -149,6 +172,21 @@ class _ControlHandler(BaseHTTPRequestHandler):
     def do_DELETE(self):
         self._handle()
 
+    def do_OPTIONS(self):
+        # CORS 预检:命中来源则回写允许头,否则普通 200 空体。
+        origin = _origin_allowed(self.cors_origins,
+                                 self.headers.get("Origin"))
+        self.send_response(204)
+        if origin:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Access-Control-Allow-Methods",
+                             "GET, POST, DELETE, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.send_header("Access-Control-Max-Age", "600")
+            self.send_header("Vary", "Origin")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def log_message(self, *args):
         pass
 
@@ -156,11 +194,12 @@ class _ControlHandler(BaseHTTPRequestHandler):
 class ControlServer:
     """HTTP 控制面服务器(线程内 serve_forever)。"""
 
-    def __init__(self, host, router, port=0):
+    def __init__(self, host, router, port=0, cors_origins=None):
         self.host = host
         self.port = port
         self.router = router
         _ControlHandler.router = router
+        _ControlHandler.cors_origins = frozenset(cors_origins or ())
         self.server = ThreadingHTTPServer((host, port), _ControlHandler)
         self.port = self.server.server_address[1]
         self._thread = None
@@ -282,11 +321,12 @@ class Service:
 
     def __init__(self, host="127.0.0.1", http_port=0, ws_port=0,
                  discovery=DEFAULT_DISCOVERY, router=None, ws_handler=None,
-                 on_message=None, on_open=None):
+                 on_message=None, on_open=None, cors_origins=None):
         self.host = host
         self.http_port = http_port
         self.ws_port = ws_port
         self.discovery = discovery
+        self.cors_origins = cors_origins
         self.router = router if router is not None else health_router()
         if ws_handler is None:
             ws_handler = make_ws_handler(on_message=on_message, on_open=on_open)
@@ -301,7 +341,8 @@ class Service:
             return
         self.ws = WsServer(self.host, self.ws_handler, self.ws_port)
         self.ws.start()
-        self.http = ControlServer(self.host, self.router, self.http_port)
+        self.http = ControlServer(self.host, self.router, self.http_port,
+                                  cors_origins=self.cors_origins)
         self.http.start()
         self.ports["http"] = self.http.port
         self.ports["ws"] = self.ws.port

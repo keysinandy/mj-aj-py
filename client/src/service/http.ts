@@ -69,6 +69,32 @@ export interface FramesResponse {
   frames: import("../replay/frame").ReplayFrame[];
 }
 
+export type SessionStatus =
+  | "created"
+  | "running"
+  | "finished"
+  | "cancelled"
+  | "error";
+
+export interface AriaProgress {
+  done: number;
+  total: number;
+  rate: number;
+  last_index: number;
+}
+
+export interface SessionInfo {
+  id: string;
+  kind: string;
+  status: SessionStatus;
+  config: { n_games?: number; concurrency?: number; seats?: unknown[] };
+  created_at: number;
+  finished_at: number | null;
+  result: { batch_id?: string; completed?: number; skipped?: number } | null;
+  error: string | null;
+  progress: AriaProgress | null;
+}
+
 export const api = {
   localBatches(): Promise<LocalRecordsResponse> {
     return fetchJson("/api/records/local");
@@ -81,5 +107,17 @@ export const api = {
       method: "POST",
       body: { batch_id: batchId, game },
     });
+  },
+  createSession(kind: string, config: unknown): Promise<SessionInfo> {
+    return fetchJson("/api/sessions", { method: "POST", body: { kind, config } });
+  },
+  listSessions(): Promise<{ sessions: SessionInfo[] }> {
+    return fetchJson("/api/sessions");
+  },
+  getSession(id: string): Promise<SessionInfo> {
+    return fetchJson(`/api/sessions/${id}`);
+  },
+  stopSession(id: string): Promise<SessionInfo> {
+    return fetchJson(`/api/sessions/${id}/stop`, { method: "POST" });
   },
 };

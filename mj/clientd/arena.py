@@ -23,12 +23,23 @@ from .records import write_game_record, result_from_game, load_game_record
 from .strategies import make_player
 from .random_claim import make_random_claim_bot
 from .stats import arena_stats
+from .sessions import SessionManager
+from .errors import ValidationError
 
 __all__ = ["run_arena", "build_player", "ArenaConfig", "resolve_seed0",
-           "DEFAULT_ARENA_DIR"]
+           "DEFAULT_ARENA_DIR", "make_arena_session_manager",
+           "DEFAULT_SEATS"]
 
 DEFAULT_ARENA_DIR = "local/arena"
 MAX_STEPS_PER_GAME = 20000
+
+# Web 控制台默认座位:主位 shape-v2 bot(无需模型),对手 random。
+DEFAULT_SEATS = [
+    {"strategy": "bot", "evaluator": "shape-v2", "fallback_ms": 10},
+    {"strategy": "random"},
+    {"strategy": "random"},
+    {"strategy": "random"},
+]
 _GLOBAL = {"stop": None}
 
 
@@ -213,3 +224,48 @@ def _write_json(batch_dir, name, payload):
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=1)
     os.replace(tmp, path)
+
+
+def _normalize_seats(config):
+    """注入默认座位与默认规模;seats 若给出必须恰为 4 个。"""
+    cfg = dict(config or {})
+    seats = cfg.get("seats")
+    if seats is None:
+        cfg["seats"] = DEFAULT_SEATS
+    elif list(seats) != seats or len(seats) != 4:
+        raise ValidationError(
+            "seats must be a list of exactly 4 role configs")
+    cfg.setdefault("n_games", 16)
+    cfg.setdefault("concurrency", 4)
+    cfg.setdefault("base", 1)
+    cfg.setdefault("you_cai_bi_kao", False)
+    return cfg
+
+
+def make_arena_session_manager(arena_root=None, max_concurrent=8):
+    """构造面向 Web 的 arena 会话管理器。
+
+    runner_factory 仅接受 arena 会话:非 arena 抛 ValidationError;arena 会话
+    运行期把进度写入 session.progress,结束用 run_arena 汇总结果。
+    默认座位/规模经 _normalize_seats 注入,保证前端零配置即可开跑。
+    """
+    root = arena_root or DEFAULT_ARENA_DIR
+
+    def _factory(kind, config):
+        if kind != "arena":
+            raise ValidationError(
+                f"clientd web 会话仅支持 arena 本机对战;got {kind!r}")
+        cfg = _normalize_seats(config)
+
+        def runner(stop, session):
+            def progress(done, total, rate, index):
+                session.progress = {
+                    "done": done, "total": total,
+                    "rate": round(rate, 2), "last_index": index,
+                }
+            return run_arena(cfg, out_dir=root, is_stop=stop,
+                             progress=progress)
+        return runner
+
+    return SessionManager(max_concurrent=max_concurrent,
+                          runner_factory=_factory)
