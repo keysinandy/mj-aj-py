@@ -1,6 +1,8 @@
 """Task 3.6 验收:记录浏览器索引(本地批次 / 线上 gid,目录兼容、容错)。"""
 
+import json
 import os
+import time
 
 from mj.clientd.index import (
     index_local_batches, index_online_games,
@@ -43,6 +45,25 @@ def test_index_online_games_compatible(tmp_path):
                                                        (day, "bbb")}
     filtered = index_online_games(str(tmp_path), gid="aaa")
     assert [e["gid"] for e in filtered] == ["aaa"]
+
+
+def test_index_online_games_time_filter_and_page_reads_metadata_only(tmp_path):
+    base = time.mktime(time.strptime("2026-09-18", "%Y-%m-%d"))
+    day = time.strftime("%Y%m%d", time.localtime(base))
+    gdir = tmp_path / day
+    gdir.mkdir()
+    for gid, started_at in (("old", base + 60), ("hit", base + 600),
+                            ("new", base + 1200)):
+        path = gdir / f"token_{gid}.jsonl"
+        with path.open("w", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": started_at, "type": "meta"}) + "\n")
+            f.write("{this is a body that the index must not parse}\n")
+
+    rows = index_online_games(
+        str(tmp_path), start_ts=base + 300, end_ts=base + 900,
+        offset=0, limit=1)
+    assert [row["gid"] for row in rows] == ["hit"]
+    assert rows[0]["started_at"] == base + 600
 
 
 def test_index_tolerates_corrupt(tmp_path):

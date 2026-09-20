@@ -2,7 +2,7 @@
 
 挂载于服务 Router,供前端/CLI 消费:
 - GET  /api/records/local    本地批次两级浏览(batch → game)
-- GET  /api/records/online   线上日志(日期 → gid)
+- GET  /api/records/online   线上日志(日期 → gid,支持时间范围分页)
 - POST /api/records/local/frames  按 batch_id+game 取预计算本地回放帧
 - GET  /api/seeds            种子库列表
 - POST /api/seeds            命名保存种子
@@ -14,7 +14,11 @@ batch_id 必须为纯目录名(禁路径穿越),game 必须为整数。
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+import math
 import os
+import time
+from urllib.parse import parse_qs, urlsplit
 
 from .errors import NotFoundError, ValidationError
 from .index import (
@@ -42,6 +46,65 @@ def _game_index(value):
     return idx
 
 
+def _query_value(query, *names):
+    for name in names:
+        values = query.get(name)
+        if values:
+            value = values[-1].strip()
+            if value:
+                return value
+    return None
+
+
+def _query_int(query, names, *, default, minimum=0, maximum=None):
+    raw = _query_value(query, *names)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        raise ValidationError(f"{names[0]} must be an integer, got {raw!r}")
+    if value < minimum or (maximum is not None and value > maximum):
+        bound = (f" between {minimum} and {maximum}"
+                 if maximum is not None else f" >= {minimum}")
+        raise ValidationError(f"{names[0]} must be{bound}, got {value}")
+    return value
+
+
+def _query_time(value, field, *, end=False):
+    """解析 epoch 秒或本地 ISO 日期时间，供线上日志查询使用。"""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.isdigit() and len(text) == 8:
+        try:
+            parsed = datetime.strptime(text, "%Y%m%d")
+        except ValueError:
+            parsed = None
+        if parsed is not None:
+            if end:
+                parsed += timedelta(days=1) - timedelta(milliseconds=1)
+            return time.mktime(parsed.timetuple()) + parsed.microsecond / 1e6
+    try:
+        numeric = float(text)
+        if math.isfinite(numeric):
+            return numeric
+    except (TypeError, ValueError):
+        pass
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        raise ValidationError(
+            f"{field} must be epoch seconds or ISO date-time, got {value!r}")
+    if end and parsed.tzinfo is None and "T" not in text and " " not in text:
+        parsed += timedelta(days=1) - timedelta(milliseconds=1)
+    if parsed.tzinfo is not None:
+        return parsed.timestamp()
+    return time.mktime(parsed.timetuple()) + parsed.microsecond / 1e6
+
+
 def api_router(arena_root=None, games_root=None, seed_root=None):
     arena_root = arena_root or DEFAULT_ARENA_ROOT
     games_root = games_root or DEFAULT_GAMES_ROOT
@@ -54,7 +117,36 @@ def api_router(arena_root=None, games_root=None, seed_root=None):
 
     @router.get("/api/records/online")
     def _online_games(request):
-        return 200, {"games": index_online_games(games_root)}
+        query = parse_qs(urlsplit(request.path).query)
+        start_ts = _query_time(
+            _query_value(query, "start_ts", "start", "from"),
+            "start")
+        end_ts = _query_time(
+            _query_value(query, "end_ts", "end", "to"),
+            "end", end=True)
+        if start_ts is not None and end_ts is not None and start_ts > end_ts:
+            raise ValidationError("start must be before or equal to end")
+        limit = _query_int(
+            query, ("limit", "page_size"), default=20, minimum=1, maximum=100)
+        offset_raw = _query_value(query, "offset")
+        if offset_raw is not None:
+            offset = _query_int(query, ("offset",), default=0, minimum=0)
+        else:
+            page = _query_int(query, ("page",), default=1, minimum=1)
+            offset = (page - 1) * limit
+        # 多取一条只用于判断是否还有下一页，响应本身始终受 limit 限制。
+        rows = index_online_games(
+            games_root, start_ts=start_ts, end_ts=end_ts,
+            offset=offset, limit=limit + 1)
+        has_more = len(rows) > limit
+        games = rows[:limit]
+        return 200, {
+            "games": games,
+            "offset": offset,
+            "limit": limit,
+            "has_more": has_more,
+            "next_offset": offset + limit if has_more else None,
+        }
 
     @router.post("/api/records/local/frames")
     def _local_frames(request):

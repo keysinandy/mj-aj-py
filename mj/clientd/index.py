@@ -4,6 +4,9 @@
   展开到单局 game_*.json;
 - 线上日志:扫描 <games_root>/<日期>/<token>_<gid>.jsonl → {date, gid, path}。
 
+线上索引只读取每个 JSONL 的第一条记录作为开始时间，不读取完整日志正文。
+调用方可传时间范围和 offset/limit，服务层据此只向客户端返回一页结果。
+
 只读消费磁盘目录,不迁移、不改名既有文件,与 Recorder/竞技场现有布局兼容;
 空目录 / 缺 meta / 半写文件均容错(跳过并不抛错)。
 """
@@ -13,6 +16,7 @@ from __future__ import annotations
 import glob
 import json
 import os
+import time
 
 from ..logview import find_logs as _find_online_logs
 
@@ -59,18 +63,66 @@ def index_local_batches(root=None):
     return out
 
 
-def index_online_games(root=None, gid=None):
-    """返回 [{date, gid, path}]。gid 过滤可选。games_root 可为空目录。"""
+def _first_record_timestamp(path):
+    """读取一条 JSONL 的首条记录时间；失败时退回文件 mtime。"""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                record = json.loads(line)
+                value = record.get("ts")
+                if isinstance(value, (int, float)):
+                    return float(value)
+                break
+    except (OSError, UnicodeError, ValueError, TypeError):
+        pass
+    try:
+        return float(os.path.getmtime(path))
+    except OSError:
+        return None
+
+
+def _day_in_range(day, start_ts, end_ts):
+    """用目录日期提前排除不可能命中的日志目录。"""
+    if not (len(day) == 8 and day.isdigit()):
+        return True
+    if start_ts is not None:
+        start_day = time.strftime("%Y%m%d", time.localtime(start_ts))
+        if day < start_day:
+            return False
+    if end_ts is not None:
+        end_day = time.strftime("%Y%m%d", time.localtime(end_ts))
+        if day > end_day:
+            return False
+    return True
+
+
+def index_online_games(root=None, gid=None, *, start_ts=None, end_ts=None,
+                       offset=0, limit=None):
+    """返回线上日志索引，可按 gid/时间范围分页。
+
+    ``start_ts``/``end_ts`` 是 epoch 秒，时间范围为闭区间；``offset`` 从
+    最新日志开始计数，``limit`` 为 ``None`` 时保持旧行为返回全部匹配项。
+    索引阶段最多读取每个文件的第一条 JSON，不会把整份 JSONL 加载进内存。
+    """
     root = root or DEFAULT_GAMES_ROOT
     if not os.path.isdir(root):
         return []
     out = []
-    for day in sorted(os.listdir(root)):
+    offset = max(0, int(offset or 0))
+    if limit is not None:
+        limit = max(0, int(limit))
+        if limit == 0:
+            return []
+    matched = 0
+    for day in sorted(os.listdir(root), reverse=True):
         day_dir = os.path.join(root, day)
-        if not os.path.isdir(day_dir):
+        if not os.path.isdir(day_dir) or not _day_in_range(
+                day, start_ts, end_ts):
             continue
         pattern = os.path.join(day_dir, "*.jsonl")
-        for path in sorted(glob.glob(pattern)):
+        for path in sorted(glob.glob(pattern), reverse=True):
             base = os.path.basename(path)          # <token>_<gid>.jsonl
             stem = base[: -len(".jsonl")]
             if "_" in stem and os.sep not in stem:
@@ -79,6 +131,19 @@ def index_online_games(root=None, gid=None):
                 gid_part = stem
             if gid is not None and gid_part != str(gid):
                 continue
+            started_at = _first_record_timestamp(path)
+            if start_ts is not None and (
+                    started_at is None or started_at < start_ts):
+                continue
+            if end_ts is not None and (
+                    started_at is None or started_at > end_ts):
+                continue
+            if matched < offset:
+                matched += 1
+                continue
+            if limit is not None and len(out) >= limit:
+                return out
             out.append({"date": day, "gid": gid_part, "path": path,
-                        "name": stem})
+                        "name": stem, "started_at": started_at})
+            matched += 1
     return out

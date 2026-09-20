@@ -13,7 +13,7 @@ import urllib.request
 
 from mj.clientd.api import api_router
 from mj.clientd.records import write_game_record, result_from_game
-from mj.clientd.service import Service
+from mj.clientd.service import Request, Service
 
 
 def _get(port, path):
@@ -136,6 +136,35 @@ def test_frames_empty_roots(tmp_path):
         assert status == 200 and body["games"] == []
     finally:
         svc.stop()
+
+
+def test_online_index_query_is_time_filtered_and_paged(tmp_path):
+    import time
+
+    games = tmp_path / "games"
+    base = time.mktime(time.strptime("2026-09-19", "%Y-%m-%d"))
+    day = time.strftime("%Y%m%d", time.localtime(base))
+    day_dir = games / day
+    day_dir.mkdir(parents=True)
+    for gid, timestamp in (("first", base + 60), ("second", base + 120),
+                           ("third", base + 180)):
+        (day_dir / f"token_{gid}.jsonl").write_text(
+            json.dumps({"ts": timestamp, "type": "meta"}) + "\n",
+            encoding="utf-8")
+
+    router = api_router(games_root=str(games), arena_root=str(tmp_path / "arena"),
+                        seed_root=str(tmp_path / "seeds"))
+    status, body = router.dispatch(Request(
+        "GET", f"/api/records/online?start_ts={base + 90}&end_ts={base + 150}&limit=1"))
+    assert status == 200
+    assert [game["gid"] for game in body["games"]] == ["second"]
+    assert body["has_more"] is False
+
+    status, body = router.dispatch(Request(
+        "GET", f"/api/records/online?start_ts={base}&end_ts={base + 300}&limit=1"))
+    assert status == 200
+    assert body["has_more"] is True
+    assert body["next_offset"] == 1
 
 
 def test_frames_rejects_traversal_and_bad_game(tmp_path):

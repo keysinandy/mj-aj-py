@@ -56,6 +56,22 @@ export interface OnlineGameRef {
   gid: string;
   path: string;
   name: string;
+  started_at?: number | null;
+}
+
+export interface OnlineGamesQuery {
+  startTs?: number;
+  endTs?: number;
+  offset?: number;
+  limit?: number;
+}
+
+export interface OnlineRecordsResponse {
+  games: OnlineGameRef[];
+  offset?: number;
+  limit?: number;
+  has_more?: boolean;
+  next_offset?: number | null;
 }
 
 export interface LocalRecordsResponse {
@@ -99,8 +115,14 @@ export const api = {
   localBatches(): Promise<LocalRecordsResponse> {
     return fetchJson("/api/records/local");
   },
-  onlineGames(): Promise<{ games: OnlineGameRef[] }> {
-    return fetchJson("/api/records/online");
+  onlineGames(params: OnlineGamesQuery = {}): Promise<OnlineRecordsResponse> {
+    const query = new URLSearchParams();
+    if (params.startTs !== undefined) query.set("start_ts", String(params.startTs));
+    if (params.endTs !== undefined) query.set("end_ts", String(params.endTs));
+    if (params.offset !== undefined) query.set("offset", String(params.offset));
+    if (params.limit !== undefined) query.set("limit", String(params.limit));
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return fetchJson(`/api/records/online${suffix}`);
   },
   localFrames(batchId: string, game: number): Promise<FramesResponse> {
     return fetchJson("/api/records/local/frames", {

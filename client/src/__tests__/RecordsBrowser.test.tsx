@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { RecordsBrowser } from "../components/RecordsBrowser";
-import type { BatchSummary } from "../service/http";
+import { api, type BatchSummary } from "../service/http";
 
 vi.mock("../service/http", () => ({
   api: {
@@ -24,12 +24,12 @@ vi.mock("../service/http", () => ({
           } as BatchSummary,
         ],
       }),
-    onlineGames: () =>
+    onlineGames: vi.fn(() =>
       Promise.resolve({
         games: [
           { date: "2026-09-18", gid: "g42", path: "x/g42.jsonl", name: "tok_g42" },
         ],
-      }),
+      })),
     localFrames: vi.fn(() =>
       Promise.resolve({ gid: null, path: "p", n_frames: 2, frames: [] }),
     ),
@@ -53,7 +53,24 @@ describe("RecordsBrowser", () => {
     const onOpenOnline = vi.fn();
     render(<RecordsBrowser onOpenLocal={vi.fn()} onOpenOnline={onOpenOnline} />);
     await screen.findByText("2026-09-18");
+    expect(screen.queryByRole("button", { name: /打开 tok_g42/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /2026-09-18/ }));
     fireEvent.click(screen.getByRole("button", { name: /打开 tok_g42/ }));
     expect(onOpenOnline).toHaveBeenCalledWith("g42", expect.any(String));
+  });
+
+  it("按日期时间搜索时只请求一页并带上时间范围", async () => {
+    render(<RecordsBrowser onOpenLocal={vi.fn()} onOpenOnline={vi.fn()} />);
+    await screen.findByText("2026-09-18");
+    fireEvent.change(screen.getByLabelText("开始时间"), {
+      target: { value: "2026-09-18T10:00" },
+    });
+    fireEvent.change(screen.getByLabelText("结束时间"), {
+      target: { value: "2026-09-18T11:00" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "搜索" }));
+    await waitFor(() => expect(api.onlineGames).toHaveBeenLastCalledWith(
+      expect.objectContaining({ offset: 0, limit: 20, startTs: expect.any(Number), endTs: expect.any(Number) }),
+    ));
   });
 });
