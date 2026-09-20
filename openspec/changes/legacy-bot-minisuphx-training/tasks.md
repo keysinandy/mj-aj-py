@@ -1,10 +1,10 @@
 ## 1. P0 冻结训练契约
 
-- [ ] 1.1 冻结 `main@08d33cff`、规则/profile/feature/action encoding 作为本 change 基线。
-- [ ] 1.2 定义 `MiniSuphxRunManifest`、`PolicyManifest`、`RolloutManifest`、`OpponentPoolManifest` 与 fingerprint。
-- [ ] 1.3 定义并实现 `round-score-v2-normalized` value contract，BC target 与 RL terminal reward 均为 `clip(score/24,-4,4)/4`。
-- [ ] 1.4 冻结 train/validation/final-test seed domains，验证所有训练/DAgger/RL job 不得使用 final-test。
-- [ ] 1.5 定义 action scope：`discard-only-v1`、未来 reaction scope 与 legacy safeguard 清单。
+- [x] 1.1 冻结 `main@08d33cff`、规则/profile/feature/action encoding 作为本 change 基线。
+- [x] 1.2 定义 `MiniSuphxRunManifest`、`PolicyManifest`、`RolloutManifest`、`OpponentPoolManifest` 与 fingerprint。
+- [x] 1.3 定义并实现 `round-score-v2-normalized` value contract，BC target 与 RL terminal reward 均为 `clip(score/24,-4,4)/4`。
+- [x] 1.4 冻结 train/validation/final-test seed domains，验证所有训练/DAgger/RL job 不得使用 final-test。
+- [x] 1.5 定义 action scope：`discard-only-v1`、未来 reaction scope 与 legacy safeguard 清单。
 
 ## 2. P1 BC 数据与训练底座
 
@@ -43,6 +43,12 @@
 - [ ] 5.7 在 PC-A 单机完成 50k~100k discard decisions 冒烟，确认无 NaN/非法动作/policy collapse。
 
 ## 6. P5 双机 synchronous Actor/Learner
+
+> 本会话已落地通用分布式运行时基底(P0 + 最小闭环):`mj/training/`
+> `distributed_jobs.py` / `job_store.py` / `coordinator.py` / `artifact_store.py`
+> / `worker_runtime.py` / `distributed_bc.py` + `scripts/minisuphx_cluster.py`,
+> 以及 A-only == A+B 语义等价测试(`tests/test_minisuphx_cluster.py`)。
+> rl_rollout/policy-version merge 守卫/基准 benchmark 属后续子任务。
 
 - [ ] 6.1 扩展 distributed job kinds：`legacy_bc_games`、`dagger_games`、`rl_rollout`。
 - [ ] 6.2 worker 注册 rollout capability；PC-B 默认 benchmark 6/8/10 actors。
