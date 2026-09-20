@@ -2704,6 +2704,14 @@ class BotClient:
         rec = self.recorder
         if rec is not None:
             meta_kwargs = {"mode": self.mode}
+            strategy = getattr(self.decide, "bot_strategy", None)
+            if strategy is None:
+                strategy = getattr(self.decide, "strategy", None)
+            if strategy is not None:
+                meta_kwargs["strategy"] = strategy
+            model_name = getattr(self.decide, "bot_model_name", None)
+            if model_name is not None:
+                meta_kwargs["model_name"] = model_name
             if self.mode == "tournament" and self.tournament_rules is not None:
                 meta_kwargs["rules"] = self.tournament_rules.as_dict()
             evaluator = getattr(self.decide, "bot_evaluator", None)

@@ -25,6 +25,10 @@ export interface ReplaySessionMetadata {
   source: InfoKind;
   id?: string | null;
   path?: string | null;
+  /** 本局我方实际使用的策略(例如 bot/policy)及评价器。 */
+  strategy?: string | null;
+  evaluator?: string | null;
+  modelName?: string | null;
   stepCount: number;
   capabilities: {
     serverEvents: boolean;
@@ -57,6 +61,9 @@ export interface BackendSession {
     source?: InfoKind;
     id?: string | null;
     path?: string | null;
+    strategy?: string | null;
+    evaluator?: string | null;
+    model_name?: string | null;
     step_count?: number;
     capabilities?: {
       server_events?: boolean;
@@ -166,6 +173,9 @@ export function sessionFromResponse(
       source: rawMeta?.source ?? source,
       id: rawMeta?.id ?? id,
       path: rawMeta?.path ?? path,
+      strategy: rawMeta?.strategy,
+      evaluator: rawMeta?.evaluator,
+      modelName: rawMeta?.model_name,
       stepCount: rawMeta?.step_count ?? steps.length,
       capabilities: {
         serverEvents: rawCapabilities?.server_events ?? source === "online",

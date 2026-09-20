@@ -214,15 +214,22 @@ class Recorder:
     # ---------- 记录类型 ----------
 
     def meta(self, gid, name, tid=None, you_cai_bi_kao=False, base=1,
-             mode=None, evaluator=None, evaluator_profile=None,
+             mode=None, strategy=None, model_name=None, evaluator=None,
+             evaluator_profile=None,
              evaluator_fingerprint=None, evaluator_kernel=None, rules=None):
-        """mode 标记对局来源(match=自由对战;测试房/正式赛缺省不写,
-        log2data 按 mode 过滤时缺省视作非 match)。"""
+        """写入来源与我方策略元数据。
+
+        ``mode`` 标记对局来源(match=自由对战;测试房/正式赛缺省不写,
+        log2data 按 mode 过滤时缺省视作非 match)；strategy/model_name/
+        evaluator 供回放列表与查看器展示，不包含令牌。
+        """
         rec = {"type": "meta", "gid": gid, "name": name, "tid": tid,
                "you_cai_bi_kao": bool(you_cai_bi_kao), "base": base}
         if mode:
             rec["mode"] = mode
-        for key, value in (("evaluator", evaluator),
+        for key, value in (("strategy", strategy),
+                           ("model_name", model_name),
+                           ("evaluator", evaluator),
                            ("evaluator_profile", evaluator_profile),
                            ("evaluator_fingerprint", evaluator_fingerprint),
                            ("evaluator_kernel", evaluator_kernel)):

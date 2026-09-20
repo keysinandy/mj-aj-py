@@ -320,7 +320,7 @@ def _inject_selected_model(config, model):
 
 
 def session_router(manager, model_resolver=None):
-    """竞技场会话控制面路由(供 Web 控制台开跑/查询/停止)。
+    """竞技场/线上匹配会话控制面路由(供 Web 控制台开跑/查询/停止)。
 
     - POST   /api/sessions            {kind, config} → 会话
     - GET    /api/sessions            全部会话列表

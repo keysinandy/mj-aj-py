@@ -1,5 +1,5 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import App from "../App";
 import { useConnectionStore, setConnectionFactory } from "../service/connectionStore";
@@ -7,6 +7,8 @@ import { FakeTransport } from "./FakeTransport";
 
 describe("App 路由骨架", () => {
   beforeEach(() => {
+    window.localStorage.clear();
+    delete document.documentElement.dataset.theme;
     useConnectionStore.setState({
       status: "disconnected", attempts: 0, error: null,
       _transport: null, _reconnect: null, _cleanup: null,
@@ -55,5 +57,22 @@ describe("App 路由骨架", () => {
       </MemoryRouter>,
     );
     expect(screen.getByText("对战控制台")).toBeTruthy();
+  });
+
+  it("明暗模式开关会更新根节点并持久化选择", async () => {
+    render(
+      <MemoryRouter initialEntries={["/console"]}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    const toggle = screen.getByRole("button", { name: "切换到暗色模式" });
+    fireEvent.click(toggle);
+
+    await waitFor(() => {
+      expect(document.documentElement.dataset.theme).toBe("dark");
+      expect(window.localStorage.getItem("mj-aj-client-theme")).toBe("dark");
+    });
+    expect(screen.getByRole("button", { name: "切换到浅色模式" })).toBeTruthy();
   });
 });

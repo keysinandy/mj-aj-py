@@ -6,9 +6,11 @@ import { ConsolePage } from "./pages/ConsolePage";
 import { RoomsPage } from "./pages/RoomsPage";
 import { ReplayPage } from "./pages/ReplayPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { useTheme } from "./theme";
 
 export default function App() {
   const start = useConnectionStore((s) => s.start);
+  const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
     start();
@@ -28,6 +30,19 @@ export default function App() {
           <NavLink to="/settings">设置</NavLink>
         </nav>
         <ConnectionStatus />
+        <button
+          className="theme-toggle"
+          type="button"
+          aria-pressed={theme === "dark"}
+          aria-label={theme === "dark" ? "切换到浅色模式" : "切换到暗色模式"}
+          title={theme === "dark" ? "切换到浅色模式" : "切换到暗色模式"}
+          onClick={toggleTheme}
+        >
+          <span className="theme-toggle-icon" aria-hidden="true">
+            {theme === "dark" ? "☀" : "☾"}
+          </span>
+          <span>{theme === "dark" ? "浅色" : "暗色"}</span>
+        </button>
       </header>
       <main className="app-main">
         <Routes>

@@ -33,9 +33,9 @@ __all__ = ["run_arena", "build_player", "ArenaConfig", "resolve_seed0",
 DEFAULT_ARENA_DIR = "local/arena"
 MAX_STEPS_PER_GAME = 20000
 
-# Web 控制台默认座位:主位 shape-v2 bot(无需模型),对手 random。
+# Web 控制台默认座位:主位 legacy bot,对手 random。
 DEFAULT_SEATS = [
-    {"strategy": "bot", "evaluator": "shape-v2", "fallback_ms": 10},
+    {"strategy": "bot", "evaluator": "legacy"},
     {"strategy": "random"},
     {"strategy": "random"},
     {"strategy": "random"},
@@ -242,19 +242,25 @@ def _normalize_seats(config):
     return cfg
 
 
-def make_arena_session_manager(arena_root=None, max_concurrent=8):
-    """构造面向 Web 的 arena 会话管理器。
+def make_arena_session_manager(arena_root=None, max_concurrent=8,
+                               settings_path=None):
+    """构造面向 Web 的本地竞技场与线上匹配会话管理器。
 
-    runner_factory 仅接受 arena 会话:非 arena 抛 ValidationError;arena 会话
-    运行期把进度写入 session.progress,结束用 run_arena 汇总结果。
-    默认座位/规模经 _normalize_seats 注入,保证前端零配置即可开跑。
+    arena 会话运行本地批量对局；match 会话复用平台 ``/api/match`` 自动
+    入席循环。线上凭据由 runner 从本机设置读取，不进入 Web 请求配置。
     """
     root = arena_root or DEFAULT_ARENA_DIR
 
+    def _build_match_runner(config):
+        from .match import make_match_runner
+        return make_match_runner(config, settings_path=settings_path)
+
     def _factory(kind, config):
+        if kind == "match":
+            return _build_match_runner(config)
         if kind != "arena":
             raise ValidationError(
-                f"clientd web 会话仅支持 arena 本机对战;got {kind!r}")
+                f"clientd web 会话仅支持 arena 或 match;got {kind!r}")
         cfg = _normalize_seats(config)
 
         def runner(stop, session):

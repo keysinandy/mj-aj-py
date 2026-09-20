@@ -2,7 +2,8 @@
 
 - 本地批次:扫描 <arena_root>/*/batch.json → 批次摘要(seed0/局数/统计),
   展开到单局 game_*.json;
-- 线上日志:扫描 <games_root>/<日期>/<token>_<gid>.jsonl → {date, gid, path}。
+- 线上日志:扫描 <games_root>/<日期>/<token>_<gid>.jsonl → {date, gid, path,
+  strategy, evaluator}。
 
 线上索引只读取每个 JSONL 的第一条记录作为开始时间，不读取完整日志正文。
 调用方可传时间范围和 offset/limit，服务层据此只向客户端返回一页结果。
@@ -59,27 +60,54 @@ def index_local_batches(root=None):
             "elapsed": summary.get("elapsed"),
             "game_paths": games,
         }
+        # 竞技场记录按“角色”保存策略；主位角色可能因轮转落在不同物理
+        # 座位，因此只读取第一局的 roles/seats，给记录列表标出我方策略。
+        if games:
+            first_game = _load_json_quiet(games[0], {})
+            if isinstance(first_game, dict):
+                roles = first_game.get("roles")
+                seats = first_game.get("seats")
+                viewer = 0
+                if isinstance(roles, list):
+                    try:
+                        viewer = roles.index(0)
+                    except ValueError:
+                        viewer = 0
+                if isinstance(seats, list) and 0 <= viewer < len(roles or []):
+                    role_index = roles[viewer]
+                    if isinstance(role_index, int) and 0 <= role_index < len(seats):
+                        role = seats[role_index]
+                        if isinstance(role, dict):
+                            for key in ("strategy", "evaluator", "model_name"):
+                                if role.get(key) is not None:
+                                    entry[key] = role[key]
         out.append(entry)
     return out
 
 
 def _first_record_timestamp(path):
     """读取一条 JSONL 的首条记录时间；失败时退回文件 mtime。"""
+    record = _first_record(path)
+    if isinstance(record, dict):
+        value = record.get("ts")
+        if isinstance(value, (int, float)):
+            return float(value)
+    try:
+        return float(os.path.getmtime(path))
+    except OSError:
+        return None
+
+
+def _first_record(path):
+    """读取首条完整记录，供索引展示轻量元数据。"""
     try:
         with open(path, "r", encoding="utf-8") as f:
             for line in f:
                 if not line.strip():
                     continue
-                record = json.loads(line)
-                value = record.get("ts")
-                if isinstance(value, (int, float)):
-                    return float(value)
-                break
+                value = json.loads(line)
+                return value if isinstance(value, dict) else None
     except (OSError, UnicodeError, ValueError, TypeError):
-        pass
-    try:
-        return float(os.path.getmtime(path))
-    except OSError:
         return None
 
 
@@ -131,6 +159,7 @@ def index_online_games(root=None, gid=None, *, start_ts=None, end_ts=None,
                 gid_part = stem
             if gid is not None and gid_part != str(gid):
                 continue
+            first = _first_record(path)
             started_at = _first_record_timestamp(path)
             if start_ts is not None and (
                     started_at is None or started_at < start_ts):
@@ -143,7 +172,12 @@ def index_online_games(root=None, gid=None, *, start_ts=None, end_ts=None,
                 continue
             if limit is not None and len(out) >= limit:
                 return out
-            out.append({"date": day, "gid": gid_part, "path": path,
-                        "name": stem, "started_at": started_at})
+            entry = {"date": day, "gid": gid_part, "path": path,
+                     "name": stem, "started_at": started_at}
+            if isinstance(first, dict):
+                for key in ("strategy", "evaluator", "model_name"):
+                    if first.get(key) is not None:
+                        entry[key] = first[key]
+            out.append(entry)
             matched += 1
     return out

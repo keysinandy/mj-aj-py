@@ -35,6 +35,17 @@ function toTimestamp(value: string): number | undefined {
   return Number.isFinite(timestamp) ? timestamp / 1000 : undefined;
 }
 
+function strategyLabel(strategy?: string | null, evaluator?: string | null, modelName?: string | null): string | null {
+  if (!strategy && !evaluator && !modelName) return null;
+  const base = strategy === "bot"
+    ? "BOT"
+    : strategy === "policy" || strategy === "policy-v3"
+      ? strategy
+      : strategy ?? "未知策略";
+  const details = [evaluator, modelName].filter(Boolean).join(" · ");
+  return details ? `${base}（${details}）` : base;
+}
+
 /** 两级记录浏览:本地批次(批次→单局)+ 线上日志(日期→gid)。 */
 export function RecordsBrowser({ onOpenLocal, onOpenOnline }: Props) {
   const [batches, setBatches] = useState<BatchSummary[]>([]);
@@ -190,6 +201,11 @@ export function RecordsBrowser({ onOpenLocal, onOpenOnline }: Props) {
                   <span className="expand">{expanded[batch.batch_id] ? "▾" : "▸"}</span>
                   <strong>{batch.batch_id}</strong>
                   <span className="muted">seed0={batch.seed0 ?? "?"} · {games.length}局 · {batch.status}</span>
+                  {strategyLabel(batch.strategy, batch.evaluator, batch.model_name) && (
+                    <span className="record-strategy">
+                      我方策略 · {strategyLabel(batch.strategy, batch.evaluator, batch.model_name)}
+                    </span>
+                  )}
                   {batch.stats ? (
                     <span className="muted">
                       · win={String((batch.stats as { win_rate?: unknown }).win_rate ?? "-")}
@@ -309,6 +325,11 @@ export function RecordsBrowser({ onOpenLocal, onOpenOnline }: Props) {
                       <div className="online-log-main">
                         <strong title={game.name}>{game.name}</strong>
                         <span>gid · {game.gid}</span>
+                        {strategyLabel(game.strategy, game.evaluator, game.model_name) && (
+                          <span className="record-strategy">
+                            我方策略 · {strategyLabel(game.strategy, game.evaluator, game.model_name)}
+                          </span>
+                        )}
                       </div>
                       <button
                         type="button"

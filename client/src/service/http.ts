@@ -84,6 +84,9 @@ export interface BatchSummary {
   skipped: number;
   stats: unknown;
   game_paths: string[];
+  strategy?: string | null;
+  evaluator?: string | null;
+  model_name?: string | null;
 }
 
 export interface OnlineGameRef {
@@ -92,6 +95,9 @@ export interface OnlineGameRef {
   path: string;
   name: string;
   started_at?: number | null;
+  strategy?: string | null;
+  evaluator?: string | null;
+  model_name?: string | null;
 }
 
 export interface OnlineGamesQuery {
@@ -140,12 +146,31 @@ export interface SessionInfo {
   id: string;
   kind: string;
   status: SessionStatus;
-  config: { n_games?: number; concurrency?: number; seats?: unknown[] };
+  config: {
+    n_games?: number;
+    concurrency?: number;
+    seats?: unknown[];
+    max_games?: number | null;
+    strategy?: string;
+    evaluator?: string;
+    state_rate?: number;
+    room_close_wait?: number;
+    [key: string]: unknown;
+  };
   created_at: number;
   finished_at: number | null;
-  result: { batch_id?: string; completed?: number; skipped?: number } | null;
+  result: {
+    batch_id?: string;
+    completed?: number;
+    skipped?: number;
+    games?: number;
+    rooms?: number;
+    scores?: unknown[];
+    stats?: Record<string, unknown>;
+    [key: string]: unknown;
+  } | null;
   error: string | null;
-  progress: AriaProgress | null;
+  progress: (AriaProgress & { rooms?: number }) | null;
 }
 
 export const api = {

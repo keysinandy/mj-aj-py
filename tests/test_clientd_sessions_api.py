@@ -4,7 +4,7 @@
   OPTIONS 预检返回允许头;未放行 Origin 不加 CORS 头;
 - 会话 API:POST /api/sessions 创建(注入假 runner 不下真实对弈)、
   GET 列表/单条、POST :id/stop;
-- 竞技场会话管理器:拒绝非 arena 种类,默认座位/规模注入。
+- 竞技场会话管理器:支持 arena/match,拒绝其它种类,默认座位/规模注入。
 """
 
 import json
@@ -148,16 +148,17 @@ def test_session_api_lifecycle(tmp_path):
         svc.stop()
 
 
-def test_arena_manager_rejects_non_arena():
+def test_arena_manager_rejects_unknown_session_kind():
     mgr = make_arena_session_manager()
     with pytest.raises(ValidationError):
-        mgr.create("match", {})
+        mgr.create("tournament", {})
 
 
 def test_normalize_seats_defaults():
     cfg = _normalize_seats({})
     assert len(cfg["seats"]) == 4
     assert cfg["seats"] == DEFAULT_SEATS
+    assert cfg["seats"][0]["evaluator"] == "legacy"
     assert cfg["n_games"] == 16 and cfg["concurrency"] == 4
     with pytest.raises(ValidationError):
         _normalize_seats({"seats": [{"strategy": "random"}]})

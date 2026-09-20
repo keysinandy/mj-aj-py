@@ -44,7 +44,8 @@ def main(argv=None):
                      seed_root=args.seed_root,
                      settings_path=args.settings_path,
                      model_root=args.model_root)
-    sessions = make_arena_session_manager(arena_root=args.arena_root)
+    sessions = make_arena_session_manager(
+        arena_root=args.arena_root, settings_path=args.settings_path)
     # api_router 内部持有同一份 ModelStore；会话控制面通过它读取当前
     # 选择，仅对创建时尚未显式指定模型的新会话注入路径。
     from .settings import ModelStore, PlatformSettings

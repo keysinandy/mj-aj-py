@@ -62,5 +62,23 @@ describe("ConsolePage", () => {
     expect(config.n_games).toBe(16);
     expect(config.seats).toHaveLength(4);
     expect(config.seats[0].strategy).toBe("bot");
+    expect(config.seats[0].evaluator).toBe("legacy");
+  });
+
+  it("切换线上匹配后创建 match 会话且不把令牌放入配置", async () => {
+    renderPage();
+    await screen.findByText(/开始本地对战/);
+    fireEvent.click(screen.getByRole("tab", { name: "线上匹配" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始线上匹配" }));
+    await vi.waitFor(() =>
+      expect(api.createSession).toHaveBeenCalledTimes(1),
+    );
+    const [kind, config] = vi.mocked(api.createSession).mock.calls[0] as [string, any];
+    expect(kind).toBe("match");
+    expect(config.max_games).toBe(10);
+    expect(config.strategy).toBe("bot");
+    expect(config.evaluator).toBe("legacy");
+    expect(config).not.toHaveProperty("token");
+    expect(config).not.toHaveProperty("match_token");
   });
 });

@@ -11,6 +11,8 @@ def _local_record():
         "dealer": 0,
         "base": 1,
         "you_cai_bi_kao": False,
+        "seats": [{"strategy": "bot", "evaluator": "shape-v2"}],
+        "roles": [0, 1, 2, 3],
         "actions": [],
         "local_requests": {
             "0": [{"kind": "state_request", "type": "GET_STATE"}],
@@ -43,6 +45,8 @@ def test_local_session_uses_derived_action_sequence_and_preserves_annotations():
 
     assert session["metadata"]["source"] == "local"
     assert session["metadata"]["capabilities"]["full_information"] is True
+    assert session["metadata"]["strategy"] == "bot"
+    assert session["metadata"]["evaluator"] == "shape-v2"
     assert len(session["steps"]) == 1
     step = session["steps"][0]
     assert step["seq_no"] == 0
@@ -54,7 +58,8 @@ def test_local_session_uses_derived_action_sequence_and_preserves_annotations():
 
 def test_online_side_records_attach_to_existing_step():
     records = [
-        {"type": "meta", "base": 1, "you_cai_bi_kao": False},
+        {"type": "meta", "base": 1, "you_cai_bi_kao": False,
+         "strategy": "policy", "model_name": "best.onnx"},
         _snapshot(10),
         {
             "type": "req", "seq": 10, "status": 200,
@@ -68,6 +73,8 @@ def test_online_side_records_attach_to_existing_step():
     session = online_session(records, session_id="g1")
 
     assert session["metadata"]["source"] == "online"
+    assert session["metadata"]["strategy"] == "policy"
+    assert session["metadata"]["model_name"] == "best.onnx"
     assert len(session["steps"]) == 1
     step = session["steps"][0]
     assert step["seq_no"] == 10

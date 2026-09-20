@@ -19,7 +19,7 @@ def test_empty_roots():
 def test_index_local_batches(tmp_path):
     cfg = {
         "n_games": 2, "concurrency": 1, "seed0": 77,
-        "seats": [{"strategy": "bot", "evaluator": "legacy"}] * 4,
+        "seats": [{"strategy": "bot", "evaluator": "shape-v2"}] * 4,
     }
     out = run_arena(cfg, out_dir=str(tmp_path), batch_id="b1")
     batches = index_local_batches(str(tmp_path))
@@ -30,6 +30,7 @@ def test_index_local_batches(tmp_path):
     assert b["completed"] == 2 and b["skipped"] == 0
     assert b["stats"] is not None and b["stats"]["games"] == 2
     assert len(b["game_paths"]) == 2
+    assert b["strategy"] == "bot" and b["evaluator"] == "shape-v2"
 
 
 def test_index_online_games_compatible(tmp_path):
@@ -39,12 +40,14 @@ def test_index_online_games_compatible(tmp_path):
     os.makedirs(gdir, exist_ok=True)
     for gid in ("aaa", "bbb"):
         with open(os.path.join(gdir, f"tok_{gid}.jsonl"), "w") as f:
-            f.write('{"type":"meta","gid":"%s"}\n' % gid)
+            f.write('{"type":"meta","gid":"%s","strategy":"bot",'
+                    '"evaluator":"shape-v2"}\n' % gid)
     listed = index_online_games(str(tmp_path))
     assert {(e["date"], e["gid"]) for e in listed} == {(day, "aaa"),
                                                        (day, "bbb")}
     filtered = index_online_games(str(tmp_path), gid="aaa")
     assert [e["gid"] for e in filtered] == ["aaa"]
+    assert listed[0]["strategy"] == "bot"
 
 
 def test_index_online_games_time_filter_and_page_reads_metadata_only(tmp_path):

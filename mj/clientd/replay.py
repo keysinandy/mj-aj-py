@@ -537,7 +537,8 @@ def online_frames(records):
 
 
 def _session_from_frames(frames, *, source, session_id=None, path=None,
-                         verifications=None):
+                         verifications=None, strategy=None, evaluator=None,
+                         model_name=None):
     """把帧状态包装为统一步骤模型。
 
     ``state`` 保留在每个步骤中是有意的:前端可直接从任一步建立
@@ -569,6 +570,10 @@ def _session_from_frames(frames, *, source, session_id=None, path=None,
         "step_count": len(steps),
         "capabilities": capabilities,
     }
+    for key, value in (("strategy", strategy), ("evaluator", evaluator),
+                       ("model_name", model_name)):
+        if value is not None:
+            metadata[key] = value
     if verifications is not None:
         metadata["verifications"] = verifications
     return {
@@ -584,7 +589,24 @@ def local_session(record):
     rec = (load_game_record(record) if isinstance(record, str) else record)
     frames = _build_local_frames(rec)
     path = record if isinstance(record, str) else None
-    return _session_from_frames(frames, source="local", path=path)
+    strategy = evaluator = model_name = None
+    viewer = _local_viewer_seat(rec)
+    seats = rec.get("seats")
+    roles = rec.get("roles")
+    if isinstance(roles, (list, tuple)) and viewer in range(len(roles)):
+        role_index = roles[viewer]
+    else:
+        role_index = 0
+    if isinstance(seats, list) and isinstance(role_index, int) \
+            and 0 <= role_index < len(seats):
+        role = seats[role_index]
+        if isinstance(role, dict):
+            strategy = role.get("strategy")
+            evaluator = role.get("evaluator")
+            model_name = role.get("model_name")
+    return _session_from_frames(
+        frames, source="local", path=path, strategy=strategy,
+        evaluator=evaluator, model_name=model_name)
 
 
 def online_session(records, *, session_id=None, path=None):
@@ -592,6 +614,10 @@ def online_session(records, *, session_id=None, path=None):
     builder = _OnlineBuilder()
     for rec in records:
         builder.ingest(rec)
+    meta = next((rec for rec in records
+                 if isinstance(rec, dict) and rec.get("type") == "meta"), {})
     return _session_from_frames(
         builder.frames, source="online", session_id=session_id, path=path,
-        verifications=builder.verifications)
+        verifications=builder.verifications,
+        strategy=meta.get("strategy"), evaluator=meta.get("evaluator"),
+        model_name=meta.get("model_name"))

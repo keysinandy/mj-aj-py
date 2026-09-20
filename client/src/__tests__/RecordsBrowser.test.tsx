@@ -27,7 +27,10 @@ vi.mock("../service/http", () => ({
     onlineGames: vi.fn(() =>
       Promise.resolve({
         games: [
-          { date: "2026-09-18", gid: "g42", path: "x/g42.jsonl", name: "tok_g42" },
+          {
+            date: "2026-09-18", gid: "g42", path: "x/g42.jsonl", name: "tok_g42",
+            strategy: "bot", evaluator: "shape-v2",
+          },
         ],
       })),
     localFrames: vi.fn(() =>
@@ -55,6 +58,7 @@ describe("RecordsBrowser", () => {
     await screen.findByText("2026-09-18");
     expect(screen.queryByRole("button", { name: /打开 tok_g42/ })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /2026-09-18/ }));
+    expect(screen.getByText(/我方策略 · BOT（shape-v2）/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /打开 tok_g42/ }));
     expect(onOpenOnline).toHaveBeenCalledWith("g42", expect.any(String));
   });
