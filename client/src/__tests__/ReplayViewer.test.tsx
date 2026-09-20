@@ -61,6 +61,17 @@ describe("ReplayControls 步进与进度", () => {
     fireEvent.click(screen.getByTestId("btn-next"));
     expect(screen.getByTestId("btn-back")).toBeEnabled();
   });
+
+  it("支持首尾和 seqNo 跳转,缺口时不跳到未来步骤", () => {
+    render(<ReplayViewer />);
+    fireEvent.change(screen.getByTestId("seq-input"), { target: { value: "3" } });
+    fireEvent.click(screen.getByTestId("btn-seq-jump"));
+    expect(screen.getByTestId("index")).toHaveTextContent("4/5");
+    fireEvent.click(screen.getByTestId("btn-first"));
+    expect(screen.getByTestId("index")).toHaveTextContent("1/5");
+    fireEvent.click(screen.getByTestId("btn-last"));
+    expect(screen.getByTestId("index")).toHaveTextContent("5/5");
+  });
 });
 
 describe("Timeline 条目与高亮", () => {

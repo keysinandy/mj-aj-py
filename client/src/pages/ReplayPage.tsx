@@ -3,6 +3,7 @@ import { useReplayStore } from "../replay/replayStore";
 import { ReplayViewer } from "../components/ReplayViewer";
 import { RecordsBrowser } from "../components/RecordsBrowser";
 import { api } from "../service/http";
+import { sessionFromResponse } from "../replay/session";
 
 interface Opened {
   label: string;
@@ -13,14 +14,14 @@ export function ReplayPage() {
   const [opened, setOpened] = useState<Opened | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const setFrames = useReplayStore((s) => s.setFrames);
+  const setSession = useReplayStore((s) => s.setSession);
 
   async function openLocal(batchId: string, game: number, label: string) {
     setLoading(true);
     setError(null);
     try {
       const resp = await api.localFrames(batchId, game);
-      setFrames(resp.frames as never);
+      setSession(sessionFromResponse(resp, "local", null, resp.path));
       setOpened({ label, infoKind: "local" });
     } catch (e) {
       setError(String((e as Error).message));
@@ -35,7 +36,7 @@ export function ReplayPage() {
     setError(null);
     try {
       const resp = await api.onlineFrames(gid);
-      setFrames(resp.frames as never);
+      setSession(sessionFromResponse(resp, "online", gid, resp.path));
       setOpened({ label, infoKind: "online" });
     } catch (e) {
       setError(String((e as Error).message));
@@ -46,7 +47,7 @@ export function ReplayPage() {
 
   function back() {
     setOpened(null);
-    setFrames([]);
+    setSession(sessionFromResponse({ frames: [] }, "local"));
   }
 
   return (

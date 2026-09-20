@@ -51,7 +51,10 @@ body { margin: 0; font-family: system-ui, "Microsoft YaHei", sans-serif; }
 .replay-observe { margin-bottom: 0.75rem; display: flex; gap: 0.4rem; align-items: center; }
 .replay-observe button { padding: 0.2rem 0.6rem; cursor: pointer; }
 .replay-observe button.active { background: var(--nav-active); color: #fff; }
-.replay-controls { display: flex; gap: 0.6rem; align-items: center; }
+.replay-controls { display: flex; gap: 0.45rem; align-items: center; flex-wrap: wrap; }
+.replay-controls button { cursor: pointer; }
+.seq-jump { display: inline-flex; gap: 0.3rem; align-items: center; color: var(--text-secondary); font-size: 0.8rem; }
+.seq-jump input { width: 5.5rem; min-height: 1.8rem; }
 .replay-control-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
 .observe-switch { display: flex; gap: 0.3rem; align-items: center; }
 .replay-body { display: flex; gap: 1rem; }
@@ -61,6 +64,24 @@ body { margin: 0; font-family: system-ui, "Microsoft YaHei", sans-serif; }
 .timeline .tl-entry:hover { background: rgba(255, 255, 255, 0.06); }
 .timeline .tl-current { background: var(--nav-active); color: #fff; }
 .timeline .tl-gap { color: var(--warn); }
+.timeline .tl-entry { display: grid; grid-template-columns: auto auto 1fr auto; gap: 0.35rem; align-items: baseline; }
+.tl-step { font-family: ui-monospace, monospace; color: var(--text-secondary); }
+.tl-seq { font-family: ui-monospace, monospace; font-size: 0.7rem; color: var(--text-secondary); }
+.tl-diagnostic { white-space: nowrap; }
+.tl-error { color: var(--err); }
+.tl-warn { color: var(--warn); }
+.response-window { color: var(--nav-active); }
+.step-inspector { width: 19rem; max-height: 60vh; overflow: auto; border: 1px solid var(--border-soft); border-radius: 8px; padding: 0.75rem; background: var(--surface); color: var(--text-primary); }
+.inspector-title { font-weight: 700; margin-bottom: 0.4rem; }
+.inspector-step { display: flex; justify-content: space-between; gap: 0.5rem; font-family: ui-monospace, monospace; font-size: 0.82rem; }
+.inspector-section { border-top: 1px solid var(--border-soft); margin-top: 0.65rem; padding-top: 0.55rem; }
+.inspector-section h3 { font-size: 0.8rem; margin: 0 0 0.35rem; color: var(--text-secondary); }
+.inspector-list { margin: 0; padding-left: 1rem; font-size: 0.78rem; }
+.inspector-list li { margin: 0.2rem 0; overflow-wrap: anywhere; }
+.diagnostic-error { color: var(--err); }
+.diagnostic-warn { color: var(--warn); }
+.diff-list li { display: grid; gap: 0.15rem; }
+.diff-value { color: var(--text-secondary); font-family: ui-monospace, monospace; font-size: 0.7rem; }
 .records-browser h3 { margin-top: 0.5rem; }
 .batch, .online-day { margin-bottom: 0.4rem; }
 .batch-head { cursor: pointer; display: flex; gap: 0.6rem; align-items: baseline; padding: 0.2rem 0; }

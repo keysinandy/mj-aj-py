@@ -69,6 +69,12 @@ export function GameTable({ frame, observeSeat }: Props) {
         <span data-testid="wall">墙 {frame.wall_remaining}</span>
         <span data-testid="scores">{frame.scores.map((s, i) => "P" + i + " " + s).join("  ")}</span>
         <span data-testid="label">{frame.label}</span>
+        {frame.seq_no !== undefined && <span data-testid="seq-no">seq {frame.seq_no ?? "-"}</span>}
+        {frame.response_window && (
+          <span className="response-window" data-testid="response-window">
+            响应窗 P{frame.response_window.owner}
+          </span>
+        )}
         {frame.gap && <span className="gap-flag">(缺口)</span>}
       </div>
       <div className="table-seats">

@@ -5,6 +5,36 @@
 
 export type InfoKind = "local" | "online";
 
+export type ReplaySeqSource =
+  | "server_event"
+  | "snapshot"
+  | "local_initial"
+  | "local_action"
+  | "derived";
+
+export interface ReplayEvent {
+  type: string;
+  [key: string]: unknown;
+}
+
+export interface ReplayLocalRequest {
+  kind?: string;
+  type?: string;
+  seq_no?: number | null;
+  status?: number | null;
+  latency_ms?: number | null;
+  attempts?: number | null;
+  [key: string]: unknown;
+}
+
+export interface ReplayDiagnostic {
+  code: string;
+  severity?: "info" | "warn" | "error" | string;
+  message?: string;
+  seq_no?: number | null;
+  [key: string]: unknown;
+}
+
 export interface MeldEntry {
   kind: "chow" | "peng" | "kong_open" | "kong_closed" | "kong_claimed";
   tiles: number[];
@@ -26,6 +56,20 @@ export interface ReplayFrame {
   current: { seat: number | null; phase: string } | null;
   label: string;
   gap: boolean;
+  /** 服务端事件序号;本地动作记录使用带来源标记的派生序号。 */
+  seq_no?: number | null;
+  seq_source?: ReplaySeqSource;
+  timestamp?: number | null;
+  event?: ReplayEvent | null;
+  local_requests?: ReplayLocalRequest[];
+  diagnostics?: ReplayDiagnostic[];
+  response_window?: {
+    owner: number;
+    tile: number;
+    phase: string;
+    response_order?: number[];
+    response_index?: number | null;
+  } | null;
 }
 
 /** 把 count 向量 [34] 展开为具体牌列表。 */

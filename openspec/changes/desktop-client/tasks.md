@@ -25,6 +25,9 @@
 - [x] 3.4 牌桌组件:四家手牌/牌河/副露/墙长/积分渲染,支持全知(本地)与自家视角(线上)两种数据形状,观战与回放共用。验证:组件测试用固定帧数组快照对比;手动验收:本地回放切换观察座位、线上回放他家暗手区域为未知占位。
 - [x] 3.5 时间线组件 + 步进/进度条:记录类型条目(事件/决策/动作/claim_miss)、上一步/下一步、拖动定位。验证:组件测试(帧索引跳转正确性)+ 手动验收:拖动到任意步的牌面 == 顺序步进到该步。
 - [x] 3.6 记录浏览器:本地批次(批次→单局)与线上日志(日期→gid)两级浏览与打开。验证:`tests/test_clientd_records_index.py` 覆盖索引与既有目录结构兼容(不迁移不改名)、空目录/缺 meta 容错。
+- [x] 3.8 **统一 ReplaySession/ReplayStep**:将本地 `seed+actions` 与线上 `snapshot+events` 的帧结果统一为同一会话/步骤契约,步骤携带来源序号、事件、可选请求与诊断,旁路记录不得增加播放步。验证:`tests/test_replay_session.py` + 前端 `session.test.ts` 覆盖两种来源进入同一 store。
+- [x] 3.9 **共享 ReplayEngine 与快照缓存**:抽出统一状态导航器,提供首尾/前后/序号跳转、时间轴定位和 checkpoint 缓存;本地与线上均从当前步骤状态渲染。验证:前端 `session.test.ts` 覆盖远距离状态/序号跳转,回放组件回归通过。
+- [x] 3.10 **步骤检查器与 Diff**:展示当前事件、seq 来源、关联本地请求、诊断和前后步骤状态差异;响应窗口/吃碰杠只在对应步骤出现。验证:`StepInspector.test.tsx` + 后端线上请求/claim_miss 绑定测试。
 - [ ] 3.7 **P0 端到端验收**:开发机 `python -m mj.clientd` + `npm run dev`,按清单执行:配置主位 BOT(shape-v2, 10ms)+ 对手 随机/legacy/policy,跑 N=16 X=4 批次 → 统计正确 → 任选一局回放(步进/拖动/切座位) → 种子入库并选用重开一局。验收清单落 `openspec/changes/desktop-client/artifacts/p0_acceptance.md`,全部通过后勾选。
 
 ## 4. P1 · 线上对战控制与观战

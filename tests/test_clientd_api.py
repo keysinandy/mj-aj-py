@@ -101,6 +101,8 @@ def test_records_local_index_and_frames(tmp_path):
         assert status == 200
         assert body["n_frames"] > 1
         assert body["n_frames"] == len(expected)
+        assert body["session"]["metadata"]["source"] == "local"
+        assert len(body["session"]["steps"]) == body["n_frames"]
     finally:
         svc.stop()
 
@@ -221,6 +223,8 @@ def test_online_frames_endpoint(tmp_path):
         assert all(f["info_kind"] == "online" for f in body["frames"])
         assert body["frames"][0]["hands"] is None
         assert body["frames"][0]["my_hand"] is not None
+        assert body["session"]["metadata"]["source"] == "online"
+        assert len(body["session"]["steps"]) == body["n_frames"]
         assert isinstance(body["verifications"], list)
         # 未知 gid → 404
         status, body = _get(svc.ports["http"], "/api/records/online/nope/frames")

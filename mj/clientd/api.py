@@ -3,7 +3,7 @@
 挂载于服务 Router,供前端/CLI 消费:
 - GET  /api/records/local    本地批次两级浏览(batch → game)
 - GET  /api/records/online   线上日志(日期 → gid,支持时间范围分页)
-- POST /api/records/local/frames  按 batch_id+game 取预计算本地回放帧
+- POST /api/records/local/frames  按 batch_id+game 取统一 ReplaySession/帧
 - GET  /api/seeds            种子库列表
 - POST /api/seeds            命名保存种子
 - DELETE /api/seeds/:name    删除种子
@@ -168,10 +168,11 @@ def api_router(arena_root=None, games_root=None, seed_root=None):
         path = game_path(os.path.join(entry["batch_dir"]), game)
         if not os.path.exists(path):
             raise NotFoundError(f"game record not found: {path}")
-        from .replay import local_frames
-        frames = local_frames(str(path))
+        from .replay import local_session
+        session = local_session(str(path))
+        frames = [step["state"] for step in session["steps"]]
         return 200, {"gid": None, "path": path, "frames": frames,
-                     "n_frames": len(frames)}
+                     "n_frames": len(frames), "session": session}
 
     @router.get("/api/records/online/:gid/frames")
     def _online_frames(request):
@@ -180,13 +181,15 @@ def api_router(arena_root=None, games_root=None, seed_root=None):
         if not hits:
             raise NotFoundError(f"online game not found: {gid}")
         from .. import logview
-        from .replay import online_frames as build_online_frames
+        from .replay import online_session
         path = hits[0]["path"]
         records = logview.load_records(str(path))
-        frames, verifications = build_online_frames(records)
+        session = online_session(records, session_id=gid, path=str(path))
+        frames = [step["state"] for step in session["steps"]]
+        verifications = session["metadata"].get("verifications", [])
         return 200, {"gid": gid, "path": str(path), "frames": frames,
                      "n_frames": len(frames),
-                     "verifications": verifications}
+                     "verifications": verifications, "session": session}
 
     @router.get("/api/seeds")
     def _seed_list(request):

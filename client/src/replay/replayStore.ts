@@ -1,61 +1,129 @@
 /**
- * 回放查看器状态:帧数组(预计算) + 当前索引 + 观察座位。
- * 步进/拖动均为数组索引 → O(1),满足"人类可感知的即时响应"。
+ * 统一回放查看器状态。
+ *
+ * 数据源只在 setSession/setFrames 时不同,后续导航、序号跳转和状态访问
+ * 全部走 ReplayEngine,因此本地批次与线上记录不会各自维护播放器。
  */
 
 import { create } from "zustand";
 import type { ReplayFrame } from "./frame";
+import { ReplayEngine } from "./engine";
+import { sessionFromFrames, type ReplaySession, type ReplayStep } from "./session";
 
 interface ReplayStore {
+  session: ReplaySession | null;
+  engine: ReplayEngine | null;
+  /** 兼容既有组件和旧测试的只读帧投影。 */
   frames: ReplayFrame[];
   index: number;
   observeSeat: number;
+  playing: boolean;
+  speed: number;
+  setSession: (session: ReplaySession) => void;
   setFrames: (frames: ReplayFrame[]) => void;
   stepForward: () => void;
   stepBack: () => void;
+  firstStep: () => void;
+  lastStep: () => void;
   jumpTo: (index: number) => void;
+  jumpToSeqNo: (seqNo: number) => void;
   setObserveSeat: (seat: number) => void;
-  /** 当前帧;无记录时 null。 */
+  togglePlaying: () => void;
+  setSpeed: (speed: number) => void;
+  /** 当前状态;无记录时 null。 */
   frame: () => ReplayFrame | null;
+  /** 当前步骤;无记录时 null。 */
+  currentStep: () => ReplayStep | null;
   total: () => number;
 }
 
+function framesFromSession(session: ReplaySession): ReplayFrame[] {
+  return session.steps.map((step) => step.state);
+}
+
 export const useReplayStore = create<ReplayStore>((set, get) => ({
+  session: null,
+  engine: null,
   frames: [],
   index: 0,
   observeSeat: 0,
+  playing: false,
+  speed: 1,
+
+  setSession: (session) => {
+    const engine = new ReplayEngine(session);
+    set({
+      session,
+      engine,
+      frames: framesFromSession(session),
+      index: 0,
+      observeSeat: 0,
+      playing: false,
+    });
+  },
 
   setFrames: (frames) => {
-    if (frames.length === 0) {
-      set({ frames, index: 0 });
-      return;
-    }
-    set({ frames, index: 0 });
+    get().setSession(sessionFromFrames(frames, frames[0]?.info_kind ?? "local"));
   },
 
   stepForward: () => {
-    const { frames, index } = get();
-    if (index < frames.length - 1) set({ index: index + 1 });
+    const { engine, index } = get();
+    if (!engine || index >= engine.total - 1) {
+      set({ playing: false });
+      return;
+    }
+    set({ index: index + 1 });
   },
 
   stepBack: () => {
     const { index } = get();
-    if (index > 0) set({ index: index - 1 });
+    if (index > 0) set({ index: index - 1, playing: false });
+  },
+
+  firstStep: () => set({ index: 0, playing: false }),
+
+  lastStep: () => {
+    const { engine } = get();
+    set({ index: engine ? Math.max(0, engine.total - 1) : 0, playing: false });
   },
 
   jumpTo: (i) => {
-    const { frames } = get();
-    if (frames.length === 0) return;
-    const clamped = Math.max(0, Math.min(frames.length - 1, Math.round(i)));
-    set({ index: clamped });
+    const { engine } = get();
+    if (!engine || engine.total === 0) return;
+    set({ index: engine.clampIndex(i), playing: false });
   },
 
-  setObserveSeat: (s) => set({ observeSeat: s }),
+  jumpToSeqNo: (seqNo) => {
+    const { engine } = get();
+    if (!engine || engine.total === 0 || !Number.isFinite(seqNo)) return;
+    set({ index: engine.indexForSeqNo(seqNo), playing: false });
+  },
+
+  setObserveSeat: (seat) => set({ observeSeat: Math.max(0, Math.min(3, Math.round(seat))) }),
+
+  togglePlaying: () => {
+    const { engine, index, playing } = get();
+    if (!engine || engine.total < 2) return;
+    if (index >= engine.total - 1) {
+      set({ index: 0, playing: true });
+      return;
+    }
+    set({ playing: !playing });
+  },
+
+  setSpeed: (speed) => {
+    if (Number.isFinite(speed) && speed > 0) set({ speed });
+  },
 
   frame: () => {
-    const { frames, index } = get();
-    return frames.length ? frames[index] : null;
+    const { engine, index, frames } = get();
+    return engine?.stateAt(index) ?? frames[index] ?? null;
   },
 
-  total: () => get().frames.length,
+  currentStep: () => {
+    const { engine, index } = get();
+    return engine?.stepAt(index) ?? null;
+  },
+
+  total: () => get().engine?.total ?? get().frames.length,
 }));

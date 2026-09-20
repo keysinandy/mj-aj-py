@@ -16,8 +16,14 @@ export function Timeline({ entries, currentIndex, onSelect }: Props) {
           onClick={() => onSelect(e.index)}
           data-testid={`tl-item-${e.index}`}
         >
-          {e.index}
+          <span className="tl-step">{e.index}</span>
+          {e.seqNo !== null && <span className="tl-seq">seq {e.seqNo}</span>}
           {e.gap ? " ⚠" : ""} {e.label}
+          {e.diagnosticCount > 0 && (
+            <span className={`tl-diagnostic tl-${e.diagnosticSeverity ?? "warn"}`}>
+              {e.diagnosticSeverity === "error" ? " 🔴" : " ⚠"} {e.diagnosticCount}
+            </span>
+          )}
         </li>
       ))}
     </ol>

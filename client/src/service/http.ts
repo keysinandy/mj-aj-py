@@ -3,6 +3,8 @@
  * sidecar 实际端口设定);dev 默认 http://127.0.0.1:17320。
  */
 
+import type { BackendSession } from "../replay/session";
+
 let base = "http://127.0.0.1:17320";
 
 export function setApiBase(url: string): void {
@@ -83,6 +85,8 @@ export interface FramesResponse {
   path: string;
   n_frames: number;
   frames: import("../replay/frame").ReplayFrame[];
+  session?: BackendSession;
+  verifications?: unknown[];
 }
 
 export type SessionStatus =
