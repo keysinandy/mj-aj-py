@@ -81,6 +81,21 @@ def api_router(arena_root=None, games_root=None, seed_root=None):
         return 200, {"gid": None, "path": path, "frames": frames,
                      "n_frames": len(frames)}
 
+    @router.get("/api/records/online/:gid/frames")
+    def _online_frames(request):
+        gid = request.params["gid"]
+        hits = index_online_games(games_root, gid)
+        if not hits:
+            raise NotFoundError(f"online game not found: {gid}")
+        from .. import logview
+        from .replay import online_frames as build_online_frames
+        path = hits[0]["path"]
+        records = logview.load_records(str(path))
+        frames, verifications = build_online_frames(records)
+        return 200, {"gid": gid, "path": str(path), "frames": frames,
+                     "n_frames": len(frames),
+                     "verifications": verifications}
+
     @router.get("/api/seeds")
     def _seed_list(request):
         return 200, {"seeds": seeds.list()}

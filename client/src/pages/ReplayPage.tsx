@@ -29,9 +29,19 @@ export function ReplayPage() {
     }
   }
 
-  // 线上回放帧需要流式/jsonl 端(见 P1);先占位为不可用提示。
-  async function openOnline(_gid: string, label: string) {
-    setError(`线上回放帧解析暂未接入(P1)。记录: ${label}`);
+  // 线上为自家视角帧(他家暗手不可见);解析走 /api/records/online/:gid/frames。
+  async function openOnline(gid: string, label: string) {
+    setLoading(true);
+    setError(null);
+    try {
+      const resp = await api.onlineFrames(gid);
+      setFrames(resp.frames as never);
+      setOpened({ label, infoKind: "online" });
+    } catch (e) {
+      setError(String((e as Error).message));
+    } finally {
+      setLoading(false);
+    }
   }
 
   function back() {

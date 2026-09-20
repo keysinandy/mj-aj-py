@@ -155,6 +155,51 @@ def test_frames_rejects_traversal_and_bad_game(tmp_path):
         svc.stop()
 
 
+def _write_demo_online_game(games_root, gid="game1"):
+    from mj.replay_debugger.fixtures import jsonl
+    hands = [
+        ["1w", "1w", "5b", "5b", "5b", "2t", "3t", "4t", "7w", "8w", "9w", "东", "南", "中"],
+        ["2w"] * 13, ["3w"] * 13, ["4w"] * 13,
+    ]
+    records = [
+        {"type": "meta", "gid": gid, "name": "demo", "seat": 0},
+        {"type": "snapshot", "seq": 179, "snap": {
+            "gid": gid, "seat": 0, "round_no": 1, "my_hand": hands[0],
+            "discards": [[], [], [], []], "melds": [[], [], [], []],
+            "hand_counts": [14, 13, 13, 13]}},
+        {"type": "events", "events": [
+            {"seq": 180, "type": "tile_drawn", "seat": 0, "tile": "9w"},
+            {"seq": 181, "type": "tile_discarded", "seat": 0, "tile": "1w"}]},
+        {"type": "end", "scores": [100, 200, -150, -150]},
+    ]
+    day = os.path.join(str(games_root), "20260919")
+    os.makedirs(day, exist_ok=True)
+    path = os.path.join(day, f"u_token_{gid}.jsonl")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(jsonl(records))
+    return gid, path
+
+
+def test_online_frames_endpoint(tmp_path):
+    svc, _, _ = _start(tmp_path)
+    games = tmp_path / "games"
+    gid, _ = _write_demo_online_game(str(games))
+    try:
+        status, body = _get(svc.ports["http"],
+                            f"/api/records/online/{gid}/frames")
+        assert status == 200
+        assert body["n_frames"] >= 1
+        assert all(f["info_kind"] == "online" for f in body["frames"])
+        assert body["frames"][0]["hands"] is None
+        assert body["frames"][0]["my_hand"] is not None
+        assert isinstance(body["verifications"], list)
+        # 未知 gid → 404
+        status, body = _get(svc.ports["http"], "/api/records/online/nope/frames")
+        assert status == 404 and body["error"] == "NOT_FOUND"
+    finally:
+        svc.stop()
+
+
 def test_seeds_crud(tmp_path):
     svc, _, _ = _start(tmp_path)
     try:
