@@ -79,6 +79,18 @@ class Router:
             return fn
         return deco
 
+    def put(self, path):
+        def deco(fn):
+            self.add("PUT", path, fn)
+            return fn
+        return deco
+
+    def patch(self, path):
+        def deco(fn):
+            self.add("PATCH", path, fn)
+            return fn
+        return deco
+
     def delete(self, path):
         def deco(fn):
             self.add("DELETE", path, fn)
@@ -169,6 +181,12 @@ class _ControlHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         self._handle()
 
+    def do_PUT(self):
+        self._handle()
+
+    def do_PATCH(self):
+        self._handle()
+
     def do_DELETE(self):
         self._handle()
 
@@ -180,7 +198,7 @@ class _ControlHandler(BaseHTTPRequestHandler):
         if origin:
             self.send_header("Access-Control-Allow-Origin", origin)
             self.send_header("Access-Control-Allow-Methods",
-                             "GET, POST, DELETE, OPTIONS")
+                             "GET, POST, PUT, PATCH, DELETE, OPTIONS")
             self.send_header("Access-Control-Allow-Headers", "Content-Type")
             self.send_header("Access-Control-Max-Age", "600")
             self.send_header("Vary", "Origin")

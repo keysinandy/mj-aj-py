@@ -6,7 +6,7 @@
  */
 
 import { create } from "zustand";
-import type { ReplayFrame } from "./frame";
+import type { ReplayFrame, ReplayVisibilityMode } from "./frame";
 import { ReplayEngine } from "./engine";
 import { sessionFromFrames, type ReplaySession, type ReplayStep } from "./session";
 
@@ -17,6 +17,7 @@ interface ReplayStore {
   frames: ReplayFrame[];
   index: number;
   observeSeat: number;
+  visibilityMode: ReplayVisibilityMode;
   playing: boolean;
   speed: number;
   setSession: (session: ReplaySession) => void;
@@ -28,6 +29,7 @@ interface ReplayStore {
   jumpTo: (index: number) => void;
   jumpToSeqNo: (seqNo: number) => void;
   setObserveSeat: (seat: number) => void;
+  setVisibilityMode: (mode: ReplayVisibilityMode) => void;
   togglePlaying: () => void;
   setSpeed: (speed: number) => void;
   /** 当前状态;无记录时 null。 */
@@ -41,12 +43,20 @@ function framesFromSession(session: ReplaySession): ReplayFrame[] {
   return session.steps.map((step) => step.state);
 }
 
+function initialObserveSeat(session: ReplaySession): number {
+  const seat = session.steps[0]?.state.my_seat;
+  return typeof seat === "number" && Number.isFinite(seat)
+    ? Math.max(0, Math.min(3, Math.round(seat)))
+    : 0;
+}
+
 export const useReplayStore = create<ReplayStore>((set, get) => ({
   session: null,
   engine: null,
   frames: [],
   index: 0,
   observeSeat: 0,
+  visibilityMode: "player",
   playing: false,
   speed: 1,
 
@@ -57,7 +67,8 @@ export const useReplayStore = create<ReplayStore>((set, get) => ({
       engine,
       frames: framesFromSession(session),
       index: 0,
-      observeSeat: 0,
+      observeSeat: initialObserveSeat(session),
+      visibilityMode: "player",
       playing: false,
     });
   },
@@ -100,6 +111,8 @@ export const useReplayStore = create<ReplayStore>((set, get) => ({
   },
 
   setObserveSeat: (seat) => set({ observeSeat: Math.max(0, Math.min(3, Math.round(seat))) }),
+
+  setVisibilityMode: (mode) => set({ visibilityMode: mode }),
 
   togglePlaying: () => {
     const { engine, index, playing } = get();

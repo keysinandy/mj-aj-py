@@ -20,7 +20,7 @@ const frames: ReplayFrame[] = Array.from({ length: 5 }).map((_, i) => ({
 
 describe("replay store 步进语义", () => {
   beforeEach(() => {
-    useReplayStore.setState({ frames: [], index: 0, observeSeat: 0 });
+    useReplayStore.setState({ frames: [], index: 0, observeSeat: 0, visibilityMode: "player" });
     useReplayStore.getState().setFrames(frames);
   });
 
@@ -77,6 +77,19 @@ describe("replay store 步进语义", () => {
 
   it("观察座位可切换", () => {
     useReplayStore.getState().setObserveSeat(2);
+    expect(useReplayStore.getState().observeSeat).toBe(2);
+  });
+
+  it("视角切换默认从玩家视角开始,重新载入记录会复位", () => {
+    useReplayStore.getState().setVisibilityMode("omniscient");
+    expect(useReplayStore.getState().visibilityMode).toBe("omniscient");
+    useReplayStore.getState().setFrames(frames);
+    expect(useReplayStore.getState().visibilityMode).toBe("player");
+  });
+
+  it("本地轮转主位作为默认观察座位", () => {
+    const rotated = frames.map((frame) => ({ ...frame, my_seat: 2 }));
+    useReplayStore.getState().setFrames(rotated);
     expect(useReplayStore.getState().observeSeat).toBe(2);
   });
 });

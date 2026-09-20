@@ -83,6 +83,7 @@ def _snap_from_game_hand(g, seat, my_hand):
             "my_hand": my_hand,
             "discards": [[], [], [], []],
             "melds": [[], [], [], []],
+            "hand_counts": [len(my_hand) if s == seat else 13 for s in range(4)],
         },
     }
 
@@ -101,6 +102,41 @@ def test_gap_marker_on_skipped_range():
     gap_frames = [f for f in frames if f.get("gap")]
     assert gap_frames, "跳段后应有 gap 标注帧"
     assert frames[-1]["round_no"] == 1
+
+
+def test_online_frames_preserve_verified_public_hand_counts():
+    from mj.game import Game
+    from mj.platform.proto import tname
+    g = Game(seed=4, dealer=0)
+    seat = 0
+    my_hand = [tname(t) for t in range(34)
+               for _ in range(g.hands[seat][t])]
+    frames, _ = online_frames([_snap_from_game_hand(g, seat, my_hand)])
+    assert frames
+    counts = frames[0]["hand_counts"]
+    assert counts[seat] == len(my_hand)
+    assert all(isinstance(value, int) for value in counts)
+
+
+def test_online_frames_preserve_open_meld_source_seat():
+    recs = [
+        {"type": "meta", "you_cai_bi_kao": False, "base": 1},
+        {
+            "type": "snapshot", "seq": 1,
+            "snap": {
+                "seat": 0, "dealer": 0, "round_no": 1,
+                "phase": "response_peng", "turn": 0,
+                "wall_remaining": 60, "my_hand": [],
+                "discards": [["5w"], [], [], []],
+                "melds": [[], [], [], []], "last_discard": "5w",
+            },
+        },
+        {"type": "events", "seq_to": 2, "events": [
+            {"type": "peng", "seq": 2, "seat": 1, "tile": "5w"},
+        ]},
+    ]
+    frames, _ = online_frames(recs)
+    assert frames[-1]["melds"][1][0]["from_seat"] == 0
 
 
 def test_loss_recovery_no_crash():

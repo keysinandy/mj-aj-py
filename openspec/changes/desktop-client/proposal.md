@@ -10,7 +10,7 @@
 - **本地竞技场**:1 个主位策略 vs 3 个可配置对手位(随机 BOT / legacy BOT / policy),支持批量对局(总局数 N × 并发 X),主位座位与庄家按 fair_match 口径轮转,对局记录为 `seed + 动作序列`(跨机器确定性重放);种子库支持保存/选用(随机或已存种子)。
 - **新增随机 BOT 策略**:有胡必胡,反应窗优先级 碰 > 杠 > 吃 > 过,多种吃法随机取一,弃牌随机。
 - **线上对战控制**:锦标赛 / 匹配房(match)/ 测试房三模式启动与停止,策略(policy / BOT / policy-v3)与参数(BOT 回退窗口 {永不回退, 10ms, 50ms, 36ms 默认, 任意 ms 手填}、policy-v3 置信度阈值、state-rate 默认 16/s)配置;房间列表(N 场并发)点入单局观战:自家手牌、四家牌河、四家副露、墙长、决策/动作时间线。
-- **回放查看器**:本地记录(全知视角,可看四家暗手)与线上 jsonl 记录(自家视角)统一为一套查看器组件;时间线、逐步前进/后退、进度条拖动定位。
+- **回放查看器**:本地记录默认以当前观察座位的玩家视角显示,可切换到全知视角查看四家暗手;线上 jsonl 记录固定为自家视角;两者统一为一套查看器组件,支持时间线、逐步前进/后退与进度条拖动定位。
 - **打包分发**:模型导出 ONNX(BC/PPO/policy-v3 三种 checkpoint)+ 逐动作对拍验证;PyInstaller 三平台制品(win-x64 / macos-arm64 / macos-x64),torch 不进包(onnxruntime 替代),mj_kernels 按平台预编译打进制品并做加载断言;CI 三平台构建矩阵。
 - **不改动**既有引擎与平台层行为:clientd 只读复用 `mj.platform` 的 runner/BotClient/Recorder/Mirror 与 `mj.evaluate`、`mj.log_replay`、`mj.decision.profile`。
 

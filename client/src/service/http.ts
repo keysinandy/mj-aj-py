@@ -41,6 +41,39 @@ export async function fetchJson<T = unknown>(
   return data as T;
 }
 
+export interface PlatformTokens {
+  tournament: string;
+  match: string;
+  test_room: string[];
+}
+
+export interface PlatformSettings {
+  server: string;
+  tokens: PlatformTokens;
+  selected_model: string | null;
+}
+
+export interface ConnectionTestResult {
+  ok: boolean;
+  status: number;
+  mode: "tournament" | "match" | "test_room";
+  code: string;
+  message: string;
+}
+
+export interface ManagedModel {
+  name: string;
+  size: number;
+  sha256?: string;
+  imported_at?: number;
+  contract: {
+    planes?: number;
+    scalars?: number;
+    actions?: number;
+  };
+  selected: boolean;
+}
+
 export interface BatchSummary {
   batch_id: string;
   batch_dir: string;
@@ -116,6 +149,38 @@ export interface SessionInfo {
 }
 
 export const api = {
+  getSettings(): Promise<PlatformSettings> {
+    return fetchJson("/api/settings");
+  },
+  saveSettings(settings: Pick<PlatformSettings, "server" | "tokens">): Promise<PlatformSettings> {
+    return fetchJson("/api/settings", { method: "PUT", body: settings });
+  },
+  testConnection(body: {
+    mode: ConnectionTestResult["mode"];
+    server: string;
+    token: string;
+  }): Promise<ConnectionTestResult> {
+    return fetchJson("/api/settings/test-connection", { method: "POST", body });
+  },
+  listModels(): Promise<{ models: ManagedModel[] }> {
+    return fetchJson("/api/models");
+  },
+  importModel(name: string, contentBase64: string): Promise<ManagedModel> {
+    return fetchJson("/api/models/import", {
+      method: "POST",
+      body: { name, content_base64: contentBase64 },
+    });
+  },
+  selectModel(name: string): Promise<ManagedModel> {
+    return fetchJson(`/api/models/${encodeURIComponent(name)}/select`, {
+      method: "POST",
+    });
+  },
+  deleteModel(name: string): Promise<{ name: string; deleted: boolean }> {
+    return fetchJson(`/api/models/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+    });
+  },
   localBatches(): Promise<LocalRecordsResponse> {
     return fetchJson("/api/records/local");
   },

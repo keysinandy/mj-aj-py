@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -19,6 +20,22 @@ from ..features import (
 from .errors import ValidationError
 
 __all__ = ["OnnxPolicyPlayer", "load_onnx_player"]
+
+
+@dataclass(frozen=True)
+class _OnnxManifest:
+    """满足 PolicyV3Runtime 最小契约的 ONNX manifest 视图。"""
+
+    oracle: bool = False
+    calibrated: bool = True
+    model_version: str = "onnx"
+    feature_contract_fingerprint: str = ""
+    belief_profile_fingerprint: str = ""
+    search_profile_fingerprint: str = ""
+
+    @property
+    def fingerprint(self):
+        return f"onnx-{self.model_version}"
 
 
 class _Distribution:
@@ -47,6 +64,10 @@ class OnnxPolicyPlayer:
             raise ValidationError("onnx model missing contract metadata")
         self._validate_contract()
         self._session = ort.InferenceSession(onnx_path)
+        # policy-v3 runtime 只依赖 manifest 的安全契约字段；ONNX 文件的
+        # contract_* 元数据已经在上面校验，挂一个轻量视图即可复用同一
+        # distribution/合法动作边界，不引入 torch checkpoint。
+        self.manifest = _OnnxManifest()
 
     def _validate_contract(self):
         if self.n_scalars != N_SCALARS:

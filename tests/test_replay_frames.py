@@ -2,7 +2,7 @@
 
 import pytest
 
-from mj.game import Game
+from mj.game import Game, PONG
 from mj.bot import choose_action
 from mj.clientd.records import write_game_record, result_from_game
 from mj.clientd.replay import local_frames
@@ -77,3 +77,45 @@ def test_full_info_hands_and_scores(tmp_path):
     assert end["hands"] is not None  # 本地全知:四家手牌可见
     assert len(end["scores"]) == 4
     assert end["current"]["phase"] == "done"
+
+
+def test_local_viewer_seat_follows_rotated_main_role(tmp_path):
+    path, _actions = _make_record(tmp_path, seed=11)
+    import json
+    with open(path, encoding="utf-8") as f:
+        rec = json.load(f)
+    rec["roles"] = [1, 0, 2, 3]
+    frames = local_frames(rec)
+    assert frames[0]["my_seat"] == 1
+    assert frames[0]["my_hand"] == frames[0]["hands"][1]
+
+
+def test_local_frames_preserve_open_meld_source_seat():
+    """本地记录的碰牌要携带被碰牌所属家,供牌桌定位横牌。"""
+    g = Game(seed=0, dealer=0)
+    actions = []
+    claim = None
+    for _ in range(3000):
+        if g.done:
+            break
+        seat = g.current_seat()
+        action = choose_action(g, seat)
+        pending = g.pending
+        actions.append(int(action))
+        if action == PONG:
+            assert pending is not None
+            claim = (seat, pending[0])
+            g.step(action)
+            break
+        g.step(action)
+
+    assert claim is not None, "seed=0 应包含一次可回放的碰牌"
+    frames = local_frames({
+        "seed": 0,
+        "dealer": 0,
+        "base": 1,
+        "you_cai_bi_kao": False,
+        "actions": actions,
+    })
+    owner, source = claim
+    assert frames[-1]["melds"][owner][0]["from_seat"] == source

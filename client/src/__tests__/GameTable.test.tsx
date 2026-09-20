@@ -64,19 +64,71 @@ describe("GameTable 本地全知视角", () => {
     expect(screen.getByText(/座位 P1/)).toBeTruthy();
   });
 
-  it("牌河与副露字段与固定帧一致", () => {
+  it("默认玩家视角只显示观察座位手牌,但保留四家牌河与副露", () => {
     const { container } = render(<GameTable frame={localFrame()} observeSeat={0} />);
     const p1 = container.querySelector(`[data-seat="1"]`)!;
-    // 吃 9,10,11 → 1筒 2筒 3筒(以单串渲染,用子串匹配)
-    expect(within(p1 as HTMLElement).getByText(/1筒/)).toBeTruthy();
-    expect(within(p1 as HTMLElement).getByText(/2筒/)).toBeTruthy();
-    expect(within(p1 as HTMLElement).getByText(/3筒/)).toBeTruthy();
+    expect(within(p1 as HTMLElement).getByText("未知")).toBeTruthy();
+    // 副露与牌河仍属于公共信息。
+    const p1Meld = within(p1 as HTMLElement).getByTestId("melds");
+    expect(within(p1Meld).getByRole("img", { name: "1筒" })).toBeTruthy();
+    expect(within(p1Meld).getByRole("img", { name: "2筒" })).toBeTruthy();
+    expect(within(p1Meld).getByRole("img", { name: "3筒" })).toBeTruthy();
     // 牌河 東
     const p1River = within(p1 as HTMLElement).getAllByTestId("river")[0];
-    expect(within(p1River).getByText("東")).toBeTruthy();
+    expect(within(p1River).getByRole("img", { name: "東" })).toBeTruthy();
+    expect(within(p1River).queryByText("東")).toBeNull();
     // P2 白板手牌
     const p2 = container.querySelector(`[data-seat="2"]`)!;
-    expect(within(p2 as HTMLElement).getByText("白·神")).toBeTruthy();
+    expect(within(p2 as HTMLElement).getByText("未知")).toBeTruthy();
+  });
+
+  it("本地全知开关显示四家手牌", () => {
+    const frame = localFrame();
+    const sideHand = Array.from({ length: 34 }, () => 0);
+    sideHand[0] = 14;
+    frame.hands![1] = [...sideHand];
+    frame.hands![3] = [...sideHand];
+    const { container } = render(
+      <GameTable frame={frame} observeSeat={0} visibilityMode="omniscient" />,
+    );
+    const p1 = container.querySelector(`[data-seat="1"]`)!;
+    const p3 = container.querySelector(`[data-seat="3"]`)!;
+    expect(within(p1 as HTMLElement).getByTestId("hand-tiles").querySelectorAll('[role="img"]')).toHaveLength(14);
+    expect(within(p3 as HTMLElement).getByTestId("hand-tiles").querySelectorAll('[role="img"]')).toHaveLength(14);
+    const p2 = container.querySelector(`[data-seat="2"]`)!;
+    expect(within(p2 as HTMLElement).getByRole("img", { name: "白·神" })).toHaveClass("tile-svg-cai");
+  });
+
+  it("切换观察座位后默认显示该座位手牌", () => {
+    const { container } = render(<GameTable frame={localFrame()} observeSeat={1} />);
+    const p1 = container.querySelector(`[data-seat="1"]`)!;
+    const p0 = container.querySelector(`[data-seat="0"]`)!;
+    expect(within(within(p1 as HTMLElement).getByTestId("hand-tiles")).getByRole("img", { name: "東" })).toBeTruthy();
+    expect(within(p0 as HTMLElement).getByText("未知")).toBeTruthy();
+  });
+
+  it("按观察座位旋转桌面,并同时显示庄家与当前轮次", () => {
+    const { container } = render(<GameTable frame={localFrame({
+      dealer: 2,
+      current: { seat: 1, phase: "playing" },
+    })} observeSeat={1} />);
+    const table = container.querySelector(".game-table")!;
+    expect(table.getAttribute("data-perspective-seat")).toBe("1");
+    const dealer = container.querySelector('[data-testid="dealer-badge-2"]');
+    expect(dealer).toBeTruthy();
+    const turn = container.querySelector('[data-seat="1"]');
+    expect(turn?.classList.contains("seat-turn")).toBe(true);
+    expect(turn?.getAttribute("data-position")).toBe("bottom");
+    expect(container.querySelector('[data-seat="2"]')?.getAttribute("data-position")).toBe("right");
+  });
+
+  it("在座位前标注庄家与主 BOT", () => {
+    const { container } = render(<GameTable frame={localFrame({ dealer: 0 })} observeSeat={0} />);
+    const p0 = container.querySelector('[data-seat="0"]')!;
+    expect(within(p0 as HTMLElement).getByTestId("dealer-badge-0")).toHaveTextContent("（庄）");
+    expect(within(p0 as HTMLElement).getByText("（主）座位 P0")).toBeTruthy();
+    const p2 = container.querySelector('[data-seat="2"]')!;
+    expect(within(p2 as HTMLElement).getByText("座位 P2")).toBeTruthy();
   });
 });
 
@@ -88,11 +140,11 @@ describe("GameTable 线上自家视角", () => {
       (el) => el.getAttribute("data-seat") === "0",
     )!;
     // my_hand[1]=1 → 1 张 value=1 = "2万"
-    expect(within(mySeat as HTMLElement).getByText("2万")).toBeTruthy();
+    expect(within(mySeat as HTMLElement).getByRole("img", { name: "2万" })).toBeTruthy();
   });
 
   it("线上视角即便切观察座位也看不到他家暗手", () => {
-    render(<GameTable frame={onlineFrame()} observeSeat={2} />);
+    render(<GameTable frame={onlineFrame()} observeSeat={2} visibilityMode="omniscient" />);
     const p2 = Array.from(document.querySelectorAll(".seat")).find(
       (el) => el.getAttribute("data-seat") === "2",
     )!;

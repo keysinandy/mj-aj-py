@@ -4,7 +4,7 @@
     {step, info_kind: "local"|"online", my_seat,
      hands: [4][34]|None,   # None => 他家暗手不可见(线上)
      my_hand: [34]|None,    # 线上视角的本家手牌
-     discards, melds, wall_remaining, scores, round_no,
+     discards, melds, hand_counts, wall_remaining, scores, round_no,
      current: {seat, phase}, label, gap}
 
 - 本地(3.1):预计算 = Game(seed) 按动作序列 step 一次,逐步快照;
@@ -31,12 +31,28 @@ DEAD_WALL_CONST = 14
 _WALL_TOTAL = 84
 
 
-def _meld_to_json(entry):
+def _meld_to_json(entry, from_seat=None):
     kind = entry[0]
     if kind == "chow":
         a = entry[1]
-        return {"kind": "chow", "tiles": [int(a), int(a + 1), int(a + 2)]}
-    return {"kind": kind, "tiles": [int(t) for t in entry[1:]]}
+        out = {"kind": "chow", "tiles": [int(a), int(a + 1), int(a + 2)]}
+    else:
+        out = {"kind": kind, "tiles": [int(t) for t in entry[1:]]}
+    if isinstance(from_seat, int) and 0 <= from_seat < 4:
+        out["from_seat"] = from_seat
+    return out
+
+
+def _melds_to_json(melds, meld_sources=None):
+    """Serialize melds and preserve the source seat when it is evidenced."""
+    out = []
+    for seat, row in enumerate(melds):
+        sources = meld_sources[seat] if meld_sources and seat < len(meld_sources) else []
+        out.append([
+            _meld_to_json(meld, sources[index] if index < len(sources) else None)
+            for index, meld in enumerate(row)
+        ])
+    return out
 
 
 def _response_window(game):
@@ -53,16 +69,19 @@ def _response_window(game):
 
 def _local_frame(game, my_seat, actor, label, gap=False, step=0,
                  *, seq_no=None, seq_source="local_action", timestamp=None,
-                 event=None, local_requests=None, diagnostics=None):
+                 event=None, local_requests=None, diagnostics=None,
+                 meld_sources=None):
     return {
         "step": step, "info_kind": "local", "my_seat": my_seat,
         "hands": [[int(v) for v in h] for h in game.hands],
         "my_hand": [int(v) for v in game.hands[my_seat]],
         "discards": [[int(v) for v in river] for river in game.discards],
-        "melds": [[_meld_to_json(m) for m in ms] for ms in game.melds],
+        "melds": _melds_to_json(game.melds, meld_sources),
+        "hand_counts": [sum(int(v) for v in hand) for hand in game.hands],
         "wall_remaining": game.live_wall_left(),
         "scores": [int(v) for v in game.scores],
         "round_no": 1,
+        "dealer": int(getattr(game, "dealer", 0)),
         "current": {"seat": actor, "phase": ("done" if game.done
                                              else getattr(game, "phase", "playing"))},
         "label": label, "gap": bool(gap),
@@ -119,15 +138,20 @@ def _build_local_frames(rec):
     g = Game(seed=rec["seed"], dealer=rec.get("dealer", 0),
              base=rec.get("base", 1),
              you_cai_bi_kao=rec.get("you_cai_bi_kao", False))
-    my_seat = 0
+    my_seat = _local_viewer_seat(rec)
     requests = rec.get("local_requests", rec.get("requests", []))
     diagnostics = rec.get("diagnostics", [])
+    # Game.melds intentionally keeps the compact engine tuple shape.  Keep a
+    # parallel source-seat list here so the replay frame can place the claimed
+    # tile at the correct visual side of each open meld.
+    meld_sources = [[] for _ in range(4)]
     frames = [_local_frame(
         g, my_seat, g.current_seat(), "初始", step=0,
         seq_no=0, seq_source="local_initial",
         event={"type": "session_start"},
         local_requests=_annotation_bucket(requests, 0, 0),
-        diagnostics=_annotation_bucket(diagnostics, 0, 0))]
+        diagnostics=_annotation_bucket(diagnostics, 0, 0),
+        meld_sources=meld_sources)]
     for k, action in enumerate(rec["actions"], start=1):
         legal = list(g.legal_actions())
         if action not in legal:
@@ -135,15 +159,45 @@ def _build_local_frames(rec):
                 f"recorded action {action} illegal at step {k} "
                 f"(legal={legal})")
         actor = g.current_seat()
+        claim_source = None
+        if getattr(g, "phase", None) == "react" and getattr(g, "pending", None):
+            claim_source = g.pending[0]
         g.step(action)
+        for seat, melds in enumerate(g.melds):
+            while len(meld_sources[seat]) < len(melds):
+                meld_sources[seat].append(
+                    claim_source if seat == actor else None)
         frames.append(_local_frame(
             g, my_seat, g.current_seat(), _action_label(action), step=k,
             seq_no=k, seq_source="local_action",
             event={"type": "action", "action": action, "actor": actor,
                    "label": _action_label(action)},
             local_requests=_annotation_bucket(requests, k, k),
-            diagnostics=_annotation_bucket(diagnostics, k, k)))
+            diagnostics=_annotation_bucket(diagnostics, k, k),
+            meld_sources=meld_sources))
     return frames
+
+
+def _local_viewer_seat(rec):
+    """Resolve the physical seat of the local arena's main role.
+
+    Arena records rotate the main role across physical seats and persist that
+    mapping in ``roles``.  Older hand-written records may omit it, so retain
+    the historical seat-0 fallback and accept an explicit viewer override.
+    """
+    for key in ("my_seat", "viewer_seat"):
+        raw = rec.get(key)
+        if isinstance(raw, int) and 0 <= raw < 4:
+            return raw
+    roles = rec.get("roles")
+    if isinstance(roles, (list, tuple)):
+        try:
+            seat = roles.index(0)
+        except ValueError:
+            seat = None
+        if isinstance(seat, int) and 0 <= seat < 4:
+            return seat
+    return 0
 
 
 def local_frames(record):
@@ -181,16 +235,28 @@ def _online_response_window(mirror):
 
 def _online_frame(mirror, scores, step, label, gap=False, *, seq_no=None,
                   timestamp=None, event=None, local_requests=None,
-                  diagnostics=None):
+                  diagnostics=None, meld_sources=None):
+    hand_counts = [None] * 4
+    me = int(mirror.me)
+    hand_counts[me] = sum(int(v) for v in mirror.my_hand)
+    public_counts = getattr(mirror, "public_hand_counts", None)
+    if isinstance(public_counts, (list, tuple)) and len(public_counts) == 4:
+        if all(isinstance(v, int) and v >= 0 for v in public_counts):
+            hand_counts = [int(v) for v in public_counts]
+            # The local hand is independently known even if a future mirror
+            # implementation changes the public-count anchor semantics.
+            hand_counts[me] = sum(int(v) for v in mirror.my_hand)
     return {
         "step": step, "info_kind": "online",
         "my_seat": mirror.me, "hands": None,
         "my_hand": [int(v) for v in mirror.my_hand],
         "discards": [[int(v) for v in river] for river in mirror.discards],
-        "melds": [[_meld_to_json(m) for m in ms] for ms in mirror.melds],
+        "melds": _melds_to_json(mirror.melds, meld_sources),
+        "hand_counts": hand_counts,
         "wall_remaining": _WALL_TOTAL - mirror._pops,
         "scores": list(scores or [0, 0, 0, 0]),
         "round_no": mirror.round_no,
+        "dealer": int(getattr(mirror, "dealer", 0)),
         "current": {"seat": _mirror_seat(mirror), "phase": "online"},
         "label": label, "gap": bool(gap),
         "seq_no": seq_no,
@@ -211,6 +277,47 @@ def _mirror_seat(mirror):
     return None
 
 
+def _source_seat(value):
+    """Read a validated source seat from a snapshot/event payload."""
+    if type(value) is int and 0 <= value < 4:
+        return value
+    return None
+
+
+def _payload_source_seat(payload):
+    if not isinstance(payload, dict):
+        return None
+    for key in ("from_seat", "fromSeat", "source_seat", "sourceSeat"):
+        source = _source_seat(payload.get(key))
+        if source is not None:
+            return source
+    data = payload.get("data")
+    if isinstance(data, dict):
+        for key in ("from_seat", "fromSeat", "source_seat", "sourceSeat"):
+            source = _source_seat(data.get(key))
+            if source is not None:
+                return source
+    return None
+
+
+def _snapshot_meld_sources(raw_melds, parsed_melds, previous=None):
+    """Align optional snapshot source seats with Mirror's parsed meld rows."""
+    previous = previous or []
+    result = []
+    for seat, row in enumerate(parsed_melds):
+        raw_row = raw_melds[seat] if isinstance(raw_melds, list) and seat < len(raw_melds) else []
+        old_row = previous[seat] if seat < len(previous) else []
+        sources = []
+        for index, _meld in enumerate(row):
+            raw = raw_row[index] if isinstance(raw_row, list) and index < len(raw_row) else None
+            source = _payload_source_seat(raw)
+            if source is None and index < len(old_row):
+                source = old_row[index]
+            sources.append(source)
+        result.append(sources)
+    return result
+
+
 class _OnlineBuilder:
     def __init__(self):
         self.mirror = None
@@ -221,6 +328,7 @@ class _OnlineBuilder:
         self.gap = False
         self.pending_requests = []
         self.pending_diagnostics = []
+        self.meld_sources = [[] for _ in range(4)]
 
     def _base(self):
         return bool((self.meta or {}).get("you_cai_bi_kao", False))
@@ -233,11 +341,16 @@ class _OnlineBuilder:
         if t == "snapshot":
             snap = rec.get("snap") or {}
             was_gap = self.gap
+            previous_sources = self.meld_sources
+            previous_round = self.mirror.round_no if self.mirror is not None else None
             self.mirror = Mirror(
                 my_seat=snap["seat"], dealer=snap.get("dealer", 0),
                 base=(self.meta or {}).get("base", 1),
                 you_cai_bi_kao=self._base(), round_no=snap.get("round_no", 1))
             self.mirror.apply_snapshot(snap)
+            self.meld_sources = _snapshot_meld_sources(
+                snap.get("melds"), self.mirror.melds,
+                previous_sources if previous_round == self.mirror.round_no else None)
             if snap.get("scores"):
                 self.scores = list(snap["scores"])
             self.gap = False
@@ -251,7 +364,26 @@ class _OnlineBuilder:
                 if self.mirror is None:
                     continue
                 try:
+                    pending_source = self.mirror.pending[0] if self.mirror.pending else None
+                    before_meld_counts = [len(row) for row in self.mirror.melds]
                     self.mirror.apply_event(ev)
+                    event_type = ev.get("type")
+                    event_data = ev.get("data") if isinstance(ev.get("data"), dict) else {}
+                    event_kind = ev.get("kind") or event_data.get("kind")
+                    is_open_claim = (
+                        event_type in {EV_CHI, EV_PENG}
+                        or (event_type == EV_GANG and event_kind in (None, "ming", "open", "gang_ming"))
+                    )
+                    actor = _source_seat(ev.get("seat"))
+                    source = _payload_source_seat(ev)
+                    if source is None:
+                        source = _source_seat(pending_source)
+                    for seat, melds in enumerate(self.mirror.melds):
+                        while len(self.meld_sources[seat]) < len(melds):
+                            index = len(self.meld_sources[seat])
+                            self.meld_sources[seat].append(
+                                source if is_open_claim and seat == actor
+                                and index >= before_meld_counts[seat] else None)
                     label = _EV_LABEL.get(ev.get("type"), ev.get("type"))
                     self._emit(
                         label, self.mirror.round_no,
@@ -260,6 +392,7 @@ class _OnlineBuilder:
                 except MirrorInconsistent:
                     # 失步 → 等待快照;缺口标注
                     self.mirror = None
+                    self.meld_sources = [[] for _ in range(4)]
                     self.gap = True
             return
         if t == "req":
@@ -388,7 +521,8 @@ class _OnlineBuilder:
             gap=(self.gap if gap is None else gap), seq_no=seq_no,
             timestamp=timestamp, event=event,
             local_requests=self.pending_requests,
-            diagnostics=self.pending_diagnostics)
+            diagnostics=self.pending_diagnostics,
+            meld_sources=self.meld_sources)
         self.pending_requests = []
         self.pending_diagnostics = []
         self.frames.append(frame)

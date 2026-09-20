@@ -26,6 +26,10 @@ def main(argv=None):
     ap.add_argument("--arena-root", default=None)
     ap.add_argument("--games-root", default=None)
     ap.add_argument("--seed-root", default=None)
+    ap.add_argument("--settings-path", default=None,
+                    help="本机平台配置路径(默认 local/platform.json)")
+    ap.add_argument("--model-root", default=None,
+                    help="本机 ONNX 模型目录(默认 local/models)")
     ap.add_argument("--cors-origins", nargs="*", default=None,
                     help="放行 CORS 的额外 Origin;缺省用本地开发默认集")
     args = ap.parse_args(argv)
@@ -37,9 +41,19 @@ def main(argv=None):
     health = health_router()
     api = api_router(arena_root=args.arena_root,
                      games_root=args.games_root,
-                     seed_root=args.seed_root)
+                     seed_root=args.seed_root,
+                     settings_path=args.settings_path,
+                     model_root=args.model_root)
     sessions = make_arena_session_manager(arena_root=args.arena_root)
-    api_sessions = session_router(sessions)
+    # api_router 内部持有同一份 ModelStore；会话控制面通过它读取当前
+    # 选择，仅对创建时尚未显式指定模型的新会话注入路径。
+    from .settings import ModelStore, PlatformSettings
+    model_store = ModelStore(
+        args.model_root or "local/models",
+        settings=PlatformSettings(args.settings_path or "local/platform.json"),
+    )
+    api_sessions = session_router(sessions,
+                                  model_resolver=model_store.resolve_selected)
     for route in api.get_all() + api_sessions.get_all():
         health.add(*route)
 

@@ -14,11 +14,12 @@ batch_id 必须为纯目录名(禁路径穿越),game 必须为整数。
 
 from __future__ import annotations
 
+import base64
 from datetime import datetime, timedelta
 import math
 import os
 import time
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from .errors import NotFoundError, ValidationError
 from .index import (
@@ -28,6 +29,9 @@ from .index import (
 from .records import game_path, load_game_record
 from .seeds import SeedLibrary
 from .service import Router
+from .settings import (DEFAULT_MODEL_DIR, DEFAULT_SETTINGS_PATH,
+                       ModelStore, PlatformSettings,
+                       probe_platform_connection)
 
 __all__ = ["api_router", "session_router"]
 
@@ -105,11 +109,70 @@ def _query_time(value, field, *, end=False):
     return time.mktime(parsed.timetuple()) + parsed.microsecond / 1e6
 
 
-def api_router(arena_root=None, games_root=None, seed_root=None):
+def api_router(arena_root=None, games_root=None, seed_root=None,
+               settings_path=None, model_root=None):
     arena_root = arena_root or DEFAULT_ARENA_ROOT
     games_root = games_root or DEFAULT_GAMES_ROOT
     seeds = SeedLibrary(str(seed_root) if seed_root else None)
+    settings = PlatformSettings(settings_path or DEFAULT_SETTINGS_PATH)
+    models = ModelStore(model_root or DEFAULT_MODEL_DIR, settings=settings)
     router = Router()
+
+    @router.get("/api/settings")
+    def _settings_get(request):
+        return 200, settings.get()
+
+    @router.put("/api/settings")
+    def _settings_put(request):
+        return 200, settings.update(request.body or {})
+
+    @router.patch("/api/settings")
+    def _settings_patch(request):
+        return 200, settings.update(request.body or {})
+
+    @router.post("/api/settings/test-connection")
+    def _settings_test_connection(request):
+        body = request.body or {}
+        if not isinstance(body, dict):
+            raise ValidationError("connection test body must be an object")
+        current = settings.get()
+        mode = body.get("mode")
+        server = body.get("server", current["server"])
+        token = body.get("token")
+        if token is None:
+            configured = current["tokens"].get(mode, "") if mode else ""
+            if isinstance(configured, list):
+                token = configured[0] if configured else ""
+            else:
+                token = configured
+        return 200, probe_platform_connection(server, token, mode)
+
+    @router.get("/api/models")
+    def _models_list(request):
+        return 200, {"models": models.list()}
+
+    @router.post("/api/models/import")
+    def _model_import(request):
+        body = request.body or {}
+        if not isinstance(body, dict):
+            raise ValidationError("model import body must be an object")
+        name = body.get("name")
+        encoded = body.get("content_base64")
+        if not isinstance(encoded, str) or not encoded:
+            raise ValidationError("content_base64 must be a non-empty string")
+        try:
+            content = base64.b64decode(encoded, validate=True)
+        except (ValueError, TypeError) as exc:
+            raise ValidationError("模型内容不是合法的 base64") from exc
+        return 200, models.import_bytes(name, content)
+
+    @router.post("/api/models/:name/select")
+    def _model_select(request):
+        return 200, models.select(unquote(request.params["name"]))
+
+    @router.delete("/api/models/:name")
+    def _model_delete(request):
+        return 200, models.delete(unquote(request.params["name"]))
 
     @router.get("/api/records/local")
     def _local_batches(request):
@@ -223,7 +286,40 @@ def api_router(arena_root=None, games_root=None, seed_root=None):
     return router
 
 
-def session_router(manager):
+def _inject_selected_model(config, model):
+    """给没有显式模型的后续会话注入当前选择，不改运行中会话。"""
+    if not model or not isinstance(config, dict):
+        return config
+    selected_path = model.get("path")
+    if not selected_path:
+        return config
+    result = dict(config)
+    injected = False
+
+    def inject(role):
+        nonlocal injected
+        if not isinstance(role, dict):
+            return role
+        item = dict(role)
+        strategy = item.get("strategy")
+        if strategy == "policy" and not item.get("ckpt"):
+            item["ckpt"] = selected_path
+            injected = True
+        elif strategy == "policy-v3" and not item.get("model"):
+            item["model"] = selected_path
+            injected = True
+        return item
+
+    if "strategy" in result:
+        result = inject(result)
+    if isinstance(result.get("seats"), list):
+        result["seats"] = [inject(role) for role in result["seats"]]
+    if injected:
+        result.setdefault("model_name", model.get("name"))
+    return result
+
+
+def session_router(manager, model_resolver=None):
     """竞技场会话控制面路由(供 Web 控制台开跑/查询/停止)。
 
     - POST   /api/sessions            {kind, config} → 会话
@@ -240,6 +336,8 @@ def session_router(manager):
         config = body.get("config") or {}
         if not isinstance(config, dict):
             raise ValidationError("config must be an object")
+        if model_resolver is not None:
+            config = _inject_selected_model(config, model_resolver())
         session = manager.create(kind, config)
         return 200, session.as_dict()
 

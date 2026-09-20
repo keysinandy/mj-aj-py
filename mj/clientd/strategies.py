@@ -136,7 +136,9 @@ def make_policy_v3_player(config):
     threshold = _validate_confidence(config.get("confidence_threshold"))
     from ..decision.policy_v3 import PolicyV3Runtime, PolicyV3Profile
     model = config.get("model")
-    load_error = len(str(model or "")) > 0
+    if isinstance(model, str) and model.endswith(".onnx"):
+        from .onnx_player import OnnxPolicyPlayer
+        model = OnnxPolicyPlayer(model)
     profile = PolicyV3Profile(confidence_threshold=threshold)
     runtime = PolicyV3Runtime(model=model, profile=profile)
 
