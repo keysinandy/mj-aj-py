@@ -35,6 +35,19 @@ if [ ! -x "$Py" ]; then
     fi
 fi
 
+# 1.5) clientd 运行依赖自检(mj/clientd:纯标准库 + numpy + websockets)
+# .venv 存在但为空(缺依赖)时,给出可执行的修复命令,而不是让 clientd 抛 traceback。
+if ! "$Py" -c 'import numpy, websockets' >/dev/null 2>&1; then
+    Missing=""
+    for mod in numpy websockets; do
+        "$Py" -c "import $mod" >/dev/null 2>&1 || Missing="$Missing $mod"
+    done
+    [ -n "$Missing" ] || Missing=" numpy websockets"
+    echo "错误:${Py} 缺少 clientd 运行依赖:${Missing# }" >&2
+    echo "修复:\"$Py\" -m pip install${Missing}" >&2
+    exit 1
+fi
+
 # 2) 前端依赖检查 + 包管理器选择(锁文件优先 pnpm)
 PM="npm"
 if [ -f "$Root/client/pnpm-lock.yaml" ] && command -v pnpm >/dev/null 2>&1; then

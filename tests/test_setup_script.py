@@ -55,6 +55,13 @@ def test_optional_specs_pure_stdlib():
     assert s.MIN_PY == (3, 10)
 
 
+def test_optional_web_covers_clientd_runtime():
+    # clientd 的运行依赖是「纯标准库 + numpy + websockets」,
+    # 缺一个 web_client.sh 就起不来;这里锁住以免再次掉队。
+    assert set(s.OPTIONAL.get("web", {}).get("pkgs", [])) == {
+        "numpy", "websockets"}
+
+
 def test_venv_python_paths(monkeypatch, tmp_path):
     root = str(tmp_path)
     assert s.venv_python(root) == os.path.join(

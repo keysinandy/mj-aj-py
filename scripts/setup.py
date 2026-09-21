@@ -7,6 +7,7 @@
          —— 纯标准库,零三方依赖,只要 Python 3.10+ 能 import 就能跑;
   [策略] policy/policy-v3 策略所需(torch + checkpoint);
   [内核] Rust shanten 内核(未装自动回退纯 Python,不影响正确性);
+  [网页] 浏览器 web 对战客户端(clientd)运行依赖:numpy + websockets;
   [开发] 测试套件(pytest/numpy)与 ONNX 导出(onnx/onnxruntime);
   [配置] local/platform.json 模板与令牌提示;
   [验证] 引擎冒烟测试 + tournament.py --dry-run 预检。
@@ -45,6 +46,8 @@ PLATFORM_JSON = os.path.join("local", "platform.json")
 
 # 可选组件:名字 → pip 包名列表 + 说明
 OPTIONAL = {
+    "web": {"pkgs": ["numpy", "websockets"],
+            "hint": "浏览器 web 客户端 clientd(scripts/web_client.sh)"},
     "policy": {"pkgs": ["torch"],
                "hint": "policy/policy-v3 策略与 BC/PPO 评估"},
     "tests": {"pkgs": ["pytest", "numpy"],

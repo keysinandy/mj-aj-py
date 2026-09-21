@@ -29,6 +29,22 @@ if (-not (Test-Path -LiteralPath $Py)) {
     }
 }
 
+# 1.5) clientd 运行依赖自检(mj/clientd:纯标准库 + numpy + websockets)
+# .venv 存在但为空(缺依赖)时,给出可执行的修复命令,而不是让 clientd 抛 traceback。
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = "SilentlyContinue"
+$missingDeps = @()
+foreach ($mod in @("numpy", "websockets")) {
+    & $Py -c "import $mod" 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { $missingDeps += $mod }
+}
+$ErrorActionPreference = $prevEap
+if ($missingDeps.Count -gt 0) {
+    $depList = $missingDeps -join " "
+    Write-Error "运行依赖缺失:$Py 缺少 $depList。修复:& '$Py' -m pip install $depList"
+    exit 1
+}
+
 # 2) 前端依赖检查
 if (-not (Test-Path -LiteralPath (Join-Path $Root "client\node_modules"))) {
     Write-Warning "client\node_modules 缺失,正在 npm install(首次会较慢)…"

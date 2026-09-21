@@ -42,7 +42,7 @@ powershell -ExecutionPolicy Bypass -File scripts\setup.ps1 -Install -Venv
 | ① | Python ≥ 3.10(`mj/platform` 用 `X \| Y` 联合类型语法) | 硬失败 |
 | ② | 锦标赛核心路径 import 冒烟(tournament_runner/bot_client/bot/win/shanten/scoring) | 硬失败 |
 | ③ | Rust shanten 内核(`--install` 且有 cargo 时 `pip install -e ./rust`) | 只警告:自动回退纯 Python,决策稍慢 |
-| ④ | 可选组件:policy(torch + `runs/bc0/best.pt`)/ tests(pytest+numpy)/ onnx(onnx+onnxruntime) | 只警告,不影响 bot 策略;装后复验 import |
+| ④ | 可选组件:web(numpy+websockets,浏览器客户端 clientd 运行依赖)/ policy(torch + `runs/bc0/best.pt`)/ tests(pytest+numpy)/ onnx(onnx+onnxruntime) | 只警告,不影响 bot 策略;装后复验 import;缺 web 时 `web_client.sh` 会自检报错并给出安装命令 |
 | ⑤ | `local/platform.json` 不存在则写模板(server 预填,令牌留空——空值会被明确报错,不会塞占位符) | 提示填令牌 |
 | ⑥ | 引擎冒烟 `pytest tests/test_shanten.py tests/test_game.py` | 硬失败(`--skip-tests` 跳过) |
 
