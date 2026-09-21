@@ -1,0 +1,38 @@
+{
+  "change": "legacy-two-ply-shanten-pruning",
+  "status": "rejected and reverted",
+  "kernel_version": "rust-weighted-two-ply-v2",
+  "code_state": "rust/src/lib.rs 与 858e594 一致(无改动)",
+  "parity": {
+    "command": "python3 scripts/rust_parity.py --n 300",
+    "greedy_seed_build": "shanten/ukeire/baotou_ukeire 全部通过",
+    "note": "正确性没问题,否决原因是性能"
+  },
+  "per_call_microbench": {
+    "command": "4000 随机 13/14 张手(含财神)+4 个已知病理手,python 计时含 FFI",
+    "no_greedy": {"p50_us": [4.529, 4.434], "p99_us": [27.440, 25.188], "max_us": [128.4, 119.8], "slow_over_50us": [13, 11]},
+    "greedy": {"p50_us": [5.612, 5.623], "p99_us": [28.125, 35.276], "max_us": [112.9, 114.0], "slow_over_50us": [14, 28]},
+    "conclusion": "每次调用多约 1.2us,尾部(max/p99/慢调用数)没有改善"
+  },
+  "stage_b_ab": {
+    "benchmark": "scripts/legacy_two_ply_weighted_bench.py --states 100 --seed 0",
+    "method": "同一会话内两个 wheel 交替跑,各 2 轮",
+    "machine_note": "本机 load 高(workers=1 complete 在 43-66 波动),只做相对比较",
+    "rounds": [
+      {"no_greedy": {"workers_1": {"complete": 66, "raw_p50": 27.57, "raw_p95": 48.65, "raw_p99": 48.89},
+                     "workers_auto": {"complete": 83, "raw_p50": 9.21, "raw_p95": 23.77, "raw_p99": 38.85}},
+       "greedy": {"workers_1": {"complete": 51, "raw_p50": 39.78, "raw_p95": 48.82, "raw_p99": 49.23},
+                  "workers_auto": {"complete": 82, "raw_p50": 12.65, "raw_p95": 28.33, "raw_p99": 49.09}}},
+      {"no_greedy": {"workers_1": {"complete": 57, "raw_p50": 35.30, "raw_p95": 48.87, "raw_p99": 49.67},
+                     "workers_auto": {"complete": 83, "raw_p50": 10.42, "raw_p95": 27.10, "raw_p99": 44.08}},
+       "greedy": {"workers_1": {"complete": 43, "raw_p50": 43.16, "raw_p95": 48.99, "raw_p99": 51.17},
+                  "workers_auto": {"complete": 83, "raw_p50": 12.98, "raw_p95": 27.41, "raw_p99": 41.45}}}
+    ],
+    "conclusion": "贪心版在两个 worker 配置下都更慢(workers=1 complete 66/57→51/43,p50 +12~18ms)"
+  },
+  "next_options": [
+    "降低调用次数:收紧 ukeire 候选集(把七对贡献拆出单独公式化计算),需保持逐位一致",
+    "跨调用只读表:进程级表 + 版本化,需要新的 spec delta 与并发读保证",
+    "接受现状:并行化已满足 KPI,不再做单线程优化"
+  ]
+}
