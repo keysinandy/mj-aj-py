@@ -15,14 +15,16 @@ v1 关键约束:
 
 from __future__ import annotations
 
-import importlib
 import os
 import threading
 import time
 
 from .artifact_store import publish_result, sha256_file
 from .distributed_jobs import WorkerCapabilities
+from . import distributed_bc       # 注册 legacy_bc_games + 共享 HANDLERS
+from . import distributed_rollout  # 注册 rl_rollout(rl worker 依赖 torch)
 from .distributed_bc import HANDLERS
+from .minisuphx_manifest import RolloutManifest
 
 __all__ = ["HANDLERS", "WorkerSupervisor", "run_worker_loop"]
 
@@ -76,20 +78,59 @@ class WorkerSupervisor:
         npz = os.path.join(local_dir, "rollout.npz")
         if not os.path.exists(npz):
             raise FileNotFoundError(f"missing staged artifact {npz}")
-        manifest = {
-            "schema": "minisuphx-job-result-v1",
-            "job_id": job["job_id"],
-            "campaign_id": job["campaign_id"],
-            "worker_id": self.caps.worker_id,
-            "git_commit": self.git_commit,
-            "kind": job["kind"],
-            "generation": job["generation"],
-            "artifact_relpath": "rollout.npz",
-            "artifact_sha256": sha256_file(npz),
-            "rows": int(meta.get("transition_count", os.path.getsize(npz))),
-            "status": "SUCCEEDED",
-        }
-        manifest.update(meta)
+        artifact_sha256 = sha256_file(npz)
+        if job["kind"] == "rl_rollout":
+            required = ("policy_version", "policy_fingerprint",
+                        "value_contract", "action_scope", "feature_contract")
+            missing = [key for key in required
+                       if key not in meta or meta.get(key) in (None, "")]
+            if missing:
+                raise ValueError(
+                    f"rl_rollout result missing provenance {missing}")
+            rollout = RolloutManifest(
+                campaign_id=job["campaign_id"],
+                job_id=job["job_id"], worker_id=self.caps.worker_id,
+                policy_version=int(meta["policy_version"]),
+                policy_fingerprint=str(meta["policy_fingerprint"]),
+                git_commit=self.git_commit,
+                generation=int(job.get("generation", 0)),
+                value_contract=str(meta["value_contract"]),
+                action_scope=str(meta["action_scope"]),
+                feature_contract=str(meta["feature_contract"]),
+                opponent_pool_fingerprint=str(
+                    meta.get("opponent_pool_fingerprint", "")),
+                transition_count=int(meta.get("transition_count", 0)),
+                artifact_sha256=artifact_sha256,
+                seed_start=int(meta.get("seed_start", 0)),
+            )
+            manifest = rollout.to_dict()
+            manifest.update(meta)
+            # The immutable artifact identity is owned by the publisher, not
+            # by a worker supplied metadata field.
+            manifest.update({
+                "artifact_relpath": "rollout.npz",
+                "artifact_sha256": artifact_sha256,
+                "rows": int(meta.get("transition_count", 0)),
+                "worker_id": self.caps.worker_id,
+                "git_commit": self.git_commit,
+                "kind": job["kind"],
+                "status": "SUCCEEDED",
+            })
+        else:
+            manifest = {
+                "schema": "minisuphx-job-result-v1",
+                "job_id": job["job_id"],
+                "campaign_id": job["campaign_id"],
+                "worker_id": self.caps.worker_id,
+                "git_commit": self.git_commit,
+                "kind": job["kind"],
+                "generation": job["generation"],
+                "artifact_relpath": "rollout.npz",
+                "artifact_sha256": artifact_sha256,
+                "rows": int(meta.get("transition_count", os.path.getsize(npz))),
+                "status": "SUCCEEDED",
+            }
+            manifest.update(meta)
         publish_result(self.result_root, job["campaign_id"], job["job_id"],
                        files={npz: "rollout.npz"}, manifest=manifest)
         return manifest

@@ -17,11 +17,11 @@
 
 ## 3. P2 HybridPolicy 与 discard env
 
-- [ ] 3.1 新增 `HybridPolicy`，明确 legacy gate 与 learned discard 的动作路由。
-- [ ] 3.2 新增 `MahjongDiscardEnv`，只有普通弃牌暴露为 RL step，其余动作自动推进。
-- [ ] 3.3 加入审计日志：每个自动 legacy action 的原因、phase、legal set、selected action。
-- [ ] 3.4 单测证明 learned policy 永远不会覆盖 HU/KONG/CHOW/PONG/PASS/safeguard。
-- [ ] 3.5 同 seed 下 HybridPolicy(learned=legacy) 与纯 legacy trajectory 完全一致。
+- [x] 3.1 新增 `HybridPolicy`，明确 legacy gate 与 learned discard 的动作路由。
+- [x] 3.2 新增 `MahjongDiscardEnv`，只有普通弃牌暴露为 RL step，其余动作自动推进。
+- [x] 3.3 加入审计日志：每个自动 legacy action 的原因、phase、legal set、selected action。
+- [x] 3.4 单测证明 learned policy 永远不会覆盖 HU/KONG/CHOW/PONG/PASS/safeguard。
+- [x] 3.5 同 seed 下 HybridPolicy(learned=legacy) 与纯 legacy trajectory 完全一致。
 
 ## 4. P3 Legacy BC + DAgger
 
@@ -34,12 +34,12 @@
 
 ## 5. P4 Custom PPO Learner
 
-- [ ] 5.1 新增 PPO rollout schema 与 GAE 计算，覆盖 action mask。
-- [ ] 5.2 新增 learner，完整加载 BC backbone/policy/value head；禁止随机替换 critic。
-- [ ] 5.3 实现 actor/value 独立 LR 参数组。
-- [ ] 5.4 实现 BC prior KL schedule，并记录 live-vs-anchor KL。
-- [ ] 5.5 实现 normalized target entropy controller、coefficient clamp 与 resume state。
-- [ ] 5.6 实现 shaping schedule，并确保 promotion eval 使用 unshaped terminal score。
+- [x] 5.1 新增 PPO rollout schema 与 GAE 计算，覆盖 action mask。
+- [x] 5.2 新增 learner，完整加载 BC backbone/policy/value head；禁止随机替换 critic。
+- [x] 5.3 实现 actor/value 独立 LR 参数组。
+- [x] 5.4 实现 BC prior KL schedule，并记录 live-vs-anchor KL。
+- [x] 5.5 实现 normalized target entropy controller、coefficient clamp 与 resume state。
+- [x] 5.6 实现 shaping schedule，并确保 promotion eval 使用 unshaped terminal score。
 - [ ] 5.7 在 PC-A 单机完成 50k~100k discard decisions 冒烟，确认无 NaN/非法动作/policy collapse。
 
 ## 6. P5 双机 synchronous Actor/Learner
@@ -52,9 +52,9 @@
 
 - [ ] 6.1 扩展 distributed job kinds：`legacy_bc_games`、`dagger_games`、`rl_rollout`。
 - [ ] 6.2 worker 注册 rollout capability；PC-B 默认 benchmark 6/8/10 actors。
-- [ ] 6.3 每轮发布 immutable `policy_N` 与 manifest，actor lease 前验证 git/model/value/action scope。
-- [ ] 6.4 rollout shard 保存 obs/mask/action/logprob/value/reward/done/episode/opponent provenance。
-- [ ] 6.5 merge gate 强制同一 policy_version；stale/mixed shard 单测必须失败。
+- [x] 6.3 每轮发布 immutable `policy_N` 与 manifest，actor lease 前验证 git/model/value/action scope。
+- [x] 6.4 rollout shard 保存 obs/mask/action/logprob/value/reward/done/episode/opponent provenance。
+- [x] 6.5 merge gate 强制同一 policy_version；stale/mixed shard 单测必须失败。
 - [ ] 6.6 worker crash/lease expiry/SMB failure/retry 不产生重复 semantic rollout。
 - [ ] 6.7 benchmark A-only、B-only、A+B 的 discard decisions/min 与 learner idle fraction。
 
