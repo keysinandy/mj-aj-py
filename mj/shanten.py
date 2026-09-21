@@ -465,7 +465,7 @@ def weighted_two_ply_frontier(
         roots, root_shantens, visible, legal_masks, locked=0, frozen=False,
         node_budget=100000, soft_budget_ms=40.0, hard_budget_ms=50.0,
         cache_capacity=8192, min_partial_coverage=0.90,
-        include_best_discards=True):
+        include_best_discards=True, workers=0):
     """Optional weighted/partial native two-ply frontier."""
     if _rust_weighted_two_ply_frontier is None or _FORCE_PY:
         return None
@@ -473,6 +473,7 @@ def weighted_two_ply_frontier(
         roots, root_shantens, visible, legal_masks, locked, frozen,
         node_budget, float(soft_budget_ms), float(hard_budget_ms),
         cache_capacity, float(min_partial_coverage), include_best_discards,
+        int(workers),
     )
 
 

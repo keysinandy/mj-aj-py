@@ -23,9 +23,11 @@ type ShantenCacheKey = ([i32; 34], i32);
 type FutureCacheKey = ([i32; 34], [i32; 34], i32);
 type UkeireCacheKey = ([i32; 34], [i32; 34], i32);
 const LEGACY_TWO_PLY_KERNEL_VERSION: &str = "rust-legacy-two-ply-v1";
-const WEIGHTED_TWO_PLY_KERNEL_VERSION: &str = "rust-weighted-two-ply-v1";
+const WEIGHTED_TWO_PLY_KERNEL_VERSION: &str = "rust-weighted-two-ply-v2";
 const WORK_BUDGET_EXCEEDED: &str = "work_budget_exceeded";
 const HARD_DEADLINE_EXCEEDED: &str = "hard_deadline";
+const STAGE_B_INTERNAL_ERROR: &str = "stage_b_internal_error";
+const STAGE_B_WORKER_FAILED: &str = "stage_b_worker_failed";
 const DEADLINE_RESERVE_MS: f64 = 2.0;
 
 #[derive(Clone)]
@@ -68,6 +70,23 @@ struct SearchCounters {
     shanten_cache_misses: i64,
     ukeire_cache_hits: i64,
     ukeire_cache_misses: i64,
+}
+
+impl SearchCounters {
+    /// Sum another set of counters into this one.  Integer sums are
+    /// order-independent, so parallel workers aggregate to the same totals as
+    /// the sequential path.
+    fn merge(&mut self, other: &SearchCounters) {
+        self.root_candidates += other.root_candidates;
+        self.draw_nodes += other.draw_nodes;
+        self.child_nodes += other.child_nodes;
+        self.shanten_calls += other.shanten_calls;
+        self.ukeire_calls += other.ukeire_calls;
+        self.shanten_cache_hits += other.shanten_cache_hits;
+        self.shanten_cache_misses += other.shanten_cache_misses;
+        self.ukeire_cache_hits += other.ukeire_cache_hits;
+        self.ukeire_cache_misses += other.ukeire_cache_misses;
+    }
 }
 
 /// 未分配自然牌张数 → 该侧最多还能节省的向听数(保守下界,Python
@@ -1282,17 +1301,168 @@ type WeightedRootRow = (
     bool,
     (i64, i64, i64, i64, i64, i64),
     Vec<WeightedDrawRow>,
-    (i64, i64, i64, i64, i64, i64, i64, i64, i64),
+    (i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64),
     i64,
     String,
 );
+
+/// One Stage B work unit: child ukeire for a single ``(root, draw)`` pair,
+/// using the best-shanten child discards already found by Stage A.
+struct StageBUnit {
+    root_index: usize,
+    order: usize,
+    draw: usize,
+    weight: i64,
+    child_s: i32,
+    best_discards: Vec<i32>,
+}
+
+/// Result of one Stage B work unit.  ``order`` restores the Stage A row order
+/// so parallel aggregation reproduces the sequential row sequence exactly.
+struct StageBOutcome {
+    root_index: usize,
+    order: usize,
+    draw: usize,
+    weight: i64,
+    child_s: i32,
+    best_u: i64,
+    best_types: i32,
+    tied: Vec<i32>,
+}
+
+/// Resolve the Stage B worker count: explicit request, then
+/// ``MJ_KERNELS_THREADS``, then available parallelism capped at 8.  The result
+/// is clamped to the number of work units, so a single unit never spawns
+/// threads.
+fn resolve_worker_count(requested: i64, units: usize) -> usize {
+    if units <= 1 {
+        return 1;
+    }
+    let value = if requested > 0 {
+        requested as usize
+    } else {
+        std::env::var("MJ_KERNELS_THREADS")
+            .ok()
+            .and_then(|raw| raw.trim().parse::<usize>().ok())
+            .filter(|count| *count > 0)
+            .unwrap_or_else(|| {
+                std::thread::available_parallelism()
+                    .map(|count| count.get())
+                    .unwrap_or(1)
+                    .min(8)
+            })
+    };
+    value.max(1).min(units)
+}
+
+/// Deterministic abort precedence: deadline, then work budget, then whatever
+/// the first worker reported.
+fn pick_stage_b_reason(reasons: &[String]) -> Option<String> {
+    if reasons.iter().any(|reason| reason == HARD_DEADLINE_EXCEEDED) {
+        return Some(HARD_DEADLINE_EXCEEDED.to_string());
+    }
+    if reasons.iter().any(|reason| reason == WORK_BUDGET_EXCEEDED) {
+        return Some(WORK_BUDGET_EXCEEDED.to_string());
+    }
+    reasons.first().cloned()
+}
+
+/// Run Stage B units against caller-owned caches.  The sequential path passes
+/// the Stage-A-warmed caches, every worker passes its own; sharing the unit
+/// semantics keeps both paths from drifting apart.  With an atomic cursor the
+/// units are pulled dynamically, so a slow draw cannot leave a shard idle.
+#[allow(clippy::too_many_arguments)]
+fn run_stage_b_units(
+    units: &[StageBUnit],
+    cursor: Option<&std::sync::atomic::AtomicUsize>,
+    root_arrays: &[[i32; 34]],
+    visible: &[i32; 34],
+    locked: i32,
+    cache_capacity: usize,
+    work_budget: i64,
+    hard_deadline: Instant,
+    shanten_cache: &mut HashMap<ShantenCacheKey, i32>,
+    ukeire_cache: &mut HashMap<UkeireCacheKey, UkeireMetrics>,
+    counters: &mut SearchCounters,
+    outcomes: &mut Vec<StageBOutcome>,
+) -> Option<String> {
+    let mut position = 0usize;
+    loop {
+        let index = match cursor {
+            Some(cursor) => cursor.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            None => position,
+        };
+        if index >= units.len() {
+            return None;
+        }
+        position = index + 1;
+        let unit = &units[index];
+        if Instant::now() >= hard_deadline {
+            return Some(HARD_DEADLINE_EXCEEDED.to_string());
+        }
+        let mut visible_after = *visible;
+        visible_after[unit.draw] += 1;
+        let mut next_hand = root_arrays[unit.root_index];
+        next_hand[unit.draw] += 1;
+        let mut best_u = -1i64;
+        let mut best_types = 0i32;
+        let mut tied = Vec::new();
+        for &discard in &unit.best_discards {
+            if Instant::now() >= hard_deadline {
+                return Some(HARD_DEADLINE_EXCEEDED.to_string());
+            }
+            let discard = discard as usize;
+            let mut after = next_hand;
+            after[discard] -= 1;
+            let metrics = match counted_ukeire_metrics(
+                &after,
+                locked,
+                &visible_after,
+                shanten_cache,
+                ukeire_cache,
+                cache_capacity,
+                work_budget,
+                hard_deadline,
+                counters,
+            ) {
+                Ok(value) => value,
+                Err(reason) => return Some(reason),
+            };
+            if metrics.ukeire > best_u
+                || (metrics.ukeire == best_u && metrics.tile_types > best_types)
+            {
+                best_u = metrics.ukeire;
+                best_types = metrics.tile_types;
+                tied.clear();
+                tied.push(discard as i32);
+            } else if metrics.ukeire == best_u && metrics.tile_types == best_types {
+                tied.push(discard as i32);
+            }
+        }
+        if tied.is_empty() {
+            return Some(STAGE_B_INTERNAL_ERROR.to_string());
+        }
+        outcomes.push(StageBOutcome {
+            root_index: unit.root_index,
+            order: unit.order,
+            draw: unit.draw,
+            weight: unit.weight,
+            child_s: unit.child_s,
+            best_u,
+            best_types,
+            tied,
+        });
+    }
+}
 
 /// Return the staged, probability-weighted online frontier.
 ///
 /// Stage A evaluates only child shanten.  Stage B is entered only when the
 /// improvement bounds cannot decide the root, avoiding the expensive child
-/// ukeire DFS for the common easy-to-rank states.
-#[pyfunction(signature = (roots, root_shantens, visible, legal_masks, locked=0, frozen=false, node_budget=100000, soft_budget_ms=40.0, hard_budget_ms=50.0, cache_capacity=8192, min_partial_coverage=0.90, include_best_discards=true))]
+/// ukeire DFS for the common easy-to-rank states.  Stage B may run its
+/// ``(root, draw)`` units in parallel workers; the aggregation order is fixed,
+/// so the reported metrics never depend on the worker count.
+#[pyfunction(signature = (roots, root_shantens, visible, legal_masks, locked=0, frozen=false, node_budget=100000, soft_budget_ms=40.0, hard_budget_ms=50.0, cache_capacity=8192, min_partial_coverage=0.90, include_best_discards=true, workers=0))]
 fn weighted_two_ply_frontier(
     roots: Vec<Vec<i32>>,
     root_shantens: Vec<i32>,
@@ -1306,6 +1476,7 @@ fn weighted_two_ply_frontier(
     cache_capacity: i64,
     min_partial_coverage: f64,
     include_best_discards: bool,
+    workers: i64,
 ) -> PyResult<Vec<WeightedRootRow>> {
     if roots.is_empty() {
         return Err(PyValueError::new_err("roots must not be empty"));
@@ -1570,74 +1741,118 @@ fn weighted_two_ply_frontier(
     }
 
     let mut stage_b_complete = total_weight == 0;
+    let mut resolved_workers: i64 = 1;
+    let mut stage_b_entered = false;
     if stage_a_winner.is_none() && stage_a_complete && total_weight > 0 {
-        let mut stage_b_aborted = None;
-        'stage_b: for root_index in 0..root_arrays.len() {
-            let rows = accumulators[root_index].stage_a_rows.clone();
-            for (draw, weight, best_s, best_discards) in rows {
-                if Instant::now() >= hard_deadline {
-                    stage_b_aborted = Some(HARD_DEADLINE_EXCEEDED.to_string());
-                    break 'stage_b;
-                }
-                let draw = draw as usize;
-                let mut visible_after = visible;
-                visible_after[draw] += 1;
-                let mut next_hand = root_arrays[root_index];
-                next_hand[draw] += 1;
-                let mut best_u = -1i64;
-                let mut best_types = 0i32;
-                let mut tied = Vec::new();
-                for discard in best_discards {
-                    if Instant::now() >= hard_deadline {
-                        stage_b_aborted = Some(HARD_DEADLINE_EXCEEDED.to_string());
-                        break 'stage_b;
-                    }
-                    let discard = discard as usize;
-                    let mut after = next_hand;
-                    after[discard] -= 1;
-                    let metrics = match counted_ukeire_metrics(
-                        &after,
-                        locked,
-                        &visible_after,
-                        &mut shanten_cache,
-                        &mut ukeire_cache,
-                        cache_capacity,
-                        work_budget,
-                        hard_deadline,
-                        &mut counters,
-                    ) {
-                        Ok(value) => value,
-                        Err(reason) => {
-                            stage_b_aborted = Some(reason);
-                            break 'stage_b;
-                        }
-                    };
-                    if metrics.ukeire > best_u
-                        || (metrics.ukeire == best_u && metrics.tile_types > best_types)
-                    {
-                        best_u = metrics.ukeire;
-                        best_types = metrics.tile_types;
-                        tied.clear();
-                        tied.push(discard as i32);
-                    } else if metrics.ukeire == best_u && metrics.tile_types == best_types {
-                        tied.push(discard as i32);
-                    }
-                }
-                if tied.is_empty() {
-                    return Err(PyValueError::new_err("future legal discard set is empty"));
-                }
-                let accumulator = &mut accumulators[root_index];
-                accumulator.future_ukeire += weight * best_u.max(0);
-                accumulator.future_ukeire_types += weight * i64::from(best_types);
-                accumulator.draw_rows.push((
-                    draw as i32,
-                    weight,
-                    best_s,
-                    best_u.max(0),
-                    best_types,
-                    tied,
-                ));
+        stage_b_entered = true;
+        let mut units: Vec<StageBUnit> = Vec::new();
+        for (root_index, accumulator) in accumulators.iter().enumerate() {
+            for (order, (draw, weight, child_s, best_discards)) in
+                accumulator.stage_a_rows.iter().enumerate()
+            {
+                units.push(StageBUnit {
+                    root_index,
+                    order,
+                    draw: *draw as usize,
+                    weight: *weight,
+                    child_s: *child_s,
+                    best_discards: best_discards.clone(),
+                });
             }
+        }
+        // Keep the units of one draw adjacent: the swapped root/discard pair
+        // shares a child hand, so neighbours usually reuse the same worker
+        // cache even when units are handed out dynamically.
+        units.sort_by_key(|unit| (unit.draw, unit.root_index));
+        let worker_count = resolve_worker_count(workers, units.len());
+        resolved_workers = worker_count as i64;
+        let mut outcomes: Vec<StageBOutcome> = Vec::with_capacity(units.len());
+        let stage_b_aborted = if worker_count <= 1 {
+            run_stage_b_units(
+                &units,
+                None,
+                &root_arrays,
+                &visible,
+                locked,
+                cache_capacity,
+                work_budget,
+                hard_deadline,
+                &mut shanten_cache,
+                &mut ukeire_cache,
+                &mut counters,
+                &mut outcomes,
+            )
+        } else {
+            let remaining_budget = (work_budget - counters.shanten_cache_misses).max(0);
+            let root_arrays_ref: &[[i32; 34]] = &root_arrays;
+            let visible_ref: &[i32; 34] = &visible;
+            let units_ref: &[StageBUnit] = &units;
+            let cursor = std::sync::atomic::AtomicUsize::new(0);
+            let cursor_ref = &cursor;
+            let results: Vec<(Vec<StageBOutcome>, SearchCounters, Option<String>)> =
+                std::thread::scope(|scope| {
+                    let handles: Vec<_> = (0..worker_count)
+                        .map(|_| {
+                            scope.spawn(move || {
+                                let mut worker_shanten: HashMap<ShantenCacheKey, i32> =
+                                    HashMap::new();
+                                let mut worker_ukeire: HashMap<UkeireCacheKey, UkeireMetrics> =
+                                    HashMap::new();
+                                let mut worker_counters = SearchCounters::default();
+                                let mut worker_outcomes = Vec::new();
+                                let aborted = run_stage_b_units(
+                                    units_ref,
+                                    Some(cursor_ref),
+                                    root_arrays_ref,
+                                    visible_ref,
+                                    locked,
+                                    cache_capacity,
+                                    remaining_budget,
+                                    hard_deadline,
+                                    &mut worker_shanten,
+                                    &mut worker_ukeire,
+                                    &mut worker_counters,
+                                    &mut worker_outcomes,
+                                );
+                                (worker_outcomes, worker_counters, aborted)
+                            })
+                        })
+                        .collect();
+                    handles
+                        .into_iter()
+                        .map(|handle| match handle.join() {
+                            Ok(value) => value,
+                            Err(_) => (
+                                Vec::new(),
+                                SearchCounters::default(),
+                                Some(STAGE_B_WORKER_FAILED.to_string()),
+                            ),
+                        })
+                        .collect()
+                });
+            let mut reasons: Vec<String> = Vec::new();
+            for (worker_outcomes, worker_counters, aborted) in results {
+                outcomes.extend(worker_outcomes);
+                counters.merge(&worker_counters);
+                if let Some(reason) = aborted {
+                    reasons.push(reason);
+                }
+            }
+            // Workers only see their own misses, so the shared work budget is
+            // enforced once more on the aggregated total.
+            if counters.shanten_cache_misses >= work_budget {
+                reasons.push(WORK_BUDGET_EXCEEDED.to_string());
+            }
+            pick_stage_b_reason(&reasons)
+        };
+        match stage_b_aborted.as_deref() {
+            Some(STAGE_B_INTERNAL_ERROR) => {
+                return Err(PyValueError::new_err("future legal discard set is empty"))
+            }
+            Some(STAGE_B_WORKER_FAILED) => {
+                return Err(PyValueError::new_err("weighted stage B worker failed"))
+            }
+            _ => {}
         }
         if let Some(reason) = stage_b_aborted {
             for accumulator in &mut accumulators {
@@ -1650,6 +1865,21 @@ fn weighted_two_ply_frontier(
                 hard_exhausted = true;
             }
         } else {
+            outcomes.sort_by_key(|outcome| (outcome.root_index, outcome.order));
+            for outcome in outcomes {
+                let accumulator = &mut accumulators[outcome.root_index];
+                accumulator.future_ukeire += outcome.weight * outcome.best_u.max(0);
+                accumulator.future_ukeire_types +=
+                    outcome.weight * i64::from(outcome.best_types);
+                accumulator.draw_rows.push((
+                    outcome.draw as i32,
+                    outcome.weight,
+                    outcome.child_s,
+                    outcome.best_u.max(0),
+                    outcome.best_types,
+                    outcome.tied,
+                ));
+            }
             stage_b_complete = true;
         }
     }
@@ -1732,6 +1962,8 @@ fn weighted_two_ply_frontier(
                 counters.shanten_cache_misses,
                 counters.ukeire_cache_hits,
                 counters.ukeire_cache_misses,
+                resolved_workers,
+                if stage_b_entered { 1 } else { 0 },
             ),
             elapsed_us,
             accumulator.reason,

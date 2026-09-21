@@ -1,0 +1,46 @@
+{
+  "change": "legacy-two-ply-parallel-stage-b",
+  "kernel_version": "rust-weighted-two-ply-v2",
+  "benchmark": "scripts/legacy_two_ply_weighted_bench.py --states 100 --seed 0",
+  "machine_note": "本机测量期间 load average 4.9-7.1（8 核），绝对数值会随负载漂移；下表为同一会话内 workers=1 与 workers=auto 的成对对照，各跑 3 轮取中位数。相位标签修正后另跑 2 轮复核：future_shanten 计数为 0，two_ply 恒为 83（其余 17 个为 singleton/baotou 作用域，不进入搜索）。",
+  "runs_per_config": 3,
+  "workers_1": {
+    "kernel_workers": 1,
+    "complete": [81, 78, 77],
+    "fallback": [19, 22, 23],
+    "search_used_rate": [0.81, 0.78, 0.77],
+    "raw_p50_ms_median": 17.76,
+    "raw_p95_ms_median": 48.25,
+    "raw_p99_ms_median": 49.39,
+    "e2e_p50_ms_median": 20.14,
+    "e2e_p95_ms_median": 50.11,
+    "e2e_p99_ms_median": 56.22
+  },
+  "workers_auto": {
+    "kernel_workers": 8,
+    "complete": [83, 83, 83],
+    "fallback": [17, 17, 17],
+    "search_used_rate": [0.83, 0.83, 0.83],
+    "raw_p50_ms_median": 5.3,
+    "raw_p95_ms_median": 12.61,
+    "raw_p99_ms_median": 21.48,
+    "e2e_p50_ms_median": 7.32,
+    "e2e_p95_ms_median": 15.18,
+    "e2e_p99_ms_median": 30.32,
+    "fallback_breakdown": {
+      "frontier_singleton_one_ply": 16,
+      "baotou_scope": 1
+    },
+    "search_phase_counts": {"two_ply": 83, "none": 17},
+    "phase_label_check_after_fix": {
+      "runs": 2,
+      "workers_1": {"complete": [82, 80], "search_phase_counts": {"two_ply": 83, "none": 17}},
+      "workers_auto": {"complete": [82, 83], "search_phase_counts": {"two_ply": 83, "none": 17}},
+      "note": "修正前这些 Stage B 中断会被报成 future_shanten；现在只有 Stage A 被截断才报告该相位。"
+    }
+  },
+  "parity_evidence": {
+    "workers_1_vs_4_exact_profile": "selected/future 指标/best discard 行/Stage A 计数一致；仅缓存命中与派生调用计数不同（tests/test_legacy_weighted_frontier.py::test_parallel_workers_preserve_exact_result）",
+    "determinism": "同 workers 重复执行 selected/future 指标/best discard 行完全一致（test_parallel_workers_are_deterministic）"
+  }
+}

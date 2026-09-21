@@ -23,6 +23,28 @@ except ImportError:  # pragma: no cover
     from test_legacy_eval import _seq100_game
 
 
+_TIMING_FIELDS = ("elapsed_ms", "future_elapsed_ms")
+_COUNTER_FIELDS = ("shanten_cache_hits", "shanten_cache_misses",
+                   "ukeire_cache_hits", "ukeire_cache_misses",
+                   "future_cache_hits", "workers", "shanten_calls",
+                   "ukeire_calls")
+
+
+def _stable_payload(value, *, strip_counters):
+    """Drop timing/cache-hit fields that may vary between runs or worker counts."""
+    if isinstance(value, dict):
+        return {
+            key: _stable_payload(item, strip_counters=strip_counters)
+            for key, item in value.items()
+            if key not in _TIMING_FIELDS
+            and not (strip_counters and key in _COUNTER_FIELDS)
+        }
+    if isinstance(value, list):
+        return [_stable_payload(item, strip_counters=strip_counters)
+                for item in value]
+    return value
+
+
 @unittest.skipUnless(
     WEIGHTED_TWO_PLY_KERNEL_VERSION,
     "mj_kernels weighted_two_ply_frontier is not installed",
@@ -300,6 +322,111 @@ class TestWeightedTwoPlyFrontier(unittest.TestCase):
         self.assertEqual(action, info["selected"])
         self.assertEqual(info["profile"], "legacyV2")
         self.assertEqual(info["mode"], "weighted")
+
+    def test_parallel_workers_preserve_exact_result(self):
+        action_one, one = choose_discard(
+            _seq100_game(), 0, return_info=True,
+            profile=self._exact_weighted(workers=1))
+        action_many, many = choose_discard(
+            _seq100_game(), 0, return_info=True,
+            profile=self._exact_weighted(workers=4))
+        self.assertEqual(self._exact_weighted(workers=1).as_json()["workers"], 1)
+        self.assertEqual(action_one, action_many)
+        self.assertEqual(one["selected"], many["selected"])
+        self.assertEqual(
+            _stable_payload(one["candidates"], strip_counters=True),
+            _stable_payload(many["candidates"], strip_counters=True))
+        self.assertEqual(one["search_metrics"]["workers"], 1)
+        self.assertGreaterEqual(many["search_metrics"]["workers"], 2)
+        # Stage A counters are order-independent; Stage B call counts depend on
+        # cache hits, which per-worker caches may resolve differently.
+        for key in ("root_candidates", "draw_nodes", "child_nodes"):
+            self.assertEqual(one["search_metrics"][key],
+                             many["search_metrics"][key])
+
+    def test_parallel_workers_are_deterministic(self):
+        profile = self._exact_weighted(workers=4)
+        _action, first = choose_discard(
+            _seq100_game(), 0, return_info=True, profile=profile)
+        _action, second = choose_discard(
+            _seq100_game(), 0, return_info=True, profile=profile)
+        self.assertEqual(first["selected"], second["selected"])
+        self.assertEqual(
+            _stable_payload(first["candidates"], strip_counters=True),
+            _stable_payload(second["candidates"], strip_counters=True))
+        self.assertEqual(
+            _stable_payload(first["search_metrics"], strip_counters=True),
+            _stable_payload(second["search_metrics"], strip_counters=True))
+
+    def test_parallel_stage_b_deadline_aborts_transactionally(self):
+        profile = self._exact_weighted(
+            workers=4, soft_budget_ms=0.0, hard_budget_ms=0.0)
+        action, info = choose_discard(
+            _seq100_game(), 0, return_info=True, profile=profile)
+        self.assertFalse(info["complete"])
+        self.assertFalse(info["partial_accepted"])
+        self.assertEqual(info["level"], "legacy")
+        self.assertEqual(action, info["legacy_best"])
+        self.assertFalse(info["search_used"])
+
+    def test_phase_label_separates_stage_a_cutoff_from_aborted_stage_b(self):
+        game = _seq100_game()
+        locked = len(game.melds[0])
+        visible = tuple(game.visible_counts(0))
+        candidates = []
+        best_s = None
+        for tile, count in enumerate(game.hands[0]):
+            if count <= 0:
+                continue
+            hand = list(game.hands[0])
+            hand[tile] -= 1
+            value = shanten(hand, locked)
+            if best_s is None or value < best_s:
+                best_s, candidates = value, []
+            if value == best_s:
+                candidates.append(LegacyRootCandidate(
+                    tile=tile, hand=tuple(hand), shanten=value))
+        _enriched, frontier, _diagnostics = _root_features(
+            candidates, locked, visible)
+        frontier, _diagnostics = _limit_weighted_frontier(
+            frontier, _diagnostics, 0)
+        roots = [list(root.hand) for root in frontier]
+        shantens = [root.shanten for root in frontier]
+        masks = _native_legal_masks(frontier, visible, False)
+
+        def rows(budget):
+            return weighted_two_ply_frontier(
+                roots, shantens, list(visible), masks, locked, False,
+                budget, 10000.0, 10000.0, 8192, 0.0, True)
+
+        # 200 次未缓存 shanten 不足以完成 Stage A；800 次会完成 Stage A 后
+        # 在 Stage B 撞上同一个工作预算。
+        stage_a_cut = rows(200)
+        stage_b_cut = rows(800)
+        self.assertTrue(all(row[5][10] == 0 for row in stage_a_cut))
+        self.assertTrue(all(row[7] == "work_budget_exceeded"
+                            for row in stage_a_cut))
+        self.assertTrue(all(row[5][10] == 1 for row in stage_b_cut))
+        self.assertTrue(all(row[7] == "work_budget_exceeded"
+                            for row in stage_b_cut))
+        self.assertTrue(all(row[3][0] == row[3][1] for row in stage_b_cut))
+
+        stage_a_profile = self._exact_weighted(
+            node_budget=200, allow_partial=True, min_partial_coverage=0.9)
+        _action, stage_a_info = choose_discard(
+            _seq100_game(), 0, return_info=True, profile=stage_a_profile)
+        self.assertEqual(stage_a_info["search_attempt_phase"], "future_shanten")
+        self.assertFalse(stage_a_info["search_used"])
+
+        stage_b_profile = self._exact_weighted(
+            node_budget=800, allow_partial=True, min_partial_coverage=0.9)
+        _action, stage_b_info = choose_discard(
+            _seq100_game(), 0, return_info=True, profile=stage_b_profile)
+        self.assertEqual(stage_b_info["search_attempt_phase"], "two_ply")
+        self.assertFalse(stage_b_info["search_used"])
+        self.assertFalse(stage_b_info["partial_accepted"])
+        self.assertEqual(stage_b_info["fallback_reason"],
+                         "partial_not_acceptable")
 
     def test_default_route_uses_legacy_v2(self):
         game = _seq100_game()

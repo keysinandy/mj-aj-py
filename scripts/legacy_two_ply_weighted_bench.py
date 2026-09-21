@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 import json
+import os
 import statistics
 import time
 
@@ -71,6 +72,7 @@ def _summary(durations, complete, partial, fallback, search_used,
         "search_used": search_used,
         "search_used_rate": (search_used / max(1, len(durations))),
         "search_phase_counts": dict(phase_counts),
+        "workers": max((item["workers"] for item in metrics), default=0),
         "p50_ms": _quantile(durations, 0.50),
         "p90_ms": _quantile(durations, 0.90),
         "p95_ms": _quantile(durations, 0.95),
@@ -126,6 +128,7 @@ def run(states, seed0, profile):
             "ukeire_calls": int(search.get("ukeire_calls") or 0),
             "child_nodes": int(search.get("child_nodes") or 0),
             "shanten_cache_hits": int(search.get("shanten_cache_hits") or 0),
+            "workers": int(search.get("workers") or 0),
         })
 
         try:
@@ -137,7 +140,7 @@ def run(states, seed0, profile):
                 [root.shanten for root in frontier], list(visible), masks,
                 locked, frozen, profile.node_budget, profile.soft_budget_ms,
                 profile.hard_budget_ms, profile.cache_capacity,
-                profile.min_partial_coverage, False)
+                profile.min_partial_coverage, False, profile.workers)
             raw_durations.append((time.perf_counter() - raw_started) * 1000.0)
         except Exception as exc:
             reasons[f"raw_{type(exc).__name__}"] += 1
@@ -160,8 +163,16 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--states", type=int, default=100)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--workers", type=int, default=0,
+                        help=("Stage B worker count (0 = kernel default). "
+                              "The end-to-end path is pinned through "
+                              "MJ_KERNELS_THREADS because the bot builds its "
+                              "own profile."))
     args = parser.parse_args()
-    profile = LegacyTwoPlyProfile.weighted_online(kernel="rust")
+    if args.workers > 0:
+        os.environ["MJ_KERNELS_THREADS"] = str(args.workers)
+    profile = LegacyTwoPlyProfile.weighted_online(kernel="rust",
+                                                  workers=args.workers)
     print(json.dumps(run(args.states, args.seed, profile),
                      ensure_ascii=False, indent=2))
 

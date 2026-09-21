@@ -38,6 +38,10 @@ LEGACY_V2_PROFILE_VERSION = "legacyV2"
 WEIGHTED_PROFILE_VERSION = LEGACY_V2_PROFILE_VERSION
 WEIGHTED_SORT_VERSION = "weighted-frontier-v1"
 WEIGHTED_DEADLINE_RESERVE_MS = 2.0
+# The weighted adapter passes the Stage B worker count, so it needs the kernel
+# revision that accepts it.  An older wheel falls back instead of raising a
+# TypeError at the FFI boundary.
+WEIGHTED_TWO_PLY_KERNEL_REQUIRED = "rust-weighted-two-ply-v2"
 LEGACY_V2_EVALUATORS = (
     LEGACY_V2_PROFILE_VERSION,
     "legacy-v2",
@@ -83,6 +87,7 @@ class LegacyTwoPlyProfile:
     allow_partial: bool = False
     min_partial_coverage: float = 1.0
     lazy_child_ukeire: bool = True
+    workers: int = 0
     enabled: bool = True
 
     def __post_init__(self):
@@ -106,6 +111,8 @@ class LegacyTwoPlyProfile:
             raise ValueError("soft/hard budgets must be finite and ordered")
         if int(self.max_frontier_candidates) < 0:
             raise ValueError("max_frontier_candidates must be non-negative")
+        if int(self.workers) < 0:
+            raise ValueError("workers must be non-negative")
         coverage = float(self.min_partial_coverage)
         if not math.isfinite(coverage) or not 0 <= coverage <= 1:
             raise ValueError("min_partial_coverage must be between 0 and 1")
@@ -116,6 +123,7 @@ class LegacyTwoPlyProfile:
         object.__setattr__(self, "hard_budget_ms", hard)
         object.__setattr__(self, "max_frontier_candidates",
                            int(self.max_frontier_candidates))
+        object.__setattr__(self, "workers", int(self.workers))
         object.__setattr__(self, "allow_partial", bool(self.allow_partial))
         object.__setattr__(self, "min_partial_coverage", coverage)
         object.__setattr__(self, "lazy_child_ukeire",
@@ -144,6 +152,7 @@ class LegacyTwoPlyProfile:
             "allow_partial": True,
             "min_partial_coverage": 0.90,
             "lazy_child_ukeire": True,
+            "workers": 0,
         }
         values.update(overrides)
         return cls(**values)
@@ -192,6 +201,7 @@ class LegacyTwoPlyProfile:
             "allow_partial": self.allow_partial,
             "min_partial_coverage": self.min_partial_coverage,
             "lazy_child_ukeire": self.lazy_child_ukeire,
+            "workers": self.workers,
         })
         result["fingerprint"] = self.fingerprint
         return result
@@ -933,6 +943,7 @@ def _weighted_native_future_for_frontier(
         roots, root_shantens, list(visible), legal_masks, locked, frozen,
         profile.node_budget, profile.soft_budget_ms, profile.hard_budget_ms,
         profile.cache_capacity, profile.min_partial_coverage, True,
+        profile.workers,
     )
     elapsed_ms = (time.monotonic() - started) * 1000.0
     if rows is None:
@@ -953,18 +964,20 @@ def _weighted_native_future_for_frontier(
         if int(index) != expected_index:
             raise _NativeKernelInvalid("weighted_native_root_order_invalid")
         if (not isinstance(metrics, (list, tuple)) or len(metrics) != 6 or
-                not isinstance(counters, (list, tuple)) or len(counters) != 9):
+                not isinstance(counters, (list, tuple)) or len(counters) != 11):
             raise _NativeKernelInvalid("weighted_native_metrics_shape_invalid")
         (covered, total, native_improve, native_maintain,
          native_ukeire, native_types) = (int(value) for value in metrics)
         counter_names = (
             "root_candidates", "draw_nodes", "child_nodes", "shanten_calls",
             "ukeire_calls", "shanten_cache_hits", "shanten_cache_misses",
-            "ukeire_cache_hits", "ukeire_cache_misses",
+            "ukeire_cache_hits", "ukeire_cache_misses", "workers",
+            "stage_b_entered",
         )
         search_metrics = {
             name: int(value) for name, value in zip(counter_names, counters)
         }
+        stage_b_entered = bool(search_metrics["stage_b_entered"])
         if any(value < 0 for value in (
                 covered, total, native_improve, native_maintain,
                 native_ukeire, native_types,
@@ -979,6 +992,9 @@ def _weighted_native_future_for_frontier(
         if not isinstance(draw_rows, (list, tuple)):
             raise _NativeKernelInvalid("weighted_native_draw_rows_invalid")
 
+        # ``stage_a_only`` means Stage A proved the winner and Stage B was
+        # skipped on purpose.  ``stage_a_shaped`` only says the draw rows carry
+        # the sentinel columns, which is also what an aborted Stage B returns.
         stage_a_only = str(reason or "") == "future_ukeire_skipped"
         sentinel_flags = []
         for raw_draw in draw_rows:
@@ -987,8 +1003,12 @@ def _weighted_native_future_for_frontier(
             sentinel_flags.append(int(raw_draw[3]) == -1 and int(raw_draw[4]) == -1)
         if sentinel_flags and any(flag != sentinel_flags[0] for flag in sentinel_flags):
             raise _NativeKernelInvalid("weighted_native_draw_stage_mixed")
-        stage_a_only = stage_a_only or (bool(sentinel_flags) and all(sentinel_flags))
-        if complete and stage_a_only:
+        stage_a_shaped = bool(sentinel_flags) and all(sentinel_flags)
+        if stage_a_only and sentinel_flags and not stage_a_shaped:
+            raise _NativeKernelInvalid("weighted_native_stage_a_row_invalid")
+        if stage_a_only and not stage_b_entered:
+            raise _NativeKernelInvalid("weighted_native_stage_a_phase_invalid")
+        if complete and stage_a_shaped:
             raise _NativeKernelInvalid("weighted_native_stage_a_marked_complete")
 
         seen_draws = set()
@@ -1006,14 +1026,14 @@ def _weighted_native_future_for_frontier(
             child_types = int(child_types)
             if (drawn not in expected_draws or drawn in seen_draws or
                     weight != remaining[drawn] or
-                    (stage_a_only and (child_u != -1 or child_types != -1)) or
-                    (not stage_a_only and (child_u < 0 or child_types < 0)) or
+                    (stage_a_shaped and (child_u != -1 or child_types != -1)) or
+                    (not stage_a_shaped and (child_u < 0 or child_types < 0)) or
                     not isinstance(tied, (list, tuple)) or not tied):
                 raise _NativeKernelInvalid("weighted_native_draw_row_invalid")
             seen_draws.add(drawn)
             next_hand = list(root.hand)
             next_hand[drawn] += 1
-            if stage_a_only:
+            if stage_a_shaped:
                 if child_s < root.shanten:
                     improve += weight
                 else:
@@ -1043,16 +1063,16 @@ def _weighted_native_future_for_frontier(
             weighted_ukeire += weight * child_u
             weighted_types += weight * child_types
 
-        complete_value = bool(complete) and not stage_a_only
+        complete_value = bool(complete) and not stage_a_shaped
         if complete_value:
             if seen_draws != expected_draws or covered != total:
                 raise _NativeKernelInvalid("weighted_native_complete_coverage")
         elif covered != sum(remaining[draw] for draw in seen_draws):
             raise _NativeKernelInvalid("weighted_native_partial_coverage")
         if (improve != native_improve or maintain != native_maintain or
-                (not stage_a_only and weighted_ukeire != native_ukeire) or
-                (not stage_a_only and weighted_types != native_types) or
-                (stage_a_only and (native_ukeire != 0 or native_types != 0))):
+                (not stage_a_shaped and weighted_ukeire != native_ukeire) or
+                (not stage_a_shaped and weighted_types != native_types) or
+                (stage_a_shaped and (native_ukeire != 0 or native_types != 0))):
             raise _NativeKernelInvalid("weighted_native_metric_mismatch")
         total_weight = total
         mean_denominator = total if complete_value else covered
@@ -1062,21 +1082,21 @@ def _weighted_native_future_for_frontier(
             future_improve_weight=improve,
             future_improve_lower=improve,
             future_improve_upper=improve + max(0, total - covered),
-            future_ukeire=(None if stage_a_only else weighted_ukeire),
+            future_ukeire=(None if stage_a_shaped else weighted_ukeire),
             future_ukeire_mean=(
-                None if stage_a_only else
+                None if stage_a_shaped else
                 (float(weighted_ukeire) / float(mean_denominator)
                  if mean_denominator else None)),
             future_ukeire_mean_denominator=(
-                None if stage_a_only else mean_denominator),
-            future_ukeire_types=(None if stage_a_only else weighted_types),
+                None if stage_a_shaped else mean_denominator),
+            future_ukeire_types=(None if stage_a_shaped else weighted_types),
             future_ukeire_types_mean=(
-                None if stage_a_only else
+                None if stage_a_shaped else
                 (float(weighted_types) / float(mean_denominator)
                  if mean_denominator else None)),
             future_ukeire_skipped=stage_a_only,
             best_discards=(
-                () if stage_a_only else tuple(sorted(best_counts.items()))),
+                () if stage_a_shaped else tuple(sorted(best_counts.items()))),
             nodes=search_metrics["child_nodes"],
             cache_hits=search_metrics["shanten_cache_hits"],
             elapsed_ms=float(elapsed_us) / 1000.0,
@@ -1086,14 +1106,16 @@ def _weighted_native_future_for_frontier(
                       if total_weight else 1.0),
             search_metrics={
                 **search_metrics,
-                "search_phase": "future_shanten" if stage_a_only else "two_ply",
+                "search_phase": ("two_ply" if stage_b_entered
+                                 else "future_shanten"),
             },
-            missing=("future_ukeire_not_evaluated",) if stage_a_only else (),
+            missing=("future_ukeire_not_evaluated",) if stage_a_shaped else (),
             fallback_reason=(str(reason) if reason else None),
         )
         all_metrics = {
             **search_metrics,
-            "search_phase": "future_shanten" if stage_a_only else "two_ply",
+            "search_phase": ("two_ply" if stage_b_entered
+                             else "future_shanten"),
         }
     return values, all_metrics, elapsed_ms
 
@@ -1228,9 +1250,15 @@ def _weighted_evaluation(
     else:
         available = (weighted_two_ply_frontier is not None and
                      WEIGHTED_TWO_PLY_KERNEL_VERSION is not None)
-        if not available:
-            fallback_reason = "native_weighted_kernel_unavailable"
+        if (available and WEIGHTED_TWO_PLY_KERNEL_VERSION
+                != WEIGHTED_TWO_PLY_KERNEL_REQUIRED):
+            available = False
+            fallback_reason = "native_weighted_kernel_version_mismatch"
             kernel_fallback_reason = fallback_reason
+        if not available:
+            if fallback_reason is None:
+                fallback_reason = "native_weighted_kernel_unavailable"
+                kernel_fallback_reason = fallback_reason
         else:
             actual_kernel = "rust"
             kernel_version = WEIGHTED_TWO_PLY_KERNEL_VERSION
