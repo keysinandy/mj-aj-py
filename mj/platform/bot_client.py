@@ -200,6 +200,22 @@ def _compact_evaluation(evaluation, limit=3):
     return data
 
 
+def _meta_evaluator_kernel(evaluator):
+    """记录到 meta 的实际内核版本标签(与 mj.shanten 上报保持一致)。
+
+    Rust 内核升级会改版本串(2026-09-21 起 weighted 为 v2),记录必须跟着走,
+    否则离线分析会把升级/降级读错;纯 Python 或强制回退时给显式回退名。
+    """
+    from mj.legacy_eval import LEGACY_V2_PROFILE_VERSION
+    from mj.shanten import (LEGACY_TWO_PLY_KERNEL_VERSION,
+                            WEIGHTED_TWO_PLY_KERNEL_VERSION)
+    if evaluator == LEGACY_V2_PROFILE_VERSION:
+        return WEIGHTED_TWO_PLY_KERNEL_VERSION or "python-fallback"
+    if evaluator in ("legacy-two-ply-v1", "legacy_v1", "legacy-v1"):
+        return LEGACY_TWO_PLY_KERNEL_VERSION or "python-frontier-v1"
+    return None
+
+
 class BotClient:
     """一个令牌一个实例;工作线程并发打 M 场(decide 调用串行加锁)。"""
 
@@ -2735,7 +2751,8 @@ class BotClient:
                         v1_profile = LegacyTwoPlyProfile.default()
                         meta_kwargs["evaluator_fingerprint"] = \
                             v1_profile.fingerprint
-                        meta_kwargs["evaluator_kernel"] = "python-frontier-v1"
+                        meta_kwargs["evaluator_kernel"] = \
+                            _meta_evaluator_kernel(evaluator)
                     elif evaluator in ("legacyV2", "legacy-v2",
                                         "weighted-two-ply-frontier-v1",
                                         "weighted_two_ply",
@@ -2745,7 +2762,7 @@ class BotClient:
                         meta_kwargs["evaluator_fingerprint"] = \
                             weighted_profile.fingerprint
                         meta_kwargs["evaluator_kernel"] = \
-                            "rust-weighted-two-ply-v1"
+                            _meta_evaluator_kernel(evaluator)
                     else:
                         from mj.hand_eval import profile_for
                         meta_kwargs["evaluator_fingerprint"] = \

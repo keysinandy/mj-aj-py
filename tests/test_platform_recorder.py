@@ -9,6 +9,7 @@ import os
 import tempfile
 import threading
 import unittest
+from unittest import mock
 
 from mj.platform.api import ApiError
 from mj.platform.bot_client import BotClient
@@ -17,7 +18,7 @@ from mj.platform.synth import synth_game, view_for
 from test_platform_client import FakeApi
 
 
-def _drive(seat, seed, recorder, api=None):
+def _drive(seat, seed, recorder, api=None, bot_evaluator=None):
     """打一局 synth 对局并落日志,返回 (FakeApi, stats, 相关决策点, res)。"""
     res = synth_game(seed)
     fake = api(res, seat) if api else FakeApi(res, seat)
@@ -30,6 +31,9 @@ def _drive(seat, seed, recorder, api=None):
         d = next(it)
         fake.deciding(d)          # 通知夹具:该决策点已消费
         return d["action"]
+
+    if bot_evaluator is not None:
+        decide.bot_evaluator = bot_evaluator
 
     bot = BotClient(fake, f"bot{seat}", decide, log=lambda m: None,
                     window_wait=0, idle_sleep=0, recorder=recorder)
@@ -323,6 +327,38 @@ class TestRecorderUnits(unittest.TestCase):
             self.assertEqual(len(lines), 1600)
             recs = [json.loads(l) for l in lines]
             self.assertEqual(len({r["i"] for r in recs}), 200)
+
+
+class TestMetaEvaluatorKernelLabel(unittest.TestCase):
+    """meta.evaluator_kernel 必须等于当前环境实际生效的内核版本串。
+
+    2026-09-21:rust 侧把 weighted 内核升到 v2,而 bot_client 里写死的
+    ``rust-weighted-two-ply-v1`` 标签没跟着改,导致 30 份记录的内核标识漂移。
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.rec = Recorder(root=self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+    def test_weighted_batch_meta_matches_installed_kernel(self):
+        import mj.shanten as shanten
+        for seat in (0, 1):
+            _drive(seat, 0, self.rec, bot_evaluator="legacyV2")
+            meta = _read_all(self.rec, "g1", f"bot{seat}")[0]
+            self.assertEqual(meta["type"], "meta")
+            self.assertEqual(
+                meta["evaluator_kernel"],
+                shanten.WEIGHTED_TWO_PLY_KERNEL_VERSION or "python-fallback")
+            self.assertEqual(meta["evaluator_profile"], "legacyV2")
+
+    def test_missing_kernel_is_labelled_as_fallback(self):
+        import mj.shanten as shanten
+        with mock.patch.object(
+                shanten, "WEIGHTED_TWO_PLY_KERNEL_VERSION", None):
+            _drive(0, 1, self.rec, bot_evaluator="legacyV2")
+            meta = _read_all(self.rec, "g1", "bot0")[0]
+            self.assertEqual(meta["evaluator_kernel"], "python-fallback")
 
 
 if __name__ == "__main__":

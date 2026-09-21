@@ -8,8 +8,10 @@ decide 用记录动作,逐点断言镜像构建的合法集包含该动作。
 
 import time
 import unittest
+from unittest.mock import patch
 
-from mj.platform.bot_client import BotClient
+import mj.shanten as shanten
+from mj.platform.bot_client import BotClient, _meta_evaluator_kernel
 from mj.platform.synth import synth_game, view_for
 
 # 夹具放行上限:客户端在某决策点连续 N 次未决策(例如其镜像判定无合法选项)
@@ -145,7 +147,7 @@ class FakeApi:
         return {}
 
 
-def _drive(seat, seed=0, ycbk=False):
+def _drive(seat, seed=0, ycbk=False, recorder=None, bot_evaluator=None):
     res = synth_game(seed, you_cai_bi_kao=ycbk)
     fake = FakeApi(res, seat)
     # bot 会实际决策的点:弃牌决策 + 有非过选项的反应窗(过窗无选项时
@@ -165,8 +167,11 @@ def _drive(seat, seed=0, ycbk=False):
         calls.append(act)
         return act
 
+    if bot_evaluator is not None:
+        decide.bot_evaluator = bot_evaluator
+
     bot = BotClient(fake, f"bot{seat}", decide, log=lambda m: None,
-                    window_wait=0, idle_sleep=0)
+                    window_wait=0, idle_sleep=0, recorder=recorder)
     stats = bot.run(max_games=1)
     return fake, stats, relevant, calls
 
@@ -219,6 +224,32 @@ class TestBotClient(unittest.TestCase):
                 self.assertTrue(payload.get("tile"))
             if payload["action"] == "chi":
                 self.assertEqual(len(payload["tiles"]), 2)
+
+
+class TestMetaEvaluatorKernel(unittest.TestCase):
+    """meta.evaluator_kernel 必须上报实际生效的内核版本,不能写死标签。"""
+
+    def test_weighted_reports_installed_kernel_version(self):
+        self.assertEqual(
+            _meta_evaluator_kernel("legacyV2"),
+            shanten.WEIGHTED_TWO_PLY_KERNEL_VERSION or "python-fallback")
+
+    def test_legacy_two_ply_reports_installed_kernel_version(self):
+        self.assertEqual(
+            _meta_evaluator_kernel("legacy-two-ply-v1"),
+            shanten.LEGACY_TWO_PLY_KERNEL_VERSION or "python-frontier-v1")
+
+    def test_degraded_runs_report_explicit_fallbacks(self):
+        with patch.object(shanten, "WEIGHTED_TWO_PLY_KERNEL_VERSION", None), \
+                patch.object(shanten, "LEGACY_TWO_PLY_KERNEL_VERSION", None):
+            self.assertEqual(_meta_evaluator_kernel("legacyV2"),
+                             "python-fallback")
+            self.assertEqual(_meta_evaluator_kernel("legacy_v1"),
+                             "python-frontier-v1")
+
+    def test_other_evaluators_have_no_kernel_label(self):
+        self.assertIsNone(_meta_evaluator_kernel("shape-v1"))
+        self.assertIsNone(_meta_evaluator_kernel("legacy"))
 
 
 if __name__ == "__main__":
