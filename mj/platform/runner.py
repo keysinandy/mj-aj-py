@@ -240,6 +240,11 @@ def main(argv=None):
                     help="trace 侧车目录(默认跟随 local/games)")
     args = ap.parse_args(argv)
     cfg = load_config(args.config)
+    # 启动诊断:缺原生 weighted 内核时 legacyV2 会走 legacy 键,必须在
+    # 启动时显式可见,而不是只在决策记录里可查。
+    from ..shanten import format_kernel_diagnostic
+
+    print(format_kernel_diagnostic(), flush=True)
     results = run_room(cfg, strategy=args.strategy, ckpt=args.ckpt,
                        games=args.games, dump=args.dump,
                        record=not args.no_recorder,

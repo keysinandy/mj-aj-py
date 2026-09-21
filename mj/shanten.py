@@ -364,6 +364,50 @@ WEIGHTED_TWO_PLY_KERNEL_VERSION = (
 )
 
 
+def kernel_runtime_diagnostic():
+    """启动诊断:实际内核、版本与降级影响面。
+
+    缺原生 weighted 内核时 LegacyV2 会静默退回 legacy 键,因此运行侧
+    (clientd / match runner)必须在启动时显式报告一次,而不是只在个别
+    决策字段里可查。
+    """
+    forced_python = _FORCE_PY
+    shanten_rust = _rust_shanten is not None and not forced_python
+    weighted_rust = (WEIGHTED_TWO_PLY_KERNEL_VERSION is not None
+                     and not forced_python)
+    if forced_python:
+        reason = "MJ_KERNELS=python"
+    elif _rust_shanten is None or _rust_ukeire is None:
+        reason = "mj_kernels_missing"
+    elif not weighted_rust:
+        reason = "weighted_kernel_missing"
+    else:
+        reason = None
+    degraded = not weighted_rust
+    return {
+        "shanten_kernel": "rust" if shanten_rust else "python",
+        "weighted_kernel": "rust" if weighted_rust else "unavailable",
+        "weighted_kernel_version": WEIGHTED_TWO_PLY_KERNEL_VERSION,
+        "legacy_two_ply_kernel_version": LEGACY_TWO_PLY_KERNEL_VERSION,
+        "baotou_kernel": "rust" if BAOTOU_UKEIRE_RUST else "python",
+        "degraded": degraded,
+        "reason": reason,
+        "impact": ("legacyV2 weighted 前瞻不可用,决策将走 legacy 键"
+                   if degraded else None),
+    }
+
+
+def format_kernel_diagnostic():
+    """单行启动诊断文本。"""
+    info = kernel_runtime_diagnostic()
+    state = "降级" if info["degraded"] else "正常"
+    detail = (f"weighted={info['weighted_kernel']}"
+              f"({info['weighted_kernel_version'] or 'n/a'})")
+    if info["reason"]:
+        detail += f" reason={info['reason']}"
+    return f"[kernel] {state} {detail} shanten={info['shanten_kernel']}"
+
+
 def shanten(counts, locked=0):
     """向听数(调度器:Rust 内核优先,回退 shanten_py)。"""
     if _rust_shanten is not None and not _FORCE_PY:

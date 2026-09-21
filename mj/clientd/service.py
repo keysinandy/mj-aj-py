@@ -357,6 +357,9 @@ class Service:
     def start(self):
         if self._running:
             return
+        from ..shanten import format_kernel_diagnostic
+
+        print(format_kernel_diagnostic(), flush=True)
         self.ws = WsServer(self.host, self.ws_handler, self.ws_port)
         self.ws.start()
         self.http = ControlServer(self.host, self.router, self.http_port,

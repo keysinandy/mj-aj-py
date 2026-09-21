@@ -96,6 +96,9 @@ class LegacyTwoPlyProfile:
     min_partial_coverage: float = 1.0
     lazy_child_ukeire: bool = True
     workers: int = 0
+    shape_guard_enabled: bool = False
+    shape_guard_ukeire_slack: int = 1
+    shape_guard_shape_delta: int = 8
     enabled: bool = True
 
     def __post_init__(self):
@@ -121,6 +124,10 @@ class LegacyTwoPlyProfile:
             raise ValueError("max_frontier_candidates must be non-negative")
         if int(self.workers) < 0:
             raise ValueError("workers must be non-negative")
+        if int(self.shape_guard_ukeire_slack) < 0:
+            raise ValueError("shape_guard_ukeire_slack must be non-negative")
+        if int(self.shape_guard_shape_delta) < 0:
+            raise ValueError("shape_guard_shape_delta must be non-negative")
         coverage = float(self.min_partial_coverage)
         if not math.isfinite(coverage) or not 0 <= coverage <= 1:
             raise ValueError("min_partial_coverage must be between 0 and 1")
@@ -132,6 +139,12 @@ class LegacyTwoPlyProfile:
         object.__setattr__(self, "max_frontier_candidates",
                            int(self.max_frontier_candidates))
         object.__setattr__(self, "workers", int(self.workers))
+        object.__setattr__(self, "shape_guard_enabled",
+                           bool(self.shape_guard_enabled))
+        object.__setattr__(self, "shape_guard_ukeire_slack",
+                           int(self.shape_guard_ukeire_slack))
+        object.__setattr__(self, "shape_guard_shape_delta",
+                           int(self.shape_guard_shape_delta))
         object.__setattr__(self, "allow_partial", bool(self.allow_partial))
         object.__setattr__(self, "min_partial_coverage", coverage)
         object.__setattr__(self, "lazy_child_ukeire",
@@ -213,6 +226,9 @@ class LegacyTwoPlyProfile:
             not self.allow_partial and
             self.min_partial_coverage == 1.0 and
             self.lazy_child_ukeire and
+            not self.shape_guard_enabled and
+            self.shape_guard_ukeire_slack == 1 and
+            self.shape_guard_shape_delta == 8 and
             self.soft_budget_ms == self.time_budget_ms and
             self.hard_budget_ms == self.time_budget_ms
         )
@@ -225,6 +241,9 @@ class LegacyTwoPlyProfile:
                 "allow_partial": self.allow_partial,
                 "min_partial_coverage": self.min_partial_coverage,
                 "lazy_child_ukeire": self.lazy_child_ukeire,
+                "shape_guard_enabled": self.shape_guard_enabled,
+                "shape_guard_ukeire_slack": self.shape_guard_ukeire_slack,
+                "shape_guard_shape_delta": self.shape_guard_shape_delta,
             })
         return payload
 
@@ -239,6 +258,9 @@ class LegacyTwoPlyProfile:
             "min_partial_coverage": self.min_partial_coverage,
             "lazy_child_ukeire": self.lazy_child_ukeire,
             "workers": self.workers,
+            "shape_guard_enabled": self.shape_guard_enabled,
+            "shape_guard_ukeire_slack": self.shape_guard_ukeire_slack,
+            "shape_guard_shape_delta": self.shape_guard_shape_delta,
         })
         result["fingerprint"] = self.fingerprint
         return result
@@ -375,6 +397,7 @@ class LegacyDiscardEvaluation:
     search_used: bool = False
     search_phase: str | None = None
     search_attempt_phase: str | None = None
+    frontier_guard: Mapping | None = None
 
     def as_json(self):
         result = {
@@ -409,6 +432,8 @@ class LegacyDiscardEvaluation:
             "search_used": self.search_used,
             "search_phase": self.search_phase,
             "search_attempt_phase": self.search_attempt_phase,
+            "frontier_guard": (dict(self.frontier_guard)
+                               if self.frontier_guard is not None else None),
         }
         return result
 
@@ -575,6 +600,104 @@ def _root_features(roots, locked, visible):
         else:
             diagnostics.append((root, True, ()))
     return tuple(enriched), tuple(frontier), tuple(diagnostics)
+
+
+def _weighted_native_ready(profile):
+    """护栏是否具备"真实比较"的前提:原生 weighted 内核可用。
+
+    内核不可用时扩围只会改变 legacy 键的候选集,违背回退语义,因此护栏
+    必须跳过并记录 ``kernel_unavailable``。
+    """
+    if profile.kernel == "python":
+        return False
+    if (weighted_two_ply_frontier is None
+            or WEIGHTED_TWO_PLY_KERNEL_VERSION is None):
+        return False
+    if WEIGHTED_TWO_PLY_KERNEL_VERSION != WEIGHTED_TWO_PLY_KERNEL_REQUIRED:
+        return False
+    return True
+
+
+def _apply_shape_guard(frontier, diagnostics, profile):
+    """形状护栏前沿(D1/D2/D3)。
+
+    仅在 primary frontier 只有一个候选时扩围:纳入「直接进张差距 <=
+    slack」且「结构损失比 primary 至少好 delta」的候选,合并后按声明顺序
+    (-进张, 结构, 喂牌, 牌编号)受 max_frontier_candidates 截断。返回
+    ``(frontier, diagnostics, frontier_guard, admitted_by)``;护栏关闭或
+    未扩围时返回原值,保证零行为漂移。
+    """
+    guard = {
+        "enabled": bool(profile.shape_guard_enabled),
+        "policy": {
+            "slack_ukeire": int(profile.shape_guard_ukeire_slack),
+            "shape_delta": int(profile.shape_guard_shape_delta),
+            "max_frontier_candidates": int(profile.max_frontier_candidates),
+        },
+        "primary_tiles": [root.tile for root in frontier],
+        "admitted_tiles": [],
+        "dropped_tiles": [],
+        "skipped_reason": None,
+    }
+    admitted_by = {root.tile: "primary" for root in frontier}
+    if not profile.shape_guard_enabled:
+        return frontier, diagnostics, guard, admitted_by
+    if not _weighted_native_ready(profile):
+        guard["skipped_reason"] = "kernel_unavailable"
+        return frontier, diagnostics, guard, admitted_by
+    if len(frontier) != 1:
+        # primary 有多个候选时既有实现本来就会做加权比较(D2)。
+        guard["skipped_reason"] = "primary_not_singleton"
+        return frontier, diagnostics, guard, admitted_by
+    slack = int(profile.shape_guard_ukeire_slack)
+    if slack <= 0:
+        guard["skipped_reason"] = "slack_zero"
+        return frontier, diagnostics, guard, admitted_by
+    delta = int(profile.shape_guard_shape_delta)
+    primary = frontier[0]
+    primary_ukeire = int(primary.current_ukeire or 0)
+    primary_shape = float(primary.shape_loss)
+    admitted = []
+    for root, eligible, missing in diagnostics:
+        if eligible or root.tile == primary.tile:
+            continue
+        if "current_ukeire_frontier" not in missing:
+            # 被前沿上限截断的候选不属于"进张接近"的护栏对象。
+            continue
+        if primary_ukeire - int(root.current_ukeire or 0) > slack:
+            continue
+        if primary_shape - float(root.shape_loss) < delta:
+            continue
+        admitted.append(root)
+    if not admitted:
+        guard["skipped_reason"] = "no_candidate_admitted"
+        return frontier, diagnostics, guard, admitted_by
+    merged = [primary, *admitted]
+    limit = int(profile.max_frontier_candidates or 0)
+    if limit and len(merged) > limit:
+        ranked = sorted(merged, key=lambda root: (
+            -int(root.current_ukeire or 0),
+            float(root.shape_loss),
+            float(root.feed_risk),
+            root.tile,
+        ))
+        kept = [root for root in ranked[:limit]]
+        guard["dropped_tiles"] = [root.tile for root in ranked[limit:]]
+        merged = kept
+    merged_tiles = {root.tile for root in merged}
+    updated = []
+    for root, eligible, missing in diagnostics:
+        if root.tile in merged_tiles:
+            updated.append((root, True, ()))
+            admitted_by[root.tile] = ("primary" if root.tile == primary.tile
+                                      else "shape_guard")
+        elif "current_ukeire_frontier" in missing:
+            updated.append((root, False, missing))
+        else:
+            updated.append((root, eligible, missing))
+    guard["admitted_tiles"] = [root.tile for root in merged
+                               if root.tile != primary.tile]
+    return tuple(merged), tuple(updated), guard, admitted_by
 
 
 def _limit_weighted_frontier(frontier, diagnostics, limit):
@@ -1043,7 +1166,10 @@ def _weighted_native_future_for_frontier(
         stage_a_shaped = bool(sentinel_flags) and all(sentinel_flags)
         if stage_a_only and sentinel_flags and not stage_a_shaped:
             raise _NativeKernelInvalid("weighted_native_stage_a_row_invalid")
-        if stage_a_only and not stage_b_entered:
+        # 证明性 Stage-A-only 只可能出现在"Stage A 直接判胜"的分支,此时
+        # 内核根本没有进入 Stage B;反过来,已进入 Stage B 的运行不允许把
+        # 哨兵行当成 Stage-A-only 证明。
+        if stage_a_only and stage_b_entered:
             raise _NativeKernelInvalid("weighted_native_stage_a_phase_invalid")
         if complete and stage_a_shaped:
             raise _NativeKernelInvalid("weighted_native_stage_a_marked_complete")
@@ -1215,6 +1341,10 @@ def _weighted_evaluation(
         )
         return legacy, evaluation
 
+    # D1/D2/D3: 结构护栏。默认关闭时原样返回,零行为漂移。
+    frontier, diagnostics, frontier_guard, admitted_by = _apply_shape_guard(
+        frontier, diagnostics, profile)
+
     if len(frontier) == 1:
         singleton = frontier[0]
         candidate_json = []
@@ -1222,6 +1352,7 @@ def _weighted_evaluation(
         for root, eligible, missing in diagnostics:
             data = root.as_json()
             data["missing"] = list(missing)
+            data["admitted_by"] = admitted_by.get(root.tile, "primary")
             if root.tile in frontier_tiles and eligible:
                 data["missing"] = ["future_not_evaluated_short_circuit"]
                 data["future_short_circuit_reason"] = "frontier_singleton"
@@ -1251,6 +1382,7 @@ def _weighted_evaluation(
             },
             requested_kernel=requested_kernel, actual_kernel="legacy",
             short_circuit_reason="frontier_singleton",
+            frontier_guard=frontier_guard,
         )
         return singleton.tile, evaluation
 
@@ -1376,6 +1508,7 @@ def _weighted_evaluation(
     for root, eligible, missing in diagnostics:
         data = root.as_json()
         data["missing"] = list(missing)
+        data["admitted_by"] = admitted_by.get(root.tile, "primary")
         if root.tile in frontier_tiles and accepted:
             future = future_values[root.tile]
             future = FutureEvaluation(
@@ -1437,6 +1570,7 @@ def _weighted_evaluation(
         search_used=search_used,
         search_phase=search_phase,
         search_attempt_phase=search_attempt_phase,
+        frontier_guard=frontier_guard,
     )
     return selected, evaluation
 
