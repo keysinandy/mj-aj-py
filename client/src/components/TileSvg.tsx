@@ -1,3 +1,8 @@
+import type {
+  FocusEventHandler,
+  KeyboardEventHandler,
+  MouseEventHandler,
+} from "react";
 import { tileLabel } from "../replay/frame";
 import { tileAssetFor } from "../assets/mahjongAssets";
 
@@ -13,6 +18,12 @@ export interface TileSvgProps {
   isBack?: boolean;
   redDora?: boolean;
   className?: string;
+  onMouseEnter?: MouseEventHandler<HTMLElement>;
+  onMouseLeave?: MouseEventHandler<HTMLElement>;
+  onFocus?: FocusEventHandler<HTMLElement>;
+  onBlur?: FocusEventHandler<HTMLElement>;
+  onKeyDown?: KeyboardEventHandler<HTMLElement>;
+  tabIndex?: number;
 }
 
 /** 基础牌面。正面使用本地打包的 mahjong_graphic SVG,牌背保留轻量 CSS/SVG 占位。 */
@@ -26,6 +37,12 @@ export function TileSvg({
   isBack = !faceUp,
   redDora = false,
   className = "",
+  onMouseEnter,
+  onMouseLeave,
+  onFocus,
+  onBlur,
+  onKeyDown,
+  tabIndex,
 }: TileSvgProps) {
   const label = tile === undefined || isBack ? "未知牌" : tileLabel(tile);
   const asset = !isBack && tile !== undefined ? tileAssetFor(tile) : undefined;
@@ -52,6 +69,12 @@ export function TileSvg({
         data-face-up="true"
         data-rotated={rotated}
         title={label}
+        onMouseEnter={onMouseEnter}
+        onMouseLeave={onMouseLeave}
+        onFocus={onFocus}
+        onBlur={onBlur}
+        onKeyDown={onKeyDown}
+        tabIndex={tabIndex}
       >
         {asset ? (
           <img className="tile-svg-image" src={asset} alt="" draggable={false} />

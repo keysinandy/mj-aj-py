@@ -46,6 +46,23 @@ export interface MeldEntry {
   from_seat?: number | null;
 }
 
+export type DiscardHintStatus = "legal_tenpai" | "rule_blocked_tenpai";
+
+export interface WaitHint {
+  tile: number;
+  unseen: number;
+}
+
+export interface DiscardHint {
+  discard_tile: number;
+  status: DiscardHintStatus | string;
+  legal_waits: WaitHint[];
+  structural_waits: WaitHint[];
+  total_legal_unseen: number;
+  total_structural_unseen: number;
+  count_basis: "public_unseen" | string;
+}
+
 export interface ReplayFrame {
   step: number;
   info_kind: InfoKind;
@@ -81,6 +98,8 @@ export interface ReplayFrame {
     response_order?: number[];
     response_index?: number | null;
   } | null;
+  /** 摸后合法弃牌的公开信息听口分析;旧帧缺省时不显示。 */
+  discard_hints?: DiscardHint[];
 }
 
 /** 把 count 向量 [34] 展开为具体牌列表。 */

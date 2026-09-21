@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { GameTable } from "../components/GameTable";
 import type { ReplayFrame } from "../replay/frame";
 
@@ -149,5 +149,89 @@ describe("GameTable 线上自家视角", () => {
       (el) => el.getAttribute("data-seat") === "2",
     )!;
     expect(within(p2 as HTMLElement).getByText("未知")).toBeTruthy();
+  });
+});
+
+function hintFrame(over: Partial<ReplayFrame> = {}): ReplayFrame {
+  return localFrame({
+    current: { seat: 0, phase: "discard" },
+    seq_no: 12,
+    discard_hints: [{
+      discard_tile: 0,
+      status: "legal_tenpai",
+      legal_waits: [{ tile: 3, unseen: 2 }, { tile: 27, unseen: 0 }],
+      structural_waits: [{ tile: 3, unseen: 2 }, { tile: 27, unseen: 0 }],
+      total_legal_unseen: 2,
+      total_structural_unseen: 2,
+      count_basis: "public_unseen",
+    }],
+    ...over,
+  });
+}
+
+describe("GameTable 摸后弃牌听口 Popover", () => {
+  it("合法弃牌支持 hover/focus,按花色显示未见数和死听", () => {
+    const { container } = render(<GameTable frame={hintFrame()} observeSeat={0} />);
+    const hand = container.querySelector('[data-seat="0"] [data-testid="hand-tiles"]')!;
+    const discard = hand.querySelector('[data-tile="0"]') as HTMLElement;
+    expect(discard).toHaveAttribute("tabindex", "0");
+    fireEvent.mouseEnter(discard);
+    expect(screen.getByRole("dialog", { name: "弃1万后的听口" })).toBeTruthy();
+    expect(screen.getByText("万子")).toBeTruthy();
+    expect(screen.getByText("字牌")).toBeTruthy();
+    expect(screen.getByText("0 张")).toBeTruthy();
+    expect(screen.queryByText("死听：上述听口均为 0 张。")).toBeNull();
+    fireEvent.mouseLeave(discard);
+    expect(screen.queryByTestId("discard-hint-popover")).toBeNull();
+
+    fireEvent.focus(discard);
+    expect(screen.getByTestId("discard-hint-popover")).toBeTruthy();
+  });
+
+  it("非听牌弃牌、响应窗和缺口不打开提示", () => {
+    const { container, rerender } = render(<GameTable frame={hintFrame()} observeSeat={0} />);
+    const hand = container.querySelector('[data-seat="0"] [data-testid="hand-tiles"]')!;
+    const ordinary = hand.querySelector('[data-tile="3"]') as HTMLElement;
+    expect(ordinary).not.toHaveAttribute("tabindex", "0");
+    fireEvent.mouseEnter(ordinary);
+    expect(screen.queryByTestId("discard-hint-popover")).toBeNull();
+
+    rerender(<GameTable frame={hintFrame({ current: { seat: 0, phase: "react" } })} observeSeat={0} />);
+    expect(container.querySelectorAll('[data-seat="0"] [tabindex="0"]').length).toBe(0);
+    rerender(<GameTable frame={hintFrame({ gap: true, seq_no: 13 })} observeSeat={0} />);
+    expect(container.querySelectorAll('[data-seat="0"] [tabindex="0"]').length).toBe(0);
+  });
+
+  it("seq 更新会清理旧 Popover,规则阻塞显示结构听口", () => {
+    const blocked = hintFrame({
+      discard_hints: [{
+        discard_tile: 0,
+        status: "rule_blocked_tenpai",
+        legal_waits: [],
+        structural_waits: [{ tile: 3, unseen: 0 }],
+        total_legal_unseen: 0,
+        total_structural_unseen: 0,
+        count_basis: "public_unseen",
+      }],
+    });
+    const { container, rerender } = render(<GameTable frame={blocked} observeSeat={0} />);
+    const discard = container.querySelector('[data-seat="0"] [data-tile="0"]') as HTMLElement;
+    fireEvent.focus(discard);
+    expect(screen.getByText(/有财必拷响/)).toBeTruthy();
+    rerender(<GameTable frame={hintFrame({ seq_no: 14 })} observeSeat={0} />);
+    expect(screen.queryByTestId("discard-hint-popover")).toBeNull();
+  });
+
+  it("线上只给本家可见牌绑定提示,不向隐藏手牌泄漏入口", () => {
+    const frame = hintFrame({
+      info_kind: "online",
+      hands: null,
+      my_hand: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      my_seat: 0,
+      current: { seat: 0, phase: "discard" },
+    });
+    const { container } = render(<GameTable frame={frame} observeSeat={3} />);
+    expect(container.querySelectorAll('[data-seat="0"] [tabindex="0"]').length).toBe(1);
+    expect(container.querySelectorAll('[data-seat="1"] [tabindex="0"], [data-seat="2"] [tabindex="0"], [data-seat="3"] [tabindex="0"]').length).toBe(0);
   });
 });

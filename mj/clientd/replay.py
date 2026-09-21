@@ -5,7 +5,7 @@
      hands: [4][34]|None,   # None => 他家暗手不可见(线上)
      my_hand: [34]|None,    # 线上视角的本家手牌
      discards, melds, hand_counts, wall_remaining, scores, round_no,
-     current: {seat, phase}, label, gap}
+     current: {seat, phase}, label, gap, discard_hints}
 
 - 本地(3.1):预计算 = Game(seed) 按动作序列 step 一次,逐步快照;
   步进/拖动 = 帧数组索引,零重算;非法动作显式报错(不静默修正)。
@@ -22,6 +22,7 @@ from ..platform.proto import (
     EV_DRAWN, EV_DISCARDED, EV_PASS, EV_CHI, EV_PENG, EV_GANG, EV_HU,
     EV_TIMEOUT, EV_ROUND_ENDED, EV_GAME_ENDED,
 )
+from .wait_hints import PublicMaterialError, analyze_discard_hints
 
 __all__ = ["local_frames", "local_session", "online_frames",
            "online_session", "DEAD_WALL_CONST"]
@@ -67,10 +68,32 @@ def _response_window(game):
     }
 
 
+def _discard_hint_payload(game, seat, diagnostics=None, seq_no=None):
+    """生成帧提示;公开物料失效时不修正计数,只留诊断。"""
+    out_diagnostics = list(diagnostics or [])
+    try:
+        hints = analyze_discard_hints(game, seat)
+    except PublicMaterialError as exc:
+        out_diagnostics.append({
+            "code": "discard_hints_unavailable",
+            "severity": "warn",
+            "message": str(exc),
+            "seq_no": seq_no,
+        })
+        hints = []
+    return hints, out_diagnostics
+
+
 def _local_frame(game, my_seat, actor, label, gap=False, step=0,
                  *, seq_no=None, seq_source="local_action", timestamp=None,
                  event=None, local_requests=None, diagnostics=None,
                  meld_sources=None):
+    frame_diagnostics = list(diagnostics or [])
+    if gap:
+        discard_hints = []
+    else:
+        discard_hints, frame_diagnostics = _discard_hint_payload(
+            game, actor, frame_diagnostics, seq_no)
     return {
         "step": step, "info_kind": "local", "my_seat": my_seat,
         "hands": [[int(v) for v in h] for h in game.hands],
@@ -90,8 +113,9 @@ def _local_frame(game, my_seat, actor, label, gap=False, step=0,
         "timestamp": timestamp,
         "event": event,
         "local_requests": list(local_requests or []),
-        "diagnostics": list(diagnostics or []),
+        "diagnostics": frame_diagnostics,
         "response_window": _response_window(game),
+        "discard_hints": discard_hints,
     }
 
 
@@ -246,6 +270,20 @@ def _online_frame(mirror, scores, step, label, gap=False, *, seq_no=None,
             # The local hand is independently known even if a future mirror
             # implementation changes the public-count anchor semantics.
             hand_counts[me] = sum(int(v) for v in mirror.my_hand)
+    frame_diagnostics = list(diagnostics or [])
+    discard_hints = []
+    snapshot_reanchor = (
+        isinstance(event, dict) and event.get("type") == "snapshot"
+    )
+    if ((not gap or snapshot_reanchor)
+            and getattr(mirror, "drawn", None) is not None):
+        try:
+            projection = mirror.build_game("draw")
+            discard_hints, frame_diagnostics = _discard_hint_payload(
+                projection, me, frame_diagnostics, seq_no)
+        except (MirrorInconsistent, ValueError):
+            # 当前线上帧不能可靠重建摸后状态时,隐藏而不是沿用旧提示。
+            discard_hints = []
     return {
         "step": step, "info_kind": "online",
         "my_seat": mirror.me, "hands": None,
@@ -257,7 +295,12 @@ def _online_frame(mirror, scores, step, label, gap=False, *, seq_no=None,
         "scores": list(scores or [0, 0, 0, 0]),
         "round_no": mirror.round_no,
         "dealer": int(getattr(mirror, "dealer", 0)),
-        "current": {"seat": _mirror_seat(mirror), "phase": "online"},
+        "current": {
+            "seat": (me if getattr(mirror, "drawn", None) is not None
+                      else _mirror_seat(mirror)),
+            "phase": ("discard" if getattr(mirror, "drawn", None) is not None
+                       else "react" if mirror.pending is not None else "online"),
+        },
         "label": label, "gap": bool(gap),
         "seq_no": seq_no,
         "seq_source": (
@@ -266,8 +309,9 @@ def _online_frame(mirror, scores, step, label, gap=False, *, seq_no=None,
         "timestamp": timestamp,
         "event": event,
         "local_requests": list(local_requests or []),
-        "diagnostics": list(diagnostics or []),
+        "diagnostics": frame_diagnostics,
         "response_window": _online_response_window(mirror),
+        "discard_hints": discard_hints,
     }
 
 

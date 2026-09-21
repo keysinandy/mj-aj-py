@@ -9,8 +9,8 @@
 - 新增 Tauri2 + React 桌面客户端(`client/`)与 Python sidecar 服务层(`mj/clientd/`,localhost WS/HTTP,由壳进程 spawn)。
 - **本地竞技场**:1 个主位策略 vs 3 个可配置对手位(随机 BOT / legacy BOT / policy),支持批量对局(总局数 N × 并发 X),主位座位与庄家按 fair_match 口径轮转,对局记录为 `seed + 动作序列`(跨机器确定性重放);种子库支持保存/选用(随机或已存种子)。
 - **新增随机 BOT 策略**:有胡必胡,反应窗优先级 碰 > 杠 > 吃 > 过,多种吃法随机取一,弃牌随机。
-- **线上对战控制**:锦标赛 / 匹配房(match)/ 测试房三模式启动与停止,策略(policy / BOT / policy-v3)与参数(BOT 回退窗口 {永不回退, 10ms, 50ms, 36ms 默认, 任意 ms 手填}、policy-v3 置信度阈值、state-rate 默认 16/s)配置;房间列表(N 场并发)点入单局观战:自家手牌、四家牌河、四家副露、墙长、决策/动作时间线。
-- **回放查看器**:本地记录默认以当前观察座位的玩家视角显示,可切换到全知视角查看四家暗手;线上 jsonl 记录固定为自家视角;两者统一为一套查看器组件,支持时间线、逐步前进/后退与进度条拖动定位。
+- **线上对战控制**:锦标赛 / 匹配房(match)/ 测试房三模式启动与停止,策略(policy / BOT / policy-v3)与参数(BOT 回退窗口 {永不回退, 10ms, 50ms, 36ms 默认, 任意 ms 手填}、policy-v3 置信度阈值、state-rate 默认 16/s)配置;房间列表(N 场并发)点入单局观战:自家手牌、四家牌河、四家副露、墙长、决策/动作时间线;摸牌 seq 下 hover/focus 合法弃牌时展示实际可胡听口及公开信息下未见张数。
+- **回放查看器**:本地记录默认以当前观察座位的玩家视角显示,可切换到全知视角查看四家暗手;线上 jsonl 记录固定为自家视角;两者统一为一套查看器组件,支持时间线、逐步前进/后退与进度条拖动定位;摸牌 seq 下按当前观察座位展示弃牌听口 popover,且计算不读取对手暗手。
 - **打包分发**:模型导出 ONNX(BC/PPO/policy-v3 三种 checkpoint)+ 逐动作对拍验证;PyInstaller 三平台制品(win-x64 / macos-arm64 / macos-x64),torch 不进包(onnxruntime 替代),mj_kernels 按平台预编译打进制品并做加载断言;CI 三平台构建矩阵。
 - **不改动**既有引擎与平台层行为:clientd 只读复用 `mj.platform` 的 runner/BotClient/Recorder/Mirror 与 `mj.evaluate`、`mj.log_replay`、`mj.decision.profile`。
 
@@ -30,7 +30,7 @@
 ## Impact
 
 - **新增代码**:`client/`(Tauri 壳 + React 前端)、`mj/clientd/`(sidecar 服务层)、ONNX 导出器与对拍脚本、随机 BOT 策略实现。
-- **只读复用**:`mj/platform/{runner,match_runner,tournament_runner,bot_client,recorder,mirror,api}.py`、`mj/evaluate.py`、`mj/log_replay.py`、`mj/decision/profile.py`(经 `choose_shape_v2_action(profile=...)` 注入预算)。
+- **只读复用**:`mj/platform/{runner,match_runner,tournament_runner,bot_client,recorder,mirror,api}.py`、`mj/evaluate.py`、`mj/log_replay.py`、`mj/decision/profile.py`(经 `choose_shape_v2_action(profile=...)` 注入预算);听口分析复用既有杭州麻将和牌/财神门禁与公开牌面口径,不改引擎动作语义。
 - **依赖**:制品侧新增 onnxruntime;开发侧新增 Node/Tauri 构建链;torch 仅开发机导出时需要,不进分发制品。
 - **新产物目录**:`local/arena/<batch_id>/`(批次与单局记录)、`local/seeds/`(种子库);`local/games/` 与 `local/platform.json` 沿用现状,客户端只读消费。
 - **CI**:新增三平台打包矩阵;现有 pytest 体系承接服务层与策略层单测。

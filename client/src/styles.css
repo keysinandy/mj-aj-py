@@ -398,7 +398,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--nav-active)
 }
 
 /* 牌桌化回放：稳定的上 / 下 / 左 / 右座位与中心状态区 */
-.game-table { position: relative; overflow: hidden; background: var(--surface-subtle); color: var(--text-primary); }
+.game-table { position: relative; overflow: visible; background: var(--surface-subtle); color: var(--text-primary); }
 .table-meta { flex-wrap: wrap; align-items: center; color: var(--text-secondary); }
 .table-seats {
   display: grid;
@@ -470,6 +470,42 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--nav-active)
 .unknown-tiles { display: flex; align-items: center; gap: 0.35rem; }
 .unknown-tiles .unknown { flex-shrink: 0; color: var(--text-secondary); font-size: 0.72rem; }
 .unknown-count { color: var(--text-secondary); font-size: 0.65rem; white-space: nowrap; }
+.discard-hint-anchor { position: relative; display: inline-flex; flex: 0 0 auto; z-index: 2; }
+.discard-hint-anchor:focus-within { z-index: 20; }
+.discard-hint-anchor > .tile-svg[tabindex="0"] { cursor: help; }
+.discard-hint-popover {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 50%;
+  z-index: 40;
+  width: min(25rem, 72vw);
+  max-height: min(28rem, 70vh);
+  overflow: auto;
+  transform: translateX(-50%);
+  padding: 0.65rem;
+  border: 1px solid var(--nav-active);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text-primary);
+  text-align: left;
+  box-shadow: 0 10px 28px var(--shadow-color);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+.wait-hint-title { display: flex; align-items: baseline; gap: 0.45rem; color: var(--nav-active); font-weight: 800; }
+.wait-hint-total { margin-left: auto; color: var(--text-secondary); font-size: 0.66rem; font-weight: 650; white-space: nowrap; }
+.wait-hint-warning { margin: 0.35rem 0; color: var(--warn); font-weight: 700; }
+.wait-hint-section { margin-top: 0.45rem; }
+.wait-hint-section h4 { margin: 0 0 0.22rem; color: var(--text-secondary); font-size: 0.68rem; }
+.wait-hint-section-dimmed { opacity: 0.58; }
+.wait-hint-group { display: flex; align-items: center; gap: 0.25rem; margin: 0.18rem 0; }
+.wait-hint-group-label { width: 2.1rem; flex: 0 0 auto; color: var(--text-secondary); }
+.wait-hint-group-tiles { display: flex; flex-wrap: wrap; gap: 0.22rem; align-items: end; }
+.wait-hint-tile { display: inline-flex; align-items: end; gap: 0.1rem; color: var(--text-secondary); white-space: nowrap; }
+.wait-hint-tile .tile-svg { width: 1.02rem; height: 1.4rem; }
+.wait-hint-dead { margin: 0.42rem 0 0; color: var(--warn); font-weight: 750; }
+.wait-hint-footnote { margin: 0.42rem 0 0; color: var(--text-secondary); font-size: 0.64rem; }
+.discard-hint-blocked { border-color: var(--warn); }
 .tile-svg { position: relative; display: inline-block; flex: 0 0 auto; width: 1.55rem; height: 2.18rem; overflow: visible; vertical-align: middle; line-height: 0; user-select: none; }
 .tile-svg-large { width: 2.05rem; height: 2.88rem; }
 .tile-svg-medium { width: 1.55rem; height: 2.18rem; }

@@ -2,7 +2,7 @@
 
 ## Context
 
-现有资产(均经线上验证,只读复用):本地引擎 `Game(seed)` 与 `legal_actions()` 单一真源;启发式 BOT(`bot.py choose_action`/`choose_shape_v2_action(profile=...)` 可注入预算);`PolicySpec.time_budget_ms`(默认 36ms)与 `PolicyV3Runtime`(置信度回退链);平台层 `runner`/`match_runner`/`tournament_runner` + `BotClient`/`Recorder`/`Mirror`;离线工具 `logview`/`log_replay`(证明 snapshot+events 足以重建公共状态)。约束:平台对局无服务端种子,线上事件流只含自家摸牌;`local/games/` jsonl 是唯一可复盘数据源;`local/` 已 gitignore;torch 依赖面仅限 `model.py`(policy 推理)。
+现有资产(均经线上验证,只读复用):本地引擎 `Game(seed)` 与 `legal_actions()` 单一真源;启发式 BOT(`bot.py choose_action`/`choose_shape_v2_action(profile=...)` 可注入预算);`PolicySpec.time_budget_ms`(默认 36ms)与 `PolicyV3Runtime`(置信度回退链);平台层 `runner`/`match_runner`/`tournament_runner` + `BotClient`/`Recorder`/`Mirror`;离线工具 `logview`/`log_replay`(证明 snapshot+events 足以重建公共状态);既有 `waiting_tiles`、`is_win` 与有财必拷响门禁。约束:平台对局无服务端种子,线上事件流只含自家摸牌;`local/games/` jsonl 是唯一可复盘数据源;`local/` 已 gitignore;torch 依赖面仅限 `model.py`(policy 推理)。
 
 ## Goals / Non-Goals
 
@@ -12,6 +12,7 @@
 - 零侵入平台层:线上对弈直接进程内调用既有 runner 体系;观战走"tail jsonl → Mirror-walk"只读路径。
 - 确定性本地竞技场:多进程批量、seed0+i 分配、记录 = seed+动作序列(不依赖重跑决策)。
 - 无 torch 制品:ONNX 导出器 + 对拍门禁,三平台 PyInstaller 矩阵。
+- 在摸牌 seq 的只读牌桌上，为合法弃牌提供可解释的听口与公开未见数提示，且提示计算不改变线上对局路径。
 
 **Non-Goals:**
 
@@ -71,6 +72,47 @@ Recorder 逐行 flush,`log_replay` 已证明 jsonl 足以重建状态。服务�
 
 React + TS,Tauri webview。组件树:控制台(对战配置)/ 房间墙 / 牌桌(手牌/牌河/副露渲染,观战与回放共用)/ 时间线(记录类型条目,复用 logview 的渲染语义)/ 记录浏览器 / 设置与模型管理。牌桌采用 DOM + SVG 牌图资源:四方相对座次由 CSS grid 定位,牌面使用本地打包的 `mahjong_graphic` 34 张 SVG 资源缩放/旋转,牌背用轻量 SVG 占位;不引入 Canvas 场景图,保留 DOM 的响应式、无障碍和组件测试能力。全知视角的侧家手牌允许自然换行而不固定裁剪;副露横牌按来源家相对拥有者映射到左/中/右位置,来源缺失时保持无方向猜测。状态管理用轻量方案(zustand 或 redux-toolkit,实现期定);WS 推送进 store,回放帧数组按记录懒加载。UI 文案中文。
 
+### D9 摸后弃牌听口分析:服务端预计算,前端只展示
+
+提示挂载到统一 `ReplayFrame`，使回放帧和实时观战帧共享同一套 UI。只有当前观察座位处于摸牌后弃牌状态、且该座位有可见的刚摸牌手牌时才生成分析；资格以状态机和合法动作集合判断，不以事件文案或最终日志反推。线上 Mirror 的观察座位固定为 `my_seat`，本地回放使用当前 `observeSeat` 对应的手牌。
+
+每个候选弃牌只使用以下输入:
+
+- 观察座位当前完整手牌(摸后 14 - 3 × 已副露面子数);
+- 四家当前未被吃碰移除的牌河;
+- 四家副露及杠的物理牌数;
+- 当前房间的杭州规则配置,包括 `you_cai_bi_kao`。
+
+对手暗手身份、真实牌墙顺序和本地全知帧中的其他三家手牌必须排除。公开可见计数为本家手牌 + 四家牌河 + 全部副露，`unseen = 4 - visible`；被吃碰的河牌只在副露中计一次，杠按四张计数。计数超过四张时该帧分析失败并隐藏提示，同时保留诊断，不得静默修正。
+
+帧中的建议数据采用可扩展数组而不是以牌值为键的对象:
+
+```json
+{
+  "discard_hints": [
+    {
+      "discard_tile": 5,
+      "status": "legal_tenpai",
+      "legal_waits": [{"tile": 8, "unseen": 2}],
+      "structural_waits": [{"tile": 8, "unseen": 2}],
+      "total_legal_unseen": 2,
+      "total_structural_unseen": 2,
+      "count_basis": "public_unseen"
+    }
+  ]
+}
+```
+
+`structural_waits` 使用既有财神和牌判定枚举，并保留未见数为零的死听；`legal_waits` 再经过当前规则的普通摸牌胡门禁。开启有财必拷响且结构听牌被门禁时，`status` 为 `rule_blocked_tenpai`，`legal_waits` 可以为空，前端显示规则提示并将结构听口置灰。提示写“公开信息下未见 N 张”，不写成可保证摸到的活墙数量。
+
+分析在 clientd 的记录/帧管线中异步或帧边界内完成，绝不进入 `BotClient` 决策、状态请求或动作提交路径；实时订阅即使不消费提示，也必须产生相同的源 jsonl 和平台请求行为。旧帧、缺口帧、settled 帧、未知手牌帧没有可靠分析输入时不继承上一帧提示。
+
+### D10 Popover 交互与帧一致性
+
+可见手牌的每个合法弃牌牌面支持 mouse hover 和 keyboard focus；popover 显示当前候选牌、实际可胡听口、每张未见数、结构听口及规则阻塞说明。相同牌值的重复牌复用同一分析结果。popover 以 `(round_no, seq_no, observeSeat)` 绑定当前帧，帧推进、观察座位切换、缺口或关闭牌桌时立即失效，禁止显示旧 seq 的数量。
+
+当听口达到 34 种时按花色分组渲染；听口全部未见时仍显示听牌和各项 `0 张`，并标记为死听。popover 通过牌桌上层定位，不能被牌面容器的溢出裁剪；它是纯展示，不产生动作、请求或改变回放游标。
+
 ## Risks / Trade-offs
 
 - [PyInstaller 三平台 torch 缺失导致的隐蔽 import 路径问题] → 服务层 import 纪律:torch 相关 import 只存在于开发机工具;制品冒烟测试含 policy 策略对局。
@@ -80,10 +122,14 @@ React + TS,Tauri webview。组件树:控制台(对战配置)/ 房间墙 / 牌桌
 - [policy-v3 的 onnx 注入接口不匹配] → 早期做注入原型验证(`predict_game` 鸭子接口),P0 内完成,失败则降级为"policy-v3 仅限开发机"并更新 spec(显式而非静默)。
 - [macOS x64 制品在 M 系上被误用] → 制品命名带架构,README 说明;不做 universal2(torch 已不在,但 onnxruntime 也无 universal2 轮)。
 - [客户端与 runner 行为漂移(两套默认值)] → 会话参数默认值从 runner 代码单一来源取数(共享常量模块),测试断言 UI 默认 == CLI 默认。
+- [公开牌面与听口计数重复计算或误读全知手牌] → 统一使用观察座位手牌 + 当前牌河 + 副露的物料投影，加入被吃牌、杠牌、四张上限和“更换对手暗手不改变结果”的测试。
+- [有财必拷响下结构听牌被误显示为可胡] → 分离 `structural_waits` 与 `legal_waits`，使用既有普通摸牌胡门禁并在 UI 明示规则阻塞。
+- [实时计算拖慢线上决策或提示跨 seq 残留] → 计算只在 clientd 观战/回放帧管线执行，禁止进入 BotClient；提示绑定回合和 seq，帧变化时丢弃旧结果。
+- [旧日志或 seq 缺口无法确认摸牌态] → 缺少可靠摸后状态时不显示提示，不用最后动作或后续事件补造手牌。
 
 ## Migration Plan
 
-纯新增,无迁移。落地顺序:P0(服务层骨架+本地竞技场+回放)→ P1(线上三模式+房间观战)→ P2(ONNX 导出+打包 CI)。P0/P1 可在开发机直接 `python -m mj.clientd` + `npm run dev` 联调,不依赖打包链路先行。回滚 = 不启动客户端,CLI 工作流完全不受影响。
+纯新增,无迁移。落地顺序:P0(服务层骨架+本地竞技场+回放+帧级听口分析)→ P1(线上三模式+房间观战+实时提示)→ P2(ONNX 导出+打包 CI)。旧记录没有 `discard_hints` 时继续正常回放但不显示 popover。P0/P1 可在开发机直接 `python -m mj.clientd` + `npm run dev` 联调,不依赖打包链路先行。回滚 = 不启动客户端,CLI 工作流完全不受影响。
 
 ## Open Questions
 

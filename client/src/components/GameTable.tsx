@@ -1,6 +1,11 @@
-import type { ReactNode } from "react";
-import type { ReplayFrame, ReplayVisibilityMode } from "../replay/frame";
-import { expandHand, SEATS } from "../replay/frame";
+import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
+import type {
+  DiscardHint,
+  ReplayFrame,
+  ReplayVisibilityMode,
+  WaitHint,
+} from "../replay/frame";
+import { expandHand, SEATS, tileLabel } from "../replay/frame";
 import { MeldSvg } from "./MeldSvg";
 import { TileSvg } from "./TileSvg";
 
@@ -12,6 +17,129 @@ interface Props {
   visibilityMode?: ReplayVisibilityMode;
   /** 放置在牌桌中心的操作区,由回放查看器提供步进控制。 */
   centerControls?: ReactNode;
+}
+
+const WAIT_GROUPS: Array<{ key: string; label: string; test: (tile: number) => boolean }> = [
+  { key: "man", label: "万子", test: (tile) => tile >= 0 && tile <= 8 },
+  { key: "pin", label: "筒子", test: (tile) => tile >= 9 && tile <= 17 },
+  { key: "sou", label: "条子", test: (tile) => tile >= 18 && tile <= 26 },
+  { key: "honor", label: "字牌", test: (tile) => tile >= 27 && tile <= 33 },
+];
+
+function waitGroups(waits: WaitHint[]) {
+  return WAIT_GROUPS.map((group) => ({
+    ...group,
+    waits: waits.filter((wait) => group.test(wait.tile)),
+  })).filter((group) => group.waits.length > 0);
+}
+
+function WaitList({
+  title,
+  waits,
+  dimmed = false,
+}: {
+  title: string;
+  waits: WaitHint[];
+  dimmed?: boolean;
+}) {
+  return (
+    <section className={`wait-hint-section${dimmed ? " wait-hint-section-dimmed" : ""}`}>
+      <h4>{title}</h4>
+      <div className="wait-hint-groups">
+        {waitGroups(waits).map((group) => (
+          <div className="wait-hint-group" key={group.key}>
+            <span className="wait-hint-group-label">{group.label}</span>
+            <span className="wait-hint-group-tiles">
+              {group.waits.map((wait) => (
+                <span className="wait-hint-tile" key={wait.tile}>
+                  <TileSvg tile={wait.tile} size="small" />
+                  <span>{wait.unseen} 张</span>
+                </span>
+              ))}
+            </span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function DiscardHintPopover({ tile, hint }: { tile: number; hint: DiscardHint }) {
+  const blocked = hint.status === "rule_blocked_tenpai";
+  const waits = blocked ? hint.structural_waits : hint.legal_waits;
+  const total = blocked ? hint.total_structural_unseen : hint.total_legal_unseen;
+  const dead = waits.length > 0 && waits.every((wait) => wait.unseen === 0);
+  return (
+    <div
+      className={`discard-hint-popover${blocked ? " discard-hint-blocked" : ""}`}
+      role="dialog"
+      aria-label={`弃${tileLabel(tile)}后的听口`}
+      data-testid="discard-hint-popover"
+      data-status={hint.status}
+    >
+      <div className="wait-hint-title">
+        弃 {tileLabel(tile)} 后听牌
+        <span className="wait-hint-total">公开未见 {total} 张</span>
+      </div>
+      {blocked && (
+        <p className="wait-hint-warning">
+          有财必拷响：普通摸牌胡被规则阻塞，需要爆头或杠开。
+        </p>
+      )}
+      <WaitList title={blocked ? "结构听口（规则阻塞）" : "实际可胡听口"} waits={waits} dimmed={blocked} />
+      {!blocked && hint.structural_waits.length !== hint.legal_waits.length && (
+        <WaitList title="结构听口" waits={hint.structural_waits} dimmed />
+      )}
+      {dead && <p className="wait-hint-dead">死听：上述听口均为 0 张。</p>}
+      <p className="wait-hint-footnote">数量按本家手牌、四家牌河和副露计算。</p>
+    </div>
+  );
+}
+
+function HintTile({
+  tile,
+  hint,
+  size,
+  contextKey,
+}: {
+  tile: number;
+  hint?: DiscardHint;
+  size: "large" | "medium";
+  contextKey: string;
+}) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => setOpen(false), [contextKey]);
+
+  if (!hint) return <TileSvg tile={tile} size={size} />;
+
+  function onKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (event.key === "Escape") {
+      setOpen(false);
+      return;
+    }
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      setOpen(true);
+    }
+  }
+
+  return (
+    <span
+      className="discard-hint-anchor"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <TileSvg
+        tile={tile}
+        size={size}
+        tabIndex={0}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        onKeyDown={onKeyDown}
+      />
+      {open && <DiscardHintPopover tile={tile} hint={hint} />}
+    </span>
+  );
 }
 
 function eventNumber(frame: ReplayFrame, ...keys: string[]): number | null {
@@ -30,12 +158,16 @@ function HandTiles({
   label,
   knownCount,
   size,
+  discardHints,
+  contextKey,
 }: {
   counts: number[] | null;
   hidden?: boolean;
   label?: string;
   knownCount?: number | null;
   size: "large" | "medium";
+  discardHints?: DiscardHint[];
+  contextKey: string;
 }) {
   if (hidden || counts === null) {
     const backCount = knownCount == null ? 0 : Math.min(Math.max(knownCount, 0), 14);
@@ -57,12 +189,21 @@ function HandTiles({
       </div>
     );
   }
+  const hintByTile = new Map(
+    (discardHints ?? []).map((hint) => [hint.discard_tile, hint]),
+  );
   return (
     <div className="hand-hand" data-testid="hand-tiles">
       {label && <span className="hand-label">{label}</span>}
       <span className="hand-tiles-svg">
         {expandHand(counts).map((tile, index) => (
-          <TileSvg key={`${tile}-${index}`} tile={tile} size={size} />
+          <HintTile
+            key={`${tile}-${index}`}
+            tile={tile}
+            hint={hintByTile.get(tile)}
+            size={size}
+            contextKey={contextKey}
+          />
         ))}
       </span>
     </div>
@@ -167,6 +308,7 @@ function PlayerArea({
   visibilityMode,
   recentActor,
   recentTile,
+  hintContextKey,
 }: {
   frame: ReplayFrame;
   seat: number;
@@ -175,6 +317,7 @@ function PlayerArea({
   visibilityMode: ReplayVisibilityMode;
   recentActor: number | null;
   recentTile: number | null;
+  hintContextKey: string;
 }) {
   const isHero = seat === frame.my_seat;
   const perspectiveSeat = frame.info_kind === "local" ? observeSeat : frame.my_seat;
@@ -196,6 +339,10 @@ function PlayerArea({
     : counts.reduce((sum, value) => sum + value, 0);
   const hidden = !omniscient && !isPerspective;
   const highlightedMeld = recentActor === seat && frame.event?.type !== "action";
+  const showHints = Boolean(
+    isObserve && isTurn && frame.current?.phase === "discard"
+    && (!frame.gap || frame.event?.type === "snapshot"),
+  );
   return (
     <section
       className={`seat player-area player-${position}${isObserve ? " seat-observe" : ""}${isHero ? " seat-my" : ""}${isTurn ? " seat-turn" : ""}${isDealer ? " seat-dealer" : ""}`}
@@ -219,6 +366,8 @@ function PlayerArea({
           label={isPerspective || omniscient ? `手牌 P${seat}` : undefined}
           knownCount={knownCount}
           size={position === "bottom" ? "large" : "medium"}
+          discardHints={showHints ? frame.discard_hints : undefined}
+          contextKey={hintContextKey}
         />
         <Melds melds={frame.melds[seat]} ownerSeat={seat} highlighted={highlightedMeld} />
         <River river={frame.discards[seat]} highlightTile={recentActor === seat ? recentTile : null} />
@@ -262,6 +411,7 @@ export function GameTable({ frame, observeSeat, visibilityMode = "player", cente
             visibilityMode={omniscient ? "omniscient" : "player"}
             recentActor={recentActor}
             recentTile={recentTile}
+            hintContextKey={`${frame.round_no}:${frame.seq_no ?? frame.step}:${perspective}`}
           />
         ))}
       </div>
