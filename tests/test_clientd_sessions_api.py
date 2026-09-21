@@ -158,7 +158,7 @@ def test_normalize_seats_defaults():
     cfg = _normalize_seats({})
     assert len(cfg["seats"]) == 4
     assert cfg["seats"] == DEFAULT_SEATS
-    assert cfg["seats"][0]["evaluator"] == "legacy"
+    assert cfg["seats"][0]["evaluator"] == "legacyV2"
     assert cfg["n_games"] == 16 and cfg["concurrency"] == 4
     with pytest.raises(ValidationError):
         _normalize_seats({"seats": [{"strategy": "random"}]})

@@ -12,20 +12,27 @@ import time
 
 from .errors import ValidationError
 from .settings import DEFAULT_SETTINGS_PATH, PlatformSettings
+from ..legacy_eval import (
+    DEFAULT_BOT_EVALUATOR,
+    LEGACY_V2_EVALUATORS,
+    canonical_evaluator,
+)
 
 
 DEFAULT_MATCH_CONFIG = {
     "max_games": 10,
     "strategy": "bot",
-    "evaluator": "legacy",
+    "evaluator": DEFAULT_BOT_EVALUATOR,
     "state_rate": 16.0,
     "room_close_wait": 65.0,
     "record": True,
     "replay_trace": False,
 }
 MATCH_STRATEGIES = {"policy", "policy-v3", "bot", "random"}
-MATCH_EVALUATORS = {"legacy", "legacy-two-ply-v1", "shape-v1", "shape-v2",
-                    "policy-v3"}
+MATCH_EVALUATORS = {
+    "legacy", "legacy-two-ply-v1", *LEGACY_V2_EVALUATORS,
+    "shape-v1", "shape-v2", "policy-v3",
+}
 
 
 class _StopSignal:
@@ -80,12 +87,12 @@ def normalize_match_config(config):
             f"{sorted(MATCH_STRATEGIES)}")
     result["strategy"] = strategy
 
-    evaluator = result.get("evaluator") or "legacy"
+    evaluator = result.get("evaluator") or DEFAULT_BOT_EVALUATOR
     if evaluator not in MATCH_EVALUATORS:
         raise ValidationError(
             f"unknown match evaluator {evaluator!r}; expected "
             f"{sorted(MATCH_EVALUATORS)}")
-    result["evaluator"] = evaluator
+    result["evaluator"] = canonical_evaluator(evaluator)
 
     try:
         state_rate = float(result.get("state_rate", 16.0))
@@ -140,7 +147,7 @@ def _build_decide(config):
             decide = make_decide(
                 strategy,
                 config.get("ckpt"),
-                evaluator=config.get("evaluator", "legacy"),
+                evaluator=config.get("evaluator", DEFAULT_BOT_EVALUATOR),
                 model=config.get("model"),
                 policy_profile=config.get("policy_profile"),
             )

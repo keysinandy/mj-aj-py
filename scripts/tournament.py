@@ -16,7 +16,7 @@
 本脚本不重复造;Ctrl-C 转发给子进程触发 INTERRUPTED 优雅收尾。
 
 用法:
-    python3 scripts/tournament.py                        # bot + legacy(线上首选)
+    python3 scripts/tournament.py                        # bot + legacyV2(线上首选)
     python3 scripts/tournament.py --bot-evaluator shape-v1
     python3 scripts/tournament.py --strategy policy --ckpt runs/bc0/best.pt
     python3 scripts/tournament.py --dry-run              # 只预检打印配置,不起 runner
@@ -42,9 +42,12 @@ from mj.platform.api import Api, ApiError  # noqa: E402
 from mj.platform.config import (  # noqa: E402
     TournamentConfigError, load_tournament_config)
 from mj.platform.tournament import TERMINAL_STATES  # noqa: E402
+from mj.legacy_eval import DEFAULT_BOT_EVALUATOR  # noqa: E402
 
 STRATEGIES = ("policy", "bot", "random", "policy-v3")
-EVALUATORS = ("legacy", "shape-v1", "shape-v2", "policy-v3")
+EVALUATORS = ("legacy", "legacyV2", "legacy-v2",
+              "weighted-two-ply-frontier-v1", "shape-v1", "shape-v2",
+              "policy-v3")
 
 # strategy=bot 时 shape-v2 需显式解锁:线上镜像材料守恒门禁未过
 # (2026-09-17 实跑 ~60% 受控回退,未崩溃但混合决策,PROGRESS.md 有结论)。
@@ -251,8 +254,9 @@ def build_parser():
     ap.add_argument("--config", default="local/platform.json")
     ap.add_argument("--strategy", default="bot", choices=STRATEGIES,
                     help="默认 bot(线上首选;runner 原默认 policy,此处已改)")
-    ap.add_argument("--bot-evaluator", default="legacy", choices=EVALUATORS,
-                    help="默认 legacy;线上限 legacy/shape-v1")
+    ap.add_argument("--bot-evaluator", default=DEFAULT_BOT_EVALUATOR,
+                    choices=EVALUATORS,
+                    help="默认 legacyV2;可显式回退 legacy")
     ap.add_argument("--ckpt", default="runs/bc0/best.pt")
     ap.add_argument("--state-rate", type=float, default=16.0)
     ap.add_argument("--dump", action="store_true")

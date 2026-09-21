@@ -127,6 +127,12 @@ def render(rec, t0):
                 if future_row.get("future_improve_weight") is not None:
                     evtxt += (f" futureI={future_row['future_improve_weight']}"
                               f" futureU={future_row.get('future_ukeire')}")
+                    if future_row.get("future_ukeire_types") is not None:
+                        evtxt += f" futureT={future_row['future_ukeire_types']}"
+                    if future_row.get("coverage") is not None:
+                        evtxt += f" coverage={future_row['coverage']:.3f}"
+                    if future_row.get("partial_accepted"):
+                        evtxt += " partial=true"
                 elif future_row.get("missing"):
                     evtxt += f" future_missing={','.join(map(str, future_row['missing']))}"
         else:

@@ -21,7 +21,9 @@ use std::time::{Duration, Instant};
 const W: usize = 33;
 type ShantenCacheKey = ([i32; 34], i32);
 type FutureCacheKey = ([i32; 34], [i32; 34], i32);
+type UkeireCacheKey = ([i32; 34], [i32; 34], i32);
 const LEGACY_TWO_PLY_KERNEL_VERSION: &str = "rust-legacy-two-ply-v1";
+const WEIGHTED_TWO_PLY_KERNEL_VERSION: &str = "rust-weighted-two-ply-v1";
 
 #[derive(Clone)]
 struct FutureDiscard {
@@ -44,6 +46,25 @@ struct FrontierRow {
 struct FutureMetrics {
     shanten: i32,
     ukeire: i64,
+}
+
+#[derive(Clone, Copy)]
+struct UkeireMetrics {
+    ukeire: i64,
+    tile_types: i32,
+}
+
+#[derive(Default, Clone, Copy)]
+struct SearchCounters {
+    root_candidates: i64,
+    draw_nodes: i64,
+    child_nodes: i64,
+    shanten_calls: i64,
+    ukeire_calls: i64,
+    shanten_cache_hits: i64,
+    shanten_cache_misses: i64,
+    ukeire_cache_hits: i64,
+    ukeire_cache_misses: i64,
 }
 
 /// 未分配自然牌张数 → 该侧最多还能节省的向听数(保守下界,Python
@@ -304,9 +325,6 @@ fn wildcard_shanten(
     locked: i32,
     cache: &mut HashMap<ShantenCacheKey, i32>,
 ) -> Result<i32, String> {
-    if counts[W] == 0 {
-        return shanten_impl(counts, locked);
-    }
     let key = (*counts, locked);
     if let Some(value) = cache.get(&key).copied() {
         return Ok(value);
@@ -423,6 +441,96 @@ fn ukeire_total_impl(
         }
     }
     Ok((s, total))
+}
+
+fn counted_shanten(
+    counts: &[i32; 34],
+    locked: i32,
+    cache: &mut HashMap<ShantenCacheKey, i32>,
+    cache_capacity: usize,
+    counters: &mut SearchCounters,
+) -> Result<i32, String> {
+    counters.shanten_calls += 1;
+    let key = (*counts, locked);
+    if cache_capacity > 0 {
+        if let Some(value) = cache.get(&key).copied() {
+            counters.shanten_cache_hits += 1;
+            return Ok(value);
+        }
+    }
+    counters.shanten_cache_misses += 1;
+    let value = shanten_impl(counts, locked)?;
+    if cache_capacity > 0 {
+        if cache.len() >= cache_capacity {
+            cache.clear();
+        }
+        cache.insert(key, value);
+    }
+    Ok(value)
+}
+
+fn counted_ukeire_metrics(
+    counts: &[i32; 34],
+    locked: i32,
+    visible: &[i32; 34],
+    shanten_cache: &mut HashMap<ShantenCacheKey, i32>,
+    ukeire_cache: &mut HashMap<UkeireCacheKey, UkeireMetrics>,
+    cache_capacity: usize,
+    counters: &mut SearchCounters,
+) -> Result<UkeireMetrics, String> {
+    counters.ukeire_calls += 1;
+    let key = (*counts, *visible, locked);
+    if cache_capacity > 0 {
+        if let Some(value) = ukeire_cache.get(&key).copied() {
+            counters.ukeire_cache_hits += 1;
+            return Ok(value);
+        }
+    }
+    counters.ukeire_cache_misses += 1;
+    let s = counted_shanten(counts, locked, shanten_cache, cache_capacity, counters)?;
+    let left = |t: usize| (4 - visible[t]).max(0) as i64;
+    let mut total = 0i64;
+    let mut tile_types = 0i32;
+    if s <= 0 {
+        if s == 0 {
+            for t in 0..34 {
+                let mut c2 = *counts;
+                c2[t] += 1;
+                if counted_shanten(&c2, locked, shanten_cache, cache_capacity, counters)? == -1 {
+                    tile_types += 1;
+                    total += left(t);
+                }
+            }
+        }
+    } else {
+        let cands: Vec<usize> = if counts[W] > 0 {
+            (0..34).collect()
+        } else {
+            ukeire_candidates(counts)
+        };
+        for t in cands {
+            if counts[t] >= 4 {
+                continue;
+            }
+            let mut c2 = *counts;
+            c2[t] += 1;
+            if counted_shanten(&c2, locked, shanten_cache, cache_capacity, counters)? < s {
+                tile_types += 1;
+                total += left(t);
+            }
+        }
+    }
+    let value = UkeireMetrics {
+        ukeire: total,
+        tile_types,
+    };
+    if cache_capacity > 0 {
+        if ukeire_cache.len() >= cache_capacity {
+            ukeire_cache.clear();
+        }
+        ukeire_cache.insert(key, value);
+    }
+    Ok(value)
 }
 
 /// ``nat``(33 维自然牌) + ``wilds`` 个财神能否恰好组成 ``need`` 个
@@ -1118,6 +1226,378 @@ fn legacy_two_ply_frontier(
     Ok(output)
 }
 
+type WeightedDrawRow = (i32, i64, i32, i64, i32, Vec<i32>);
+type WeightedRootRow = (
+    i32,
+    bool,
+    bool,
+    (i64, i64, i64, i64, i64, i64),
+    Vec<WeightedDrawRow>,
+    (i64, i64, i64, i64, i64, i64, i64, i64, i64),
+    i64,
+    String,
+);
+
+/// Return the bounded, probability-weighted online frontier.
+///
+/// The row contract is intentionally separate from ``legacy_two_ply_frontier``
+/// so old wheels and exact replay artifacts remain stable.  A root row is
+/// committed once at least one complete draw branch has been evaluated.  The
+/// Python adapter decides whether all committed rows meet the configured
+/// partial-coverage gate before allowing the row to influence a decision.
+#[pyfunction(signature = (roots, root_shantens, visible, legal_masks, locked=0, frozen=false, node_budget=100000, soft_budget_ms=40.0, hard_budget_ms=50.0, cache_capacity=8192, min_partial_coverage=0.90, include_best_discards=true))]
+fn weighted_two_ply_frontier(
+    roots: Vec<Vec<i32>>,
+    root_shantens: Vec<i32>,
+    visible: Vec<i32>,
+    legal_masks: Vec<Vec<i64>>,
+    locked: i32,
+    frozen: bool,
+    node_budget: i64,
+    soft_budget_ms: f64,
+    hard_budget_ms: f64,
+    cache_capacity: i64,
+    min_partial_coverage: f64,
+    include_best_discards: bool,
+) -> PyResult<Vec<WeightedRootRow>> {
+    if roots.is_empty() {
+        return Err(PyValueError::new_err("roots must not be empty"));
+    }
+    if roots.len() != root_shantens.len() || roots.len() != legal_masks.len() {
+        return Err(PyValueError::new_err(
+            "roots, root_shantens and legal_masks must have equal length",
+        ));
+    }
+    if locked < 0 || locked > 4 {
+        return Err(PyValueError::new_err("locked must be between 0 and 4"));
+    }
+    if node_budget < 0 {
+        return Err(PyValueError::new_err("node_budget must be non-negative"));
+    }
+    if !soft_budget_ms.is_finite()
+        || !hard_budget_ms.is_finite()
+        || soft_budget_ms < 0.0
+        || hard_budget_ms < 0.0
+        || soft_budget_ms > hard_budget_ms
+    {
+        return Err(PyValueError::new_err(
+            "soft/hard budgets must be finite and ordered",
+        ));
+    }
+    if !min_partial_coverage.is_finite() || !(0.0..=1.0).contains(&min_partial_coverage) {
+        return Err(PyValueError::new_err(
+            "min_partial_coverage must be between 0 and 1",
+        ));
+    }
+    let cache_capacity = usize::try_from(cache_capacity)
+        .map_err(|_| PyValueError::new_err("cache_capacity must be non-negative"))?;
+    let started = Instant::now();
+    let soft_limit = Duration::from_secs_f64(soft_budget_ms / 1000.0);
+    let hard_limit = Duration::from_secs_f64(hard_budget_ms / 1000.0);
+    let visible = validate_count_vector(&visible, "visible")?;
+    let expected = 13 - 3 * locked;
+    let mut root_arrays = Vec::with_capacity(roots.len());
+    for (index, values) in roots.iter().enumerate() {
+        let root = validate_count_vector(values, "root")?;
+        if root.iter().sum::<i32>() != expected {
+            return Err(PyValueError::new_err(format!(
+                "root {index} has an invalid concealed hand size"
+            )));
+        }
+        if root
+            .iter()
+            .enumerate()
+            .any(|(tile, &count)| visible[tile] < count)
+        {
+            return Err(PyValueError::new_err(format!(
+                "visible counts do not contain root {index}"
+            )));
+        }
+        if legal_masks[index].len() != 34 {
+            return Err(PyValueError::new_err(format!(
+                "legal_masks[{index}] must have 34 draw entries"
+            )));
+        }
+        root_arrays.push(root);
+    }
+
+    let remaining: Vec<i64> = (0..34)
+        .map(|tile| (4 - visible[tile]).max(0) as i64)
+        .collect();
+    let total_weight: i64 = remaining.iter().sum();
+    let mut draw_order: Vec<usize> = (0..34).filter(|&tile| remaining[tile] > 0).collect();
+    draw_order.sort_by(|&a, &b| remaining[b].cmp(&remaining[a]).then_with(|| a.cmp(&b)));
+
+    let mut shanten_cache: HashMap<ShantenCacheKey, i32> = HashMap::new();
+    let mut ukeire_cache: HashMap<UkeireCacheKey, UkeireMetrics> = HashMap::new();
+    let mut counters = SearchCounters {
+        root_candidates: root_arrays.len() as i64,
+        ..SearchCounters::default()
+    };
+    let mut root_shanten_values = Vec::with_capacity(root_arrays.len());
+    for (index, root) in root_arrays.iter().enumerate() {
+        let value = counted_shanten(
+            root,
+            locked,
+            &mut shanten_cache,
+            cache_capacity,
+            &mut counters,
+        )
+        .map_err(PyValueError::new_err)?;
+        if value != root_shantens[index] {
+            return Err(PyValueError::new_err(format!(
+                "root_shantens[{index}] does not match root hand"
+            )));
+        }
+        root_shanten_values.push(value);
+    }
+
+    let mut accumulators: Vec<WeightedRootAccumulator> = root_shanten_values
+        .iter()
+        .map(|_| WeightedRootAccumulator::new(total_weight))
+        .collect();
+    let mut hard_exhausted = false;
+    let mut soft_stopped = false;
+
+    'draws: for &draw in &draw_order {
+        if started.elapsed() >= hard_limit {
+            hard_exhausted = true;
+            break;
+        }
+        for root_index in 0..root_arrays.len() {
+            if accumulators[root_index].complete || accumulators[root_index].failed {
+                continue;
+            }
+            if started.elapsed() >= hard_limit {
+                hard_exhausted = true;
+                break 'draws;
+            }
+            let all_covered = accumulators.iter().all(|acc| {
+                acc.coverage() >= min_partial_coverage || (acc.total_weight == 0 && acc.committed)
+            });
+            if soft_stopped || (started.elapsed() >= soft_limit && all_covered) {
+                soft_stopped = true;
+                break 'draws;
+            }
+
+            let weight = remaining[draw];
+            let mut next_hand = root_arrays[root_index];
+            next_hand[draw] += 1;
+            let mut visible_after = visible;
+            visible_after[draw] += 1;
+            if visible_after[draw] > 4 {
+                return Err(PyValueError::new_err("visible_after_draw_invalid"));
+            }
+            let mut mask = legal_masks[root_index][draw];
+            if mask < 0 {
+                return Err(PyValueError::new_err("legal mask must be non-negative"));
+            }
+            if frozen {
+                mask &= 1i64 << draw;
+            }
+            let valid_mask = next_hand
+                .iter()
+                .enumerate()
+                .fold(
+                    0i64,
+                    |acc, (tile, &count)| {
+                        if count > 0 {
+                            acc | (1i64 << tile)
+                        } else {
+                            acc
+                        }
+                    },
+                );
+            if mask & !valid_mask != 0 || mask == 0 {
+                return Err(PyValueError::new_err("invalid future legal discard mask"));
+            }
+
+            counters.draw_nodes += 1;
+            let mut children: Vec<(usize, [i32; 34], i32)> = Vec::new();
+            let mut best_s = i32::MAX;
+            let mut branch_aborted = false;
+            for discard in 0..34 {
+                if mask & (1i64 << discard) == 0 {
+                    continue;
+                }
+                if counters.child_nodes >= node_budget || started.elapsed() >= hard_limit {
+                    branch_aborted = true;
+                    hard_exhausted = true;
+                    break;
+                }
+                counters.child_nodes += 1;
+                let mut after = next_hand;
+                after[discard] -= 1;
+                let child_s = counted_shanten(
+                    &after,
+                    locked,
+                    &mut shanten_cache,
+                    cache_capacity,
+                    &mut counters,
+                )
+                .map_err(PyValueError::new_err)?;
+                best_s = best_s.min(child_s);
+                children.push((discard, after, child_s));
+            }
+            if branch_aborted {
+                accumulators[root_index].reason = if counters.child_nodes >= node_budget {
+                    "node_budget_exceeded".to_string()
+                } else {
+                    "hard_deadline".to_string()
+                };
+                continue;
+            }
+            if children.is_empty() {
+                return Err(PyValueError::new_err("future legal discard set is empty"));
+            }
+
+            let mut best_u = -1i64;
+            let mut best_types = 0i32;
+            let mut tied: Vec<i32> = Vec::new();
+            for (discard, after, child_s) in children {
+                if child_s != best_s {
+                    continue;
+                }
+                let metrics = counted_ukeire_metrics(
+                    &after,
+                    locked,
+                    &visible_after,
+                    &mut shanten_cache,
+                    &mut ukeire_cache,
+                    cache_capacity,
+                    &mut counters,
+                )
+                .map_err(PyValueError::new_err)?;
+                if metrics.ukeire > best_u
+                    || (metrics.ukeire == best_u && metrics.tile_types > best_types)
+                {
+                    best_u = metrics.ukeire;
+                    best_types = metrics.tile_types;
+                    tied.clear();
+                    tied.push(discard as i32);
+                } else if metrics.ukeire == best_u && metrics.tile_types == best_types {
+                    tied.push(discard as i32);
+                }
+            }
+            if tied.is_empty() {
+                return Err(PyValueError::new_err("future legal discard set is empty"));
+            }
+            accumulators[root_index].covered_weight += weight;
+            if best_s < root_shanten_values[root_index] {
+                accumulators[root_index].improve_weight += weight;
+            } else {
+                accumulators[root_index].maintain_weight += weight;
+            }
+            accumulators[root_index].future_ukeire += weight * best_u.max(0);
+            accumulators[root_index].future_ukeire_types += weight * i64::from(best_types);
+            if include_best_discards {
+                accumulators[root_index].draw_rows.push((
+                    draw as i32,
+                    weight,
+                    best_s,
+                    best_u.max(0),
+                    best_types,
+                    tied,
+                ));
+            }
+        }
+    }
+
+    if hard_exhausted || soft_stopped {
+        for acc in &mut accumulators {
+            if !acc.complete && !acc.failed {
+                acc.reason = if hard_exhausted {
+                    "hard_deadline".to_string()
+                } else {
+                    "soft_deadline".to_string()
+                };
+            }
+        }
+    }
+    for acc in &mut accumulators {
+        if !acc.failed && acc.covered_weight >= acc.total_weight {
+            acc.complete = true;
+            acc.committed = true;
+            acc.reason.clear();
+        } else if !acc.failed && acc.covered_weight > 0 {
+            acc.committed = true;
+        }
+    }
+
+    let elapsed_us = started.elapsed().as_micros() as i64;
+    let mut output = Vec::with_capacity(accumulators.len());
+    for (index, acc) in accumulators.into_iter().enumerate() {
+        output.push((
+            index as i32,
+            acc.committed,
+            acc.complete,
+            (
+                acc.covered_weight,
+                acc.total_weight,
+                acc.improve_weight,
+                acc.maintain_weight,
+                acc.future_ukeire,
+                acc.future_ukeire_types,
+            ),
+            acc.draw_rows,
+            (
+                counters.root_candidates,
+                counters.draw_nodes,
+                counters.child_nodes,
+                counters.shanten_calls,
+                counters.ukeire_calls,
+                counters.shanten_cache_hits,
+                counters.shanten_cache_misses,
+                counters.ukeire_cache_hits,
+                counters.ukeire_cache_misses,
+            ),
+            elapsed_us,
+            acc.reason,
+        ));
+    }
+    Ok(output)
+}
+
+struct WeightedRootAccumulator {
+    covered_weight: i64,
+    total_weight: i64,
+    improve_weight: i64,
+    maintain_weight: i64,
+    future_ukeire: i64,
+    future_ukeire_types: i64,
+    draw_rows: Vec<WeightedDrawRow>,
+    committed: bool,
+    complete: bool,
+    failed: bool,
+    reason: String,
+}
+
+impl WeightedRootAccumulator {
+    fn new(total_weight: i64) -> Self {
+        Self {
+            covered_weight: 0,
+            total_weight,
+            improve_weight: 0,
+            maintain_weight: 0,
+            future_ukeire: 0,
+            future_ukeire_types: 0,
+            draw_rows: Vec::new(),
+            committed: false,
+            complete: false,
+            failed: false,
+            reason: String::new(),
+        }
+    }
+
+    fn coverage(&self) -> f64 {
+        if self.total_weight <= 0 {
+            1.0
+        } else {
+            self.covered_weight as f64 / self.total_weight as f64
+        }
+    }
+}
+
 fn validate_count_vector(values: &[i32], name: &str) -> PyResult<[i32; 34]> {
     let array: [i32; 34] = values
         .to_vec()
@@ -1188,11 +1668,18 @@ fn mj_kernels(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(discard_frontier, m)?)?;
     m.add_function(wrap_pyfunction!(discard_frontier_batch, m)?)?;
     m.add_function(wrap_pyfunction!(legacy_two_ply_frontier, m)?)?;
+    m.add_function(wrap_pyfunction!(weighted_two_ply_frontier, m)?)?;
     m.add_function(wrap_pyfunction!(legacy_two_ply_kernel_version, m)?)?;
+    m.add_function(wrap_pyfunction!(weighted_two_ply_kernel_version, m)?)?;
     Ok(())
 }
 
 #[pyfunction]
 fn legacy_two_ply_kernel_version() -> &'static str {
     LEGACY_TWO_PLY_KERNEL_VERSION
+}
+
+#[pyfunction]
+fn weighted_two_ply_kernel_version() -> &'static str {
+    WEIGHTED_TWO_PLY_KERNEL_VERSION
 }

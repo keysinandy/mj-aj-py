@@ -1,0 +1,50 @@
+{
+  "schema": "legacy-two-ply-weighted-frontier-v1/release-evidence-v1",
+  "captured_at": "2026-09-21",
+  "change": "legacy-two-ply-weighted-frontier",
+  "kernel": "rust-weighted-two-ply-v1",
+  "profile": {
+    "name": "legacyV2",
+    "kernel": "rust",
+    "states": 100,
+    "seeds": "0..99",
+    "soft_budget_ms": 40.0,
+    "hard_budget_ms": 50.0,
+    "node_budget": 100000,
+    "max_frontier_candidates": 3,
+    "allow_partial": true,
+    "min_partial_coverage": 0.90,
+    "lazy_child_ukeire": true
+  },
+  "end_to_end": {
+    "complete": 39,
+    "partial_accepted": 19,
+    "fallback": 42,
+    "p50_ms": 52.4543,
+    "p90_ms": 57.9048,
+    "p95_ms": 59.0155,
+    "p99_ms": 60.0165,
+    "coverage_p50": 1.0,
+    "frontier_p50": 3.0,
+    "shanten_calls_total": 1112904,
+    "ukeire_calls_total": 41340,
+    "child_nodes_total": 76066,
+    "shanten_cache_hit_rate": 0.3276311344,
+    "fallback_reasons": {
+      "partial_not_acceptable": 41,
+      "baotou_scope": 1
+    },
+    "status": "performance_gate_not_met"
+  },
+  "raw_native": {
+    "states": 100,
+    "p50_ms": 45.2871,
+    "p95_ms": 52.2186,
+    "p99_ms": 54.7063
+  },
+  "release_decision": {
+    "default": "legacyV2",
+    "weighted_profile": "default",
+    "reason": "Explicit release decision enables legacyV2 despite recorded end-to-end p95 above 50ms; retain transactional legacy fallback and telemetry."
+  }
+}

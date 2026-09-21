@@ -21,9 +21,14 @@ from .bot_client import BotClient
 from .config import load_config
 from .recorder import Recorder
 from .security import redact_exception, redact_value
+from ..legacy_eval import (
+    DEFAULT_BOT_EVALUATOR,
+    LEGACY_V2_EVALUATORS,
+    canonical_evaluator,
+)
 
 
-def make_decide(strategy, ckpt=None, evaluator="legacy", model=None,
+def make_decide(strategy, ckpt=None, evaluator=DEFAULT_BOT_EVALUATOR, model=None,
                 policy_profile=None):
     if strategy == "policy-v3" or (
             strategy == "bot" and evaluator in ("policy-v3", "policy_v3")):
@@ -54,19 +59,23 @@ def make_decide(strategy, ckpt=None, evaluator="legacy", model=None,
         return policy_player(ckpt)
     if strategy == "bot":
         from mj.bot import choose_action
-        profile = evaluator or "legacy"
+        profile = canonical_evaluator(evaluator or DEFAULT_BOT_EVALUATOR)
         if profile in ("shape-v1", "shape_v1", "shape"):
             from mj.hand_eval import warmup
             warmup("shape-v1")
         def play(g, seat):
             if profile in ("shape-v1", "shape_v1", "shape",
                            "shape-v2", "shape_v2", "ev2",
-                           "legacy-two-ply-v1", "legacy_v1", "legacy-v1"):
+                           "legacy-two-ply-v1", "legacy_v1", "legacy-v1",
+                           *LEGACY_V2_EVALUATORS):
                 requested = ("shape-v2" if profile in
                              ("shape-v2", "shape_v2", "ev2")
                              else ("legacy-two-ply-v1" if profile in
                                    ("legacy-two-ply-v1", "legacy_v1",
-                                    "legacy-v1") else "shape-v1"))
+                                    "legacy-v1") else
+                                   (DEFAULT_BOT_EVALUATOR if
+                                    profile in LEGACY_V2_EVALUATORS else
+                                    "shape-v1")))
                 return choose_action(g, seat, evaluator=requested,
                                      return_evaluation=True)
             action = choose_action(g, seat)
@@ -160,7 +169,8 @@ def _dump_error(exc, secrets=()):
 
 def run_room(cfg, strategy="policy", ckpt=None, games=1, dump=False,
              dump_dir="local/logs", record=True, state_rate=16.0,
-             evaluator="legacy", replay_trace=False, trace_root=None):
+             evaluator=DEFAULT_BOT_EVALUATOR, replay_trace=False,
+             trace_root=None):
     tokens = cfg["tokens"]
     stop = threading.Event()
     results = {}
@@ -207,10 +217,12 @@ def main(argv=None):
     ap.add_argument("--config", default="local/platform.json")
     ap.add_argument("--strategy", default="policy",
                     choices=("policy", "bot", "random", "policy-v3"))
-    ap.add_argument("--bot-evaluator", default="legacy",
-                    choices=("legacy", "legacy-two-ply-v1", "shape-v1",
+    ap.add_argument("--bot-evaluator", default=DEFAULT_BOT_EVALUATOR,
+                    choices=("legacy", "legacy-two-ply-v1",
+                             "legacyV2", "legacy-v2",
+                             "weighted-two-ply-frontier-v1", "shape-v1",
                              "shape-v2", "policy-v3"),
-                    help="strategy=bot 时的评价器(默认 legacy)")
+                    help="strategy=bot 时的评价器(默认 legacyV2)")
     ap.add_argument("--ckpt", default="runs/bc0/best.pt")
     ap.add_argument("--games", type=int, default=1, help="打满场数(跨轮复用)")
     ap.add_argument("--dump", action="store_true",

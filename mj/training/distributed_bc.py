@@ -16,6 +16,7 @@ from __future__ import annotations
 import os
 
 from ..bc_data import _write_shard
+from ..legacy_eval import DEFAULT_BOT_EVALUATOR
 
 HANDLERS: dict = {}
 
@@ -27,7 +28,7 @@ def execute_legacy_bc_games(job: dict, *, cache_dir: str) -> dict:
     seed_start = int(payload.get("seed_start", 0))
     games = int(payload.get("games", 1))
     ycbk = bool(payload.get("you_cai_bi_kao", False))
-    evaluator = str(payload.get("evaluator", "legacy"))
+    evaluator = str(payload.get("evaluator", DEFAULT_BOT_EVALUATOR))
     scope = str(payload.get("scope", "all-root"))
     include_meta = bool(payload.get("include_metadata", False))
     local_dir = os.path.join(cache_dir, job["job_id"])

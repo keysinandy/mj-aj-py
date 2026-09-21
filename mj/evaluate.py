@@ -12,9 +12,10 @@ import numpy as np
 
 from mj.game import Game, HU
 from mj.bot import choose_action
+from mj.legacy_eval import DEFAULT_BOT_EVALUATOR
 
 
-def _pick(player, g, seat, evaluator="legacy"):
+def _pick(player, g, seat, evaluator=DEFAULT_BOT_EVALUATOR):
     if player is True:
         return choose_action(g, seat, evaluator=evaluator)
     if callable(player):
@@ -24,7 +25,7 @@ def _pick(player, g, seat, evaluator="legacy"):
 
 
 def _play_game(players, seed, dealer=0, you_cai_bi_kao=False,
-               evaluator="legacy"):
+               evaluator=DEFAULT_BOT_EVALUATOR):
     g = Game(seed=seed, dealer=dealer, you_cai_bi_kao=you_cai_bi_kao)
     while not g.done:
         seat = g.current_seat()
@@ -37,7 +38,7 @@ def _play_game(players, seed, dealer=0, you_cai_bi_kao=False,
 
 
 def run_games(players, n=200, seed0=0, dealer="rotate", you_cai_bi_kao=False,
-              evaluator="legacy"):
+              evaluator=DEFAULT_BOT_EVALUATOR):
     """players: 长度 4 的玩家列表(见模块 docstring)。
     dealer: "rotate" 逐局轮转庄家(默认,消除庄家 ×8 收付偏置),
     或指定固定座位;you_cai_bi_kao: 有财必拷响开关。"""
@@ -66,7 +67,7 @@ def run_games(players, n=200, seed0=0, dealer="rotate", you_cai_bi_kao=False,
 
 
 def fair_match(player, n=192, seed0=0, you_cai_bi_kao=False,
-               evaluator="legacy"):
+               evaluator=DEFAULT_BOT_EVALUATOR):
     """player 轮转四座位、庄家独立轮转((座位,庄家) 16 组合均衡)
     对抗启发式 bot,返回 player 视角统计。
 
@@ -202,8 +203,10 @@ if __name__ == "__main__":
     ap.add_argument("n", nargs="?", type=int, default=200,
                     help="对局数(兼容旧的第一个位置参数)")
     ap.add_argument("--bot-evaluator",
-                     choices=("legacy", "legacy-two-ply-v1", "shape-v1"),
-                    default="legacy")
+                     choices=("legacy", "legacy-two-ply-v1",
+                              "legacyV2", "legacy-v2",
+                              "weighted-two-ply-frontier-v1", "shape-v1"),
+                    default=DEFAULT_BOT_EVALUATOR)
     args = ap.parse_args()
     n = args.n
     # 座位 0 = 启发式 bot,其余随机

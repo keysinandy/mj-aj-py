@@ -317,6 +317,16 @@ except (ImportError, AttributeError):
     _rust_legacy_two_ply_kernel_version = None
 
 try:
+    from mj_kernels import weighted_two_ply_frontier as _rust_weighted_two_ply_frontier
+except (ImportError, AttributeError):
+    _rust_weighted_two_ply_frontier = None
+
+try:
+    from mj_kernels import weighted_two_ply_kernel_version as _rust_weighted_two_ply_kernel_version
+except (ImportError, AttributeError):
+    _rust_weighted_two_ply_kernel_version = None
+
+try:
     from mj_kernels import baotou_ukeire as _rust_baotou_ukeire
 except (ImportError, AttributeError):
     _rust_baotou_ukeire = None
@@ -342,6 +352,12 @@ LEGACY_TWO_PLY_KERNEL_VERSION = (
     _rust_legacy_two_ply_kernel_version()
     if _rust_legacy_two_ply_frontier is not None
     and _rust_legacy_two_ply_kernel_version is not None
+    and not _FORCE_PY else None
+)
+WEIGHTED_TWO_PLY_KERNEL_VERSION = (
+    _rust_weighted_two_ply_kernel_version()
+    if _rust_weighted_two_ply_frontier is not None
+    and _rust_weighted_two_ply_kernel_version is not None
     and not _FORCE_PY else None
 )
 
@@ -442,6 +458,21 @@ def legacy_two_ply_frontier(roots, root_shantens, visible, legal_masks,
     return _rust_legacy_two_ply_frontier(
         roots, root_shantens, visible, legal_masks, locked, frozen,
         node_budget, float(time_budget_ms), include_best_discards,
+    )
+
+
+def weighted_two_ply_frontier(
+        roots, root_shantens, visible, legal_masks, locked=0, frozen=False,
+        node_budget=100000, soft_budget_ms=40.0, hard_budget_ms=50.0,
+        cache_capacity=8192, min_partial_coverage=0.90,
+        include_best_discards=True):
+    """Optional weighted/partial native two-ply frontier."""
+    if _rust_weighted_two_ply_frontier is None or _FORCE_PY:
+        return None
+    return _rust_weighted_two_ply_frontier(
+        roots, root_shantens, visible, legal_masks, locked, frozen,
+        node_budget, float(soft_budget_ms), float(hard_budget_ms),
+        cache_capacity, float(min_partial_coverage), include_best_discards,
     )
 
 

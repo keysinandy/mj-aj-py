@@ -31,6 +31,8 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from mj.legacy_eval import DEFAULT_BOT_EVALUATOR
+
 
 def _cmd_coordinator(args):
     from mj.training.coordinator import Coordinator, CoordinatorServer
@@ -157,7 +159,7 @@ def main(argv=None):
     sj.add_argument("--per-shard", type=int, default=25)
     sj.add_argument("--seed-start", type=int, default=0)
     sj.add_argument("--games", type=int, default=100)
-    sj.add_argument("--evaluator", default="legacy")
+    sj.add_argument("--evaluator", default=DEFAULT_BOT_EVALUATOR)
     sj.add_argument("--scope", default="all-root")
     sj.add_argument("--you-cai-bi-kao", action="store_true")
     sj.add_argument("--out-dir", default="local/minisuphx")

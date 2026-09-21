@@ -20,9 +20,10 @@ import numpy as np
 
 from .bot import choose_action
 from .features import N_ACTIONS, N_PLANES, N_SCALARS, extract, legal_mask, action_to_flat
+from .legacy_eval import DEFAULT_BOT_EVALUATOR
 
 
-def generate_game(seed, you_cai_bi_kao=False, evaluator="legacy",
+def generate_game(seed, you_cai_bi_kao=False, evaluator=DEFAULT_BOT_EVALUATOR,
                   scope="all-root", teacher_metadata=None):
     """跑一局 bot 自博弈,返回 dict(样本数组 + 终局得分)。
 
@@ -61,7 +62,7 @@ def generate_game(seed, you_cai_bi_kao=False, evaluator="legacy",
         actions.append(action_to_flat(act))
         seats.append(seat)
         context_hashes.append(context_hash)
-        evaluator_names.append(str(evaluator or "legacy"))
+        evaluator_names.append(str(evaluator or DEFAULT_BOT_EVALUATOR))
         scopes.append(str(scope))
         label_sources.append("online_policy" if evaluator in (None, "legacy")
                              else "online_evaluator")
@@ -95,7 +96,7 @@ def generate_game(seed, you_cai_bi_kao=False, evaluator="legacy",
 def _write_shard(args):
     seed0, n_games, path, ycbk = args[:4]
     include_metadata = bool(args[4]) if len(args) > 4 else False
-    evaluator = str(args[5]) if len(args) > 5 else "legacy"
+    evaluator = str(args[5]) if len(args) > 5 else DEFAULT_BOT_EVALUATOR
     scope = str(args[6]) if len(args) > 6 else "all-root"
     parts = [generate_game(seed0 + i, you_cai_bi_kao=ycbk,
                            evaluator=evaluator, scope=scope)
@@ -129,8 +130,10 @@ def main():
     ap.add_argument("--legacy-layout", action="store_true",
                     help="兼容旧的六数组 NPZ 布局(默认写入 provenance 元数据)")
     ap.add_argument("--evaluator", choices=("legacy", "legacy-two-ply-v1",
+                                             "legacyV2", "legacy-v2",
+                                             "weighted-two-ply-frontier-v1",
                                              "shape-v1", "shape-v2"),
-                    default="legacy")
+                    default=DEFAULT_BOT_EVALUATOR)
     ap.add_argument("--scope", choices=("discard", "hu-piao", "all-root"),
                     default="all-root")
     ap.add_argument("--you-cai-bi-kao", action="store_true",

@@ -14,7 +14,7 @@ def test_normalize_match_config_defaults_and_bounds():
     cfg = normalize_match_config({})
     assert cfg["max_games"] == 10
     assert cfg["strategy"] == "bot"
-    assert cfg["evaluator"] == "legacy"
+    assert cfg["evaluator"] == "legacyV2"
     assert cfg["state_rate"] == 16.0
 
     with pytest.raises(ValidationError):

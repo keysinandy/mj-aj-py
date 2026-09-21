@@ -2716,6 +2716,8 @@ class BotClient:
                 meta_kwargs["rules"] = self.tournament_rules.as_dict()
             evaluator = getattr(self.decide, "bot_evaluator", None)
             if evaluator is not None:
+                from mj.legacy_eval import canonical_evaluator
+                evaluator = canonical_evaluator(evaluator)
                 meta_kwargs.update({
                     "evaluator": evaluator,
                     "evaluator_profile": evaluator,
@@ -2734,6 +2736,16 @@ class BotClient:
                         meta_kwargs["evaluator_fingerprint"] = \
                             v1_profile.fingerprint
                         meta_kwargs["evaluator_kernel"] = "python-frontier-v1"
+                    elif evaluator in ("legacyV2", "legacy-v2",
+                                        "weighted-two-ply-frontier-v1",
+                                        "weighted_two_ply",
+                                        "weighted-two-ply"):
+                        from mj.legacy_eval import LegacyTwoPlyProfile
+                        weighted_profile = LegacyTwoPlyProfile.weighted_online()
+                        meta_kwargs["evaluator_fingerprint"] = \
+                            weighted_profile.fingerprint
+                        meta_kwargs["evaluator_kernel"] = \
+                            "rust-weighted-two-ply-v1"
                     else:
                         from mj.hand_eval import profile_for
                         meta_kwargs["evaluator_fingerprint"] = \

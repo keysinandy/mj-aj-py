@@ -25,6 +25,7 @@ import threading
 from .api import Api, ApiError
 from .bot_client import BotClient
 from .config import load_match_config
+from ..legacy_eval import DEFAULT_BOT_EVALUATOR
 from .recorder import Recorder
 from .runner import DumpingApi, make_decide
 
@@ -47,10 +48,12 @@ def main(argv=None):
     ap.add_argument("--config", default="local/platform.json")
     ap.add_argument("--strategy", default="policy",
                     choices=("policy", "bot", "random", "policy-v3"))
-    ap.add_argument("--bot-evaluator", default="legacy",
-                    choices=("legacy", "legacy-two-ply-v1", "shape-v1",
+    ap.add_argument("--bot-evaluator", default=DEFAULT_BOT_EVALUATOR,
+                    choices=("legacy", "legacy-two-ply-v1",
+                             "legacyV2", "legacy-v2",
+                             "weighted-two-ply-frontier-v1", "shape-v1",
                              "shape-v2", "policy-v3"),
-                    help="strategy=bot 时的评价器(默认 legacy)")
+                    help="strategy=bot 时的评价器(默认 legacyV2)")
     ap.add_argument("--ckpt", default="runs/ppo4/ckpt_350000.pt",
                     help="policy 策略 checkpoint(BC best.pt 或 PPO ckpt)")
     ap.add_argument("--games", type=int, default=10,

@@ -31,6 +31,8 @@ import weakref
 from .tiles import W
 from .shanten import shanten, ukeire
 from .legacy_eval import (
+    DEFAULT_BOT_EVALUATOR,
+    LEGACY_V2_EVALUATORS,
     LegacyRootCandidate,
     LegacyTwoPlyProfile,
     evaluate_legacy_two_ply,
@@ -185,8 +187,9 @@ def choose_discard(g, seat, return_info=False, profile=None):
         roots = []
         for t, c, shape, feed in cands:
             roots.append(LegacyRootCandidate(
-                tile=t, hand=tuple(c), shanten=shanten(c, locked),
-                shape_loss=shape, feed_risk=feed))
+                tile=t, hand=tuple(c), shanten=best_s,
+                shape_loss=shape, feed_risk=feed,
+                shanten_verified=True))
         selected, evaluation = evaluate_legacy_two_ply(
             g, seat, roots, locked, vis, profile,
             shape_cost=_discard_shape_cost, feed_risk=_feed_risk)
@@ -226,12 +229,14 @@ def _legacy_v1_scope_info(profile, action, reason):
         "profile_fingerprint": profile.fingerprint,
         "level": "legacy",
         "complete": False,
+        "mode": profile.mode,
         "selected": action,
         "legacy_best": action,
         "future_model": profile.model,
         "candidates": [],
         "missing": [reason],
         "fallback_reason": reason,
+        "partial_accepted": False,
     }
 
 
@@ -713,19 +718,20 @@ def choose_shape_v2_action(g, seat, profile=None):
         g, seat, profile or ProfileSpec.shape_v2_discard())
 
 
-def choose_action(g, seat, evaluator="legacy", return_evaluation=False):
+def choose_action(g, seat, evaluator=DEFAULT_BOT_EVALUATOR,
+                  return_evaluation=False):
     """统一入口:返回该 seat 的动作。
 
-    Existing callers keep the two-argument legacy behaviour.  Passing
-    ``evaluator='shape-v1'`` opts into the shared shape evaluator;
-    ``legacy-two-ply-v1`` explicitly enables the one-draw legacy future layer.
+    The two-argument production path uses the weighted two-ply frontier.
+    Passing ``evaluator='legacy'`` explicitly selects the historical rollback
+    oracle; ``evaluator='shape-v1'`` opts into the shared shape evaluator.
     Callers that need an explanation can additionally request
     ``return_evaluation``.
     """
     if evaluator not in (None, "legacy", "shape-v1", "shape_v1", "shape",
                          "shape-v2", "shape_v2", "ev2", "policy-v3",
                          "policy_v3", "legacy-two-ply-v1", "legacy_v1",
-                         "legacy-v1"):
+                         "legacy-v1", *LEGACY_V2_EVALUATORS):
         raise ValueError(f"unknown evaluator profile: {evaluator}")
     if evaluator in ("policy-v3", "policy_v3"):
         from .decision.policy_v3 import PolicyV3Runtime
@@ -738,8 +744,11 @@ def choose_action(g, seat, evaluator="legacy", return_evaluation=False):
         action, evaluation = choose_shape_v2_action(g, seat)
         return (action, evaluation) if return_evaluation else action
     if evaluator not in (None, "legacy"):
-        if evaluator in ("legacy-two-ply-v1", "legacy_v1", "legacy-v1"):
-            profile = LegacyTwoPlyProfile.default()
+        if evaluator in (("legacy-two-ply-v1", "legacy_v1", "legacy-v1")
+                         + LEGACY_V2_EVALUATORS):
+            profile = (LegacyTwoPlyProfile.weighted_online()
+                       if evaluator in LEGACY_V2_EVALUATORS else
+                       LegacyTwoPlyProfile.default())
             acts = g.legal_actions()
             if len(acts) == 1:
                 evaluation = {
@@ -748,12 +757,14 @@ def choose_action(g, seat, evaluator="legacy", return_evaluation=False):
                     "profile_fingerprint": profile.fingerprint,
                     "level": "legacy",
                     "complete": False,
+                    "mode": profile.mode,
                     "selected": acts[0],
                     "legacy_best": acts[0],
                     "future_model": profile.model,
                     "candidates": [],
                     "missing": ["only_legal_action"],
                     "fallback_reason": "only_legal_action",
+                    "partial_accepted": False,
                 }
                 return ((acts[0], evaluation) if return_evaluation else acts[0])
             if g.phase == "discard":
@@ -775,12 +786,14 @@ def choose_action(g, seat, evaluator="legacy", return_evaluation=False):
                 "profile_fingerprint": profile.fingerprint,
                 "level": "legacy",
                 "complete": False,
+                "mode": profile.mode,
                 "selected": action,
                 "legacy_best": action,
                 "future_model": profile.model,
                 "candidates": [],
                 "missing": ["reaction_scope"],
                 "fallback_reason": "reaction_scope",
+                "partial_accepted": False,
             }
             return ((action, evaluation)
                     if return_evaluation else action)

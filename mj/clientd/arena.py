@@ -25,6 +25,7 @@ from .random_claim import make_random_claim_bot
 from .stats import arena_stats
 from .sessions import SessionManager
 from .errors import ValidationError
+from ..legacy_eval import DEFAULT_BOT_EVALUATOR
 
 __all__ = ["run_arena", "build_player", "ArenaConfig", "resolve_seed0",
            "DEFAULT_ARENA_DIR", "make_arena_session_manager",
@@ -35,7 +36,7 @@ MAX_STEPS_PER_GAME = 20000
 
 # Web 控制台默认座位:主位 legacy bot,对手 random。
 DEFAULT_SEATS = [
-    {"strategy": "bot", "evaluator": "legacy"},
+    {"strategy": "bot", "evaluator": DEFAULT_BOT_EVALUATOR},
     {"strategy": "random"},
     {"strategy": "random"},
     {"strategy": "random"},

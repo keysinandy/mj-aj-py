@@ -18,6 +18,7 @@ from .runner import DumpingApi, make_decide
 from .security import redact_exception, redact_text, redact_value
 from .tournament import (TournamentContext, TournamentResult, TournamentRules,
                          TERMINATION_REASONS)
+from ..legacy_eval import DEFAULT_BOT_EVALUATOR
 
 
 PRODUCTION_API = Api
@@ -98,7 +99,7 @@ class TournamentWorker:
     """Run one scoped registration token until its tournament outcome."""
 
     def __init__(self, label, server, token, strategy="policy", ckpt=None,
-                 evaluator="legacy", state_rate=16.0, dump=False,
+                 evaluator=DEFAULT_BOT_EVALUATOR, state_rate=16.0, dump=False,
                  dump_dir="local/logs", recorder=True,
                  replay_trace=False, trace_root=None, stop=None,
                  recorder_root="local/games", api_factory=None,
@@ -315,7 +316,8 @@ class TournamentWorker:
             self._close_recorder()
 
 
-def run_tournament(cfg, *, strategy="policy", ckpt=None, evaluator="legacy",
+def run_tournament(cfg, *, strategy="policy", ckpt=None,
+                   evaluator=DEFAULT_BOT_EVALUATOR,
                    state_rate=16.0, dump=False, no_recorder=False,
                    replay_trace=False, trace_root=None,
                    max_games_debug=None, stop=None, **worker_kwargs):
@@ -364,10 +366,12 @@ def build_parser():
                     choices=("policy", "bot", "random", "policy-v3"))
     parser.add_argument("--ckpt", default="runs/bc0/best.pt",
                         help="policy 策略 checkpoint")
-    parser.add_argument("--bot-evaluator", default="legacy",
-                        choices=("legacy", "legacy-two-ply-v1", "shape-v1",
+    parser.add_argument("--bot-evaluator", default=DEFAULT_BOT_EVALUATOR,
+                        choices=("legacy", "legacy-two-ply-v1",
+                                 "legacyV2", "legacy-v2",
+                                 "weighted-two-ply-frontier-v1", "shape-v1",
                                  "shape-v2", "policy-v3"),
-                        help="strategy=bot 时的评价器")
+                        help="strategy=bot 时的评价器(默认 legacyV2)")
     parser.add_argument("--state-rate", type=float, default=16.0,
                         help="每 token /state 主动限速(默认 16/s)")
     parser.add_argument("--dump", action="store_true",

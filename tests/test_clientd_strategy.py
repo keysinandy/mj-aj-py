@@ -47,6 +47,13 @@ def test_bot_shape_v2_budget_injection():
     assert ev["budget"]["time_limit_ms"] == 10.0
 
 
+def test_bot_default_uses_legacy_v2():
+    player = make_player({"strategy": "bot"})
+    assert player.evaluator == "legacyV2"
+    assert player.profile is not None
+    assert player.profile.name == "legacyV2"
+
+
 def test_bot_never_fallbacks_no_budget_fallback():
     player = make_player({"strategy": "bot", "evaluator": "shape-v2",
                           "fallback_ms": "never"})
