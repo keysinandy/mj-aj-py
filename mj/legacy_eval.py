@@ -37,6 +37,7 @@ LEGACY_V2_PROFILE_VERSION = "legacyV2"
 # now the shorter public ``legacyV2`` identifier.
 WEIGHTED_PROFILE_VERSION = LEGACY_V2_PROFILE_VERSION
 WEIGHTED_SORT_VERSION = "weighted-frontier-v1"
+WEIGHTED_DEADLINE_RESERVE_MS = 2.0
 LEGACY_V2_EVALUATORS = (
     LEGACY_V2_PROFILE_VERSION,
     "legacy-v2",
@@ -246,6 +247,7 @@ class FutureEvaluation:
     future_ukeire_mean_denominator: int | None = None
     future_ukeire_types: int | None = None
     future_ukeire_types_mean: float | None = None
+    future_ukeire_skipped: bool = False
     best_discards: tuple[tuple[int, int], ...] = ()
     nodes: int = 0
     cache_hits: int = 0
@@ -270,6 +272,7 @@ class FutureEvaluation:
             "future_ukeire_mean_denominator": self.future_ukeire_mean_denominator,
             "future_ukeire_types": self.future_ukeire_types,
             "future_ukeire_types_mean": self.future_ukeire_types_mean,
+            "future_ukeire_skipped": self.future_ukeire_skipped,
             "future_best_discards": {
                 str(tile): weight for tile, weight in self.best_discards
             },
@@ -322,6 +325,9 @@ class LegacyDiscardEvaluation:
     kernel_version: str | None = None
     kernel_fallback_reason: str | None = None
     short_circuit_reason: str | None = None
+    search_used: bool = False
+    search_phase: str | None = None
+    search_attempt_phase: str | None = None
 
     def as_json(self):
         result = {
@@ -353,6 +359,9 @@ class LegacyDiscardEvaluation:
             "kernel_version": self.kernel_version,
             "kernel_fallback_reason": self.kernel_fallback_reason,
             "short_circuit_reason": self.short_circuit_reason,
+            "search_used": self.search_used,
+            "search_phase": self.search_phase,
+            "search_attempt_phase": self.search_attempt_phase,
         }
         return result
 
@@ -970,6 +979,18 @@ def _weighted_native_future_for_frontier(
         if not isinstance(draw_rows, (list, tuple)):
             raise _NativeKernelInvalid("weighted_native_draw_rows_invalid")
 
+        stage_a_only = str(reason or "") == "future_ukeire_skipped"
+        sentinel_flags = []
+        for raw_draw in draw_rows:
+            if not isinstance(raw_draw, (list, tuple)) or len(raw_draw) != 6:
+                raise _NativeKernelInvalid("weighted_native_draw_row_shape_invalid")
+            sentinel_flags.append(int(raw_draw[3]) == -1 and int(raw_draw[4]) == -1)
+        if sentinel_flags and any(flag != sentinel_flags[0] for flag in sentinel_flags):
+            raise _NativeKernelInvalid("weighted_native_draw_stage_mixed")
+        stage_a_only = stage_a_only or (bool(sentinel_flags) and all(sentinel_flags))
+        if complete and stage_a_only:
+            raise _NativeKernelInvalid("weighted_native_stage_a_marked_complete")
+
         seen_draws = set()
         improve = 0
         maintain = 0
@@ -977,8 +998,6 @@ def _weighted_native_future_for_frontier(
         weighted_types = 0
         best_counts = {}
         for raw_draw in draw_rows:
-            if not isinstance(raw_draw, (list, tuple)) or len(raw_draw) != 6:
-                raise _NativeKernelInvalid("weighted_native_draw_row_shape_invalid")
             drawn, weight, child_s, child_u, child_types, tied = raw_draw
             drawn = int(drawn)
             weight = int(weight)
@@ -986,13 +1005,20 @@ def _weighted_native_future_for_frontier(
             child_u = int(child_u)
             child_types = int(child_types)
             if (drawn not in expected_draws or drawn in seen_draws or
-                    weight != remaining[drawn] or child_u < 0 or
-                    child_types < 0 or not isinstance(tied, (list, tuple)) or
-                    not tied):
+                    weight != remaining[drawn] or
+                    (stage_a_only and (child_u != -1 or child_types != -1)) or
+                    (not stage_a_only and (child_u < 0 or child_types < 0)) or
+                    not isinstance(tied, (list, tuple)) or not tied):
                 raise _NativeKernelInvalid("weighted_native_draw_row_invalid")
             seen_draws.add(drawn)
             next_hand = list(root.hand)
             next_hand[drawn] += 1
+            if stage_a_only:
+                if child_s < root.shanten:
+                    improve += weight
+                else:
+                    maintain += weight
+                continue
             candidates = []
             for discard in tied:
                 discard = int(discard)
@@ -1017,31 +1043,40 @@ def _weighted_native_future_for_frontier(
             weighted_ukeire += weight * child_u
             weighted_types += weight * child_types
 
-        if complete:
+        complete_value = bool(complete) and not stage_a_only
+        if complete_value:
             if seen_draws != expected_draws or covered != total:
                 raise _NativeKernelInvalid("weighted_native_complete_coverage")
         elif covered != sum(remaining[draw] for draw in seen_draws):
             raise _NativeKernelInvalid("weighted_native_partial_coverage")
         if (improve != native_improve or maintain != native_maintain or
-                weighted_ukeire != native_ukeire or
-                weighted_types != native_types):
+                (not stage_a_only and weighted_ukeire != native_ukeire) or
+                (not stage_a_only and weighted_types != native_types) or
+                (stage_a_only and (native_ukeire != 0 or native_types != 0))):
             raise _NativeKernelInvalid("weighted_native_metric_mismatch")
         total_weight = total
-        mean_denominator = total if complete else covered
+        mean_denominator = total if complete_value else covered
         values[root.tile] = FutureEvaluation(
-            complete=bool(complete),
+            complete=complete_value,
             root_shanten=root.shanten,
             future_improve_weight=improve,
             future_improve_lower=improve,
             future_improve_upper=improve + max(0, total - covered),
-            future_ukeire=weighted_ukeire,
-            future_ukeire_mean=(float(weighted_ukeire) / float(mean_denominator)
-                                if mean_denominator else None),
-            future_ukeire_mean_denominator=mean_denominator,
-            future_ukeire_types=weighted_types,
-            future_ukeire_types_mean=(float(weighted_types) / float(mean_denominator)
-                                      if mean_denominator else None),
-            best_discards=tuple(sorted(best_counts.items())),
+            future_ukeire=(None if stage_a_only else weighted_ukeire),
+            future_ukeire_mean=(
+                None if stage_a_only else
+                (float(weighted_ukeire) / float(mean_denominator)
+                 if mean_denominator else None)),
+            future_ukeire_mean_denominator=(
+                None if stage_a_only else mean_denominator),
+            future_ukeire_types=(None if stage_a_only else weighted_types),
+            future_ukeire_types_mean=(
+                None if stage_a_only else
+                (float(weighted_types) / float(mean_denominator)
+                 if mean_denominator else None)),
+            future_ukeire_skipped=stage_a_only,
+            best_discards=(
+                () if stage_a_only else tuple(sorted(best_counts.items()))),
             nodes=search_metrics["child_nodes"],
             cache_hits=search_metrics["shanten_cache_hits"],
             elapsed_ms=float(elapsed_us) / 1000.0,
@@ -1049,10 +1084,17 @@ def _weighted_native_future_for_frontier(
             total_weight=total_weight,
             coverage=(float(covered) / float(total_weight)
                       if total_weight else 1.0),
-            search_metrics=search_metrics,
+            search_metrics={
+                **search_metrics,
+                "search_phase": "future_shanten" if stage_a_only else "two_ply",
+            },
+            missing=("future_ukeire_not_evaluated",) if stage_a_only else (),
             fallback_reason=(str(reason) if reason else None),
         )
-        all_metrics = search_metrics
+        all_metrics = {
+            **search_metrics,
+            "search_phase": "future_shanten" if stage_a_only else "two_ply",
+        }
     return values, all_metrics, elapsed_ms
 
 
@@ -1083,7 +1125,10 @@ def _weighted_evaluation(
                     "work_budget": profile.node_budget,
                     "work_budget_metric": "shanten_cache_misses",
                     "soft_budget_ms": profile.soft_budget_ms,
-                    "hard_budget_ms": profile.hard_budget_ms},
+                    "hard_budget_ms": profile.hard_budget_ms,
+                    "internal_hard_budget_ms": max(
+                        0.0, profile.hard_budget_ms - WEIGHTED_DEADLINE_RESERVE_MS),
+                    "deadline_reserve_ms": WEIGHTED_DEADLINE_RESERVE_MS},
             fallback_reason=str(exc), missing=(str(exc),),
             requested_kernel=requested_kernel, actual_kernel="legacy",
             kernel_fallback_reason="root_validation_failed",
@@ -1253,6 +1298,14 @@ def _weighted_evaluation(
         selected = legacy
         actual_kernel = "legacy"
 
+    stage_a_only = any(
+        value.future_ukeire_skipped for value in future_values.values())
+    search_used = bool(accepted)
+    search_attempt_phase = search_metrics.get("search_phase")
+    search_phase = (
+        ("future_shanten" if stage_a_only else "two_ply")
+        if accepted else None)
+
     candidate_json = []
     frontier_tiles = {root.tile for root in frontier}
     for root, eligible, missing in diagnostics:
@@ -1285,7 +1338,10 @@ def _weighted_evaluation(
                 "work_budget": profile.node_budget,
                 "work_budget_metric": "shanten_cache_misses",
                 "soft_budget_ms": profile.soft_budget_ms,
-                "hard_budget_ms": profile.hard_budget_ms},
+                "hard_budget_ms": profile.hard_budget_ms,
+                "internal_hard_budget_ms": max(
+                    0.0, profile.hard_budget_ms - WEIGHTED_DEADLINE_RESERVE_MS),
+                "deadline_reserve_ms": WEIGHTED_DEADLINE_RESERVE_MS},
         fallback_reason=fallback_reason,
         missing=(() if accepted else ("weighted_incomplete",)),
         partial_accepted=partial_accepted,
@@ -1303,10 +1359,19 @@ def _weighted_evaluation(
             "elapsed_ms": elapsed_ms,
             "work_budget": profile.node_budget,
             "work_budget_metric": "shanten_cache_misses",
+            "search_used": search_used,
+            "search_phase": search_phase,
+            "search_attempt_phase": search_attempt_phase,
+            "internal_hard_budget_ms": max(
+                0.0, profile.hard_budget_ms - WEIGHTED_DEADLINE_RESERVE_MS),
+            "deadline_reserve_ms": WEIGHTED_DEADLINE_RESERVE_MS,
         },
         requested_kernel=requested_kernel, actual_kernel=actual_kernel,
         kernel_version=kernel_version,
         kernel_fallback_reason=kernel_fallback_reason,
+        search_used=search_used,
+        search_phase=search_phase,
+        search_attempt_phase=search_attempt_phase,
     )
     return selected, evaluation
 

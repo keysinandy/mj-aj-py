@@ -25,6 +25,8 @@ type UkeireCacheKey = ([i32; 34], [i32; 34], i32);
 const LEGACY_TWO_PLY_KERNEL_VERSION: &str = "rust-legacy-two-ply-v1";
 const WEIGHTED_TWO_PLY_KERNEL_VERSION: &str = "rust-weighted-two-ply-v1";
 const WORK_BUDGET_EXCEEDED: &str = "work_budget_exceeded";
+const HARD_DEADLINE_EXCEEDED: &str = "hard_deadline";
+const DEADLINE_RESERVE_MS: f64 = 2.0;
 
 #[derive(Clone)]
 struct FutureDiscard {
@@ -450,6 +452,7 @@ fn counted_shanten(
     cache: &mut HashMap<ShantenCacheKey, i32>,
     cache_capacity: usize,
     work_budget: i64,
+    hard_deadline: Instant,
     counters: &mut SearchCounters,
 ) -> Result<i32, String> {
     counters.shanten_calls += 1;
@@ -459,6 +462,9 @@ fn counted_shanten(
             counters.shanten_cache_hits += 1;
             return Ok(value);
         }
+    }
+    if Instant::now() >= hard_deadline {
+        return Err(HARD_DEADLINE_EXCEEDED.to_string());
     }
     if counters.shanten_cache_misses >= work_budget {
         return Err(WORK_BUDGET_EXCEEDED.to_string());
@@ -482,6 +488,7 @@ fn counted_ukeire_metrics(
     ukeire_cache: &mut HashMap<UkeireCacheKey, UkeireMetrics>,
     cache_capacity: usize,
     work_budget: i64,
+    hard_deadline: Instant,
     counters: &mut SearchCounters,
 ) -> Result<UkeireMetrics, String> {
     counters.ukeire_calls += 1;
@@ -493,12 +500,16 @@ fn counted_ukeire_metrics(
         }
     }
     counters.ukeire_cache_misses += 1;
+    if Instant::now() >= hard_deadline {
+        return Err(HARD_DEADLINE_EXCEEDED.to_string());
+    }
     let s = counted_shanten(
         counts,
         locked,
         shanten_cache,
         cache_capacity,
         work_budget,
+        hard_deadline,
         counters,
     )?;
     let left = |t: usize| (4 - visible[t]).max(0) as i64;
@@ -507,6 +518,9 @@ fn counted_ukeire_metrics(
     if s <= 0 {
         if s == 0 {
             for t in 0..34 {
+                if Instant::now() >= hard_deadline {
+                    return Err(HARD_DEADLINE_EXCEEDED.to_string());
+                }
                 let mut c2 = *counts;
                 c2[t] += 1;
                 if counted_shanten(
@@ -515,6 +529,7 @@ fn counted_ukeire_metrics(
                     shanten_cache,
                     cache_capacity,
                     work_budget,
+                    hard_deadline,
                     counters,
                 )? == -1
                 {
@@ -530,6 +545,9 @@ fn counted_ukeire_metrics(
             ukeire_candidates(counts)
         };
         for t in cands {
+            if Instant::now() >= hard_deadline {
+                return Err(HARD_DEADLINE_EXCEEDED.to_string());
+            }
             if counts[t] >= 4 {
                 continue;
             }
@@ -541,6 +559,7 @@ fn counted_ukeire_metrics(
                 shanten_cache,
                 cache_capacity,
                 work_budget,
+                hard_deadline,
                 counters,
             )? < s
             {
@@ -1256,6 +1275,7 @@ fn legacy_two_ply_frontier(
 }
 
 type WeightedDrawRow = (i32, i64, i32, i64, i32, Vec<i32>);
+type StageADrawRow = (i32, i64, i32, Vec<i32>);
 type WeightedRootRow = (
     i32,
     bool,
@@ -1267,13 +1287,11 @@ type WeightedRootRow = (
     String,
 );
 
-/// Return the bounded, probability-weighted online frontier.
+/// Return the staged, probability-weighted online frontier.
 ///
-/// The row contract is intentionally separate from ``legacy_two_ply_frontier``
-/// so old wheels and exact replay artifacts remain stable.  A root row is
-/// committed once at least one complete draw branch has been evaluated.  The
-/// Python adapter decides whether all committed rows meet the configured
-/// partial-coverage gate before allowing the row to influence a decision.
+/// Stage A evaluates only child shanten.  Stage B is entered only when the
+/// improvement bounds cannot decide the root, avoiding the expensive child
+/// ukeire DFS for the common easy-to-rank states.
 #[pyfunction(signature = (roots, root_shantens, visible, legal_masks, locked=0, frozen=false, node_budget=100000, soft_budget_ms=40.0, hard_budget_ms=50.0, cache_capacity=8192, min_partial_coverage=0.90, include_best_discards=true))]
 fn weighted_two_ply_frontier(
     roots: Vec<Vec<i32>>,
@@ -1322,7 +1340,9 @@ fn weighted_two_ply_frontier(
         .map_err(|_| PyValueError::new_err("cache_capacity must be non-negative"))?;
     let started = Instant::now();
     let soft_limit = Duration::from_secs_f64(soft_budget_ms / 1000.0);
-    let hard_limit = Duration::from_secs_f64(hard_budget_ms / 1000.0);
+    let internal_hard_ms = (hard_budget_ms - DEADLINE_RESERVE_MS).max(0.0);
+    let hard_limit = Duration::from_secs_f64(internal_hard_ms / 1000.0);
+    let hard_deadline = started + hard_limit;
     let visible = validate_count_vector(&visible, "visible")?;
     let expected = 13 - 3 * locked;
     let mut root_arrays = Vec::with_capacity(roots.len());
@@ -1363,10 +1383,11 @@ fn weighted_two_ply_frontier(
         root_candidates: root_arrays.len() as i64,
         ..SearchCounters::default()
     };
-    // Keep root validation legal even when callers request a zero child-work
-    // budget; the weighted budget is charged to uncached shanten work after
-    // at least one root validation per candidate.
     let work_budget = node_budget.max(root_arrays.len() as i64);
+    // Root validation is a legality check, not speculative search.  Keep it
+    // outside the online hard deadline so a zero/very small budget still
+    // returns a transactional row instead of a PyO3 exception.
+    let root_validation_deadline = Instant::now() + Duration::from_secs(24 * 60 * 60);
     let mut root_shanten_values = Vec::with_capacity(root_arrays.len());
     for (index, root) in root_arrays.iter().enumerate() {
         let value = counted_shanten(
@@ -1375,6 +1396,7 @@ fn weighted_two_ply_frontier(
             &mut shanten_cache,
             cache_capacity,
             work_budget,
+            root_validation_deadline,
             &mut counters,
         )
         .map_err(PyValueError::new_err)?;
@@ -1391,33 +1413,37 @@ fn weighted_two_ply_frontier(
         .map(|_| WeightedRootAccumulator::new(total_weight))
         .collect();
     let mut hard_exhausted = false;
-    let mut soft_stopped = false;
+    let soft_stopped = false;
+    let mut stage_a_winner = None;
 
-    'draws: for &draw in &draw_order {
+    'stage_a: for &draw in &draw_order {
         if counters.shanten_cache_misses >= work_budget {
             break;
         }
-        if started.elapsed() >= hard_limit {
+        if Instant::now() >= hard_deadline {
             hard_exhausted = true;
             break;
         }
         for root_index in 0..root_arrays.len() {
-            if accumulators[root_index].complete || accumulators[root_index].failed {
-                continue;
-            }
-            if started.elapsed() >= hard_limit {
+            if Instant::now() >= hard_deadline {
                 hard_exhausted = true;
-                break 'draws;
+                break 'stage_a;
             }
             if counters.shanten_cache_misses >= work_budget {
-                break 'draws;
+                break 'stage_a;
             }
             let all_covered = accumulators.iter().all(|acc| {
-                acc.coverage() >= min_partial_coverage || (acc.total_weight == 0 && acc.committed)
+                acc.coverage() >= min_partial_coverage
+                    || (acc.total_weight == 0 && acc.covered_weight == 0)
             });
-            if soft_stopped || (started.elapsed() >= soft_limit && all_covered) {
-                soft_stopped = true;
-                break 'draws;
+            if Instant::now() >= started + soft_limit && all_covered {
+                if let Some(winner) = strict_improvement_winner(&accumulators) {
+                    stage_a_winner = Some(winner);
+                    break 'stage_a;
+                }
+                // Coverage alone is not a decision certificate.  Keep racing
+                // until the internal hard deadline so the remaining draw mass
+                // can either separate the bounds or finish Stage A.
             }
 
             let weight = remaining[draw];
@@ -1453,16 +1479,15 @@ fn weighted_two_ply_frontier(
             }
 
             counters.draw_nodes += 1;
-            let mut children: Vec<(usize, [i32; 34], i32)> = Vec::new();
             let mut best_s = i32::MAX;
-            let mut branch_aborted = false;
+            let mut best_discards = Vec::new();
+            let mut branch_reason = None;
             for discard in 0..34 {
                 if mask & (1i64 << discard) == 0 {
                     continue;
                 }
-                if started.elapsed() >= hard_limit {
-                    branch_aborted = true;
-                    hard_exhausted = true;
+                if Instant::now() >= hard_deadline {
+                    branch_reason = Some(HARD_DEADLINE_EXCEEDED.to_string());
                     break;
                 }
                 counters.child_nodes += 1;
@@ -1474,85 +1499,137 @@ fn weighted_two_ply_frontier(
                     &mut shanten_cache,
                     cache_capacity,
                     work_budget,
+                    hard_deadline,
                     &mut counters,
                 ) {
                     Ok(value) => value,
-                    Err(reason) if reason == WORK_BUDGET_EXCEEDED => {
-                        branch_aborted = true;
+                    Err(reason) => {
+                        branch_reason = Some(reason);
                         break;
                     }
-                    Err(reason) => return Err(PyValueError::new_err(reason)),
                 };
-                best_s = best_s.min(child_s);
-                children.push((discard, after, child_s));
+                if child_s < best_s {
+                    best_s = child_s;
+                    best_discards.clear();
+                    best_discards.push(discard as i32);
+                } else if child_s == best_s {
+                    best_discards.push(discard as i32);
+                }
             }
-            if branch_aborted {
-                accumulators[root_index].reason = if counters.shanten_cache_misses >= work_budget {
-                    WORK_BUDGET_EXCEEDED.to_string()
-                } else {
-                    "hard_deadline".to_string()
-                };
-                if counters.shanten_cache_misses >= work_budget {
-                    break 'draws;
+            if let Some(reason) = branch_reason {
+                accumulators[root_index].reason = reason.clone();
+                if reason == WORK_BUDGET_EXCEEDED || reason == HARD_DEADLINE_EXCEEDED {
+                    if reason == HARD_DEADLINE_EXCEEDED {
+                        hard_exhausted = true;
+                    }
+                    break 'stage_a;
                 }
                 continue;
             }
-            if children.is_empty() {
+            if best_discards.is_empty() {
                 return Err(PyValueError::new_err("future legal discard set is empty"));
             }
-
-            let mut best_u = -1i64;
-            let mut best_types = 0i32;
-            let mut tied: Vec<i32> = Vec::new();
-            for (discard, after, child_s) in children {
-                if child_s != best_s {
-                    continue;
-                }
-                let metrics = match counted_ukeire_metrics(
-                    &after,
-                    locked,
-                    &visible_after,
-                    &mut shanten_cache,
-                    &mut ukeire_cache,
-                    cache_capacity,
-                    work_budget,
-                    &mut counters,
-                ) {
-                    Ok(value) => value,
-                    Err(reason) if reason == WORK_BUDGET_EXCEEDED => {
-                        branch_aborted = true;
-                        break;
-                    }
-                    Err(reason) => return Err(PyValueError::new_err(reason)),
-                };
-                if metrics.ukeire > best_u
-                    || (metrics.ukeire == best_u && metrics.tile_types > best_types)
-                {
-                    best_u = metrics.ukeire;
-                    best_types = metrics.tile_types;
-                    tied.clear();
-                    tied.push(discard as i32);
-                } else if metrics.ukeire == best_u && metrics.tile_types == best_types {
-                    tied.push(discard as i32);
-                }
-            }
-            if branch_aborted {
-                accumulators[root_index].reason = WORK_BUDGET_EXCEEDED.to_string();
-                break 'draws;
-            }
-            if tied.is_empty() {
-                return Err(PyValueError::new_err("future legal discard set is empty"));
-            }
-            accumulators[root_index].covered_weight += weight;
+            let accumulator = &mut accumulators[root_index];
+            accumulator.covered_weight += weight;
             if best_s < root_shanten_values[root_index] {
-                accumulators[root_index].improve_weight += weight;
+                accumulator.improve_weight += weight;
             } else {
-                accumulators[root_index].maintain_weight += weight;
+                accumulator.maintain_weight += weight;
             }
-            accumulators[root_index].future_ukeire += weight * best_u.max(0);
-            accumulators[root_index].future_ukeire_types += weight * i64::from(best_types);
-            if include_best_discards {
-                accumulators[root_index].draw_rows.push((
+            accumulator
+                .stage_a_rows
+                .push((draw as i32, weight, best_s, best_discards));
+
+            if let Some(winner) = strict_improvement_winner(&accumulators) {
+                stage_a_winner = Some(winner);
+                break 'stage_a;
+            }
+        }
+    }
+
+    let stage_a_complete = !hard_exhausted
+        && !soft_stopped
+        && counters.shanten_cache_misses < work_budget
+        && accumulators
+            .iter()
+            .all(|acc| acc.covered_weight >= acc.total_weight);
+    if stage_a_winner.is_none() && stage_a_complete && total_weight > 0 {
+        let max_improve = accumulators
+            .iter()
+            .map(|acc| acc.improve_weight)
+            .max()
+            .unwrap_or(0);
+        let winners: Vec<usize> = accumulators
+            .iter()
+            .enumerate()
+            .filter_map(|(index, acc)| (acc.improve_weight == max_improve).then_some(index))
+            .collect();
+        if winners.len() == 1 {
+            stage_a_winner = winners.first().copied();
+        }
+    }
+
+    let mut stage_b_complete = total_weight == 0;
+    if stage_a_winner.is_none() && stage_a_complete && total_weight > 0 {
+        let mut stage_b_aborted = None;
+        'stage_b: for root_index in 0..root_arrays.len() {
+            let rows = accumulators[root_index].stage_a_rows.clone();
+            for (draw, weight, best_s, best_discards) in rows {
+                if Instant::now() >= hard_deadline {
+                    stage_b_aborted = Some(HARD_DEADLINE_EXCEEDED.to_string());
+                    break 'stage_b;
+                }
+                let draw = draw as usize;
+                let mut visible_after = visible;
+                visible_after[draw] += 1;
+                let mut next_hand = root_arrays[root_index];
+                next_hand[draw] += 1;
+                let mut best_u = -1i64;
+                let mut best_types = 0i32;
+                let mut tied = Vec::new();
+                for discard in best_discards {
+                    if Instant::now() >= hard_deadline {
+                        stage_b_aborted = Some(HARD_DEADLINE_EXCEEDED.to_string());
+                        break 'stage_b;
+                    }
+                    let discard = discard as usize;
+                    let mut after = next_hand;
+                    after[discard] -= 1;
+                    let metrics = match counted_ukeire_metrics(
+                        &after,
+                        locked,
+                        &visible_after,
+                        &mut shanten_cache,
+                        &mut ukeire_cache,
+                        cache_capacity,
+                        work_budget,
+                        hard_deadline,
+                        &mut counters,
+                    ) {
+                        Ok(value) => value,
+                        Err(reason) => {
+                            stage_b_aborted = Some(reason);
+                            break 'stage_b;
+                        }
+                    };
+                    if metrics.ukeire > best_u
+                        || (metrics.ukeire == best_u && metrics.tile_types > best_types)
+                    {
+                        best_u = metrics.ukeire;
+                        best_types = metrics.tile_types;
+                        tied.clear();
+                        tied.push(discard as i32);
+                    } else if metrics.ukeire == best_u && metrics.tile_types == best_types {
+                        tied.push(discard as i32);
+                    }
+                }
+                if tied.is_empty() {
+                    return Err(PyValueError::new_err("future legal discard set is empty"));
+                }
+                let accumulator = &mut accumulators[root_index];
+                accumulator.future_ukeire += weight * best_u.max(0);
+                accumulator.future_ukeire_types += weight * i64::from(best_types);
+                accumulator.draw_rows.push((
                     draw as i32,
                     weight,
                     best_s,
@@ -1562,47 +1639,89 @@ fn weighted_two_ply_frontier(
                 ));
             }
         }
-    }
-
-    if hard_exhausted || soft_stopped || counters.shanten_cache_misses >= work_budget {
-        for acc in &mut accumulators {
-            if !acc.complete && !acc.failed {
-                acc.reason = if counters.shanten_cache_misses >= work_budget {
-                    WORK_BUDGET_EXCEEDED.to_string()
-                } else if hard_exhausted {
-                    "hard_deadline".to_string()
-                } else {
-                    "soft_deadline".to_string()
-                };
+        if let Some(reason) = stage_b_aborted {
+            for accumulator in &mut accumulators {
+                accumulator.reason = reason.clone();
+                accumulator.future_ukeire = 0;
+                accumulator.future_ukeire_types = 0;
+                accumulator.draw_rows.clear();
             }
+            if reason == HARD_DEADLINE_EXCEEDED {
+                hard_exhausted = true;
+            }
+        } else {
+            stage_b_complete = true;
         }
     }
-    for acc in &mut accumulators {
-        if !acc.failed && acc.covered_weight >= acc.total_weight {
-            acc.complete = true;
-            acc.committed = true;
-            acc.reason.clear();
-        } else if !acc.failed && acc.covered_weight > 0 {
-            acc.committed = true;
+
+    if let Some(_winner) = stage_a_winner {
+        for accumulator in &mut accumulators {
+            accumulator.reason = "future_ukeire_skipped".to_string();
+            accumulator.future_ukeire = 0;
+            accumulator.future_ukeire_types = 0;
+            accumulator.draw_rows.clear();
+        }
+    } else if hard_exhausted || soft_stopped || counters.shanten_cache_misses >= work_budget {
+        for accumulator in &mut accumulators {
+            if accumulator.reason.is_empty() {
+                accumulator.reason = if counters.shanten_cache_misses >= work_budget {
+                    WORK_BUDGET_EXCEEDED.to_string()
+                } else if soft_stopped {
+                    "soft_deadline".to_string()
+                } else {
+                    HARD_DEADLINE_EXCEEDED.to_string()
+                };
+            }
         }
     }
 
     let elapsed_us = started.elapsed().as_micros() as i64;
     let mut output = Vec::with_capacity(accumulators.len());
-    for (index, acc) in accumulators.into_iter().enumerate() {
+    for (index, accumulator) in accumulators.into_iter().enumerate() {
+        let complete = stage_b_complete
+            && accumulator.covered_weight >= accumulator.total_weight
+            && accumulator.reason.is_empty();
+        let committed = accumulator.covered_weight > 0 || accumulator.total_weight == 0;
+        let draw_rows = if stage_b_complete && accumulator.reason.is_empty() {
+            if include_best_discards {
+                accumulator.draw_rows
+            } else {
+                Vec::new()
+            }
+        } else if include_best_discards {
+            accumulator
+                .stage_a_rows
+                .into_iter()
+                .map(|(draw, weight, child_s, tied)| (draw, weight, child_s, -1, -1, tied))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let improve = accumulator.improve_weight;
+        let maintain = accumulator.maintain_weight;
+        let future_ukeire = if complete {
+            accumulator.future_ukeire
+        } else {
+            0
+        };
+        let future_types = if complete {
+            accumulator.future_ukeire_types
+        } else {
+            0
+        };
         output.push((
             index as i32,
-            acc.committed,
-            acc.complete,
+            committed,
+            complete,
             (
-                acc.covered_weight,
-                acc.total_weight,
-                acc.improve_weight,
-                acc.maintain_weight,
-                acc.future_ukeire,
-                acc.future_ukeire_types,
+                accumulator.covered_weight,
+                accumulator.total_weight,
+                improve,
+                maintain,
+                future_ukeire,
+                future_types,
             ),
-            acc.draw_rows,
+            draw_rows,
             (
                 counters.root_candidates,
                 counters.draw_nodes,
@@ -1615,7 +1734,7 @@ fn weighted_two_ply_frontier(
                 counters.ukeire_cache_misses,
             ),
             elapsed_us,
-            acc.reason,
+            accumulator.reason,
         ));
     }
     Ok(output)
@@ -1628,10 +1747,8 @@ struct WeightedRootAccumulator {
     maintain_weight: i64,
     future_ukeire: i64,
     future_ukeire_types: i64,
+    stage_a_rows: Vec<StageADrawRow>,
     draw_rows: Vec<WeightedDrawRow>,
-    committed: bool,
-    complete: bool,
-    failed: bool,
     reason: String,
 }
 
@@ -1644,10 +1761,8 @@ impl WeightedRootAccumulator {
             maintain_weight: 0,
             future_ukeire: 0,
             future_ukeire_types: 0,
+            stage_a_rows: Vec::new(),
             draw_rows: Vec::new(),
-            committed: false,
-            complete: false,
-            failed: false,
             reason: String::new(),
         }
     }
@@ -1659,6 +1774,20 @@ impl WeightedRootAccumulator {
             self.covered_weight as f64 / self.total_weight as f64
         }
     }
+}
+
+fn strict_improvement_winner(accumulators: &[WeightedRootAccumulator]) -> Option<usize> {
+    for (index, candidate) in accumulators.iter().enumerate() {
+        let lower = candidate.improve_weight;
+        let winner = accumulators.iter().enumerate().all(|(other, value)| {
+            other == index
+                || lower > value.improve_weight + (value.total_weight - value.covered_weight).max(0)
+        });
+        if winner {
+            return Some(index);
+        }
+    }
+    None
 }
 
 fn validate_count_vector(values: &[i32], name: &str) -> PyResult<[i32; 34]> {

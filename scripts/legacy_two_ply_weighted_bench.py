@@ -61,13 +61,16 @@ def _roots(game, seat, profile):
     return locked, visible, frozen, frontier
 
 
-def _summary(durations, complete, partial, fallback, coverage, frontiers,
-             metrics, reasons):
+def _summary(durations, complete, partial, fallback, search_used,
+             phase_counts, coverage, frontiers, metrics, reasons):
     return {
         "states": len(durations),
         "complete": complete,
         "partial_accepted": partial,
         "fallback": fallback,
+        "search_used": search_used,
+        "search_used_rate": (search_used / max(1, len(durations))),
+        "search_phase_counts": dict(phase_counts),
         "p50_ms": _quantile(durations, 0.50),
         "p90_ms": _quantile(durations, 0.90),
         "p95_ms": _quantile(durations, 0.95),
@@ -88,6 +91,8 @@ def run(states, seed0, profile):
     end_durations = []
     raw_durations = []
     complete = partial = fallback = 0
+    search_used = 0
+    phase_counts = Counter()
     coverage = []
     frontiers = []
     metrics = []
@@ -108,6 +113,8 @@ def run(states, seed0, profile):
         partial += int(bool(info.get("partial_accepted")))
         fallback += int(not info.get("complete") and
                         not info.get("partial_accepted"))
+        search_used += int(bool(info.get("search_used")))
+        phase_counts[str(info.get("search_attempt_phase") or "none")] += 1
         if info.get("coverage") is not None:
             coverage.append(float(info["coverage"]))
         if info.get("fallback_reason"):
@@ -138,8 +145,8 @@ def run(states, seed0, profile):
     return {
         "profile": profile.as_json(),
         "end_to_end": _summary(
-            end_durations, complete, partial, fallback, coverage, frontiers,
-            metrics, reasons),
+            end_durations, complete, partial, fallback, search_used,
+            phase_counts, coverage, frontiers, metrics, reasons),
         "raw_native": {
             "states": len(raw_durations),
             "p50_ms": _quantile(raw_durations, 0.50),
