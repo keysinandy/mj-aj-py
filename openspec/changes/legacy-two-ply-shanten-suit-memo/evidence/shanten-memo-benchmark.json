@@ -1,0 +1,50 @@
+{
+  "change": "legacy-two-ply-shanten-suit-memo",
+  "kernel_version": "rust-weighted-two-ply-v2",
+  "switch": "MJ_KERNELS_SHANTEN=memo 启用花色表;默认逐牌 DFS",
+  "parity": {
+    "command": "python3 scripts/rust_parity.py --n 250~300",
+    "default_dfs": "shanten/ukeire/baotou_ukeire 全部通过",
+    "memo_enabled": "shanten/ukeire/baotou_ukeire 全部通过",
+    "tests": "tests/test_legacy_weighted_frontier.py + test_legacy_eval.py + test_legacy_rust_kernel.py + test_bot.py + test_shanten.py + test_shanten_props.py + test_hand_eval.py = 122 passed"
+  },
+  "standalone_cost": {
+    "note": "单次调用(每次新建 memo,表全冷)的成本;scripts/rust_parity.py 自带基准",
+    "dfs": {"shanten_us": 1.79, "ukeire_us": 34.06},
+    "memo": {"shanten_us": 5.87, "ukeire_us": 88.23},
+    "conclusion": "单次调用下建表成本无法摊薄,memo 明显更贵"
+  },
+  "stage_b_cost": {
+    "benchmark": "scripts/legacy_two_ply_weighted_bench.py --states 100 --seed 0",
+    "machine_note": "本机 load 4-6,绝对数值随负载漂移;p50 在两次会话间不稳定,尾部分析需在安静机器复核。",
+    "runs": [
+      {
+        "workers_1": {
+          "dfs": {"complete": 76, "raw_p50": 24.49, "raw_p95": 48.39, "raw_p99": 48.81},
+          "memo": {"complete": 80, "raw_p50": 26.15, "raw_p95": 46.04, "raw_p99": 48.48}
+        },
+        "workers_auto": {
+          "dfs": {"complete": 83, "raw_p50": 7.84, "raw_p95": 17.42, "raw_p99": 31.62},
+          "memo": {"complete": 83, "raw_p50": 10.67, "raw_p95": 17.80, "raw_p99": 29.26}
+        }
+      },
+      {
+        "workers_1": {
+          "dfs": {"complete": 77, "raw_p50": 19.89, "raw_p95": 48.24, "raw_p99": 48.43},
+          "memo": {"complete": 81, "raw_p50": 20.87, "raw_p95": 37.26, "raw_p99": 48.75}
+        },
+        "workers_auto": {
+          "dfs": {"complete": 83, "raw_p50": 6.45, "raw_p95": 14.78, "raw_p99": 23.96},
+          "memo": {"complete": 83, "raw_p50": 8.38, "raw_p95": 13.82, "raw_p99": 18.24}
+        }
+      }
+    ],
+    "cpu_check": {"states": 34, "reps": 2, "wall_p50_ms": {"dfs": 22.68, "memo": 23.81}},
+    "conclusion": "中位数与 DFS 相当(两次会话内方向不一致),但尾部稳定更好:p95 48.2→37.3(workers=1)、p99 24.0→18.2(workers=auto),complete 76/77→80/81。达不到 3-5x 的目标,因此默认保持 DFS,memo 作为 opt-in。"
+  },
+  "decision": {
+    "default": "逐牌 DFS(与并行化提交 1ca8465 的行为一致)",
+    "opt_in": "MJ_KERNELS_SHANTEN=memo",
+    "next_lever": "参考 DFS 单次约 1.8μs,但存在 ~650μs 的离群调用;若还要单线程加速,优先考虑给 DFS 一个贪心初始上界/更强剪枝,而不是继续加宽表结构。"
+  }
+}

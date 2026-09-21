@@ -284,7 +284,289 @@ fn std_dfs(
     );
 }
 
-fn std_shanten(counts: &[i32; 34], locked: i32) -> i32 {
+/// One suit-block decomposition option: 面子/搭子/对子 counts plus how many
+/// 财神 the block consumed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct BlockOption {
+    m: i32,
+    t: i32,
+    p: i32,
+    wilds: i32,
+}
+
+/// Decision-local shanten memo: the hand-value cache plus the per-suit
+/// decomposition tables.  Tables are built lazily, only read afterwards and
+/// never leave the call (each parallel worker owns one), so no cross-call
+/// global state is involved.
+#[derive(Default)]
+struct ShantenMemo {
+    values: HashMap<ShantenCacheKey, i32>,
+    numbered: HashMap<u32, Vec<BlockOption>>,
+    honors: HashMap<u32, Vec<BlockOption>>,
+    enabled: bool,
+}
+
+impl ShantenMemo {
+    fn new(enabled: bool) -> Self {
+        ShantenMemo {
+            enabled,
+            ..ShantenMemo::default()
+        }
+    }
+
+    fn lookup(&self, key: &ShantenCacheKey) -> Option<i32> {
+        self.values.get(key).copied()
+    }
+
+    fn store(&mut self, key: ShantenCacheKey, value: i32, capacity: usize) {
+        if capacity == 0 {
+            return;
+        }
+        if self.values.len() >= capacity {
+            self.values.clear();
+        }
+        self.values.insert(key, value);
+    }
+}
+
+/// 花色表 opt-in:`MJ_KERNELS_SHANTEN=memo|on|1` 启用;默认(以及任何
+/// 其它取值)走逐牌 DFS,因为实测在 Stage B 口径下两者总耗时相当。
+fn shanten_memo_enabled() -> bool {
+    matches!(
+        std::env::var("MJ_KERNELS_SHANTEN").as_deref(),
+        Ok("memo") | Ok("on") | Ok("1") | Ok("true")
+    )
+}
+
+/// 花色表按 base-5 打包计数向量;数牌 9 位、字牌 6 位。
+const MAX_BLOCK_WILDS: i32 = 4;
+
+fn pack_block(block: &[i32]) -> u32 {
+    let mut key = 0u32;
+    for &count in block {
+        key = key * 5 + count as u32;
+    }
+    key
+}
+
+/// 枚举单个花色的全部分解(与 std_dfs 的逐牌分支同构:刻子、
+/// 两枚+1 财神成刻、对子、顺子、两面、坎张、放弃),再去掉被支配项。
+/// 表按最大财神数构建,合并时按实际财神预算过滤。
+#[allow(clippy::too_many_arguments)]
+fn block_options_dfs(
+    block: &mut [i32],
+    index: usize,
+    numbered: bool,
+    wilds_left: i32,
+    m: i32,
+    t: i32,
+    p: i32,
+    wilds_used: i32,
+    out: &mut Vec<BlockOption>,
+) {
+    if index >= block.len() {
+        out.push(BlockOption {
+            m,
+            t,
+            p,
+            wilds: wilds_used,
+        });
+        return;
+    }
+    let count = block[index];
+    if count == 0 {
+        block_options_dfs(
+            block, index + 1, numbered, wilds_left, m, t, p, wilds_used, out,
+        );
+        return;
+    }
+    if count >= 3 {
+        block[index] -= 3;
+        block_options_dfs(
+            block, index, numbered, wilds_left, m + 1, t, p, wilds_used, out,
+        );
+        block[index] += 3;
+    }
+    if count >= 2 && wilds_left >= 1 {
+        block[index] -= 2;
+        block_options_dfs(
+            block,
+            index,
+            numbered,
+            wilds_left - 1,
+            m + 1,
+            t,
+            p,
+            wilds_used + 1,
+            out,
+        );
+        block[index] += 2;
+    }
+    if count >= 2 {
+        block[index] -= 2;
+        block_options_dfs(
+            block, index, numbered, wilds_left, m, t, p + 1, wilds_used, out,
+        );
+        block[index] += 2;
+    }
+    if numbered && index + 2 < block.len() && block[index + 1] > 0 && block[index + 2] > 0 {
+        block[index] -= 1;
+        block[index + 1] -= 1;
+        block[index + 2] -= 1;
+        block_options_dfs(
+            block, index, numbered, wilds_left, m + 1, t, p, wilds_used, out,
+        );
+        block[index] += 1;
+        block[index + 1] += 1;
+        block[index + 2] += 1;
+    }
+    if numbered && index + 1 < block.len() && block[index + 1] > 0 {
+        block[index] -= 1;
+        block[index + 1] -= 1;
+        block_options_dfs(
+            block, index, numbered, wilds_left, m, t + 1, p, wilds_used, out,
+        );
+        block[index] += 1;
+        block[index + 1] += 1;
+    }
+    if numbered && index + 2 < block.len() && block[index + 2] > 0 {
+        block[index] -= 1;
+        block[index + 2] -= 1;
+        block_options_dfs(
+            block, index, numbered, wilds_left, m, t + 1, p, wilds_used, out,
+        );
+        block[index] += 1;
+        block[index + 2] += 1;
+    }
+    block_options_dfs(
+        block, index + 1, numbered, wilds_left, m, t, p, wilds_used, out,
+    );
+}
+
+/// 保留 Pareto 集合:面子/搭子/对子更多、财神更少者支配其余项。
+fn pareto_options(options: Vec<BlockOption>) -> Vec<BlockOption> {
+    let mut kept: Vec<BlockOption> = Vec::with_capacity(options.len());
+    'outer: for option in options {
+        for other in &kept {
+            if other.wilds <= option.wilds
+                && other.m >= option.m
+                && other.t >= option.t
+                && other.p >= option.p
+            {
+                continue 'outer;
+            }
+        }
+        kept.retain(|other| {
+            !(option.wilds <= other.wilds
+                && option.m >= other.m
+                && option.t >= other.t
+                && option.p >= other.p)
+        });
+        kept.push(option);
+    }
+    kept
+}
+
+fn block_options(block: &[i32], numbered: bool) -> Vec<BlockOption> {
+    let mut owned = block.to_vec();
+    let mut raw = Vec::new();
+    block_options_dfs(
+        &mut owned,
+        0,
+        numbered,
+        MAX_BLOCK_WILDS,
+        0,
+        0,
+        0,
+        0,
+        &mut raw,
+    );
+    pareto_options(raw)
+}
+
+/// 合并四个块的 Pareto 集合,再交给 score() 取最小值;与 std_dfs 的
+/// 叶子集合一一对应,只是把跨块展开换成状态合并。
+fn combine_block_options(sets: &[&Vec<BlockOption>], wilds: i32, need_melds: i32) -> i32 {
+    let mut states = vec![BlockOption {
+        m: 0,
+        t: 0,
+        p: 0,
+        wilds: 0,
+    }];
+    for set in sets {
+        let mut next = Vec::with_capacity(states.len() * set.len().max(1));
+        for state in &states {
+            for option in set.iter() {
+                let used = state.wilds + option.wilds;
+                if used > wilds {
+                    continue;
+                }
+                next.push(BlockOption {
+                    m: state.m + option.m,
+                    t: state.t + option.t,
+                    p: state.p + option.p,
+                    wilds: used,
+                });
+            }
+        }
+        if next.is_empty() {
+            return 9;
+        }
+        states = pareto_options(next);
+    }
+    let mut best = 9;
+    for state in states {
+        let value = score(
+            state.m,
+            state.t,
+            state.p,
+            wilds - state.wilds,
+            need_melds,
+        );
+        if value < best {
+            best = value;
+        }
+    }
+    best
+}
+
+fn std_shanten_memo(counts: &[i32; 34], locked: i32, memo: &mut ShantenMemo) -> i32 {
+    let wilds = counts[W];
+    let need_melds = 4 - locked;
+    let mut keys = [(true, 0u32); 4];
+    for (slot, start) in [0usize, 9, 18, 27].iter().enumerate() {
+        let end = if *start == 27 { 33 } else { start + 9 };
+        let block = &counts[*start..end];
+        let numbered = *start < 27;
+        let key = pack_block(block);
+        if numbered {
+            memo.numbered
+                .entry(key)
+                .or_insert_with(|| block_options(block, true));
+        } else {
+            memo.honors
+                .entry(key)
+                .or_insert_with(|| block_options(block, false));
+        }
+        keys[slot] = (numbered, key);
+    }
+    let sets: Vec<&Vec<BlockOption>> = keys
+        .iter()
+        .map(|(numbered, key)| {
+            if *numbered {
+                memo.numbered.get(key).expect("numbered block table")
+            } else {
+                memo.honors.get(key).expect("honors block table")
+            }
+        })
+        .collect();
+    combine_block_options(&sets, wilds, need_melds)
+}
+
+fn std_shanten(counts: &[i32; 34], locked: i32, memo: &mut ShantenMemo) -> i32 {
+    if memo.enabled {
+        return std_shanten_memo(counts, locked, memo);
+    }
     let wilds = counts[W];
     let mut nat = [0i32; 33];
     nat.copy_from_slice(&counts[..33]);
@@ -324,13 +606,17 @@ fn chiitoi(counts: &[i32; 34], locked: i32) -> i32 {
     7 - pairs - i32::from(singles + odd > 0)
 }
 
-fn shanten_impl(counts: &[i32; 34], locked: i32) -> Result<i32, String> {
+fn shanten_impl(
+    counts: &[i32; 34],
+    locked: i32,
+    memo: &mut ShantenMemo,
+) -> Result<i32, String> {
     let n: i32 = counts.iter().sum();
     let need = 13 - 3 * locked;
     if n != need && n != need + 1 {
         return Err(format!("暗牌张数 {n} 与副露不符"));
     }
-    let mut s = std_shanten(counts, locked);
+    let mut s = std_shanten(counts, locked, memo);
     let c = chiitoi(counts, locked);
     if c < s {
         s = c;
@@ -345,14 +631,14 @@ fn shanten_impl(counts: &[i32; 34], locked: i32) -> Result<i32, String> {
 fn wildcard_shanten(
     counts: &[i32; 34],
     locked: i32,
-    cache: &mut HashMap<ShantenCacheKey, i32>,
+    memo: &mut ShantenMemo,
 ) -> Result<i32, String> {
     let key = (*counts, locked);
-    if let Some(value) = cache.get(&key).copied() {
+    if let Some(value) = memo.lookup(&key) {
         return Ok(value);
     }
-    let value = shanten_impl(counts, locked)?;
-    cache.insert(key, value);
+    let value = shanten_impl(counts, locked, memo)?;
+    memo.store(key, value, usize::MAX);
     Ok(value)
 }
 
@@ -384,8 +670,9 @@ fn ukeire_impl(
     counts: &[i32; 34],
     locked: i32,
     visible: Option<&[i32; 34]>,
+    memo: &mut ShantenMemo,
 ) -> Result<(i32, Vec<usize>, i64), String> {
-    let s = shanten_impl(counts, locked)?;
+    let s = shanten_impl(counts, locked, memo)?;
     let v = visible.copied().unwrap_or(*counts);
     let left = |t: usize| (4 - v[t]).max(0) as i64;
     if s <= 0 {
@@ -394,7 +681,7 @@ fn ukeire_impl(
             for t in 0..34 {
                 let mut c2 = *counts;
                 c2[t] += 1;
-                if shanten_impl(&c2, locked)? == -1 {
+                if shanten_impl(&c2, locked, memo)? == -1 {
                     acc.push(t);
                 }
             }
@@ -416,7 +703,7 @@ fn ukeire_impl(
         }
         let mut c2 = *counts;
         c2[t] += 1;
-        if shanten_impl(&c2, locked)? < s {
+        if shanten_impl(&c2, locked, memo)? < s {
             acc.push(t);
         }
     }
@@ -428,7 +715,7 @@ fn ukeire_total_impl(
     counts: &[i32; 34],
     locked: i32,
     visible: &[i32; 34],
-    shanten_cache: &mut HashMap<ShantenCacheKey, i32>,
+    shanten_cache: &mut ShantenMemo,
 ) -> Result<(i32, i64), String> {
     let s = wildcard_shanten(counts, locked, shanten_cache)?;
     let left = |t: usize| (4 - visible[t]).max(0) as i64;
@@ -468,7 +755,7 @@ fn ukeire_total_impl(
 fn counted_shanten(
     counts: &[i32; 34],
     locked: i32,
-    cache: &mut HashMap<ShantenCacheKey, i32>,
+    cache: &mut ShantenMemo,
     cache_capacity: usize,
     work_budget: i64,
     hard_deadline: Instant,
@@ -477,7 +764,7 @@ fn counted_shanten(
     counters.shanten_calls += 1;
     let key = (*counts, locked);
     if cache_capacity > 0 {
-        if let Some(value) = cache.get(&key).copied() {
+        if let Some(value) = cache.lookup(&key) {
             counters.shanten_cache_hits += 1;
             return Ok(value);
         }
@@ -489,13 +776,8 @@ fn counted_shanten(
         return Err(WORK_BUDGET_EXCEEDED.to_string());
     }
     counters.shanten_cache_misses += 1;
-    let value = shanten_impl(counts, locked)?;
-    if cache_capacity > 0 {
-        if cache.len() >= cache_capacity {
-            cache.clear();
-        }
-        cache.insert(key, value);
-    }
+    let value = shanten_impl(counts, locked, cache)?;
+    cache.store(key, value, cache_capacity);
     Ok(value)
 }
 
@@ -503,7 +785,7 @@ fn counted_ukeire_metrics(
     counts: &[i32; 34],
     locked: i32,
     visible: &[i32; 34],
-    shanten_cache: &mut HashMap<ShantenCacheKey, i32>,
+    shanten_cache: &mut ShantenMemo,
     ukeire_cache: &mut HashMap<UkeireCacheKey, UkeireMetrics>,
     cache_capacity: usize,
     work_budget: i64,
@@ -768,7 +1050,7 @@ fn best_future_discard_impl_with_cache(
     counts: &[i32; 34],
     locked: i32,
     visible: Option<&[i32; 34]>,
-    shanten_cache: &mut HashMap<ShantenCacheKey, i32>,
+    shanten_cache: &mut ShantenMemo,
     include_tiles: bool,
 ) -> Result<Option<FutureDiscard>, String> {
     let mut best_shanten = 99;
@@ -801,7 +1083,7 @@ fn best_future_discard_impl_with_cache(
         let total = if let Some(view) = visible {
             ukeire_total_impl(&child, locked, view, shanten_cache)?.1
         } else {
-            ukeire_impl(&child, locked, None)?.2
+            ukeire_impl(&child, locked, None, shanten_cache)?.2
         };
         if total > best_total
             || (total == best_total && (best_discard.is_none() || d < best_discard.unwrap()))
@@ -817,9 +1099,9 @@ fn best_future_discard_impl_with_cache(
     };
     let tiles = if include_tiles {
         if let Some(view) = visible {
-            ukeire_impl(&best_child, locked, Some(view))?.1
+            ukeire_impl(&best_child, locked, Some(view), shanten_cache)?.1
         } else {
-            ukeire_impl(&best_child, locked, None)?.1
+            ukeire_impl(&best_child, locked, None, shanten_cache)?.1
         }
     } else {
         Vec::new()
@@ -839,7 +1121,7 @@ fn discard_frontier_impl(
     legal: Option<&[usize]>,
     include_tiles: bool,
 ) -> Result<Vec<FrontierRow>, String> {
-    let mut cache = HashMap::new();
+    let mut cache = ShantenMemo::new(shanten_memo_enabled());
     discard_frontier_impl_with_cache(counts, locked, visible, legal, include_tiles, &mut cache)
 }
 
@@ -849,7 +1131,7 @@ fn discard_frontier_impl_with_cache(
     visible: Option<&[i32; 34]>,
     legal: Option<&[usize]>,
     include_tiles: bool,
-    cache: &mut HashMap<ShantenCacheKey, i32>,
+    cache: &mut ShantenMemo,
 ) -> Result<Vec<FrontierRow>, String> {
     let mut rows = Vec::new();
     let tiles: Vec<usize> = match legal {
@@ -864,10 +1146,10 @@ fn discard_frontier_impl_with_cache(
         child[discard] -= 1;
         let child_s = wildcard_shanten(&child, locked, cache)?;
         let (draw_tiles, total) = if let Some(view) = visible {
-            let value = ukeire_impl(&child, locked, Some(view))?;
+            let value = ukeire_impl(&child, locked, Some(view), cache)?;
             (value.1, value.2)
         } else {
-            let value = ukeire_impl(&child, locked, None)?;
+            let value = ukeire_impl(&child, locked, None, cache)?;
             (value.1, value.2)
         };
         rows.push(FrontierRow {
@@ -902,7 +1184,7 @@ fn best_future_discard(
         Some(v) => Some(to_arr(v)?),
         None => None,
     };
-    let mut shanten_cache = HashMap::new();
+    let mut shanten_cache = ShantenMemo::new(shanten_memo_enabled());
     let best = best_future_discard_impl_with_cache(
         &arr,
         locked,
@@ -989,7 +1271,7 @@ fn discard_frontier_batch(
             ));
         }
     }
-    let mut cache = HashMap::new();
+    let mut cache = ShantenMemo::new(shanten_memo_enabled());
     let mut result = Vec::with_capacity(states.len());
     for (index, values) in states.into_iter().enumerate() {
         let counts = to_arr(values)?;
@@ -1112,7 +1394,7 @@ fn legacy_two_ply_frontier(
         root_arrays.push(root);
     }
 
-    let mut shanten_cache: HashMap<ShantenCacheKey, i32> = HashMap::new();
+    let mut shanten_cache = ShantenMemo::new(shanten_memo_enabled());
     let mut future_cache: HashMap<FutureCacheKey, FutureMetrics> = HashMap::new();
     let mut nodes = 0i64;
     let mut cache_hits = 0i64;
@@ -1381,7 +1663,7 @@ fn run_stage_b_units(
     cache_capacity: usize,
     work_budget: i64,
     hard_deadline: Instant,
-    shanten_cache: &mut HashMap<ShantenCacheKey, i32>,
+    shanten_cache: &mut ShantenMemo,
     ukeire_cache: &mut HashMap<UkeireCacheKey, UkeireMetrics>,
     counters: &mut SearchCounters,
     outcomes: &mut Vec<StageBOutcome>,
@@ -1548,7 +1830,7 @@ fn weighted_two_ply_frontier(
     let mut draw_order: Vec<usize> = (0..34).filter(|&tile| remaining[tile] > 0).collect();
     draw_order.sort_by(|&a, &b| remaining[b].cmp(&remaining[a]).then_with(|| a.cmp(&b)));
 
-    let mut shanten_cache: HashMap<ShantenCacheKey, i32> = HashMap::new();
+    let mut shanten_cache = ShantenMemo::new(shanten_memo_enabled());
     let mut ukeire_cache: HashMap<UkeireCacheKey, UkeireMetrics> = HashMap::new();
     let mut counters = SearchCounters {
         root_candidates: root_arrays.len() as i64,
@@ -1794,8 +2076,8 @@ fn weighted_two_ply_frontier(
                     let handles: Vec<_> = (0..worker_count)
                         .map(|_| {
                             scope.spawn(move || {
-                                let mut worker_shanten: HashMap<ShantenCacheKey, i32> =
-                                    HashMap::new();
+                                let mut worker_shanten =
+                                    ShantenMemo::new(shanten_memo_enabled());
                                 let mut worker_ukeire: HashMap<UkeireCacheKey, UkeireMetrics> =
                                     HashMap::new();
                                 let mut worker_counters = SearchCounters::default();
@@ -2045,7 +2327,8 @@ fn to_arr(counts: Vec<i32>) -> PyResult<[i32; 34]> {
 #[pyfunction(signature = (counts, locked=0))]
 fn shanten(counts: Vec<i32>, locked: i32) -> PyResult<i32> {
     let arr = to_arr(counts)?;
-    shanten_impl(&arr, locked).map_err(PyValueError::new_err)
+    let mut memo = ShantenMemo::new(shanten_memo_enabled());
+    shanten_impl(&arr, locked, &mut memo).map_err(PyValueError::new_err)
 }
 
 /// 进张枚举:返回 (向听数, 进张种类列表, 进张总张数)。
@@ -2061,7 +2344,9 @@ fn ukeire(
         Some(v) => Some(to_arr(v)?),
         None => None,
     };
-    let (s, acc, total) = ukeire_impl(&arr, locked, vis.as_ref()).map_err(PyValueError::new_err)?;
+    let mut memo = ShantenMemo::new(shanten_memo_enabled());
+    let (s, acc, total) =
+        ukeire_impl(&arr, locked, vis.as_ref(), &mut memo).map_err(PyValueError::new_err)?;
     Ok((s, acc.iter().map(|&t| t as i32).collect(), total))
 }
 

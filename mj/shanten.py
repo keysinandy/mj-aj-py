@@ -13,6 +13,8 @@
 `python3 -m pip install -e rust/` 构建,快 40~97x);未安装扩展时
 自动回退纯 Python(shanten_py/ukeire_py,shanten 按 (手牌字节串,
 locked) 记忆化);MJ_KERNELS=python 强制纯 Python(排障/对拍)。
+Rust 侧的按花色分解表是 opt-in(`MJ_KERNELS_SHANTEN=memo`);默认
+走逐牌 DFS,两者语义由 scripts/rust_parity.py 在两种模式下分别对拍。
 两实现语义由 scripts/rust_parity.py 随机差分锁定。_std 剪枝界用
 剩余牌数材料上界(纯自然牌 r 张最多省 2*(r//3)+(r%3)//2 向听,
 每张财神最多省 2),是可证明的保守下界,比按位置数估计紧得多。
