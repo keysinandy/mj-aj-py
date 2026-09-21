@@ -45,6 +45,7 @@
   "decision": {
     "default": "逐牌 DFS(与并行化提交 1ca8465 的行为一致)",
     "opt_in": "MJ_KERNELS_SHANTEN=memo",
+    "rerun_tool": "scripts/shanten_memo_ab.py(同进程交替 A/B,记录 load 与每决策 CPU,预声明判定规则;load<1 才有结论)",
     "next_lever": "参考 DFS 单次约 1.8μs,但存在 ~650μs 的离群调用;若还要单线程加速,优先考虑给 DFS 一个贪心初始上界/更强剪枝,而不是继续加宽表结构。"
   }
 }
