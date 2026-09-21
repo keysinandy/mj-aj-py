@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import inspect
 import os
 
 from ..features import N_ACTIONS, N_PLANES, N_SCALARS
@@ -135,13 +136,21 @@ def export_checkpoint(ck_path, out_path, *, model=None, n_actions=N_ACTIONS):
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     planes = torch.zeros(1, n_planes, 34, dtype=torch.float32)
     scalars = torch.zeros(1, n_scalars, dtype=torch.float32)
-    torch.onnx.export(
-        wrapper, (planes, scalars), out_path,
-        input_names=["planes", "scalars"], output_names=["logits"],
-        dynamic_axes={"planes": {0: "batch"}, "scalars": {0: "batch"},
-                      "logits": {0: "batch"}},
-        opset_version=13, do_constant_folding=True,
-        dynamo=False)  # 走 legacy tracer,图更简单,onnxruntime 兼容更稳
+    export_kwargs = {
+        "input_names": ["planes", "scalars"],
+        "output_names": ["logits"],
+        "dynamic_axes": {
+            "planes": {0: "batch"}, "scalars": {0: "batch"},
+            "logits": {0: "batch"},
+        },
+        "opset_version": 13,
+        "do_constant_folding": True,
+    }
+    # Torch 2.2 的 exporter 默认就是 legacy tracer,还没有 dynamo 参数;
+    # 新版仍显式关闭 dynamo,保持导出图和 onnxruntime 的契约稳定。
+    if "dynamo" in inspect.signature(torch.onnx.export).parameters:
+        export_kwargs["dynamo"] = False
+    torch.onnx.export(wrapper, (planes, scalars), out_path, **export_kwargs)
 
     meta = {PLANES_KEY: int(n_planes), SCALARS_KEY: int(n_scalars),
             ACTIONS_KEY: int(n_actions)}

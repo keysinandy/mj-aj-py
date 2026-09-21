@@ -3,6 +3,7 @@
 BC/PPO 用真实 ckpt,先导出 onnx 再对拍;负面用例注入坏权重断言拦截。
 """
 
+import inspect
 import os
 
 import pytest
@@ -48,14 +49,19 @@ def test_parity_detects_corruption(tmp_path):
     bad_path = str(tmp_path / "bad.onnx")
     planes = torch.randn(1, N_PLANES, 34)
     scalars = torch.randn(1, N_SCALARS)
-    torch.onnx.export(net, (planes, scalars), bad_path,
-                       input_names=["planes", "scalars"],
-                       output_names=["logits"],
-                       dynamic_axes={"planes": {0: "batch"},
-                                     "scalars": {0: "batch"},
-                                     "logits": {0: "batch"}},
-                       opset_version=13, do_constant_folding=True,
-                       dynamo=False)
+    export_kwargs = {
+        "input_names": ["planes", "scalars"],
+        "output_names": ["logits"],
+        "dynamic_axes": {
+            "planes": {0: "batch"}, "scalars": {0: "batch"},
+            "logits": {0: "batch"},
+        },
+        "opset_version": 13,
+        "do_constant_folding": True,
+    }
+    if "dynamo" in inspect.signature(torch.onnx.export).parameters:
+        export_kwargs["dynamo"] = False
+    torch.onnx.export(net, (planes, scalars), bad_path, **export_kwargs)
     # 比较:原 onnx vs 随机 onnx 在同一批观测上选牌应不一致
     orig_sess = ort.InferenceSession(onnx_path)
     bad_sess = ort.InferenceSession(bad_path)
