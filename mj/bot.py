@@ -32,6 +32,7 @@ from .tiles import W
 from .shanten import shanten, ukeire
 from .legacy_eval import (
     DEFAULT_BOT_EVALUATOR,
+    LEGACY_V2_OFFLINE_EVALUATORS,
     LEGACY_V2_EVALUATORS,
     LegacyRootCandidate,
     LegacyTwoPlyProfile,
@@ -731,7 +732,8 @@ def choose_action(g, seat, evaluator=DEFAULT_BOT_EVALUATOR,
     if evaluator not in (None, "legacy", "shape-v1", "shape_v1", "shape",
                          "shape-v2", "shape_v2", "ev2", "policy-v3",
                          "policy_v3", "legacy-two-ply-v1", "legacy_v1",
-                         "legacy-v1", *LEGACY_V2_EVALUATORS):
+                         "legacy-v1", *LEGACY_V2_EVALUATORS,
+                         *LEGACY_V2_OFFLINE_EVALUATORS):
         raise ValueError(f"unknown evaluator profile: {evaluator}")
     if evaluator in ("policy-v3", "policy_v3"):
         from .decision.policy_v3 import PolicyV3Runtime
@@ -745,10 +747,14 @@ def choose_action(g, seat, evaluator=DEFAULT_BOT_EVALUATOR,
         return (action, evaluation) if return_evaluation else action
     if evaluator not in (None, "legacy"):
         if evaluator in (("legacy-two-ply-v1", "legacy_v1", "legacy-v1")
-                         + LEGACY_V2_EVALUATORS):
-            profile = (LegacyTwoPlyProfile.weighted_online()
-                       if evaluator in LEGACY_V2_EVALUATORS else
-                       LegacyTwoPlyProfile.default())
+                         + LEGACY_V2_EVALUATORS
+                         + LEGACY_V2_OFFLINE_EVALUATORS):
+            if evaluator in LEGACY_V2_OFFLINE_EVALUATORS:
+                profile = LegacyTwoPlyProfile.weighted_offline()
+            elif evaluator in LEGACY_V2_EVALUATORS:
+                profile = LegacyTwoPlyProfile.weighted_online()
+            else:
+                profile = LegacyTwoPlyProfile.default()
             acts = g.legal_actions()
             if len(acts) == 1:
                 evaluation = {

@@ -1,10 +1,15 @@
 """BC 管线测试:数据生成不变量 / 花色置换增广语义 / 网络前向。"""
 
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
-from mj.bc_data import generate_game
+from mj.bc_data import (
+    TRAINING_BOT_EVALUATOR,
+    generate_game,
+    search_fallback_reason,
+)
 from mj.features import (
     N_ACTIONS, N_PLANES, SUIT_PERMS, augment_sample,
 )
@@ -12,6 +17,64 @@ from mj.tiles import W
 
 
 class TestGenerateGame(unittest.TestCase):
+    def test_training_evaluator_uses_offline_profile(self):
+        from mj.legacy_eval import (
+            LegacyTwoPlyProfile,
+            WEIGHTED_OFFLINE_PROFILE_VERSION,
+        )
+
+        self.assertEqual(TRAINING_BOT_EVALUATOR, WEIGHTED_OFFLINE_PROFILE_VERSION)
+        offline = LegacyTwoPlyProfile.weighted_offline()
+        online = LegacyTwoPlyProfile.weighted_online()
+        self.assertEqual(offline.max_frontier_candidates,
+                         online.max_frontier_candidates)
+        self.assertEqual(offline.allow_partial, online.allow_partial)
+        # 预算放大到不会因 deadline / work budget 回退
+        self.assertGreaterEqual(offline.hard_budget_ms, 1000.0)
+        self.assertGreaterEqual(offline.node_budget, 1_000_000)
+
+    def test_scope_delegation_is_not_a_search_fallback(self):
+        self.assertIsNone(search_fallback_reason({"level": "legacy-one-ply"}))
+        self.assertIsNone(search_fallback_reason(
+            {"level": "legacy", "fallback_reason": "reaction_scope"}))
+        self.assertIsNone(search_fallback_reason(
+            {"level": "legacy", "fallback_reason": "baotou_scope"}))
+        self.assertIsNone(search_fallback_reason(
+            {"level": "legacy", "fallback_reason": "hu_kong_scope"}))
+        self.assertIsNone(search_fallback_reason(
+            {"level": "legacy", "fallback_reason": "only_legal_action"}))
+        self.assertEqual(
+            search_fallback_reason(
+                {"level": "legacy",
+                 "fallback_reason": "partial_not_acceptable"}),
+            "partial_not_acceptable")
+        self.assertEqual(
+            search_fallback_reason(
+                {"level": "legacy", "fallback_reason": "hard_deadline"}),
+            "hard_deadline")
+
+    def test_search_fallback_is_rejected_for_training_labels(self):
+        from mj.legacy_eval import LegacyTwoPlyProfile
+
+        strict = LegacyTwoPlyProfile.weighted_online(
+            soft_budget_ms=0.0, hard_budget_ms=0.0)
+        with patch.object(LegacyTwoPlyProfile, "weighted_online",
+                          return_value=strict):
+            with self.assertRaises(RuntimeError) as ctx:
+                generate_game(seed=0, evaluator="legacyV2")
+        self.assertIn("搜索回退", str(ctx.exception))
+
+    def test_training_labels_record_level_and_fallback(self):
+        d = generate_game(seed=1)
+        self.assertIn("label_level", d)
+        self.assertIn("label_fallback_reason", d)
+        levels = set(d["label_level"].tolist())
+        self.assertTrue(levels <= {"", "legacy", "legacy-one-ply",
+                                   "weighted-two-ply-v1",
+                                   "weighted-two-ply-partial"})
+        # 训练路径不允许出现预算类回退
+        self.assertEqual(set(d["label_fallback_reason"].tolist()), {""})
+
     def test_invariants(self):
         d = generate_game(seed=123)
         n = len(d["action"])

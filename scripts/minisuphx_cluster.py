@@ -31,7 +31,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from mj.legacy_eval import DEFAULT_BOT_EVALUATOR
+from mj.bc_data import TRAINING_BOT_EVALUATOR as TRAINING_EVALUATOR
 
 
 def _cmd_coordinator(args):
@@ -89,6 +89,7 @@ def _cmd_submit(args):
         "seed_start": args.seed_start, "games": args.games,
         "you_cai_bi_kao": args.you_cai_bi_kao,
         "evaluator": args.evaluator, "scope": args.scope,
+        "allow_search_fallback": args.allow_search_fallback,
         "include_metadata": True,
     }
     specs = []
@@ -159,7 +160,10 @@ def main(argv=None):
     sj.add_argument("--per-shard", type=int, default=25)
     sj.add_argument("--seed-start", type=int, default=0)
     sj.add_argument("--games", type=int, default=100)
-    sj.add_argument("--evaluator", default=DEFAULT_BOT_EVALUATOR)
+    sj.add_argument("--evaluator", default=TRAINING_EVALUATOR,
+                    help="训练标签评价器;默认离线 legacyV2(不因预算回退)")
+    sj.add_argument("--allow-search-fallback", action="store_true",
+                    help="允许 legacyV2 回退 legacy(默认禁止)")
     sj.add_argument("--scope", default="all-root")
     sj.add_argument("--you-cai-bi-kao", action="store_true")
     sj.add_argument("--out-dir", default="local/minisuphx")

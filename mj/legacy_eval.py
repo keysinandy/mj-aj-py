@@ -42,6 +42,14 @@ WEIGHTED_DEADLINE_RESERVE_MS = 2.0
 # revision that accepts it.  An older wheel falls back instead of raising a
 # TypeError at the FFI boundary.
 WEIGHTED_TWO_PLY_KERNEL_REQUIRED = "rust-weighted-two-ply-v2"
+# 训练/离线标签生成使用:预算宽裕到不会因 deadline / work budget 回退,
+# 使 legacyV2 的标签始终由搜索本身给出。
+WEIGHTED_OFFLINE_PROFILE_VERSION = "legacyV2-offline"
+LEGACY_V2_OFFLINE_EVALUATORS = (
+    WEIGHTED_OFFLINE_PROFILE_VERSION,
+    "legacy-v2-offline",
+    "legacy_v2_offline",
+)
 LEGACY_V2_EVALUATORS = (
     LEGACY_V2_PROFILE_VERSION,
     "legacy-v2",
@@ -147,6 +155,35 @@ class LegacyTwoPlyProfile:
             "cache_capacity": 8192,
             "sort_version": WEIGHTED_SORT_VERSION,
             "kernel": "auto",
+            "mode": "weighted",
+            "max_frontier_candidates": 3,
+            "allow_partial": True,
+            "min_partial_coverage": 0.90,
+            "lazy_child_ukeire": True,
+            "workers": 0,
+        }
+        values.update(overrides)
+        return cls(**values)
+
+    @classmethod
+    def weighted_offline(cls, **overrides):
+        """训练/离线标签生成用的 legacyV2 profile。
+
+        与 ``weighted_online`` 的排序、前沿上限、部分接受规则完全一致,
+        只把时间与节点预算放大到不会触发 deadline / work budget / 不安全
+        partial 回退,因此搜索标签不会悄悄退化成 legacy 启发式。
+        """
+        values = {
+            "name": WEIGHTED_OFFLINE_PROFILE_VERSION,
+            "version": WEIGHTED_OFFLINE_PROFILE_VERSION,
+            "model": "weighted_unseen_one_draw_lazy_best_discard",
+            "node_budget": 5_000_000,
+            "time_budget_ms": 2000.0,
+            "soft_budget_ms": 2000.0,
+            "hard_budget_ms": 2000.0,
+            "cache_capacity": 65536,
+            "sort_version": WEIGHTED_SORT_VERSION,
+            "kernel": "rust",
             "mode": "weighted",
             "max_frontier_candidates": 3,
             "allow_partial": True,

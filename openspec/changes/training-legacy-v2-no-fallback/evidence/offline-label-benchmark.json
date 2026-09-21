@@ -1,0 +1,29 @@
+{
+  "change": "training-legacy-v2-no-fallback",
+  "date": "2026-09-21",
+  "kernel_version": "rust-weighted-two-ply-v2",
+  "measurement": "mj.bc_data.generate_game 逐局跑 seed 0..9（本机，load 4-6）",
+  "online_profile": {
+    "evaluator": "legacyV2",
+    "games": 10,
+    "seconds": 4.3,
+    "samples": 1325,
+    "rejected_games": {"partial_not_acceptable": 1},
+    "note": "修复前这类回退会被静默写成 label_source=online_evaluator"
+  },
+  "offline_profile": {
+    "evaluator": "legacyV2-offline",
+    "games": 10,
+    "seconds": 4.6,
+    "samples": 1477,
+    "rejected_games": {},
+    "label_level_distribution": {
+      "weighted-two-ply-v1": 54,
+      "legacy-one-ply": 64,
+      "legacy(scope delegation)": 568
+    },
+    "note": "5 局样本的 label_level 统计;作用域委托占多数,与 discard-only 契约一致"
+  },
+  "cost": "+0.3s / 10 局(约 +7%)",
+  "tests": "tests/test_bc_pipeline.py -k 'training_evaluator or scope_delegation or search_fallback or labels_record' → 4 passed"
+}

@@ -15,8 +15,7 @@ from __future__ import annotations
 
 import os
 
-from ..bc_data import _write_shard
-from ..legacy_eval import DEFAULT_BOT_EVALUATOR
+from ..bc_data import TRAINING_BOT_EVALUATOR, _write_shard
 
 HANDLERS: dict = {}
 
@@ -28,15 +27,17 @@ def execute_legacy_bc_games(job: dict, *, cache_dir: str) -> dict:
     seed_start = int(payload.get("seed_start", 0))
     games = int(payload.get("games", 1))
     ycbk = bool(payload.get("you_cai_bi_kao", False))
-    evaluator = str(payload.get("evaluator", DEFAULT_BOT_EVALUATOR))
+    evaluator = str(payload.get("evaluator", TRAINING_BOT_EVALUATOR))
     scope = str(payload.get("scope", "all-root"))
     include_meta = bool(payload.get("include_metadata", False))
+    allow_fallback = bool(payload.get("allow_search_fallback", False))
     local_dir = os.path.join(cache_dir, job["job_id"])
     os.makedirs(local_dir, exist_ok=True)
     out = os.path.join(local_dir, "rollout.npz")
     # 复用 bc_data 的单 worker 分片原语(_write_shard 返回 (path, n_samples))
     _, n_samples = _write_shard(
-        [seed_start, games, out, ycbk, include_meta, evaluator, scope])
+        [seed_start, games, out, ycbk, include_meta, evaluator, scope,
+         allow_fallback])
     return {
         "campaign_id": job["campaign_id"],
         "transition_count": int(n_samples),
