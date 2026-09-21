@@ -201,7 +201,8 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="离线麻将策略评估")
     ap.add_argument("n", nargs="?", type=int, default=200,
                     help="对局数(兼容旧的第一个位置参数)")
-    ap.add_argument("--bot-evaluator", choices=("legacy", "shape-v1"),
+    ap.add_argument("--bot-evaluator",
+                     choices=("legacy", "legacy-two-ply-v1", "shape-v1"),
                     default="legacy")
     args = ap.parse_args()
     n = args.n

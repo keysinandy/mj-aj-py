@@ -128,7 +128,8 @@ def main():
     ap.add_argument("--seed0", type=int, default=0)
     ap.add_argument("--legacy-layout", action="store_true",
                     help="兼容旧的六数组 NPZ 布局(默认写入 provenance 元数据)")
-    ap.add_argument("--evaluator", choices=("legacy", "shape-v1", "shape-v2"),
+    ap.add_argument("--evaluator", choices=("legacy", "legacy-two-ply-v1",
+                                             "shape-v1", "shape-v2"),
                     default="legacy")
     ap.add_argument("--scope", choices=("discard", "hu-piao", "all-root"),
                     default="all-root")

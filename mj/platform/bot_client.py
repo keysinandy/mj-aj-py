@@ -2727,6 +2727,13 @@ class BotClient:
                             ProfileSpec.shape_v2_discard().fingerprint
                         meta_kwargs["evaluator_kernel"] = \
                             ProfileSpec.shape_v2_discard().kernel_version
+                    elif evaluator in ("legacy-two-ply-v1", "legacy_v1",
+                                        "legacy-v1"):
+                        from mj.legacy_eval import LegacyTwoPlyProfile
+                        v1_profile = LegacyTwoPlyProfile.default()
+                        meta_kwargs["evaluator_fingerprint"] = \
+                            v1_profile.fingerprint
+                        meta_kwargs["evaluator_kernel"] = "python-frontier-v1"
                     else:
                         from mj.hand_eval import profile_for
                         meta_kwargs["evaluator_fingerprint"] = \

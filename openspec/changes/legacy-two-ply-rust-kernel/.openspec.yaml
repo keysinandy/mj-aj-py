@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-09-21
+goal: Reduce two-ply decision latency and fallback rate without changing
+  public-information semantics or legacy defaults

@@ -24,7 +24,8 @@ DEFAULT_MATCH_CONFIG = {
     "replay_trace": False,
 }
 MATCH_STRATEGIES = {"policy", "policy-v3", "bot", "random"}
-MATCH_EVALUATORS = {"legacy", "shape-v1", "shape-v2", "policy-v3"}
+MATCH_EVALUATORS = {"legacy", "legacy-two-ply-v1", "shape-v1", "shape-v2",
+                    "policy-v3"}
 
 
 class _StopSignal:

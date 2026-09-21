@@ -1,0 +1,79 @@
+{
+  "schema": "legacy-two-ply-rust-kernel-v1/release-evidence-v1",
+  "captured_at": "2026-09-21",
+  "change": "legacy-two-ply-rust-kernel",
+  "kernel": "rust-legacy-two-ply-v1",
+  "profile": {
+    "kernel": "rust",
+    "node_budget": 4096,
+    "time_budgets_ms": [8.0, 50.0, 1000.0],
+    "states": 100,
+    "seeds": "0..99"
+  },
+  "fixture": {
+    "source": "local/games/20260920/u_9812ba08fe2f_a_e18e58e3acb8_r1_b9_t0.jsonl",
+    "seq": 100,
+    "rust_action": "9b",
+    "python_action": "9b",
+    "future_ukeire": {
+      "3t": 2048,
+      "9b": 2070
+    },
+    "status": "pass"
+  },
+  "native_python_parity": {
+    "command": "PYTHONPATH=/tmp/mj-kernel-test:. python3 -m pytest tests/test_legacy_rust_kernel.py -q -p no:cacheprovider",
+    "tests": 5,
+    "status": "pass"
+  },
+  "performance": {
+    "command": "PYTHONPATH=/tmp/mj-kernel-test:. python3 scripts/legacy_two_ply_rust_bench.py --states 100 --seed 0",
+    "time_budget_ms_8": {
+      "complete_decisions": 0,
+      "fallback_decisions": 100,
+      "illegal_actions": 0,
+      "p50_ms": 15.0638,
+      "p95_ms": 24.8419,
+      "p99_ms": 41.4116,
+      "nodes_total": 0,
+      "status": "performance_gate_not_met"
+    },
+    "time_budget_ms_50": {
+      "complete_decisions": 25,
+      "fallback_decisions": 75,
+      "illegal_actions": 0,
+      "p50_ms": 57.4126,
+      "p95_ms": 65.5464,
+      "p99_ms": 67.9161,
+      "nodes_total": 16508,
+      "status": "performance_gate_not_met"
+    },
+    "time_budget_ms_1000": {
+      "complete_decisions": 99,
+      "fallback_decisions": 1,
+      "illegal_actions": 0,
+      "p50_ms": 110.2013,
+      "p95_ms": 392.4427,
+      "p99_ms": 720.4202,
+      "nodes_total": 124524,
+      "status": "diagnostic_only"
+    }
+  },
+  "verification": {
+    "cargo_check": "pass",
+    "cargo_test": "0 tests, pass",
+    "focused_pytest": "79 passed",
+    "shanten_pytest": "28 passed",
+    "full_pytest_sandbox": "859 passed, 19 local-port failures",
+    "full_pytest_port_subset_escalated": "22 passed",
+    "rust_parity_existing_manifest": "pass",
+    "strict_information_safety": "unchanged, prior gate not passed",
+    "paired_benefit": "unchanged, prior gate not passed"
+  },
+  "release_decision": {
+    "default": "legacy",
+    "native": "explicit opt-in/diagnostic",
+    "performance_gate": "not_passed",
+    "reason": "Native batching removes most per-node FFI overhead but complete choose_discard latency remains above the 8 ms target on this 100-state benchmark."
+  }
+}

@@ -307,6 +307,16 @@ except (ImportError, AttributeError):
     _rust_discard_frontier_batch = None
 
 try:
+    from mj_kernels import legacy_two_ply_frontier as _rust_legacy_two_ply_frontier
+except (ImportError, AttributeError):
+    _rust_legacy_two_ply_frontier = None
+
+try:
+    from mj_kernels import legacy_two_ply_kernel_version as _rust_legacy_two_ply_kernel_version
+except (ImportError, AttributeError):
+    _rust_legacy_two_ply_kernel_version = None
+
+try:
     from mj_kernels import baotou_ukeire as _rust_baotou_ukeire
 except (ImportError, AttributeError):
     _rust_baotou_ukeire = None
@@ -327,6 +337,13 @@ _FORCE_PY = os.environ.get("MJ_KERNELS", "").lower() == "python"
 # bot 的爆头档只在 Rust 内核可用时启用(纯 Python 枚举 90~220ms/决策,
 # 不可用);MJ_KERNELS=python 视同不可用。决策行为因此确定性可复现。
 BAOTOU_UKEIRE_RUST = _rust_baotou_ukeire is not None and not _FORCE_PY
+
+LEGACY_TWO_PLY_KERNEL_VERSION = (
+    _rust_legacy_two_ply_kernel_version()
+    if _rust_legacy_two_ply_frontier is not None
+    and _rust_legacy_two_ply_kernel_version is not None
+    and not _FORCE_PY else None
+)
 
 
 def shanten(counts, locked=0):
@@ -408,6 +425,24 @@ def discard_frontier_batch(states, locked=0, visibles=None,
             states, locked, visibles, legal_discards, include_tiles)
     except (TypeError, ValueError):
         return None
+
+
+def legacy_two_ply_frontier(roots, root_shantens, visible, legal_masks,
+                            locked=0, frozen=False, node_budget=4096,
+                            time_budget_ms=8.0, include_best_discards=True):
+    """Optional native batch evaluator for legacy two-ply V1.
+
+    ``None`` is a capability signal when the extension is unavailable or
+    ``MJ_KERNELS=python`` is active.  Native validation/runtime errors are
+    deliberately propagated so the legacy evaluator can record a precise
+    transactional fallback reason instead of silently mixing partial values.
+    """
+    if _rust_legacy_two_ply_frontier is None or _FORCE_PY:
+        return None
+    return _rust_legacy_two_ply_frontier(
+        roots, root_shantens, visible, legal_masks, locked, frozen,
+        node_budget, float(time_budget_ms), include_best_discards,
+    )
 
 
 def _left(t, vis):

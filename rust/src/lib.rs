@@ -16,9 +16,12 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 const W: usize = 33;
 type ShantenCacheKey = ([i32; 34], i32);
+type FutureCacheKey = ([i32; 34], [i32; 34], i32);
+const LEGACY_TWO_PLY_KERNEL_VERSION: &str = "rust-legacy-two-ply-v1";
 
 #[derive(Clone)]
 struct FutureDiscard {
@@ -35,6 +38,12 @@ struct FrontierRow {
     shanten: i32,
     tiles: Vec<usize>,
     total: i64,
+}
+
+#[derive(Clone, Copy)]
+struct FutureMetrics {
+    shanten: i32,
+    ukeire: i64,
 }
 
 /// 未分配自然牌张数 → 该侧最多还能节省的向听数(保守下界,Python
@@ -844,6 +853,284 @@ fn discard_frontier_batch(
     Ok(result)
 }
 
+/// Return the public-information two-ply frontier used by legacy V1.
+///
+/// The Python evaluator owns root legality, policy callbacks, explanations and
+/// transactional fallback.  This function only performs the hot nested loop:
+/// one weighted public draw followed by one legal child discard.  Every draw
+/// row includes all children tied on (shanten, ukeire), so Python can apply its
+/// existing shape/feed tie-break without asking Rust to call back into Python.
+/// Rows are returned as tuples to keep the PyO3 boundary small and compatible
+/// with already-installed wheels:
+///
+/// ``(root_index, complete, improve, future_ukeire,
+///     [(draw, weight, child_shanten, child_ukeire, tied_discards)],
+///     nodes, cache_hits, reason)``.
+#[pyfunction(signature = (roots, root_shantens, visible, legal_masks, locked=0, frozen=false, node_budget=4096, time_budget_ms=8.0, include_best_discards=true))]
+fn legacy_two_ply_frontier(
+    roots: Vec<Vec<i32>>,
+    root_shantens: Vec<i32>,
+    visible: Vec<i32>,
+    legal_masks: Vec<Vec<i64>>,
+    locked: i32,
+    frozen: bool,
+    node_budget: i64,
+    time_budget_ms: f64,
+    include_best_discards: bool,
+) -> PyResult<
+    Vec<(
+        i32,
+        bool,
+        i64,
+        i64,
+        Vec<(i32, i64, i32, i64, Vec<i32>)>,
+        i64,
+        i64,
+        String,
+    )>,
+> {
+    if roots.is_empty() {
+        return Err(PyValueError::new_err("roots must not be empty"));
+    }
+    if roots.len() != root_shantens.len() || roots.len() != legal_masks.len() {
+        return Err(PyValueError::new_err(
+            "roots, root_shantens and legal_masks must have equal length",
+        ));
+    }
+    if locked < 0 || locked > 4 {
+        return Err(PyValueError::new_err("locked must be between 0 and 4"));
+    }
+    if node_budget < 0 {
+        return Err(PyValueError::new_err("node_budget must be non-negative"));
+    }
+    if !time_budget_ms.is_finite() || time_budget_ms < 0.0 {
+        return Err(PyValueError::new_err(
+            "time_budget_ms must be finite and non-negative",
+        ));
+    }
+    let started = Instant::now();
+    let time_limit = Duration::from_secs_f64(time_budget_ms / 1000.0);
+    let visible = validate_count_vector(&visible, "visible")?;
+    let expected = 13 - 3 * locked;
+    let mut root_arrays = Vec::with_capacity(roots.len());
+    for (index, values) in roots.iter().enumerate() {
+        let root = validate_count_vector(values, "root")?;
+        if root.iter().sum::<i32>() != expected {
+            return Err(PyValueError::new_err(format!(
+                "root {index} has an invalid concealed hand size"
+            )));
+        }
+        if root
+            .iter()
+            .enumerate()
+            .any(|(tile, &count)| visible[tile] < count)
+        {
+            return Err(PyValueError::new_err(format!(
+                "visible counts do not contain root {index}"
+            )));
+        }
+        if legal_masks[index].len() != 34 {
+            return Err(PyValueError::new_err(format!(
+                "legal_masks[{index}] must have 34 draw entries"
+            )));
+        }
+        root_arrays.push(root);
+    }
+
+    let mut shanten_cache: HashMap<ShantenCacheKey, i32> = HashMap::new();
+    let mut future_cache: HashMap<FutureCacheKey, FutureMetrics> = HashMap::new();
+    let mut nodes = 0i64;
+    let mut cache_hits = 0i64;
+    let mut output = Vec::with_capacity(roots.len());
+    let mut exhausted = false;
+
+    for (root_index, root) in root_arrays.iter().enumerate() {
+        if exhausted {
+            output.push((
+                root_index as i32,
+                false,
+                0,
+                0,
+                Vec::new(),
+                nodes,
+                cache_hits,
+                "node_budget_exceeded".to_string(),
+            ));
+            continue;
+        }
+        let root_s =
+            wildcard_shanten(root, locked, &mut shanten_cache).map_err(PyValueError::new_err)?;
+        if root_s != root_shantens[root_index] {
+            return Err(PyValueError::new_err(format!(
+                "root_shantens[{root_index}] does not match root hand"
+            )));
+        }
+        let mut improve = 0i64;
+        let mut future_ukeire = 0i64;
+        let mut draw_rows: Vec<(i32, i64, i32, i64, Vec<i32>)> = Vec::new();
+        let mut complete = true;
+        let mut reason = String::new();
+
+        for draw in 0..34 {
+            let weight = (4 - visible[draw]).max(0) as i64;
+            if weight == 0 {
+                continue;
+            }
+            if nodes >= node_budget || started.elapsed() >= time_limit {
+                complete = false;
+                reason = if nodes >= node_budget {
+                    "node_budget_exceeded"
+                } else {
+                    "time_budget_exceeded"
+                }
+                .to_string();
+                exhausted = true;
+                break;
+            }
+
+            let mut next_hand = *root;
+            next_hand[draw] += 1;
+            let mut visible_after = visible;
+            visible_after[draw] += 1;
+            if visible_after[draw] > 4 {
+                return Err(PyValueError::new_err("visible_after_draw_invalid"));
+            }
+
+            let mut mask = legal_masks[root_index][draw];
+            if mask < 0 {
+                return Err(PyValueError::new_err("legal mask must be non-negative"));
+            }
+            if frozen {
+                mask &= 1i64 << draw;
+            }
+            let valid_mask = next_hand
+                .iter()
+                .enumerate()
+                .fold(
+                    0i64,
+                    |acc, (tile, &count)| {
+                        if count > 0 {
+                            acc | (1i64 << tile)
+                        } else {
+                            acc
+                        }
+                    },
+                );
+            if mask & !valid_mask != 0 || mask == 0 {
+                return Err(PyValueError::new_err("invalid future legal discard mask"));
+            }
+
+            let mut best_s = i32::MAX;
+            let mut children: Vec<(usize, [i32; 34], i32, Option<i64>)> = Vec::new();
+            for discard in 0..34 {
+                if mask & (1i64 << discard) == 0 {
+                    continue;
+                }
+                if nodes >= node_budget || started.elapsed() >= time_limit {
+                    complete = false;
+                    reason = if nodes >= node_budget {
+                        "node_budget_exceeded"
+                    } else {
+                        "time_budget_exceeded"
+                    }
+                    .to_string();
+                    exhausted = true;
+                    break;
+                }
+                nodes += 1;
+                let mut after = next_hand;
+                after[discard] -= 1;
+                let key = (after, visible_after, locked);
+                if let Some(value) = future_cache.get(&key).copied() {
+                    cache_hits += 1;
+                    if value.shanten < best_s {
+                        best_s = value.shanten;
+                    }
+                    children.push((discard, after, value.shanten, Some(value.ukeire)));
+                } else {
+                    let child_s = wildcard_shanten(&after, locked, &mut shanten_cache)
+                        .map_err(PyValueError::new_err)?;
+                    children.push((discard, after, child_s, None));
+                    if child_s < best_s {
+                        best_s = child_s;
+                    }
+                }
+            }
+            if !complete {
+                break;
+            }
+            if children.is_empty() {
+                return Err(PyValueError::new_err("future legal discard set is empty"));
+            }
+            let mut best_u = -1i64;
+            let mut tied = Vec::new();
+            for (discard, after, child_s, cached_u) in children {
+                if child_s != best_s {
+                    continue;
+                }
+                let child_u = if let Some(value) = cached_u {
+                    value
+                } else {
+                    let value =
+                        ukeire_total_impl(&after, locked, &visible_after, &mut shanten_cache)
+                            .map_err(PyValueError::new_err)?
+                            .1;
+                    future_cache.insert(
+                        (after, visible_after, locked),
+                        FutureMetrics {
+                            shanten: child_s,
+                            ukeire: value,
+                        },
+                    );
+                    value
+                };
+                if child_u > best_u {
+                    best_u = child_u;
+                    tied.clear();
+                    tied.push(discard as i32);
+                } else if child_u == best_u {
+                    tied.push(discard as i32);
+                }
+            }
+            if tied.is_empty() {
+                return Err(PyValueError::new_err("future legal discard set is empty"));
+            }
+            if best_s < root_s {
+                improve += weight;
+            }
+            future_ukeire += weight * best_u.max(0);
+            if include_best_discards {
+                draw_rows.push((draw as i32, weight, best_s, best_u.max(0), tied));
+            }
+        }
+
+        output.push((
+            root_index as i32,
+            complete,
+            if complete { improve } else { 0 },
+            if complete { future_ukeire } else { 0 },
+            if complete { draw_rows } else { Vec::new() },
+            nodes,
+            cache_hits,
+            reason,
+        ));
+    }
+    Ok(output)
+}
+
+fn validate_count_vector(values: &[i32], name: &str) -> PyResult<[i32; 34]> {
+    let array: [i32; 34] = values
+        .to_vec()
+        .try_into()
+        .map_err(|_| PyValueError::new_err(format!("{name} must have 34 entries")))?;
+    if array.iter().any(|&value| !(0..=4).contains(&value)) {
+        return Err(PyValueError::new_err(format!(
+            "{name} contains a count outside 0..4"
+        )));
+    }
+    Ok(array)
+}
+
 fn to_arr(counts: Vec<i32>) -> PyResult<[i32; 34]> {
     counts
         .try_into()
@@ -900,5 +1187,12 @@ fn mj_kernels(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(best_future_discard, m)?)?;
     m.add_function(wrap_pyfunction!(discard_frontier, m)?)?;
     m.add_function(wrap_pyfunction!(discard_frontier_batch, m)?)?;
+    m.add_function(wrap_pyfunction!(legacy_two_ply_frontier, m)?)?;
+    m.add_function(wrap_pyfunction!(legacy_two_ply_kernel_version, m)?)?;
     Ok(())
+}
+
+#[pyfunction]
+fn legacy_two_ply_kernel_version() -> &'static str {
+    LEGACY_TWO_PLY_KERNEL_VERSION
 }

@@ -115,6 +115,20 @@ def render(rec, t0):
                 evtxt += f" Q={q:.4f}"
             if ev.get("fallback_reason"):
                 evtxt += f" fallback={ev['fallback_reason']}"
+            selected_tile = ev.get("selected")
+            if isinstance(selected_tile, dict):
+                selected_tile = selected_tile.get("tile", selected_tile.get("action"))
+            future_candidates = ev.get("candidates") or []
+            future_row = next(
+                (row for row in future_candidates
+                 if isinstance(row, dict) and
+                 row.get("tile") == selected_tile), None)
+            if future_row is not None:
+                if future_row.get("future_improve_weight") is not None:
+                    evtxt += (f" futureI={future_row['future_improve_weight']}"
+                              f" futureU={future_row.get('future_ukeire')}")
+                elif future_row.get("missing"):
+                    evtxt += f" future_missing={','.join(map(str, future_row['missing']))}"
         else:
             evtxt = " eval=legacy_unrecorded"
         confidence = rec.get("network_confidence",

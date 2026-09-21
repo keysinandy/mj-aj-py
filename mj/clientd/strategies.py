@@ -2,7 +2,7 @@
 
 策略:
 - policy:    policy_player(ckpt)(神经网络 argmax);
-- bot:       启发式,评价器 legacy / shape-v1 / shape-v2;
+- bot:       启发式,评价器 legacy / legacy-two-ply-v1 / shape-v1 / shape-v2;
              shape-v2 经 ProfileSpec 注入回退窗口;
 - policy-v3: PolicyV3Runtime,置信度阈值高级项。
 
@@ -20,6 +20,7 @@ import os
 
 from ..game import Game
 from ..bot import choose_action, choose_shape_v2_action
+from ..legacy_eval import LegacyTwoPlyProfile
 from ..decision.profile import ProfileSpec
 from .errors import ValidationError
 
@@ -29,7 +30,8 @@ __all__ = ["Player", "make_player", "resolve_budget", "NEVER_TIME_MS",
 NEVER_TIME_MS = float(10 ** 9)     # ~11.6 天,远超任何对局
 NEVER_NODE_BUDGET = 10 ** 12
 
-VALID_EVALUATORS = ("legacy", "shape-v1", "shape_v1", "shape",
+VALID_EVALUATORS = ("legacy", "legacy-two-ply-v1", "legacy_v1", "legacy-v1",
+                    "shape-v1", "shape_v1", "shape",
                     "shape-v2", "shape_v2", "ev2", "policy-v3", "policy_v3")
 _SUPPORTED_STRATEGIES = ("policy", "bot", "policy-v3")
 
@@ -107,6 +109,8 @@ def make_bot_player(config):
             return choose_shape_v2_action(game, seat, profile=_p)
     else:
         _ev = evaluator
+        if _ev in ("legacy-two-ply-v1", "legacy_v1", "legacy-v1"):
+            profile = LegacyTwoPlyProfile.default()
 
         def _play(game, seat, _e=_ev):
             return choose_action(game, seat, evaluator=_e,

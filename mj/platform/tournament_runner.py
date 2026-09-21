@@ -365,7 +365,8 @@ def build_parser():
     parser.add_argument("--ckpt", default="runs/bc0/best.pt",
                         help="policy 策略 checkpoint")
     parser.add_argument("--bot-evaluator", default="legacy",
-                    choices=("legacy", "shape-v1", "shape-v2", "policy-v3"),
+                        choices=("legacy", "legacy-two-ply-v1", "shape-v1",
+                                 "shape-v2", "policy-v3"),
                         help="strategy=bot 时的评价器")
     parser.add_argument("--state-rate", type=float, default=16.0,
                         help="每 token /state 主动限速(默认 16/s)")

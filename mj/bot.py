@@ -30,6 +30,11 @@ import weakref
 
 from .tiles import W
 from .shanten import shanten, ukeire
+from .legacy_eval import (
+    LegacyRootCandidate,
+    LegacyTwoPlyProfile,
+    evaluate_legacy_two_ply,
+)
 from .win import is_baotou, is_win, is_baotou_wait
 from .scoring import hand_multiplier, settle
 from .game import (
@@ -98,8 +103,12 @@ def _push_abort_reason(g, seat, include_live=True):
     return None
 
 
-def choose_discard(g, seat, return_info=False):
+def choose_discard(g, seat, return_info=False, profile=None):
     """返回弃牌 tile;``return_info=True`` 时返回 ``(tile, info dict)``。
+
+    ``profile`` 仅用于显式启用 ``legacy-two-ply-v1``；省略时严格走
+    原 legacy 排序。V1 只覆盖普通摸后弃牌，爆头、HU、杠和反应窗口
+    始终由既有规则分支处理。
 
     优先级:向听数(硬约束,不为打风牌让向听倒退)→ 财神保护 →
     进张数 → 牌型结构损失 → 喂牌风险 → tile 编号(仅作稳定排序)。
@@ -145,7 +154,9 @@ def choose_discard(g, seat, return_info=False):
             cands.append((t, c, _discard_shape_cost(hand, t), _feed_risk(g, seat, t)))
 
     info = {}
+    baotou_scope = False
     if hand[W] > 0 and best_s == 0:
+        baotou_scope = True
         rounds = _bump_push_rounds(g, seat)
         abort = _push_abort_reason(g, seat)
         if abort is not None:
@@ -159,19 +170,69 @@ def choose_discard(g, seat, return_info=False):
             best = _choose_discard_baotou(cands, locked, vis, info)
             if best is not None:
                 info["push_rounds"] = rounds
+                if profile is not None:
+                    info.update(_legacy_v1_scope_info(
+                        profile, best, "baotou_scope"))
                 return (best, info) if return_info else best
             # 预算回退:整局走下方 legacy 键,info 已带 fallback_reason
     else:
         _clear_push_rounds(g, seat)
 
+    # The V1 layer is explicitly opt-in.  The baotou branch above remains the
+    # established legacy rule, including its own transactional fallback; it
+    # must not be re-ranked by a future model in this change.
+    if profile is not None and not baotou_scope:
+        roots = []
+        for t, c, shape, feed in cands:
+            roots.append(LegacyRootCandidate(
+                tile=t, hand=tuple(c), shanten=shanten(c, locked),
+                shape_loss=shape, feed_risk=feed))
+        selected, evaluation = evaluate_legacy_two_ply(
+            g, seat, roots, locked, vis, profile,
+            shape_cost=_discard_shape_cost, feed_risk=_feed_risk)
+        info = evaluation.as_json()
+        info["reason"] = ("discard_legacy_v1" if evaluation.complete
+                           else "discard_legacy")
+        if (not evaluation.complete and evaluation.fallback_reason
+                and "fallback_reason" not in info):
+            info["fallback_reason"] = evaluation.fallback_reason
+        return (selected, info) if return_info else selected
+
+    best, best_key = _legacy_best(cands, locked, vis)
+    info.setdefault("reason", "discard_legacy")
+    if profile is not None and baotou_scope:
+        scope_info = _legacy_v1_scope_info(profile, best, "baotou_scope")
+        scope_info.update(info)
+        info = scope_info
+    return (best, info) if return_info else best
+
+
+def _legacy_best(cands, locked, vis):
+    """Complete pre-V1 legacy ordering, kept as the rollback oracle."""
     best, best_key = None, None
     for t, c, shape, feed in cands:
         uke = ukeire(c, locked, vis)[2]
         key = (t == W, -uke, shape, feed, t)
         if best_key is None or key < best_key:
             best, best_key = t, key
-    info.setdefault("reason", "discard_legacy")
-    return (best, info) if return_info else best
+    return best, best_key
+
+
+def _legacy_v1_scope_info(profile, action, reason):
+    """Explain a V1 request that stayed in an established legacy branch."""
+    return {
+        "version": profile.version,
+        "profile": profile.name,
+        "profile_fingerprint": profile.fingerprint,
+        "level": "legacy",
+        "complete": False,
+        "selected": action,
+        "legacy_best": action,
+        "future_model": profile.model,
+        "candidates": [],
+        "missing": [reason],
+        "fallback_reason": reason,
+    }
 
 
 # 持财神听牌态爆头进张计算的预算:只用**节点数**(确定性,决策可复现
@@ -367,7 +428,7 @@ def _evaluate_kong_next_draw(g, seat, action, remaining):
     return result
 
 
-def _choose_draw_action(g, seat, actions=None):
+def _choose_draw_action(g, seat, actions=None, discard_profile=None):
     """Choose HU/piao, self-kong, or discard at a draw decision point.
 
     KONG is accepted only when its public next-replacement score expectation
@@ -387,7 +448,8 @@ def _choose_draw_action(g, seat, actions=None):
             return (W if _should_piao(g, seat) else HU), {
                 "reason": "hu_or_piao_legacy",
             }
-        tile, info = choose_discard(g, seat, return_info=True)
+        tile, info = choose_discard(
+            g, seat, return_info=True, profile=discard_profile)
         info.setdefault("reason", "discard_legacy")
         return tile, info
 
@@ -655,12 +717,15 @@ def choose_action(g, seat, evaluator="legacy", return_evaluation=False):
     """统一入口:返回该 seat 的动作。
 
     Existing callers keep the two-argument legacy behaviour.  Passing
-    ``evaluator='shape-v1'`` opts into the shared shape evaluator; callers
-    that need an explanation can additionally request ``return_evaluation``.
+    ``evaluator='shape-v1'`` opts into the shared shape evaluator;
+    ``legacy-two-ply-v1`` explicitly enables the one-draw legacy future layer.
+    Callers that need an explanation can additionally request
+    ``return_evaluation``.
     """
     if evaluator not in (None, "legacy", "shape-v1", "shape_v1", "shape",
                          "shape-v2", "shape_v2", "ev2", "policy-v3",
-                         "policy_v3"):
+                         "policy_v3", "legacy-two-ply-v1", "legacy_v1",
+                         "legacy-v1"):
         raise ValueError(f"unknown evaluator profile: {evaluator}")
     if evaluator in ("policy-v3", "policy_v3"):
         from .decision.policy_v3 import PolicyV3Runtime
@@ -673,6 +738,52 @@ def choose_action(g, seat, evaluator="legacy", return_evaluation=False):
         action, evaluation = choose_shape_v2_action(g, seat)
         return (action, evaluation) if return_evaluation else action
     if evaluator not in (None, "legacy"):
+        if evaluator in ("legacy-two-ply-v1", "legacy_v1", "legacy-v1"):
+            profile = LegacyTwoPlyProfile.default()
+            acts = g.legal_actions()
+            if len(acts) == 1:
+                evaluation = {
+                    "version": profile.version,
+                    "profile": profile.name,
+                    "profile_fingerprint": profile.fingerprint,
+                    "level": "legacy",
+                    "complete": False,
+                    "selected": acts[0],
+                    "legacy_best": acts[0],
+                    "future_model": profile.model,
+                    "candidates": [],
+                    "missing": ["only_legal_action"],
+                    "fallback_reason": "only_legal_action",
+                }
+                return ((acts[0], evaluation) if return_evaluation else acts[0])
+            if g.phase == "discard":
+                action, evaluation = _choose_draw_action(
+                    g, seat, acts, discard_profile=profile)
+                if not isinstance(evaluation, dict) or "version" not in evaluation:
+                    scoped = _legacy_v1_scope_info(
+                        profile, action, "hu_kong_scope")
+                    scoped["legacy_detail"] = evaluation
+                    evaluation = scoped
+                return ((action, evaluation)
+                        if return_evaluation else action)
+            # V1 is discard-only by contract.  Keep reaction/HU/KONG routing
+            # on the existing rules and make that scope explicit in logs.
+            action = _choose_react(g, seat, acts)
+            evaluation = {
+                "version": profile.version,
+                "profile": profile.name,
+                "profile_fingerprint": profile.fingerprint,
+                "level": "legacy",
+                "complete": False,
+                "selected": action,
+                "legacy_best": action,
+                "future_model": profile.model,
+                "candidates": [],
+                "missing": ["reaction_scope"],
+                "fallback_reason": "reaction_scope",
+            }
+            return ((action, evaluation)
+                    if return_evaluation else action)
         action, evaluation = choose_shape_action(g, seat)
         return (action, evaluation) if return_evaluation else action
     acts = g.legal_actions()

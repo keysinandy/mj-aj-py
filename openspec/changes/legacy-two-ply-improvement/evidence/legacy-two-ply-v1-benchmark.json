@@ -1,0 +1,93 @@
+{
+  "schema": "legacy-two-ply-v1/release-evidence-v1",
+  "captured_at": "2026-09-20",
+  "change": "legacy-two-ply-improvement",
+  "profile": {
+    "name": "legacy-two-ply-v1",
+    "node_budget": 4096,
+    "time_budget_ms": 8.0,
+    "cache_capacity": 8192,
+    "default_state": "opt_in"
+  },
+  "fixture": {
+    "source": "local/games/20260920/u_9812ba08fe2f_a_e18e58e3acb8_r1_b9_t0.jsonl",
+    "seq": 100,
+    "baseline_action": "3t",
+    "v1_action": "9b",
+    "current_ukeire": {
+      "3t": 19,
+      "9b": 19,
+      "3b": 15
+    },
+    "future_ukeire": {
+      "3t": 2048,
+      "9b": 2070
+    },
+    "status": "pass"
+  },
+  "same_seed_games": {
+    "seeds": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    "illegal_actions": 0,
+    "complete_decisions": 42,
+    "fallback_decisions": 246,
+    "nodes_total": 54694,
+    "action_differences": 0,
+    "result_differences": 0,
+    "status": "diagnostic_only"
+  },
+  "decision_benchmark": {
+    "random_hands": 100,
+    "rust_kernel": true,
+    "time_budget_ms_8": {
+      "complete_decisions": 0,
+      "p50_ms": 8.54,
+      "p95_ms": 9.06,
+      "p99_ms": 9.33,
+      "nodes_total": 19451,
+      "nodes_p50": 193.0,
+      "cache_hits_total": 0,
+      "status": "fallback_rate_gate_not_met"
+    },
+    "time_budget_ms_50": {
+      "complete_decisions": 54,
+      "p50_ms": 48.1,
+      "p95_ms": 51.01,
+      "p99_ms": 51.41,
+      "nodes_total": 91858,
+      "nodes_p50": 936.0,
+      "cache_hits_total": 0,
+      "status": "fallback_rate_gate_not_met"
+    },
+    "time_budget_ms_1000": {
+      "complete_decisions": 100,
+      "p50_ms": 52.16,
+      "p95_ms": 123.51,
+      "p99_ms": 150.62,
+      "status": "diagnostic_only"
+    }
+  },
+  "rust_python_parity": {
+    "command": "python3 scripts/rust_parity.py --n 20 --bench 100 --e2e",
+    "shanten_cases": 600,
+    "ukeire_cases": 600,
+    "baotou_cases": 3000,
+    "e2e_games": 30,
+    "trajectory_match": true,
+    "status": "pass"
+  },
+  "full_tests": {
+    "command": "python3 -m pytest -q -p no:cacheprovider",
+    "passed": 842,
+    "failed": 15,
+    "failures": "ONNX export/player tests require the unavailable onnx package",
+    "changed_scope_focused": "pass",
+    "status": "environment_blocked_outside_change"
+  },
+  "gates": {
+    "paired_benefit": "not_passed",
+    "strict_information_safety": "not_passed",
+    "performance": "not_passed",
+    "online_window": "not_run",
+    "release_decision": "keep_legacy_default_and_v1_opt_in"
+  }
+}
