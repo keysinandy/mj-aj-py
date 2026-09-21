@@ -45,6 +45,7 @@ describe("ConsolePage", () => {
   it("渲染表单与已有会话、已完成会话出现回放链接", async () => {
     renderPage();
     expect(await screen.findByText(/开始本地对战/)).toBeTruthy();
+    expect(screen.getAllByRole("option", { name: "legacy-v2 启发式" })).toHaveLength(2);
     expect(screen.getByText(/batch_test/)).toBeTruthy();
     expect(screen.getAllByRole("link", { name: /打开回放/ })).toHaveLength(1);
   });
@@ -52,6 +53,7 @@ describe("ConsolePage", () => {
   it("点击开始用主位/对手策略构造座位并创建会话", async () => {
     renderPage();
     await screen.findByText(/开始本地对战/);
+    fireEvent.change(screen.getByLabelText("对手策略"), { target: { value: "legacy-v2" } });
     fireEvent.click(screen.getByText(/开始本地对战/));
     await screen.findByText(/启动中/); // 异步
     await vi.waitFor(() =>
@@ -62,13 +64,15 @@ describe("ConsolePage", () => {
     expect(config.n_games).toBe(16);
     expect(config.seats).toHaveLength(4);
     expect(config.seats[0].strategy).toBe("bot");
-    expect(config.seats[0].evaluator).toBe("legacy");
+    expect(config.seats[0].evaluator).toBe("legacy-v2");
+    expect(config.seats[1].evaluator).toBe("legacy-v2");
   });
 
   it("切换线上匹配后创建 match 会话且不把令牌放入配置", async () => {
     renderPage();
     await screen.findByText(/开始本地对战/);
     fireEvent.click(screen.getByRole("tab", { name: "线上匹配" }));
+    expect(screen.getByRole("option", { name: "legacy-v2 启发式" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "开始线上匹配" }));
     await vi.waitFor(() =>
       expect(api.createSession).toHaveBeenCalledTimes(1),
@@ -77,7 +81,7 @@ describe("ConsolePage", () => {
     expect(kind).toBe("match");
     expect(config.max_games).toBe(10);
     expect(config.strategy).toBe("bot");
-    expect(config.evaluator).toBe("legacy");
+    expect(config.evaluator).toBe("legacy-v2");
     expect(config).not.toHaveProperty("token");
     expect(config).not.toHaveProperty("match_token");
   });

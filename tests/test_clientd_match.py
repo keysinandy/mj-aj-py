@@ -25,6 +25,11 @@ def test_normalize_match_config_defaults_and_bounds():
         normalize_match_config({"state_rate": 0})
 
 
+def test_normalize_match_config_accepts_legacy_v2_alias():
+    cfg = normalize_match_config({"evaluator": "legacy-v2"})
+    assert cfg["evaluator"] == "legacyV2"
+
+
 def test_match_runner_reads_local_settings_and_reports_progress(tmp_path,
                                                                  monkeypatch):
     settings_path = tmp_path / "platform.json"

@@ -24,6 +24,7 @@ type FutureCacheKey = ([i32; 34], [i32; 34], i32);
 type UkeireCacheKey = ([i32; 34], [i32; 34], i32);
 const LEGACY_TWO_PLY_KERNEL_VERSION: &str = "rust-legacy-two-ply-v1";
 const WEIGHTED_TWO_PLY_KERNEL_VERSION: &str = "rust-weighted-two-ply-v1";
+const WORK_BUDGET_EXCEEDED: &str = "work_budget_exceeded";
 
 #[derive(Clone)]
 struct FutureDiscard {
@@ -448,6 +449,7 @@ fn counted_shanten(
     locked: i32,
     cache: &mut HashMap<ShantenCacheKey, i32>,
     cache_capacity: usize,
+    work_budget: i64,
     counters: &mut SearchCounters,
 ) -> Result<i32, String> {
     counters.shanten_calls += 1;
@@ -457,6 +459,9 @@ fn counted_shanten(
             counters.shanten_cache_hits += 1;
             return Ok(value);
         }
+    }
+    if counters.shanten_cache_misses >= work_budget {
+        return Err(WORK_BUDGET_EXCEEDED.to_string());
     }
     counters.shanten_cache_misses += 1;
     let value = shanten_impl(counts, locked)?;
@@ -476,6 +481,7 @@ fn counted_ukeire_metrics(
     shanten_cache: &mut HashMap<ShantenCacheKey, i32>,
     ukeire_cache: &mut HashMap<UkeireCacheKey, UkeireMetrics>,
     cache_capacity: usize,
+    work_budget: i64,
     counters: &mut SearchCounters,
 ) -> Result<UkeireMetrics, String> {
     counters.ukeire_calls += 1;
@@ -487,7 +493,14 @@ fn counted_ukeire_metrics(
         }
     }
     counters.ukeire_cache_misses += 1;
-    let s = counted_shanten(counts, locked, shanten_cache, cache_capacity, counters)?;
+    let s = counted_shanten(
+        counts,
+        locked,
+        shanten_cache,
+        cache_capacity,
+        work_budget,
+        counters,
+    )?;
     let left = |t: usize| (4 - visible[t]).max(0) as i64;
     let mut total = 0i64;
     let mut tile_types = 0i32;
@@ -496,7 +509,15 @@ fn counted_ukeire_metrics(
             for t in 0..34 {
                 let mut c2 = *counts;
                 c2[t] += 1;
-                if counted_shanten(&c2, locked, shanten_cache, cache_capacity, counters)? == -1 {
+                if counted_shanten(
+                    &c2,
+                    locked,
+                    shanten_cache,
+                    cache_capacity,
+                    work_budget,
+                    counters,
+                )? == -1
+                {
                     tile_types += 1;
                     total += left(t);
                 }
@@ -514,7 +535,15 @@ fn counted_ukeire_metrics(
             }
             let mut c2 = *counts;
             c2[t] += 1;
-            if counted_shanten(&c2, locked, shanten_cache, cache_capacity, counters)? < s {
+            if counted_shanten(
+                &c2,
+                locked,
+                shanten_cache,
+                cache_capacity,
+                work_budget,
+                counters,
+            )? < s
+            {
                 tile_types += 1;
                 total += left(t);
             }
@@ -1334,6 +1363,10 @@ fn weighted_two_ply_frontier(
         root_candidates: root_arrays.len() as i64,
         ..SearchCounters::default()
     };
+    // Keep root validation legal even when callers request a zero child-work
+    // budget; the weighted budget is charged to uncached shanten work after
+    // at least one root validation per candidate.
+    let work_budget = node_budget.max(root_arrays.len() as i64);
     let mut root_shanten_values = Vec::with_capacity(root_arrays.len());
     for (index, root) in root_arrays.iter().enumerate() {
         let value = counted_shanten(
@@ -1341,6 +1374,7 @@ fn weighted_two_ply_frontier(
             locked,
             &mut shanten_cache,
             cache_capacity,
+            work_budget,
             &mut counters,
         )
         .map_err(PyValueError::new_err)?;
@@ -1360,6 +1394,9 @@ fn weighted_two_ply_frontier(
     let mut soft_stopped = false;
 
     'draws: for &draw in &draw_order {
+        if counters.shanten_cache_misses >= work_budget {
+            break;
+        }
         if started.elapsed() >= hard_limit {
             hard_exhausted = true;
             break;
@@ -1370,6 +1407,9 @@ fn weighted_two_ply_frontier(
             }
             if started.elapsed() >= hard_limit {
                 hard_exhausted = true;
+                break 'draws;
+            }
+            if counters.shanten_cache_misses >= work_budget {
                 break 'draws;
             }
             let all_covered = accumulators.iter().all(|acc| {
@@ -1420,7 +1460,7 @@ fn weighted_two_ply_frontier(
                 if mask & (1i64 << discard) == 0 {
                     continue;
                 }
-                if counters.child_nodes >= node_budget || started.elapsed() >= hard_limit {
+                if started.elapsed() >= hard_limit {
                     branch_aborted = true;
                     hard_exhausted = true;
                     break;
@@ -1428,23 +1468,33 @@ fn weighted_two_ply_frontier(
                 counters.child_nodes += 1;
                 let mut after = next_hand;
                 after[discard] -= 1;
-                let child_s = counted_shanten(
+                let child_s = match counted_shanten(
                     &after,
                     locked,
                     &mut shanten_cache,
                     cache_capacity,
+                    work_budget,
                     &mut counters,
-                )
-                .map_err(PyValueError::new_err)?;
+                ) {
+                    Ok(value) => value,
+                    Err(reason) if reason == WORK_BUDGET_EXCEEDED => {
+                        branch_aborted = true;
+                        break;
+                    }
+                    Err(reason) => return Err(PyValueError::new_err(reason)),
+                };
                 best_s = best_s.min(child_s);
                 children.push((discard, after, child_s));
             }
             if branch_aborted {
-                accumulators[root_index].reason = if counters.child_nodes >= node_budget {
-                    "node_budget_exceeded".to_string()
+                accumulators[root_index].reason = if counters.shanten_cache_misses >= work_budget {
+                    WORK_BUDGET_EXCEEDED.to_string()
                 } else {
                     "hard_deadline".to_string()
                 };
+                if counters.shanten_cache_misses >= work_budget {
+                    break 'draws;
+                }
                 continue;
             }
             if children.is_empty() {
@@ -1458,16 +1508,23 @@ fn weighted_two_ply_frontier(
                 if child_s != best_s {
                     continue;
                 }
-                let metrics = counted_ukeire_metrics(
+                let metrics = match counted_ukeire_metrics(
                     &after,
                     locked,
                     &visible_after,
                     &mut shanten_cache,
                     &mut ukeire_cache,
                     cache_capacity,
+                    work_budget,
                     &mut counters,
-                )
-                .map_err(PyValueError::new_err)?;
+                ) {
+                    Ok(value) => value,
+                    Err(reason) if reason == WORK_BUDGET_EXCEEDED => {
+                        branch_aborted = true;
+                        break;
+                    }
+                    Err(reason) => return Err(PyValueError::new_err(reason)),
+                };
                 if metrics.ukeire > best_u
                     || (metrics.ukeire == best_u && metrics.tile_types > best_types)
                 {
@@ -1478,6 +1535,10 @@ fn weighted_two_ply_frontier(
                 } else if metrics.ukeire == best_u && metrics.tile_types == best_types {
                     tied.push(discard as i32);
                 }
+            }
+            if branch_aborted {
+                accumulators[root_index].reason = WORK_BUDGET_EXCEEDED.to_string();
+                break 'draws;
             }
             if tied.is_empty() {
                 return Err(PyValueError::new_err("future legal discard set is empty"));
@@ -1503,10 +1564,12 @@ fn weighted_two_ply_frontier(
         }
     }
 
-    if hard_exhausted || soft_stopped {
+    if hard_exhausted || soft_stopped || counters.shanten_cache_misses >= work_budget {
         for acc in &mut accumulators {
             if !acc.complete && !acc.failed {
-                acc.reason = if hard_exhausted {
+                acc.reason = if counters.shanten_cache_misses >= work_budget {
+                    WORK_BUDGET_EXCEEDED.to_string()
+                } else if hard_exhausted {
                     "hard_deadline".to_string()
                 } else {
                     "soft_deadline".to_string()

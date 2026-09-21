@@ -239,8 +239,11 @@ class FutureEvaluation:
     complete: bool
     root_shanten: int | None = None
     future_improve_weight: int | None = None
+    future_improve_lower: int | None = None
+    future_improve_upper: int | None = None
     future_ukeire: int | None = None
     future_ukeire_mean: float | None = None
+    future_ukeire_mean_denominator: int | None = None
     future_ukeire_types: int | None = None
     future_ukeire_types_mean: float | None = None
     best_discards: tuple[tuple[int, int], ...] = ()
@@ -260,8 +263,11 @@ class FutureEvaluation:
             "complete": self.complete,
             "root_shanten": self.root_shanten,
             "future_improve_weight": self.future_improve_weight,
+            "future_improve_lower": self.future_improve_lower,
+            "future_improve_upper": self.future_improve_upper,
             "future_ukeire": self.future_ukeire,
             "future_ukeire_mean": self.future_ukeire_mean,
+            "future_ukeire_mean_denominator": self.future_ukeire_mean_denominator,
             "future_ukeire_types": self.future_ukeire_types,
             "future_ukeire_types_mean": self.future_ukeire_types_mean,
             "future_best_discards": {
@@ -298,7 +304,7 @@ class LegacyDiscardEvaluation:
     mode: str = "exact"
     future_nodes: int = 0
     future_cache_hits: int = 0
-    budget: Mapping[str, float | int] | None = None
+    budget: Mapping[str, float | int | str] | None = None
     assumptions: tuple[str, ...] = (
         "public_visible_uniform_unseen",
         "one_future_draw_one_best_legal_discard",
@@ -315,6 +321,7 @@ class LegacyDiscardEvaluation:
     actual_kernel: str = "python"
     kernel_version: str | None = None
     kernel_fallback_reason: str | None = None
+    short_circuit_reason: str | None = None
 
     def as_json(self):
         result = {
@@ -345,6 +352,7 @@ class LegacyDiscardEvaluation:
             "actual_kernel": self.actual_kernel,
             "kernel_version": self.kernel_version,
             "kernel_fallback_reason": self.kernel_fallback_reason,
+            "short_circuit_reason": self.short_circuit_reason,
         }
         return result
 
@@ -642,12 +650,18 @@ def _future_for_root(game, seat, root, locked, visible, profile, budget,
         complete=True,
         root_shanten=root.shanten,
         future_improve_weight=improve,
+        future_improve_lower=improve,
+        future_improve_upper=improve,
         future_ukeire=weighted_ukeire,
         future_ukeire_mean=mean,
+        future_ukeire_mean_denominator=total_weight,
         best_discards=tuple(sorted(best_counts.items())),
         nodes=budget.nodes,
         cache_hits=memo.hits,
         elapsed_ms=budget.elapsed_ms,
+        covered_weight=total_weight,
+        total_weight=total_weight,
+        coverage=1.0,
     )
 
 
@@ -723,9 +737,12 @@ def _weighted_future_for_root(game, seat, root, locked, visible, profile,
         complete=True,
         root_shanten=root.shanten,
         future_improve_weight=improve,
+        future_improve_lower=improve,
+        future_improve_upper=improve,
         future_ukeire=weighted_ukeire,
         future_ukeire_mean=(float(weighted_ukeire) / float(total_weight)
                             if total_weight else None),
+        future_ukeire_mean_denominator=total_weight,
         future_ukeire_types=weighted_types,
         future_ukeire_types_mean=(float(weighted_types) / float(total_weight)
                                   if total_weight else None),
@@ -877,13 +894,19 @@ def _native_future_for_frontier(
             complete=True,
             root_shanten=root.shanten,
             future_improve_weight=improve,
+            future_improve_lower=improve,
+            future_improve_upper=improve,
             future_ukeire=weighted_ukeire,
             future_ukeire_mean=(float(weighted_ukeire) / float(total_weight)
                                 if total_weight else None),
+            future_ukeire_mean_denominator=total_weight,
             best_discards=tuple(sorted(best_counts.items())),
             nodes=total_nodes,
             cache_hits=total_cache_hits,
             elapsed_ms=elapsed_ms,
+            covered_weight=total_weight,
+            total_weight=total_weight,
+            coverage=1.0,
         )
     return values, total_nodes, total_cache_hits, elapsed_ms
 
@@ -1004,16 +1027,20 @@ def _weighted_native_future_for_frontier(
                 weighted_types != native_types):
             raise _NativeKernelInvalid("weighted_native_metric_mismatch")
         total_weight = total
+        mean_denominator = total if complete else covered
         values[root.tile] = FutureEvaluation(
             complete=bool(complete),
             root_shanten=root.shanten,
             future_improve_weight=improve,
+            future_improve_lower=improve,
+            future_improve_upper=improve + max(0, total - covered),
             future_ukeire=weighted_ukeire,
-            future_ukeire_mean=(float(weighted_ukeire) / float(total_weight)
-                                if total_weight else None),
+            future_ukeire_mean=(float(weighted_ukeire) / float(mean_denominator)
+                                if mean_denominator else None),
+            future_ukeire_mean_denominator=mean_denominator,
             future_ukeire_types=weighted_types,
-            future_ukeire_types_mean=(float(weighted_types) / float(total_weight)
-                                      if total_weight else None),
+            future_ukeire_types_mean=(float(weighted_types) / float(mean_denominator)
+                                      if mean_denominator else None),
             best_discards=tuple(sorted(best_counts.items())),
             nodes=search_metrics["child_nodes"],
             cache_hits=search_metrics["shanten_cache_hits"],
@@ -1053,6 +1080,8 @@ def _weighted_evaluation(
             candidates=tuple(root.as_json() for root in roots),
             future_model=profile.model, mode=profile.mode,
             budget={"node_budget": profile.node_budget,
+                    "work_budget": profile.node_budget,
+                    "work_budget_metric": "shanten_cache_misses",
                     "soft_budget_ms": profile.soft_budget_ms,
                     "hard_budget_ms": profile.hard_budget_ms},
             fallback_reason=str(exc), missing=(str(exc),),
@@ -1072,6 +1101,8 @@ def _weighted_evaluation(
             candidates=tuple(root.as_json() for root, _, _ in diagnostics),
             future_model=profile.model, mode=profile.mode,
             budget={"node_budget": profile.node_budget,
+                    "work_budget": profile.node_budget,
+                    "work_budget_metric": "shanten_cache_misses",
                     "soft_budget_ms": profile.soft_budget_ms,
                     "hard_budget_ms": profile.hard_budget_ms},
             fallback_reason="profile_disabled", missing=("profile_disabled",),
@@ -1079,6 +1110,45 @@ def _weighted_evaluation(
             kernel_fallback_reason="profile_disabled",
         )
         return legacy, evaluation
+
+    if len(frontier) == 1:
+        singleton = frontier[0]
+        candidate_json = []
+        frontier_tiles = {singleton.tile}
+        for root, eligible, missing in diagnostics:
+            data = root.as_json()
+            data["missing"] = list(missing)
+            if root.tile in frontier_tiles and eligible:
+                data["missing"] = ["future_not_evaluated_short_circuit"]
+                data["future_short_circuit_reason"] = "frontier_singleton"
+            candidate_json.append(data)
+        evaluation = LegacyDiscardEvaluation(
+            version=profile.version, profile=profile.name,
+            profile_fingerprint=profile.fingerprint,
+            level="legacy-one-ply", complete=False,
+            selected=singleton.tile, legacy_best=legacy,
+            candidates=tuple(candidate_json), future_model=profile.model,
+            mode=profile.mode,
+            budget={"node_budget": profile.node_budget,
+                    "work_budget": profile.node_budget,
+                    "work_budget_metric": "shanten_cache_misses",
+                    "soft_budget_ms": profile.soft_budget_ms,
+                    "hard_budget_ms": profile.hard_budget_ms},
+            missing=("future_not_evaluated_short_circuit",),
+            search_metrics={
+                "root_candidates": len(frontier),
+                "draw_nodes": 0,
+                "child_nodes": 0,
+                "shanten_calls": 0,
+                "ukeire_calls": 0,
+                "work_budget": profile.node_budget,
+                "work_budget_metric": "shanten_cache_misses",
+                "short_circuit": "frontier_singleton",
+            },
+            requested_kernel=requested_kernel, actual_kernel="legacy",
+            short_circuit_reason="frontier_singleton",
+        )
+        return singleton.tile, evaluation
 
     frozen = _rule_context(game, profile, seat)[3]
     future_values = {}
@@ -1135,12 +1205,28 @@ def _weighted_evaluation(
         value.complete and (value.coverage is None or value.coverage >= 1.0)
         for value in future_values.values())
     partial_accepted = False
+    partial_winner = None
     if not fallback_reason and not complete and profile.allow_partial:
-        partial_accepted = (
-            bool(root_tiles) and committed_tiles == root_tiles and all(
-                value.coverage is not None and
-                value.coverage >= profile.min_partial_coverage
-                for value in future_values.values()))
+        if bool(root_tiles) and committed_tiles == root_tiles:
+            bounds = {
+                root.tile: (
+                    future_values[root.tile].future_improve_lower,
+                    future_values[root.tile].future_improve_upper,
+                )
+                for root in frontier
+            }
+            for root in frontier:
+                lower, _upper = bounds[root.tile]
+                if lower is None:
+                    continue
+                other_uppers = [bounds[other.tile][1]
+                                for other in frontier
+                                if other.tile != root.tile]
+                if (other_uppers and all(value is not None and lower > value
+                                         for value in other_uppers)):
+                    partial_winner = root
+                    break
+            partial_accepted = partial_winner is not None
         if not partial_accepted:
             fallback_reason = "partial_not_acceptable"
     elif not fallback_reason and not complete:
@@ -1148,18 +1234,21 @@ def _weighted_evaluation(
 
     accepted = not fallback_reason and (complete or partial_accepted)
     if accepted:
-        selected_root = min(
-            frontier,
-            key=lambda root: (
-                root.tile == W,
-                -(root.current_ukeire or 0),
-                -future_values[root.tile].future_improve_weight,
-                -(future_values[root.tile].future_ukeire_mean or 0.0),
-                -(future_values[root.tile].future_ukeire_types_mean or 0.0),
-                root.shape_loss, root.feed_risk, root.tile,
-            ),
-        )
-        selected = selected_root.tile
+        if partial_accepted:
+            selected = partial_winner.tile
+        else:
+            selected_root = min(
+                frontier,
+                key=lambda root: (
+                    root.tile == W,
+                    -(root.current_ukeire or 0),
+                    -future_values[root.tile].future_improve_weight,
+                    -(future_values[root.tile].future_ukeire_mean or 0.0),
+                    -(future_values[root.tile].future_ukeire_types_mean or 0.0),
+                    root.shape_loss, root.feed_risk, root.tile,
+                ),
+            )
+            selected = selected_root.tile
     else:
         selected = legacy
         actual_kernel = "legacy"
@@ -1193,6 +1282,8 @@ def _weighted_evaluation(
         future_cache_hits=int(search_metrics.get("shanten_cache_hits", 0)
                               or 0),
         budget={"node_budget": profile.node_budget,
+                "work_budget": profile.node_budget,
+                "work_budget_metric": "shanten_cache_misses",
                 "soft_budget_ms": profile.soft_budget_ms,
                 "hard_budget_ms": profile.hard_budget_ms},
         fallback_reason=fallback_reason,
@@ -1207,7 +1298,12 @@ def _weighted_evaluation(
         coverage=(min((future.coverage for future in future_values.values()
                        if future.coverage is not None), default=None)
                   if accepted else None),
-        search_metrics={**search_metrics, "elapsed_ms": elapsed_ms},
+        search_metrics={
+            **search_metrics,
+            "elapsed_ms": elapsed_ms,
+            "work_budget": profile.node_budget,
+            "work_budget_metric": "shanten_cache_misses",
+        },
         requested_kernel=requested_kernel, actual_kernel=actual_kernel,
         kernel_version=kernel_version,
         kernel_fallback_reason=kernel_fallback_reason,

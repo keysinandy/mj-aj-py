@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api, type SessionInfo } from "../service/http";
 
 const MAIN_STRATEGIES: Array<{ key: string; label: string; config: object }> = [
+  { key: "legacy-v2", label: "legacy-v2 启发式", config: { strategy: "bot", evaluator: "legacy-v2" } },
   { key: "legacy", label: "legacy 启发式", config: { strategy: "bot", evaluator: "legacy" } },
   { key: "shape-v2", label: "shape-v2 启发式", config: { strategy: "bot", evaluator: "shape-v2", fallback_ms: 10 } },
   { key: "random", label: "随机", config: { strategy: "random" } },
@@ -10,11 +11,13 @@ const MAIN_STRATEGIES: Array<{ key: string; label: string; config: object }> = [
 
 const OPPONENT_STRATEGIES: Array<{ key: string; label: string; config: object }> = [
   { key: "random", label: "随机", config: { strategy: "random" } },
+  { key: "legacy-v2", label: "legacy-v2 启发式", config: { strategy: "bot", evaluator: "legacy-v2" } },
   { key: "legacy", label: "legacy 启发式", config: { strategy: "bot", evaluator: "legacy" } },
   { key: "shape-v2", label: "shape-v2 启发式", config: { strategy: "bot", evaluator: "shape-v2", fallback_ms: 10 } },
 ];
 
 const MATCH_STRATEGIES: Array<{ key: string; label: string; config: object }> = [
+  { key: "legacy-v2", label: "legacy-v2 启发式", config: { strategy: "bot", evaluator: "legacy-v2" } },
   { key: "legacy", label: "legacy 启发式", config: { strategy: "bot", evaluator: "legacy" } },
   { key: "shape-v2", label: "shape-v2 启发式", config: { strategy: "bot", evaluator: "shape-v2" } },
   { key: "policy", label: "policy（设置中的当前模型）", config: { strategy: "policy" } },
@@ -42,10 +45,10 @@ export function ConsolePage() {
   const [battleMode, setBattleMode] = useState<BattleMode>("arena");
   const [nGames, setNGames] = useState(16);
   const [concurrency, setConcurrency] = useState(4);
-  const [mainStrategy, setMainStrategy] = useState("legacy");
+  const [mainStrategy, setMainStrategy] = useState("legacy-v2");
   const [oppStrategy, setOppStrategy] = useState("random");
   const [matchGames, setMatchGames] = useState(10);
-  const [matchStrategy, setMatchStrategy] = useState("legacy");
+  const [matchStrategy, setMatchStrategy] = useState("legacy-v2");
   const [matchStateRate, setMatchStateRate] = useState(16);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);

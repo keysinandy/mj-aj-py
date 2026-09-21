@@ -1,12 +1,21 @@
 """Weighted online two-ply frontier contract tests."""
 
 import unittest
+from unittest.mock import patch
 
 from mj.bot import choose_action, choose_discard
 from mj.game import Game
-from mj.legacy_eval import LegacyTwoPlyProfile
+from mj.legacy_eval import (
+    FutureEvaluation,
+    LegacyRootCandidate,
+    LegacyTwoPlyProfile,
+    _limit_weighted_frontier,
+    _native_legal_masks,
+    _root_features,
+)
 from mj.legacy_eval import DEFAULT_BOT_EVALUATOR
-from mj.shanten import WEIGHTED_TWO_PLY_KERNEL_VERSION
+from mj.shanten import WEIGHTED_TWO_PLY_KERNEL_VERSION, shanten
+from mj.shanten import weighted_two_ply_frontier
 
 try:
     from tests.test_legacy_eval import _seq100_game
@@ -52,7 +61,7 @@ class TestWeightedTwoPlyFrontier(unittest.TestCase):
         self.assertLess(info["search_metrics"]["ukeire_calls"],
                         info["search_metrics"]["child_nodes"])
 
-    def test_partial_result_can_be_accepted_after_root_commit(self):
+    def test_singleton_frontier_short_circuits_two_ply(self):
         game = _seq100_game()
         game.freeze = 2
         game.freezer = 2
@@ -62,32 +71,152 @@ class TestWeightedTwoPlyFrontier(unittest.TestCase):
             allow_partial=True,
             min_partial_coverage=0.0,
         )
-        action, info = choose_discard(
-            game, 0, return_info=True, profile=profile)
+        with patch("mj.legacy_eval._weighted_native_future_for_frontier",
+                   side_effect=AssertionError("singleton must not search")):
+            action, info = choose_discard(
+                game, 0, return_info=True, profile=profile)
         self.assertEqual(action, 7)
         self.assertFalse(info["complete"])
-        self.assertTrue(info["partial_accepted"])
-        self.assertGreater(info["coverage"], 0.0)
-        self.assertLess(info["coverage"], 1.0)
-        self.assertEqual(info["level"], "weighted-two-ply-partial")
+        self.assertFalse(info["partial_accepted"])
+        self.assertEqual(info["level"], "legacy-one-ply")
+        self.assertEqual(info["short_circuit_reason"], "frontier_singleton")
+        row = next(row for row in info["candidates"] if row["tile"] == 7)
+        self.assertIsNone(row.get("future_improve_weight"))
+        self.assertEqual(row["future_short_circuit_reason"],
+                         "frontier_singleton")
 
-    def test_partial_result_falls_back_when_coverage_is_insufficient(self):
+    def test_partial_result_falls_back_when_bounds_overlap(self):
         game = _seq100_game()
-        game.freeze = 2
-        game.freezer = 2
-        game.drawn[0] = 7
         profile = self._exact_weighted(
-            node_budget=1,
+            node_budget=100000,
             allow_partial=True,
-            min_partial_coverage=1.0,
+            min_partial_coverage=0.9,
         )
-        action, info = choose_discard(
-            game, 0, return_info=True, profile=profile)
-        self.assertEqual(action, 7)
+
+        def fake_native(_game, _seat, frontier, *_args):
+            self.assertGreaterEqual(len(frontier), 2)
+            values = {}
+            for index, root in enumerate(frontier):
+                lower, upper = ((30, 40) if index == 0 else (20, 50))
+                values[root.tile] = FutureEvaluation(
+                    complete=False,
+                    root_shanten=root.shanten,
+                    future_improve_weight=lower,
+                    future_improve_lower=lower,
+                    future_improve_upper=upper,
+                    future_ukeire=40,
+                    future_ukeire_mean=2.0,
+                    future_ukeire_mean_denominator=95,
+                    future_ukeire_types=20,
+                    future_ukeire_types_mean=1.0,
+                    covered_weight=95,
+                    total_weight=100,
+                    coverage=0.95,
+                    search_metrics={"shanten_cache_misses": 10},
+                )
+            return values, {"shanten_cache_misses": 10}, 1.0
+
+        with patch("mj.legacy_eval._weighted_native_future_for_frontier",
+                   side_effect=fake_native):
+            action, info = choose_discard(
+                game, 0, return_info=True, profile=profile)
         self.assertFalse(info["complete"])
         self.assertFalse(info["partial_accepted"])
         self.assertEqual(info["level"], "legacy")
         self.assertEqual(info["fallback_reason"], "partial_not_acceptable")
+
+    def test_partial_result_accepts_strict_improvement_winner(self):
+        game = _seq100_game()
+        profile = self._exact_weighted(
+            node_budget=100000,
+            allow_partial=True,
+            min_partial_coverage=0.9,
+        )
+        seen = {}
+
+        def fake_native(_game, _seat, frontier, *_args):
+            self.assertGreaterEqual(len(frontier), 2)
+            seen["first"] = frontier[0].tile
+            values = {}
+            for index, root in enumerate(frontier):
+                lower, upper = ((30, 35) if index == 0 else (10, 29))
+                values[root.tile] = FutureEvaluation(
+                    complete=False,
+                    root_shanten=root.shanten,
+                    future_improve_weight=lower,
+                    future_improve_lower=lower,
+                    future_improve_upper=upper,
+                    future_ukeire=40,
+                    future_ukeire_mean=2.0,
+                    future_ukeire_mean_denominator=20,
+                    future_ukeire_types=20,
+                    future_ukeire_types_mean=1.0,
+                    covered_weight=20,
+                    total_weight=100,
+                    coverage=0.2,
+                    search_metrics={"shanten_cache_misses": 10},
+                )
+            return values, {"shanten_cache_misses": 10}, 1.0
+
+        with patch("mj.legacy_eval._weighted_native_future_for_frontier",
+                   side_effect=fake_native):
+            action, info = choose_discard(
+                game, 0, return_info=True, profile=profile)
+        self.assertEqual(action, seen["first"])
+        self.assertFalse(info["complete"])
+        self.assertTrue(info["partial_accepted"])
+        self.assertEqual(info["level"], "weighted-two-ply-partial")
+        row = next(row for row in info["candidates"]
+                   if row["tile"] == seen["first"])
+        self.assertEqual(row["future_improve_lower"], 30)
+        self.assertEqual(row["future_improve_upper"], 35)
+        self.assertEqual(row["future_ukeire_mean"], 2.0)
+        self.assertEqual(row["future_ukeire_mean_denominator"], 20)
+
+    def test_work_budget_counts_uncached_shanten_not_child_nodes(self):
+        game = _seq100_game()
+        profile = self._exact_weighted(
+            node_budget=1,
+            allow_partial=True,
+            min_partial_coverage=0.0,
+        )
+        _action, info = choose_discard(
+            game, 0, return_info=True, profile=profile)
+        metrics = info["search_metrics"]
+        self.assertEqual(metrics["child_nodes"], 0)
+        self.assertLessEqual(metrics["shanten_cache_misses"], 3)
+        self.assertEqual(info["fallback_reason"], "partial_not_acceptable")
+
+    def test_native_work_budget_reports_work_budget_reason(self):
+        game = _seq100_game()
+        seat = 0
+        locked = len(game.melds[seat])
+        visible = tuple(game.visible_counts(seat))
+        candidates = []
+        best_s = None
+        for tile, count in enumerate(game.hands[seat]):
+            if count <= 0:
+                continue
+            hand = list(game.hands[seat])
+            hand[tile] -= 1
+            value = shanten(hand, locked)
+            if best_s is None or value < best_s:
+                best_s, candidates = value, []
+            if value == best_s:
+                candidates.append(LegacyRootCandidate(
+                    tile=tile, hand=tuple(hand), shanten=value))
+        _enriched, frontier, _diagnostics = _root_features(
+            candidates, locked, visible)
+        frontier, _diagnostics = _limit_weighted_frontier(
+            frontier, _diagnostics, 0)
+        rows = weighted_two_ply_frontier(
+            [list(root.hand) for root in frontier],
+            [root.shanten for root in frontier],
+            list(visible),
+            _native_legal_masks(frontier, visible, False),
+            locked, False, 1, 10000.0, 10000.0, 8192, 0.0, True)
+        self.assertTrue(rows)
+        self.assertTrue(all(row[7] == "work_budget_exceeded" for row in rows))
 
     def test_profile_routing_accepts_legacy_v2_alias(self):
         game = _seq100_game()

@@ -54,6 +54,12 @@ def test_bot_default_uses_legacy_v2():
     assert player.profile.name == "legacyV2"
 
 
+def test_bot_legacy_v2_alias_is_accepted_and_normalized():
+    player = make_player({"strategy": "bot", "evaluator": "legacy-v2"})
+    assert player.evaluator == "legacyV2"
+    assert player.profile.name == "legacyV2"
+
+
 def test_bot_never_fallbacks_no_budget_fallback():
     player = make_player({"strategy": "bot", "evaluator": "shape-v2",
                           "fallback_ms": "never"})
