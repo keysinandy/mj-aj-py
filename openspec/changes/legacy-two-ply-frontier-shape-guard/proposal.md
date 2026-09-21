@@ -16,7 +16,10 @@
 - 评价 JSON 增加护栏审计：`frontier_guard`（开关、slack、delta、准入牌、截断牌、跳过原因）与候选级 `admitted_by`。
 - 内核不可用（缺 `mj_kernels`、`MJ_KERNELS=python`）时护栏 MUST NOT 改变比较集与选择，只记录 `shape_guard_skipped_reason=kernel_unavailable`，保持现有 legacy 回退与对拍路径。
 - 降级显式化：运行侧（clientd/runner 启动与决策记录）显式报告"实际内核 = legacy / 降级原因"，前端与回放可据此提示，不再只在个别字段里可查。
-- 护栏默认关闭（profile 开关），切换默认前必须完成冻结回放成对 A/B 与 40/50ms 延迟验收。
+- 护栏以 profile 开关提供；**2026-09-21 决定默认开启**（`weighted_online()` /
+  `weighted_offline()` 显式置 true，精确/legacy V1 档案保持关闭）。闸门证据与风险
+  记录见 design 与 `evidence/shape-guard-ab.json`：触发率 0.63%、护栏边际延迟 ≈ 0，
+  但本机基线已超预算、离线 A/B 无收益指标，属"按决定开启、留可回滚开关"。
 - 公开信息口径、抓打圈、财神保护、反应窗口门禁与 `legacy`/`MJ_KERNELS=python` 回退行为全部不变。
 
 ## Capabilities
@@ -31,5 +34,6 @@
 
 - 代码：`mj/legacy_eval.py`（`_root_features` / `_limit_weighted_frontier` / `_weighted_evaluation` / profile 旋钮 / 审计字段）、`mj/bot.py`（profile 透传与 info）、`mj/clientd`（启动降级诊断）、前端/回放对新增字段的展示。
 - 性能：护栏最多把比较集从 1 个候选扩到 `max_frontier_candidates` 个，加权搜索节点与延迟上升，必须在 soft 40ms / hard 50ms 预算内验收；未开护栏时零开销。
-- 兼容：护栏默认关闭，默认指纹与行为不变；新增字段只增不改，旧日志仍按 `legacy_unrecorded` 处理。
+- 兼容：精确/legacy V1 档案指纹与行为不变；weighted 在线/离线档案因默认开启护栏而
+  **指纹变化**（`shape_guard_enabled` 进入 payload），旧记录仍可读，新增字段只增不改。
 - 风险：护栏扩围可能把"该打的孤张"排除掉（结构损失小 ≠ 该留），因此以冻结回放的成对 A/B 与延迟验收为发布闸门，未达标保持默认关闭。

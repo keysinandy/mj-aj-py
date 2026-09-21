@@ -21,7 +21,7 @@ PRIMARY_TILE = 3
 )
 class TestShapeGuard(unittest.TestCase):
     def _profile(self, **overrides):
-        values = {"kernel": "rust"}
+        values = {"kernel": "rust", "shape_guard_enabled": False}
         values.update(overrides)
         return LegacyTwoPlyProfile.weighted_online(**values)
 
@@ -33,7 +33,7 @@ class TestShapeGuard(unittest.TestCase):
         rows = {row["tile"]: row for row in info["candidates"]}
         return action, info, rows
 
-    def test_guard_default_off_keeps_singleton_short_circuit(self):
+    def test_guard_explicit_off_keeps_singleton_short_circuit(self):
         action, info, rows = self._decide()
         self.assertEqual(action, PRIMARY_TILE)
         self.assertEqual(info["level"], "legacy-one-ply")
@@ -45,6 +45,28 @@ class TestShapeGuard(unittest.TestCase):
         self.assertEqual(guard["primary_tiles"], [PRIMARY_TILE])
         self.assertTrue(all(row["admitted_by"] == "primary"
                             for row in rows.values()))
+
+    def test_guard_defaults_on_in_online_and_offline_profiles(self):
+        self.assertTrue(
+            LegacyTwoPlyProfile.weighted_online(kernel="rust")
+            .shape_guard_enabled)
+        self.assertTrue(LegacyTwoPlyProfile.weighted_offline().shape_guard_enabled)
+        # 精确/legacy V1 档案保持关闭,指纹不受影响
+        exact = LegacyTwoPlyProfile.default()
+        self.assertFalse(exact.shape_guard_enabled)
+        self.assertNotIn("shape_guard_enabled", exact._payload())
+
+    def test_default_profile_guards_the_singleton_state(self):
+        game = Game(seed=GUARD_SEED)
+        seat = game.current_seat()
+        action, info = choose_discard(
+            game, seat, return_info=True,
+            profile=LegacyTwoPlyProfile.weighted_online(kernel="rust"))
+        guard = info["frontier_guard"]
+        self.assertTrue(guard["enabled"])
+        self.assertTrue(guard["admitted_tiles"])
+        self.assertIn(action, guard["primary_tiles"] + guard["admitted_tiles"])
+        self.assertNotEqual(info["level"], "legacy-one-ply")
 
     def test_guard_admits_structurally_better_candidate(self):
         action, info, rows = self._decide(shape_guard_enabled=True)
@@ -96,24 +118,17 @@ class TestShapeGuard(unittest.TestCase):
         self.assertFalse(info["search_used"])
         self.assertEqual(action, info["legacy_best"])
 
-    def test_guard_off_matches_online_default_route(self):
+    def test_guard_off_keeps_legacy_short_circuit(self):
+        # 默认开启后,显式关闭仍必须回到旧行为:唯一最大进张直接短路。
         for seed in (0, 7, GUARD_SEED):
-            first = Game(seed=seed)
-            seat = first.current_seat()
-            _a, plain = choose_discard(
-                first, seat, return_info=True,
-                profile=LegacyTwoPlyProfile.weighted_online(kernel="rust"))
-            second = Game(seed=seed)
-            _b, guarded = choose_discard(
-                second, seat, return_info=True,
-                profile=self._profile(shape_guard_enabled=False,
-                                      shape_guard_ukeire_slack=1,
-                                      shape_guard_shape_delta=8))
-            self.assertEqual(plain["selected"], guarded["selected"])
-            self.assertEqual(plain["level"], guarded["level"])
+            action, info, _rows = self._decide(seed=seed)
+            primary = info["frontier_guard"]["primary_tiles"]
+            if len(primary) == 1:
+                self.assertEqual(info["level"], "legacy-one-ply")
+                self.assertEqual(action, primary[0])
 
     def test_guard_knobs_enter_fingerprint_and_json(self):
-        off = self._profile()
+        off = self._profile(shape_guard_enabled=False)
         on = self._profile(shape_guard_enabled=True)
         self.assertNotEqual(off.fingerprint, on.fingerprint)
         self.assertIs(off.as_json()["shape_guard_enabled"], False)

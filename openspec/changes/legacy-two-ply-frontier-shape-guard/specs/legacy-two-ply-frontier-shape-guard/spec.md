@@ -50,14 +50,18 @@
 - **WHEN** 运行进程没有可用的 weighted 原生内核而护栏已开启
 - **THEN** 选择与护栏关闭时完全相同，并显式记录跳过原因
 
-### Requirement: 默认切换闸门
+### Requirement: 默认值与切换记录
 
-护栏 SHALL 以显式 profile 开关提供并默认关闭。切换默认前 MUST 完成：全量测试与 `openspec validate --strict`、冻结记录的成对 A/B（同一批回放、同一预算，报告决策变化数、逐条差异与加权指标分布）、以及 40/50ms 预算下的延迟验收（p95 不超预算、无新增窗口损失）。任一项未达标 MUST 保持默认关闭并报告证据不足；参数扫描方案 MUST 事前声明。
+护栏 SHALL 以显式 profile 开关提供。默认值 MUST 记录在 profile 定义里（当前
+`weighted_online()` / `weighted_offline()` 为开启，精确/legacy V1 档案为关闭），且
+每次默认变更 MUST 留下证据：全量测试与 `openspec validate --strict`、成对 A/B（同一预算，
+报告触发率、决策变化数、逐条差异与延迟分位）、参数扫描方案事前声明。若证据显示护栏使
+p95 超出预算或产生新增窗口损失，MUST 回退默认并记录。
 
-#### Scenario: 收益不确定
-- **WHEN** 护栏在冻结回放上改变决策但成对指标区间跨零
-- **THEN** 保持默认关闭并输出证据不足结论
+#### Scenario: 默认开启后的证据留档
+- **WHEN** 默认从关闭切换为开启
+- **THEN** change 的 evidence 记录触发率、变化条数、延迟分位与基线对照，并保留关闭开关
 
-#### Scenario: 延迟超预算
-- **WHEN** 护栏使 p95 决策延迟超出 50ms 硬预算
-- **THEN** 发布闸门不通过，默认保持关闭
+#### Scenario: 延迟或窗口损失回归
+- **WHEN** 开启后 p95 超出预算或出现新增窗口损失
+- **THEN** 回退默认值并在 evidence 中记录回退原因

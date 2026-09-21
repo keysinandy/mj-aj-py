@@ -174,6 +174,7 @@ class LegacyTwoPlyProfile:
             "min_partial_coverage": 0.90,
             "lazy_child_ukeire": True,
             "workers": 0,
+            "shape_guard_enabled": True,
         }
         values.update(overrides)
         return cls(**values)
@@ -203,6 +204,7 @@ class LegacyTwoPlyProfile:
             "min_partial_coverage": 0.90,
             "lazy_child_ukeire": True,
             "workers": 0,
+            "shape_guard_enabled": True,
         }
         values.update(overrides)
         return cls(**values)
