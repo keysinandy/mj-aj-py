@@ -8,10 +8,9 @@
 现口径(优先级从高到低):向听数(硬约束)→ 财神保护 → 进张数 →
 牌型结构损失 → 喂牌风险 → tile 编号(仅稳定排序)。
 
-反应侧(2026-09-11 bot-react-full-eval):吃/碰按"副露 + 最佳弃牌
-后站立牌面"与 PASS 基准比较,门槛判据 (shanten, ukeire)——向听
-下降即做,等向听需进张增量达标(PONG≥2/CHOW≥4);KONG_OPEN 合法
-时整个 claim 窗口(含 PONG)沿用 legacy 决策。
+反应侧(legacy-shape-progress-v1):吃/碰按"副露 + 最佳弃牌后站立
+牌面"与 PASS 基准比较;向听下降即做,同向听需爆头/财飘/听牌宽度/
+降向听能力显著推进。KONG_OPEN 单独走结构、牌效与杠开硬门。
 """
 
 import random
@@ -514,21 +513,17 @@ class TestReactDecision(unittest.TestCase):
         self.assertEqual(top[CHOW_HIGH], max(top.values()))
         self.assertEqual(act, CHOW_HIGH)
 
-    def test_chi_equal_shanten_gain_exactly_at_threshold(self):
-        """等向听 + 进张增量恰为 4(= CHOW 门槛)→ 吃;门槛语义是 ≥。
+    def test_chi_equal_shanten_small_gain_passes(self):
+        """等向听 + 进张增量恰为 4(旧门槛)→ PASS。
 
         pending 3p 已入河使 PASS 基准进张 11→10,最优吃法进张 14,
-        增量恰为 4:默认门槛下接受;把门槛抬到 5 即拒绝——同牌型
-        锁死"恰达门槛仍可接受"的边界。
+        增量恰为 4:未达到 CHOW 绝对门槛 6,也无类别升级。
         """
         spec, owner, tile = "22m345m678m123p45p", 0, 11
         base, claims, act = self._probe(spec, owner, tile)
         self.assertEqual(base[0], 0)
         self.assertEqual(max(r[1] - base[1] for _, r in claims), 4)
-        self.assertEqual(act, CHOW_HIGH)
-        with mock.patch.object(bot_mod, "CHOW_UKE_GAIN", 5):
-            g = _react_game(spec, owner, tile)
-            self.assertEqual(bot_mod.choose_action(g, 1), PASS)
+        self.assertEqual(act, PASS)
 
     def test_pong_taken_when_shanten_drops(self):
         """碰后向听下降(1→0)→ PONG。"""
@@ -537,18 +532,17 @@ class TestReactDecision(unittest.TestCase):
         self.assertEqual(claims[0][1][0], 0)
         self.assertEqual(act, PONG)
 
-    def test_pong_equal_shanten_ukeire_drop_pass(self):
-        """等向听 + 进张增量 -1(< PONG 门槛 2)→ PASS。"""
+    def test_pong_equal_shanten_baotou_progress(self):
+        """等向听普通进张 -1,但爆头进张 0→4 → PONG。"""
         base, claims, act = self._probe("33m456m789m123p45p", 0, 2, mode="claim")
         self.assertEqual(base[0], 0)
         self.assertEqual(claims[0][1][1] - base[1], -1)
-        self.assertEqual(act, PASS)
+        self.assertEqual(act, PONG)
 
     def test_pong_equal_shanten_gain_and_threshold_boundary(self):
         """等向听 + 进张增量 +12 → PONG;门槛边界用常量锁定。
 
-        同一局面增量恰为 +12:PONG_UKE_GAIN=12 时重新决策仍可接受
-        (≥),=13 时拒绝——直接锁死门槛语义是"≥ 增量"。
+        同一普通进张 +12,同时满足 PONG 绝对与 1.5 倍门槛。
         """
         spec, owner, tile = "33m456m789m12p45pE", 0, 2
         base, claims, act = self._probe(spec, owner, tile, mode="claim")
@@ -556,21 +550,15 @@ class TestReactDecision(unittest.TestCase):
         delta = claims[0][1][1] - base[1]
         self.assertEqual(delta, 12)
         self.assertEqual(act, PONG)
-        with mock.patch.object(bot_mod, "PONG_UKE_GAIN", 12):
-            g = _react_game(spec, owner, tile, mode="claim")
-            self.assertEqual(bot_mod.choose_action(g, 1), PONG)
-        with mock.patch.object(bot_mod, "PONG_UKE_GAIN", 13):
-            g = _react_game(spec, owner, tile, mode="claim")
-            self.assertEqual(bot_mod.choose_action(g, 1), PASS)
 
-    def test_kong_window_keeps_legacy_behavior(self):
-        """KONG_OPEN 合法时整窗走 legacy:KONG 优先于 PONG(等向听),
-        PONG 向听严格更优时 PONG——两例与旧实现逐动作一致。
+    def test_kong_window_no_longer_freezes_legacy_claim(self):
+        """KONG_OPEN 单独过硬门;PONG 不再被整窗旧逻辑覆盖。
         """
-        # legacy: 碰/杠同 key 时 KONG 次项 -1 优先 → KONG_OPEN
+        # KONG 结构安全但 post-KONG 仍 1 向听,PONG 同向听不显著
+        # → 两者都不推进,PASS。
         base, claims, act = self._probe("333m456m789m12p45p", 0, 2, mode="claim")
-        self.assertEqual(act, KONG_OPEN)
-        # legacy: PONG 的副露后向听严格更低 → PONG
+        self.assertEqual(act, PASS)
+        # PONG 的副露后向听严格更低,KONG 未过杠开门 → PONG。
         act = self._probe("444m567m89m12p45pE", 0, 3, mode="claim")[2]
         self.assertEqual(act, PONG)
 

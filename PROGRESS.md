@@ -496,6 +496,30 @@ locked 手牌向听数虚高 bug(见下)。
     KONG 同窗 legacy 不漂移、七对保护、vis 不变量、副露 0/1/2 张数
     三档);全量 283 passed。教师分布变化未重训管线(BC/PPO 重跑
     另行决策)。
+12. **legacy 吃碰看推进、杠看无损 + 杠开**(2026-09-22,openspec change
+    `legacy-shape-progress-kong-guard`):新增
+    `LegacyShapeProgress`/`legacy-shape-progress-v1`,PASS 与
+    “副露 + 最佳弃牌”同口径比较。向听下降直接吃碰;同向听仅四类
+    显著推进可做:爆头、财飘、听牌宽度、下一摸降向听能力。冻结第一版
+    阈值:PONG 绝对 +4、CHOW 绝对 +6、比例 1.50(before=0 只看绝对),
+    听牌牌种 +2 且 live 不降;旧 `PONG_UKE_GAIN=2`/
+    `CHOW_UKE_GAIN=4` 不再参与决策。KONG_OPEN 与 PONG 分路评价;
+    三种 KONG 先过 material-safe 最优标准形结构门(暗杠/加杠要求冗余
+    single,明杠要求自然刻子),再比较同口径 post-KONG 牌效,最后
+    要求 post-KONG 已听且有公开未见杠开张,才进入补牌 EV。固定牌例:
+    `123333m` 暗杠 3m 拒绝、`333m + single 3m` 可继续、加杠牌在
+    `123m` 中拒绝、明杠三张被顺子占用拒绝、post-KONG 未听/无活杠开张/
+    live waits 下降拒绝;PONG/KONG 同窗不再整窗回退。
+    验证:`tests/test_bot.py` + 新
+    `tests/test_legacy_shape_progress_kong_guard.py` 锁阈值、结构、
+    杠开与诊断;同机同 pyenv/Rust 内核交错 3×200 局,4-bots
+    elapsed/games 中位数 60s→67s(+11.7%,≤15%);200 局诊断:
+    react p50/p95/p99=0.299/2.089/13.181ms,KONG_OPEN
+    1.182/5.053/17.614ms,self-KONG 1.106/9.710/29.905ms,
+    decomposition 121 次、Rust baotou 4790 次、Python baotou
+    fallback 0。20260922 本地批次 40 局扫旧吃/碰/杠 209 个决策:
+    186 个动作不变、23 个旧 PONG/KONG_OPEN 改 PASS;KONG 拒绝
+    分布 post-KONG 未听 9、牌效下降 3、结构占用 1。
 
 
 ### 性能现状(2026-09-03,shanten 剪枝界重构 + shanten/is_win 记忆化)
