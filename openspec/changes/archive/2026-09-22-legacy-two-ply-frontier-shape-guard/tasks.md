@@ -35,6 +35,8 @@
 
 ## 6. 文档与校验
 
-- [ ] 6.1 更新 `bot-decision-explanations` 相关文档/前端提示（降级与护栏字段的展示）。验证：前端 typecheck/测试通过。← 未做（本轮只落 Python/记录侧）。
+- [ ] 6.1 更新 `bot-decision-explanations` 相关文档/前端提示（降级与护栏字段的展示）。验证：前端 typecheck/测试通过。← 未做（本轮只落 Python/记录侧）；归档时作为遗留记录。
 - [x] 6.2 运行 `OPENSPEC_TELEMETRY=0 openspec validate legacy-two-ply-frontier-shape-guard --strict` 与 focused 测试（`test_shape_guard`/`test_legacy_*`/`test_bot`/`test_bc_pipeline`）。
-- [ ] 6.3 归档前同步主 specs（`openspec archive`）并复核 `actual_kernel`/护栏字段在真实记录中的落地情况。验证：归档命令 + 记录抽样。
+- [x] 6.3 归档前同步主 specs（新建 `legacy-two-ply-frontier-shape-guard`，更新
+  `bot-decision-explanations`）并复核真实记录落地：近三局 `evaluator_kernel=rust-weighted-two-ply-v2`，
+  `frontier_guard` 出现在 27/31/32 条决策上。

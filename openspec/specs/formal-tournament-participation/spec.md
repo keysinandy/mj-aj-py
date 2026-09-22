@@ -17,7 +17,7 @@
 
 ### Requirement: Formal tournament entrypoint reuses the existing online client
 
-The project SHALL provide a dedicated module entrypoint:
+项目 SHALL 提供以下专用模块入口：
 
 ~~~bash
 python3 -m mj.platform.tournament_runner \
@@ -26,42 +26,36 @@ python3 -m mj.platform.tournament_runner \
     --ckpt runs/bc0/best.pt
 ~~~
 
-The tournament runner SHALL be a thin lifecycle and CLI wrapper around the
-existing mj.platform.api.Api, mj.platform.bot_client.BotClient,
-mj.platform.runner.make_decide, and mj.platform.recorder.Recorder.
-Formal tournament games SHALL continue to use BotClient.run() and its existing
-state reconstruction, /notify, /state, window confirmation, action submission,
-throttling, and recovery paths.
+赛事 runner SHALL 只是围绕现有 `mj.platform.api.Api`、
+`mj.platform.bot_client.BotClient`、`mj.platform.runner.make_decide` 和
+`mj.platform.recorder.Recorder` 的生命周期与 CLI 封装。正式赛 game SHALL 继续使用
+`BotClient.run()` 及其已有的 state 重建、`/notify`、`/state`、窗口确认、动作提交、
+限速和恢复路径。
 
-The runner MUST NOT copy or fork the game state loop, SSE handling, state
-fetching, Mirror transitions, StateDemand, StateScheduler, window
-confirmation, action mapping, or action recovery implementation.
+runner MUST NOT 复制或 fork 游戏状态循环、SSE 处理、状态获取、Mirror 转换、
+StateDemand、StateScheduler、窗口确认、动作映射或动作恢复实现。
 
 #### Scenario: Start a formal tournament
 
-- **WHEN** the user invokes python3 -m mj.platform.tournament_runner
-- **THEN** the runner loads the tournament configuration and strategy
-- **AND** creates one independent Api and BotClient for each configured
-  registration token
-- **AND** starts the formal tournament lifecycle for each worker
-- **AND** runs each worker until a tournament terminal condition or normal
-  elimination
+- **WHEN** 用户调用 `python3 -m mj.platform.tournament_runner`
+- **THEN** runner 加载赛事配置和策略
+- **AND** 为每个配置的报名令牌创建独立的 `Api` 和 `BotClient`
+- **AND** 启动对应的正式赛生命周期
+- **AND** 每个 worker 运行至赛事终态或正常淘汰
 
 #### Scenario: An assigned game becomes active
 
-- **WHEN** a formal tournament exposes an active game
-- **THEN** the runner delegates that game to the existing BotClient game worker
-- **AND** the runner does not create a second game protocol implementation
+- **WHEN** 正式赛事暴露一个 active game
+- **THEN** runner 将该 game 委托给现有 BotClient game worker
+- **AND** runner 不创建第二套游戏协议实现
 
 ### Requirement: Tournament configuration supports one or more tokens
 
-The tournament configuration loader SHALL accept one or more registration tokens
-and SHALL NOT require exactly four participants. The loader MAY be a new
-load_tournament_config() function or an explicitly extended load_config()
-contract, but existing test-room and free-match configuration behavior MUST
-remain compatible.
+赛事配置加载器 SHALL 接受一个或多个报名令牌，且 MUST NOT 要求恰好四个参与者。
+加载器可以是新的 `load_tournament_config()`，也可以是明确扩展的 `load_config()`
+契约；已有测试房和自由匹配配置行为 MUST 保持兼容。
 
-The minimum supported configuration SHALL be:
+最小配置 SHALL 支持：
 
 ~~~json
 {
@@ -72,95 +66,75 @@ The minimum supported configuration SHALL be:
 }
 ~~~
 
-Multiple independent identities SHALL also be supported:
-
-~~~json
-{
-  "server": "https://10.240.169.190:18080",
-  "tokens": {
-    "bot-a": "<token-a>",
-    "bot-b": "<token-b>"
-  }
-}
-~~~
-
-Each token SHALL have its own Api, tournament identity, active-game set,
-supervisor state, and termination result. The runner MUST NOT infer participant
-count, stage size, or tournament completion from the number of configured
-tokens.
+每个 token SHALL 拥有独立的 `Api`、赛事身份、active game 集合、supervisor 状态和
+终止结果。runner MUST NOT 从 token 数量推断参赛人数、阶段规模或赛事完成。
 
 #### Scenario: Single tournament token
 
-- **WHEN** the configuration contains one token
-- **THEN** the runner starts one tournament worker
-- **AND** the runner does not require three additional tokens
+- **WHEN** 配置包含一个 token
+- **THEN** runner 启动一个赛事 worker
+- **AND** runner 不要求另外三个 token
 
 #### Scenario: Multiple tournament tokens
 
-- **WHEN** the configuration contains N tokens
-- **THEN** the runner starts N independent workers
-- **AND** one worker's tournament identity or active games cannot authorize
-  actions for another worker
+- **WHEN** 配置包含 N 个 token
+- **THEN** runner 启动 N 个独立 worker
+- **AND** 一个 worker 的赛事身份或 active game 不能授权另一个 worker 发起动作
 
 ### Requirement: Registration token determines tournament identity
 
-Before registering, readying, or polling a tournament, each worker SHALL call:
+在注册、ready 或轮询赛事之前，每个 worker SHALL 调用：
 
 ~~~text
 GET /api/me
 Authorization: Bearer <registration-token>
 ~~~
 
-The worker SHALL read tournament_id, user_id, and active_games from that
-response. It SHALL use the returned non-empty tournament_id as the only
-tournament ID for that worker and SHALL NOT require a manually supplied
---tournament-id.
+worker SHALL 从响应读取 `tournament_id`、`user_id` 和 `active_games`，使用返回的非空
+`tournament_id` 作为该 worker 唯一赛事 ID，且 MUST NOT 要求手工提供
+`--tournament-id`。
 
-If tournament_id is empty, the worker SHALL terminate with TOKEN_NOT_BOUND and
-SHALL NOT enter the game loop. HTTP 401 and non-recoverable 403 responses SHALL
-be fatal authentication failures and SHALL terminate with AUTH_FAILED without
-infinite retry.
+若 `tournament_id` 为空，worker SHALL 在进入 game loop 前以 `TOKEN_NOT_BOUND` 终止。
+HTTP 401 和不可恢复的 403 SHALL 是致命认证错误，worker SHALL 以 `AUTH_FAILED` 终止，
+不得无限重试。
 
 #### Scenario: Valid registration token
 
-- **WHEN** /api/me returns a non-empty tournament_id
-- **THEN** the worker stores that ID as its tournament identity
-- **AND** all subsequent tournament requests use that ID
+- **WHEN** `/api/me` 返回非空 `tournament_id`
+- **THEN** worker 保存该赛事身份
+- **AND** 后续赛事请求全部使用该身份
 
 #### Scenario: Token is not bound to a tournament
 
-- **WHEN** /api/me.tournament_id is empty
-- **THEN** the worker stops before starting any game worker
-- **AND** its termination reason is TOKEN_NOT_BOUND
+- **WHEN** `/api/me.tournament_id` 为空
+- **THEN** worker 在启动任何 game worker 前停止
+- **AND** 终止原因为 `TOKEN_NOT_BOUND`
 
 #### Scenario: Authentication is rejected
 
-- **WHEN** /api/me returns HTTP 401 or an unrecoverable 403
-- **THEN** the worker reports AUTH_FAILED
-- **AND** the worker does not retry forever
+- **WHEN** `/api/me` 返回 HTTP 401 或不可恢复的 403
+- **THEN** worker 报告 `AUTH_FAILED`
+- **AND** worker 不会无限重试
 
 ### Requirement: Tournament rules are authoritative and token-scoped
 
-After resolving the tournament identity, the worker SHALL fetch rules from:
+解析赛事身份后，worker SHALL 从以下端点获取规则：
 
 ~~~text
 GET /api/tournaments/me/rules
 ~~~
 
-The worker SHALL use the returned configuration rather than replacing it with
-client defaults. At minimum, the supported fields M, Rounds, BaseScore,
-YouCaiBiKao, and supported timeout/window parameters SHALL be consumed by the
-existing game client. YouCaiBiKao and other tournament-level values MUST NOT be
-hard-coded globally.
+worker SHALL 使用返回配置，而不是用客户端默认值覆盖。至少 `M`、`Rounds`、
+`BaseScore`、`YouCaiBiKao` 和平台支持的 timeout/window 参数 SHALL 被现有 game client
+消费；`YouCaiBiKao` 及其他赛事级值 MUST NOT 被全局硬编码。
 
-Unknown configuration fields SHALL be ignored. A temporary rules-fetch failure
-SHALL follow the bounded tournament polling retry policy; the worker MUST NOT
-silently start games using an unverified default rule set.
+未知配置字段 SHALL 忽略。临时规则获取失败 SHALL 遵循有界赛事轮询重试策略；在没有
+验证规则时，worker MUST NOT 静默使用默认规则启动 game。
 
 #### Scenario: Tournament-specific rule configuration
 
-- **WHEN** /rules.config.YouCaiBiKao is true
-- **THEN** games started by that worker use you_cai_bi_kao=true
+- **WHEN** `/rules.config.YouCaiBiKao` 为 true
+- **THEN** 该 worker 启动的 game 使用 `you_cai_bi_kao=true`
 
 #### Scenario: Two tournaments return different rules
 
@@ -171,51 +145,53 @@ silently start games using an unverified default rule set.
 
 #### Scenario: Server adds an unknown configuration field
 
-- **WHEN** the rules response contains an unsupported field
-- **THEN** the worker ignores that field
-- **AND** the worker does not terminate solely because of it
+- **WHEN** rules 响应包含不支持的字段
+- **THEN** worker 忽略该字段
+- **AND** worker 不会仅因该字段退出
+
+#### Scenario: Two workers return different rules
+
+- **WHEN** 赛事 A 返回 `YouCaiBiKao=false` 且赛事 B 返回 `YouCaiBiKao=true`
+- **THEN** 两个 worker 分别使用自己的规则值
+- **AND** 一个 worker 不能覆盖另一个 worker 的赛事配置
 
 ### Requirement: Formal tournament execution has no fixed normal game limit
 
-The formal tournament runner SHALL invoke:
+正式赛事 runner SHALL 调用：
 
 ~~~python
 BotClient.run(max_games=None)
 ~~~
 
-The runner MUST NOT use a fixed game count as the normal completion condition.
-After a game or stage ends, the worker SHALL continue tournament polling unless
-the platform reports a terminal status or the participant is explicitly not
-qualified.
+runner MUST NOT 使用固定局数作为正常完成条件。game 或阶段结束后，除非平台报告终态
+或明确表示参与者不再晋级，worker SHALL 继续轮询赛事。
 
-New game IDs that appear later in my_games and active_games, including
-tiebreak or replay games, SHALL remain eligible for discovery regardless of the
-number of games already completed.
+之后出现在 `my_games` 和 `active_games` 中的新 game ID（包括加赛和重赛）无论已经
+完成多少局都 SHALL 继续具备发现资格。
 
 #### Scenario: A first game finishes
 
-- **WHEN** the current game finishes
-- **AND** the tournament is not terminal
-- **THEN** the worker continues polling the tournament
+- **WHEN** 当前 game 完成
+- **AND** 赛事不是终态
+- **THEN** worker 继续轮询赛事
 
 #### Scenario: A stage finishes with no active games
 
-- **WHEN** the tournament enters stage_done
-- **AND** active_games=[]
-- **THEN** the worker remains alive and authenticated
-- **AND** the worker does not interpret the empty list as tournament completion
+- **WHEN** 赛事进入 `stage_done`
+- **AND** `active_games=[]`
+- **THEN** worker 保持存活并认证轮询
+- **AND** worker 不把空列表解释为赛事完成
 
 #### Scenario: A tiebreak game appears
 
-- **WHEN** all previously known games finish
-- **AND** the platform later adds a new game ID to the participant's game list
-- **THEN** the worker discovers and starts that game
-- **AND** the worker does not exit because a prior game count was reached
+- **WHEN** 所有已知 game 完成
+- **AND** 平台稍后将新的 game ID 加入参与者 game 列表
+- **THEN** worker 发现并启动该 game
+- **AND** worker 不因已完成的局数达到某个猜测值而退出
 
 ### Requirement: The tournament lifecycle follows authoritative platform status
 
-The tournament supervisor SHALL use the platform status as the lifecycle
-authority. It SHALL support at least:
+赛事 supervisor SHALL 以平台状态作为生命周期权威，至少支持：
 
 ~~~text
 registering
@@ -227,7 +203,7 @@ closed
 void
 ~~~
 
-The conceptual lifecycle SHALL be:
+概念生命周期 SHALL 为：
 
 ~~~text
 BOOT -> REGISTERING -> STAGE_OPEN -> RUNNING -> STAGE_DONE
@@ -240,206 +216,180 @@ any stage ----------------------> CLOSED / VOID
 final stage --------------------> FINISHED
 ~~~
 
-stage_done SHALL be treated as an inter-stage state, not as final completion.
-The worker SHALL stop only for finished, closed, void, explicit elimination,
-interruption, or a fatal protocol/authentication error.
+`stage_done` SHALL 是阶段间状态而不是最终完成。worker 只允许在 `finished`、`closed`、
+`void`、明确淘汰、用户中断或致命协议/认证错误时停止。
 
 #### Scenario: Registering
 
-- **WHEN** status=registering
-- **THEN** the worker performs idempotent register/ready handling
-- **AND** the worker continues tournament polling
+- **WHEN** status 为 `registering`
+- **THEN** worker 执行幂等 register/ready 处理
+- **AND** worker 继续赛事轮询
 
 #### Scenario: Qualified stage open
 
-- **WHEN** status=stage_open and qualified=true
-- **THEN** the worker confirms attendance for that stage
-- **AND** the worker waits for running or a subsequent authoritative status
+- **WHEN** status 为 `stage_open` 且 `qualified=true`
+- **THEN** worker 确认该阶段出席
+- **AND** worker 等待 `running` 或后续权威状态
 
 #### Scenario: Not qualified
 
-- **WHEN** status=stage_open and qualified=false
-- **THEN** the worker terminates normally as ELIMINATED
-- **AND** the worker does not report an unhandled program exception
+- **WHEN** status 为 `stage_open` 且 `qualified=false`
+- **THEN** worker 正常以 `ELIMINATED` 终止
+- **AND** worker 不报告未处理的程序异常
 
 #### Scenario: Stage done
 
-- **WHEN** status=stage_done
-- **THEN** the worker remains alive
-- **AND** the worker keeps authenticated tournament polling active
-- **AND** the worker waits for the next stage, replay, or terminal status
+- **WHEN** status 为 `stage_done`
+- **THEN** worker 保持存活
+- **AND** worker 持续认证赛事轮询
+- **AND** worker 等待下一阶段、重赛或终态
 
 #### Scenario: Finished
 
-- **WHEN** status=finished
-- **THEN** the worker stops normally with termination reason FINISHED
+- **WHEN** status 为 `finished`
+- **THEN** worker 正常以 `FINISHED` 终止
 
 #### Scenario: Void or closed
 
-- **WHEN** status=void or status=closed
-- **THEN** the worker stops normally with termination reason VOID or CLOSED
+- **WHEN** status 为 `void` 或 `closed`
+- **THEN** worker 正常以对应的 `VOID` 或 `CLOSED` 终止
 
 ### Requirement: Attendance confirmation is repeated for every stage
 
-The worker SHALL treat each newly entered stage_open as a new attendance
-confirmation boundary. A successful ready from a previous stage MUST NOT be
-assumed to carry over.
+worker SHALL 把每次新进入的 `stage_open` 视为新的出席确认边界，前一阶段成功 ready
+MUST NOT 被假设可以跨阶段继承。
 
-The worker SHALL use the existing API wrappers:
+出席处理 SHALL 使用现有包装：
 
 ~~~text
 POST /api/tournaments/{tournament_id}/register
 POST /api/tournaments/{tournament_id}/ready
 ~~~
 
-Attendance handling SHALL be idempotent per stage: normal repeated polling of
-the same stage MUST NOT create an unbounded ready retry loop, while a new stage
-MUST trigger a new ready attempt.
-
-TOURNAMENT_STARTED returned from register or ready SHALL be treated as a state
-race. The worker SHALL re-query tournament status and SHALL NOT exit for that
-response. NOT_QUALIFIED returned from ready at stage_open SHALL be treated as
-normal elimination or loss of stage eligibility and SHALL NOT be retried
-indefinitely.
+同一阶段的正常重复轮询 SHALL 是幂等的，不得产生无界 ready 重试；新阶段 SHALL 触发
+一次新的 ready 尝试。register 或 ready 返回 `TOURNAMENT_STARTED` SHALL 被视为状态
+竞争并重新查询；stage_open 的 ready 返回 `NOT_QUALIFIED` SHALL 被视为阶段资格丢失，
+不得无限重试。
 
 #### Scenario: Advance to the next stage
 
-- **WHEN** a participant qualified in the previous stage
-- **AND** the tournament enters a new stage_open
-- **THEN** the worker performs ready for the new stage
-- **AND** the worker does not rely on the previous stage's ready result
+- **WHEN** 参与者在上一阶段晋级
+- **AND** 赛事进入新的 `stage_open`
+- **THEN** worker 为新阶段执行 ready
+- **AND** worker 不依赖上一阶段 ready 结果
 
 #### Scenario: Three stages
 
-- **WHEN** the worker observes three distinct stage_open stages
-- **THEN** it performs attendance confirmation for each stage
-- **AND** a successful first-stage ready does not suppress later confirmations
+- **WHEN** worker 观察到三个不同的 `stage_open` 阶段
+- **THEN** worker 为每个阶段执行出席确认
+- **AND** 第一阶段成功 ready 不会抑制后续确认
 
 #### Scenario: Tournament-start race
 
-- **WHEN** register or ready returns 409 TOURNAMENT_STARTED
-- **THEN** the worker treats it as a status race
-- **AND** re-queries the tournament
-- **AND** does not terminate solely for that response
+- **WHEN** register 或 ready 返回 HTTP 409 `TOURNAMENT_STARTED`
+- **THEN** worker 将其视为状态竞争
+- **AND** worker 重新查询赛事
+- **AND** worker 不仅因该响应终止
 
 #### Scenario: Not-qualified response
 
-- **WHEN** ready returns 409 NOT_QUALIFIED
-- **THEN** the worker records loss of stage eligibility
-- **AND** stops with ELIMINATED when the authoritative lifecycle confirms that
-  the participant is not qualified
-- **AND** does not retry ready forever
+- **WHEN** ready 返回 HTTP 409 `NOT_QUALIFIED`
+- **THEN** worker 记录阶段资格丢失
+- **AND** 权威生命周期确认后以 `ELIMINATED` 停止
+- **AND** worker 不会无限重试 ready
 
 ### Requirement: Tournament presence is maintained between stages
 
-During registering, stage_open, and stage_done, the worker SHALL keep making
-authenticated requests for its own tournament. It MUST NOT depend on a game SSE
-stream as an online heartbeat when no game is active.
+在 `registering`、`stage_open` 和 `stage_done` 期间，worker SHALL 持续为自己的赛事
+发起认证请求。没有 active game 时，worker MUST NOT 依赖 game SSE 作为在线心跳。
 
-The default polling interval and bounded backoff SHALL ensure that, whenever the
-platform is reachable, successful authenticated requests for this tournament do
-not have an idle gap of 60 seconds or more. Requests for another tournament or
-another token MUST NOT be used as proof of this worker's online presence.
-
-After a transient network failure, the worker SHALL resume this tournament's
-authenticated polling as soon as practical and SHALL not turn a temporary
-empty-game interval into completion.
+默认轮询间隔和有界退避 SHALL 保证：只要平台可达，针对该赛事的成功认证请求之间
+不会出现 60 秒或更长的空档。另一个赛事或另一个 token 的请求 MUST NOT 作为本 worker
+在线的证明。临时网络失败恢复后，worker SHALL 尽快恢复本赛事轮询，不得把临时空 game
+区间转换为完成。
 
 #### Scenario: Long inter-stage wait
 
-- **WHEN** the tournament remains in stage_done for several minutes
-- **THEN** the worker continues authenticated tournament polling
-- **AND** it remains eligible under the platform's online-confirmation window
+- **WHEN** 赛事在 `stage_done` 保持数分钟
+- **THEN** worker 持续认证轮询
+- **AND** worker 仍处于平台在线确认窗口内
 
 #### Scenario: No active games
 
-- **WHEN** active_games=[] and the tournament is not terminal
-- **THEN** the worker remains alive
-- **AND** the worker continues tournament polling independently of game SSE
+- **WHEN** `active_games=[]` 且赛事不是终态
+- **THEN** worker 保持存活
+- **AND** worker 独立于 game SSE 继续赛事轮询
 
 ### Requirement: Tournament polling failures are retryable and bounded
 
-The worker SHALL retry transient tournament GET failures, temporary 5xx
-responses, connection resets, and timeouts with bounded backoff. The retry loop MUST NOT
-busy-loop and MUST NOT infer elimination, completion, or a new stage from the
-last successful status while the current status is unavailable.
+赛事 GET 的临时失败、暂时性 5xx、连接重置和超时 SHALL 使用有界退避重试。重试循环
+MUST NOT 忙等，也 MUST NOT 在当前状态不可用时根据最近一次成功状态推断淘汰、完成或新阶段。
 
-After recovery, the worker SHALL fetch a complete authoritative tournament
-status before making lifecycle decisions. The retry and keepalive policy SHALL
-make a best effort not to cross the platform's online window solely because of
-the client's retry schedule.
+恢复后，worker SHALL 先获取完整权威赛事状态，再作生命周期决策；重试和保活策略 SHALL
+尽力避免仅因客户端退避跨过平台在线窗口。
 
 #### Scenario: Tournament polling temporarily fails
 
-- **WHEN** several consecutive tournament GET requests fail transiently
-- **THEN** the worker retries with bounded backoff
-- **AND** does not declare elimination or completion
-- **WHEN** a request succeeds again
-- **THEN** the worker bases the next decision on the newly returned status
+- **WHEN** 连续多个赛事 GET 暂时失败
+- **THEN** worker 以有界退避重试
+- **AND** worker 不声明淘汰或完成
+- **WHEN** 请求再次成功
+- **THEN** worker 根据新返回的权威状态作下一次决策
 
 ### Requirement: Game discovery is dynamic and tournament-scoped
 
-For each successful tournament poll, the worker SHALL determine game workers
-from:
+每次赛事轮询成功后，worker SHALL 从以下集合确定 game worker：
 
 ~~~text
 /api/me.active_games ∩ tournament.my_games
 ~~~
 
-The worker MUST refresh this view during the lifecycle and MUST NOT cache a
-fixed game ID list from startup or use game count as a completion signal.
-
-Completed game IDs SHALL be tracked in _done_games or an equivalent durable
-per-run set so that a game visible again in polling is not started twice. A game
-belonging to another tournament SHALL never be operated by this worker.
+worker MUST 在生命周期内刷新该视图，MUST NOT 在启动时缓存固定 game ID 列表或使用局数
+作为完成信号。已完成 game ID SHALL 放入 `_done_games` 或等价的本次运行持久集合，
+防止轮询中重复出现时启动重复 worker；属于其他赛事的 game 绝不能由本 worker 操作。
 
 #### Scenario: Newly assigned game
 
-- **WHEN** a game ID appears in /api/me.active_games
-- **AND** the same ID appears in tournament.my_games
-- **THEN** the worker starts a game worker for that ID
+- **WHEN** game ID 出现在 `/api/me.active_games`
+- **AND** 同一 ID 出现在赛事 `my_games`
+- **THEN** worker 启动该 game worker
 
 #### Scenario: Foreign active game
 
-- **WHEN** an active game appears in /api/me.active_games
-- **AND** it is absent from the current tournament's my_games
-- **THEN** the current tournament worker does not operate that game
+- **WHEN** active game 出现在 `/api/me.active_games`
+- **AND** 它不在当前赛事的 `my_games` 中
+- **THEN** 当前赛事 worker 不操作该 game
 
 #### Scenario: Completed game remains visible
 
-- **WHEN** a completed game is returned again by polling
-- **THEN** the worker does not start a duplicate game worker
+- **WHEN** 已完成 game ID 再次出现在轮询结果中
+- **THEN** worker 不启动重复 game worker
 
 ### Requirement: Per-token game concurrency and state budget are preserved
 
-When one token has multiple active games, the worker SHALL run one independent
-game worker per active game. Each game SHALL retain independent Mirror, cursor,
-decision, window, and lifecycle state.
+一个 token 有多个 active game 时，worker SHALL 为每个 game 运行一个独立 game worker；
+每局 SHALL 保持独立的 Mirror、cursor、decision、window 和生命周期状态。
 
-All games for the same token SHALL share the single StateThrottle owned by that
-token's Api. The formal runner MUST NOT create one independent /state budget per
-game, and MUST NOT multiply the configured rate by the number of active games.
-Different tokens MAY have independent throttles.
-
-The default formal tournament state rate SHALL be 15 requests per second per
-token unless explicitly overridden by the CLI for diagnostics.
+同一 token 的所有 game SHALL 共享该 token `Api` 所有的单一 `StateThrottle`。正式 runner
+MUST NOT 为每局创建独立 `/state` 预算，也 MUST NOT 随 active game 数量倍增配置速率；
+不同 token 可以拥有独立限流器。正式赛默认 state rate SHALL 为每 token 每秒 15 次，
+除非 CLI 为诊断显式覆盖。
 
 #### Scenario: Multiple games are assigned simultaneously
 
-- **WHEN** one token is assigned N active games
-- **THEN** the worker runs N game workers concurrently
-- **AND** all N workers use the same token-level state throttle
+- **WHEN** 一个 token 同时被分配 N 个 active game
+- **THEN** worker 并发运行 N 个 game worker
+- **AND** N 个 worker 使用同一个 token 级 StateThrottle
 
 #### Scenario: Ten concurrent games
 
-- **WHEN** one token has ten active games and --state-rate 15
-- **THEN** the aggregate token budget remains 15 requests per second
-- **AND** the client does not create ten independent 15-per-second budgets
+- **WHEN** 一个 token 有十个 game 且 `--state-rate 15`
+- **THEN** token 总预算仍为每秒 15 次
+- **AND** 客户端不创建十个独立的每秒 15 次预算
 
 ### Requirement: Active games reuse SSE wakeups and incremental state
 
-For an active game, the client SHALL continue using the existing communication
-pattern:
+active game SHALL 继续使用现有通信模式：
 
 ~~~text
 GET /api/games/{game_id}/notify
@@ -449,46 +399,40 @@ GET /api/games/{game_id}/notify
 GET /api/games/{game_id}/state?seq=N
 ~~~
 
-SSE seq SHALL be treated as an inclusive wakeup watermark only. It MUST NOT
-directly replace the local /state cursor or be applied as a game transition.
-/state responses remain the authoritative input for Mirror advancement.
-
-SSE reconnect, polling fallback, and incremental cursor behavior SHALL remain
-the existing BotClient behavior.
+SSE seq SHALL 只作为包含式唤醒水位，MUST NOT 直接替换本地 `/state` cursor 或作为
+game transition 应用；`/state` 响应仍是 Mirror 前进的权威输入。SSE 重连、轮询 fallback
+和增量 cursor 行为 SHALL 保持现有 BotClient 语义。
 
 #### Scenario: SSE notification is received
 
-- **WHEN** /notify delivers a newer sequence
-- **THEN** the game worker schedules the corresponding /state demand
-- **AND** it does not set the Mirror cursor directly to the SSE sequence
+- **WHEN** `/notify` 提供更新的 seq
+- **THEN** game worker 调度对应的 `/state` demand
+- **AND** worker 不直接设置 Mirror cursor 为 SSE seq
 
 #### Scenario: SSE disconnects
 
-- **WHEN** the SSE stream disconnects because of a network failure
-- **THEN** the existing reconnect or polling fallback resumes state fetching
-- **AND** the game worker does not lose the game state
+- **WHEN** `/notify` 因网络故障断开
+- **THEN** 现有重连或轮询 fallback 恢复 state 获取
+- **AND** game worker 不丢失 game 状态
 
 ### Requirement: Authoritative snapshots are the recovery boundary
 
-The existing GET /api/games/{game_id}/state?seq=0 path SHALL be used to rebuild
-authoritative state when an event gap, Mirror inconsistency, action 409,
-uncertain action result, window confirmation boundary, or untrusted local
-cursor requires recovery.
+现有 `GET /api/games/{game_id}/state?seq=0` SHALL 用于在事件缺口、Mirror 不一致、action
+409、action 结果未知、窗口确认边界或不可信本地 cursor 时重建权威状态。
 
-The client MUST NOT continue submitting an action based only on an inferred
-local state after such a condition. The tournament wrapper SHALL preserve this
-behavior and SHALL not add an alternative recovery implementation.
+客户端 MUST NOT 仅凭推断的本地状态继续提交动作；赛事 wrapper SHALL 保留该行为，且
+不得添加另一套恢复实现。
 
 #### Scenario: Local cursor cannot be trusted
 
-- **WHEN** a game detects a gap or inconsistent Mirror
-- **THEN** it issues a seq=0 authoritative resync through the existing client
-- **AND** it does not submit an action from the stale cursor
+- **WHEN** game 检测到缺口或 Mirror 不一致
+- **THEN** game 通过现有客户端发起 seq=0 权威重同步
+- **AND** game 不从过期 cursor 提交动作
 
 ### Requirement: Action submission is safe under rejection and uncertainty
 
-The existing POST /api/games/{game_id}/action implementation SHALL remain the
-only action transport for formal games. Supported payloads include:
+正式赛 SHALL 继续以现有 `POST /api/games/{game_id}/action` 作为唯一动作传输。支持的
+payload 至少包括：
 
 ~~~json
 {"action":"discard","tile":"..."}
@@ -499,43 +443,39 @@ only action transport for formal games. Supported payloads include:
 {"action":"chi","tile":"...","tiles":["...","..."]}
 ~~~
 
-Chi actions SHALL explicitly include the two hand tiles selected for the
-combination. The client MUST NOT blindly retry a physical action after a 409,
-transport error, response-read error, or other result that leaves execution
-unknown.
+chi action SHALL 明确包含组合所选的两张手牌。客户端在 409、传输错误、读取响应错误
+或其他未知执行结果后 MUST NOT 盲目重发同一物理动作。
 
 #### Scenario: Action returns 409
 
-- **WHEN** an action POST returns HTTP 409
-- **THEN** the game records the rejection
-- **AND** it performs the existing seq=0 resync
-- **AND** it never reposts the same physical action
+- **WHEN** action POST 返回 HTTP 409
+- **THEN** game 记录拒绝
+- **AND** game 执行现有 seq=0 重同步
+- **AND** game 永不再次提交同一物理动作
 
 #### Scenario: Action result is uncertain
 
-- **WHEN** a network failure leaves it unknown whether the server executed the
-  action
-- **THEN** the game records post_uncertain
-- **AND** reconciles using seq=0
-- **AND** does not automatically resend the old action
+- **WHEN** 网络故障导致服务端是否执行动作未知
+- **THEN** game 记录 `post_uncertain`
+- **AND** game 使用 seq=0 对账
+- **AND** game 不自动重发旧动作
 
 ### Requirement: Stage crashes remain observable and recoverable
 
-When status=stage_done and stage_crashed=true, the worker SHALL emit a
-structured warning with reason STAGE_CRASHED_WAITING, remain online, and
-continue tournament polling. It MUST NOT terminate the entire tournament
-because of the stage-crashed marker alone.
+当 status 为 `stage_done` 且 `stage_crashed=true` 时，worker SHALL 发出带
+`STAGE_CRASHED_WAITING` 原因的结构化 warning，保持在线并继续赛事轮询。仅因 stage
+crashed 标志不得终止整个赛事。
 
 #### Scenario: Stage crashes and awaits administration
 
-- **WHEN** the platform reports stage_done with stage_crashed=true
-- **THEN** the worker reports STAGE_CRASHED_WAITING
-- **AND** continues authenticated polling
-- **AND** waits for a platform restart, replay, next stage, or terminal status
+- **WHEN** 平台报告 `stage_done` 且 `stage_crashed=true`
+- **THEN** worker 报告 `STAGE_CRASHED_WAITING`
+- **AND** worker 继续认证轮询
+- **AND** worker 等待平台重启、重赛、下一阶段或终态
 
 ### Requirement: Termination is based only on authoritative terminal facts
 
-The following conditions alone SHALL NOT terminate a formal tournament:
+以下条件单独出现时 SHALL NOT 终止正式赛事：
 
 ~~~text
 active_games == []
@@ -546,24 +486,23 @@ no game appears for a period of time
 status == stage_done
 ~~~
 
-Normal tournament termination SHALL require finished, closed, void, or an
-authoritative stage_open with qualified=false. A worker error or operator
-interruption SHALL be reported separately from tournament outcome.
+正常赛事终止 SHALL 要求 `finished`、`closed`、`void` 或权威 `stage_open` 且
+`qualified=false`。worker error 或 operator interruption SHALL 与赛事结果分开报告。
 
 #### Scenario: Inter-stage idle period
 
-- **WHEN** a participant has no active game for five minutes
-- **AND** the tournament remains in stage_done
-- **THEN** the worker remains alive and keeps polling
+- **WHEN** 参与者五分钟没有 active game
+- **AND** 赛事仍为 `stage_done`
+- **THEN** worker 保持存活并继续轮询
 
 #### Scenario: Final game count is unknown
 
-- **WHEN** a tournament creates an unanticipated replay or tiebreak game
-- **THEN** the worker continues until the platform reports a terminal outcome
+- **WHEN** 赛事创建未预期的重赛或加赛 game
+- **THEN** worker 持续运行直至平台报告终态
 
 ### Requirement: Each token produces a structured tournament result
 
-Each token worker SHALL produce a machine-readable result containing at least:
+每个 token worker SHALL 产生机器可读结果，至少包含：
 
 ~~~json
 {
@@ -582,8 +521,7 @@ Each token worker SHALL produce a machine-readable result containing at least:
 }
 ~~~
 
-The result SHALL preserve stage transitions and existing game diagnostics when
-available. termination_reason SHALL include at least:
+结果 SHALL 保留阶段转换和可用的既有 game 诊断。`termination_reason` 至少包括：
 
 ~~~text
 FINISHED
@@ -596,76 +534,61 @@ PROTOCOL_FATAL
 INTERRUPTED
 ~~~
 
-Normal elimination MAY exit with process status zero, but SHALL be explicit in
-the result and SHALL NOT be printed as an unhandled exception. Authentication
-or protocol-fatal failures SHALL cause a non-zero process status.
-
-The result, logs, and exception summaries MUST identify a token only by its
-label and may include user_id, tournament_id, and game_id; they MUST NOT include
-the bearer token.
+正常淘汰可以使用进程状态零，但必须在结果中明确且不能打印为未处理异常；认证或
+协议致命错误 SHALL 导致非零进程状态。结果、日志和异常摘要只可用 token label 标识
+token，可包含 user_id、tournament_id、game_id，但 MUST NOT 包含 bearer token。
 
 #### Scenario: Player is eliminated normally
 
-- **WHEN** the platform reports that the participant is not qualified for the
-  next stage
-- **THEN** the worker finishes with termination_reason=ELIMINATED
-- **AND** the result is not represented as an exception
+- **WHEN** 平台报告参与者不具备下一阶段资格
+- **THEN** worker 以 `ELIMINATED` 结束
+- **AND** 结果不表现为未处理异常
 
 #### Scenario: Authentication fails
 
-- **WHEN** a registration token is invalid
-- **THEN** the process exits non-zero
-- **AND** the result contains termination_reason=AUTH_FAILED
+- **WHEN** 报名 token 无效
+- **THEN** 进程非零退出
+- **AND** 结果包含 `termination_reason=AUTH_FAILED`
 
 ### Requirement: Recorder is enabled by default
 
-The formal runner SHALL enable Recorder by default because formal tournament
-evidence cannot be regenerated reliably. The CLI MAY disable it only with an
-explicit --no-recorder flag.
-
-When --no-recorder is supplied, the runner SHALL emit a clear warning that
-formal tournament evidence is being discarded. Recorder output SHALL preserve
-the existing game evidence contract without storing bearer tokens.
+正式 runner SHALL 默认启用 Recorder，因为正式赛事证据无法可靠再生。CLI 只有在显式
+传入 `--no-recorder` 时才可以关闭；关闭时 SHALL 发出正式赛证据被丢弃的清晰警告。
+Recorder 输出 SHALL 保持现有 game evidence 契约且不得保存 bearer token。
 
 #### Scenario: Default recorder behavior
 
-- **WHEN** the formal runner starts without --no-recorder
-- **THEN** recording is enabled for games handled by the token workers
+- **WHEN** runner 不带 `--no-recorder` 启动
+- **THEN** token worker 处理的 game 默认启用记录
 
 #### Scenario: Recorder is explicitly disabled
 
-- **WHEN** the user supplies --no-recorder
-- **THEN** the runner disables recording
-- **AND** emits a warning that this is unsafe for a formal tournament
+- **WHEN** 用户传入 `--no-recorder`
+- **THEN** runner 关闭记录
+- **AND** runner 警告这对正式赛事是不安全的
 
 ### Requirement: Registration secrets are never persisted or exposed
 
-Registration tokens SHALL be read only from a gitignored local configuration or
-a future secret provider. They SHALL NOT be recommended as direct CLI arguments
-and SHALL NOT be written to Git, Recorder files, JSONL records,
-request/response dumps, run summaries, or trace output.
-
-Token redaction SHALL also apply to exception text, HTTP error bodies, dump
-helpers, and traceback/log formatting. It MUST be impossible for a normal
-authentication failure response containing the token to place the complete token
-in captured stdout or stderr.
+报名 token SHALL 仅从 gitignored 本地配置或未来 secret provider 读取。token MUST NOT
+作为直接 CLI 参数推荐，也 MUST NOT 写入 Git、Recorder、JSONL、请求/响应 dump、运行
+摘要或 trace。脱敏 SHALL 覆盖异常文本、HTTP 错误 body、dump helper 和 traceback/log
+格式化；包含 token 的普通认证错误响应不得使完整 token 出现在 stdout 或 stderr。
 
 #### Scenario: Authentication error contains credential text
 
-- **WHEN** the server returns a 401/403 error whose message contains the
-  credential
-- **THEN** captured stdout and stderr contain no complete bearer token
-- **AND** Recorder, dump, trace, and summary outputs contain no complete token
+- **WHEN** server 返回的 401/403 错误消息包含 credential
+- **THEN** 捕获的 stdout 和 stderr 不包含完整 bearer token
+- **AND** Recorder、dump、trace 和 summary 不包含完整 token
 
 #### Scenario: Normal diagnostic logging
 
-- **WHEN** a worker logs an identity or game event
-- **THEN** it may log token_label, user_id, tournament_id, and game_id
-- **AND** it does not log the bearer token or Authorization header
+- **WHEN** worker 记录身份或 game 事件
+- **THEN** 日志可以记录 token label、user_id、tournament_id 和 game_id
+- **AND** 日志不记录 bearer token 或 Authorization header
 
 ### Requirement: CLI exposes formal tournament controls without a normal game cap
 
-The formal entrypoint SHALL support:
+正式入口 SHALL 支持：
 
 ~~~text
 --config
@@ -679,143 +602,128 @@ The formal entrypoint SHALL support:
 --trace-root
 ~~~
 
-strategy=policy SHALL support a training checkpoint, strategy=bot SHALL support
-the existing heuristic strategy, and strategy=random SHALL remain a
-protocol/rule diagnostic option rather than a recommended tournament strategy.
+`strategy=policy` SHALL 支持 training checkpoint，`strategy=bot` SHALL 支持现有启发式
+策略，`strategy=random` SHALL 保留为协议/规则诊断选项，不作为推荐赛事策略。
 
-The formal entrypoint MUST NOT expose or default to a normal --games N
-termination condition. If a game limit is retained for diagnostics, it SHALL
-be named --max-games-debug and its help text SHALL state:
+正式入口 MUST NOT 暴露或默认使用正常的 `--games N` 终止条件。若保留诊断局数参数，
+参数名 SHALL 为 `--max-games-debug`，帮助文本 SHALL 明确：
 
 ~~~text
 仅调试；正式锦标赛不要使用，会导致提前离赛
 ~~~
 
-The default formal state rate SHALL be 15 per second per token.
+正式赛默认 state rate SHALL 为每 token 每秒 15 次。
 
 #### Scenario: Standard formal command
 
-- **WHEN** the user runs the policy command with --state-rate 15
-- **THEN** the runner starts with no fixed game termination limit
-- **AND** it continues through stage transitions and tiebreak games
+- **WHEN** 用户使用带 `--state-rate 15` 的 policy 命令
+- **THEN** runner 在无固定局数终止上限下启动
+- **AND** runner 继续处理阶段转换和加赛 game
 
 #### Scenario: Diagnostic game limit
 
-- **WHEN** the user supplies --max-games-debug
-- **THEN** the runner clearly marks the run as diagnostic
-- **AND** the help and runtime warning state that it MUST NOT be used for a
-  formal tournament
+- **WHEN** 用户传入 `--max-games-debug`
+- **THEN** runner 将该运行明确标记为 diagnostic
+- **AND** 帮助和运行时警告说明不得用于正式锦标赛
 
 ### Requirement: Ctrl-C performs graceful shutdown
 
-On KeyboardInterrupt or SIGINT, the runner SHALL set a shared stop event,
-stop creating new game workers, and allow active workers to leave through the
-existing shutdown path. It SHALL attempt to close active recorders, preserve
-already written evidence, and emit a structured INTERRUPTED result for each
-affected worker.
+收到 KeyboardInterrupt 或 SIGINT 时，runner SHALL 设置共享 stop event、停止创建新的
+game worker，并允许 active worker 通过现有 shutdown 路径离开。runner SHALL 尽力关闭
+active Recorder、保留已写证据，并为受影响的每个 worker 发出结构化 `INTERRUPTED` 结果。
 
-The shutdown path MUST NOT delete or truncate previously written formal
-tournament logs, and MUST NOT submit new actions after shutdown has begun.
+shutdown 开始后 MUST NOT 删除或截断既有正式赛日志，也 MUST NOT 提交新的动作。
 
 #### Scenario: Operator interrupts an active tournament
 
-- **WHEN** the process receives Ctrl-C while games or stage polling are active
-- **THEN** the shared stop event is set
-- **AND** no new game worker is created
-- **AND** active recorder resources are closed when possible
-- **AND** the final result reports INTERRUPTED
+- **WHEN** game 或阶段轮询期间进程收到 Ctrl-C
+- **THEN** 设置共享 stop event
+- **AND** 不再创建新的 game worker
+- **AND** 尽可能关闭 active Recorder 资源
+- **AND** 最终结果报告 `INTERRUPTED`
 
 ### Requirement: Formal tournament acceptance covers lifecycle and regression gates
 
-The implementation SHALL add focused lifecycle tests in
-tests/test_tournament_runner.py. Tests SHALL cover at least:
+实现 SHALL 增加 `tests/test_tournament_runner.py` 的聚焦生命周期测试，至少覆盖：
 
-- single-stage completion with FINISHED;
-- multi-stage stage_done to stage_open progression;
-- repeated ready for each stage;
-- normal elimination;
-- empty active-game periods without premature exit;
-- online polling intervals during a long stage_done;
-- dynamic tiebreak game discovery;
-- per-token rule isolation;
-- action 409 and uncertain POST recovery without duplicate action;
-- token redaction from output and artifacts;
-- graceful interruption and structured results.
+- 单阶段 `FINISHED`；
+- `stage_done` 到下一 `stage_open` 的多阶段推进；
+- 每阶段重复 ready；
+- 正常淘汰；
+- 空 active-game 期间不提前退出；
+- 长 stage_done 的在线轮询间隔；
+- 动态 tiebreak game 发现；
+- token 级规则隔离；
+- action 409 和 uncertain POST 的无重复动作恢复；
+- 输出和 artifact 的 token 脱敏；
+- 优雅中断和结构化结果。
 
-The focused tests and the existing full test suite SHALL pass. The test-room
-mj.platform.runner and free-match mj.platform.match_runner behavior SHALL remain
-unchanged. OpenSpec strict validation, compilation/diff checks, and any online
-acceptance SHALL report actual results separately from planned gates.
+聚焦测试和现有全量测试 SHALL 通过；测试房 `mj.platform.runner` 与自由匹配
+`mj.platform.match_runner` 行为 SHALL 保持不变。OpenSpec strict validation、编译、
+diff 检查和任何线上验收 SHALL 分开报告真实结果与计划门槛。
 
 #### Scenario: Direct final completes
 
-- **GIVEN** a tournament enters its final stage and the final game completes
-- **WHEN** the platform returns status=finished
-- **THEN** the runner exits normally with termination_reason=FINISHED
+- **GIVEN** 赛事进入最终阶段且 final game 完成
+- **WHEN** 平台返回 `status=finished`
+- **THEN** runner 正常退出且 `termination_reason=FINISHED`
 
 #### Scenario: Multi-stage qualification works
 
-- **GIVEN** a participant finishes a stage and the platform returns stage_done
-- **WHEN** the platform later returns stage_open with qualified=true
-- **THEN** the runner remains alive during the gap
-- **AND** performs ready for the new stage
-- **AND** discovers games for that stage dynamically
+- **GIVEN** 参与者结束一个阶段且平台返回 `stage_done`
+- **WHEN** 平台稍后返回 `stage_open` 且 `qualified=true`
+- **THEN** runner 在间隔期间保持存活
+- **AND** 为新阶段执行 ready
+- **AND** 动态发现该阶段 game
 
 #### Scenario: Empty inter-stage game list does not terminate
 
-- **GIVEN** stage_done and active_games=[]
-- **WHEN** five minutes pass without a game
-- **THEN** the runner continues tournament polling
-- **AND** does not report FINISHED or ELIMINATED without authoritative
-  evidence
+- **GIVEN** `stage_done` 且 `active_games=[]`
+- **WHEN** 五分钟没有 game
+- **THEN** runner 继续赛事轮询
+- **AND** 没有权威证据时不报告 `FINISHED` 或 `ELIMINATED`
 
 #### Scenario: Online presence is maintained
 
-- **GIVEN** the tournament remains in stage_done
-- **THEN** successive successful authenticated polls for that tournament are
-  less than 60 seconds apart
+- **GIVEN** 赛事保持 `stage_done`
+- **THEN** 针对该赛事的连续成功认证轮询间隔小于 60 秒
 
 #### Scenario: Tiebreak is discovered
 
-- **GIVEN** the initial final games have completed
-- **WHEN** the platform adds a new game to both my_games and active_games
-- **THEN** a new game worker starts for that game
-- **AND** the worker does not stop because the initial game count was reached
+- **GIVEN** 初始 final games 已完成
+- **WHEN** 平台将新 game 同时加入 `my_games` 和 `active_games`
+- **THEN** 启动该 game worker
+- **AND** 不因初始 game 数量达到而停止
 
 #### Scenario: Token isolation and shared throttle are preserved
 
-- **GIVEN** two tokens and multiple games for one token
-- **THEN** each token uses its own tournament identity and rules
-- **AND** each token's games share only that token's state throttle
+- **GIVEN** 两个 token 且其中一个拥有多个 game
+- **THEN** 每个 token 使用自己的赛事身份和规则
+- **AND** 每个 token 的 game 只共享本 token 的 StateThrottle
 
 #### Scenario: Existing runners do not regress
 
-- **WHEN** the existing test-room and free-match test suites run after the
-  formal runner change
-- **THEN** their prior lifecycle and game-count behavior remain unchanged
+- **WHEN** 正式 runner 改动后的现有测试房和自由匹配测试运行
+- **THEN** 原有生命周期和局数行为保持不变
 
 ### Requirement: Formal tournament scope excludes unrelated protocol and strategy work
 
-This change SHALL be limited to the formal tournament lifecycle wrapper,
-configuration and lifecycle observability needed to expose its structured
-result, and the corresponding tests.
+本 change SHALL 限定于正式赛事生命周期 wrapper、配置、为结构化结果所需的生命周期
+可观测性及对应测试。
 
-It SHALL NOT:
+本 change SHALL NOT：
 
-- create or administer tournaments;
-- automate portal login or registration;
-- modify Mahjong rules;
-- modify policy, EV, heuristic, PPO, or random strategy logic;
-- implement a new /state, /notify, or /action protocol;
-- implement free matching through /api/match;
-- replace existing SSE, state recovery, window confirmation, throttling, or
-  safe action transport;
-- fork the existing game execution client.
+- 创建或管理赛事；
+- 自动化门户登录或报名；
+- 修改麻将规则；
+- 修改 policy、EV、启发式、PPO 或 random strategy 逻辑；
+- 实现新的 `/state`、`/notify` 或 `/action` 协议；
+- 通过 `/api/match` 实现自由匹配；
+- 替换现有 SSE、状态恢复、窗口确认、限速或安全动作传输；
+- fork 现有 game execution client。
 
 #### Scenario: Existing game protocol is sufficient
 
-- **WHEN** a formal tournament game is assigned
-- **THEN** the implementation changes only how the tournament supervisor obtains
-  and retires games
-- **AND** the game state/action protocol remains the existing BotClient
-  implementation
+- **WHEN** 正式赛事分配一个 game
+- **THEN** 实现只改变赛事 supervisor 获取和回收 game 的方式
+- **AND** game state/action 协议仍由现有 BotClient 实现
