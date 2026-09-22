@@ -1,0 +1,522 @@
+{
+  "budget_ms": 50.0,
+  "states": 800,
+  "seed_start": 0,
+  "grid": [
+    {
+      "slack": 1,
+      "delta": 8,
+      "states": 800,
+      "guard_fired": 5,
+      "guard_fire_rate": 0.00625,
+      "decision_changed": 6,
+      "decision_changed_by_guard": 5,
+      "decision_changed_timing_noise": 1,
+      "examples": [
+        {
+          "seed": 184,
+          "off": {
+            "action": 27,
+            "level": "weighted-two-ply-v1"
+          },
+          "on": {
+            "action": 27,
+            "level": "legacy"
+          },
+          "admitted": [],
+          "dropped": [],
+          "guard_effect": false,
+          "fallback": {
+            "off": null,
+            "on": "partial_not_acceptable"
+          }
+        },
+        {
+          "seed": 290,
+          "off": {
+            "action": 3,
+            "level": "legacy-one-ply"
+          },
+          "on": {
+            "action": 3,
+            "level": "weighted-two-ply-partial"
+          },
+          "admitted": [
+            27,
+            32
+          ],
+          "dropped": [
+            8,
+            9
+          ],
+          "guard_effect": true,
+          "fallback": {
+            "off": null,
+            "on": null
+          }
+        },
+        {
+          "seed": 492,
+          "off": {
+            "action": 10,
+            "level": "legacy-one-ply"
+          },
+          "on": {
+            "action": 10,
+            "level": "weighted-two-ply-partial"
+          },
+          "admitted": [
+            14,
+            26
+          ],
+          "dropped": [],
+          "guard_effect": true,
+          "fallback": {
+            "off": null,
+            "on": null
+          }
+        },
+        {
+          "seed": 529,
+          "off": {
+            "action": 6,
+            "level": "legacy-one-ply"
+          },
+          "on": {
+            "action": 6,
+            "level": "weighted-two-ply-partial"
+          },
+          "admitted": [
+            27,
+            30
+          ],
+          "dropped": [
+            20,
+            26
+          ],
+          "guard_effect": true,
+          "fallback": {
+            "off": null,
+            "on": null
+          }
+        },
+        {
+          "seed": 761,
+          "off": {
+            "action": 6,
+            "level": "legacy-one-ply"
+          },
+          "on": {
+            "action": 6,
+            "level": "weighted-two-ply-partial"
+          },
+          "admitted": [
+            27,
+            30
+          ],
+          "dropped": [
+            31
+          ],
+          "guard_effect": true,
+          "fallback": {
+            "off": null,
+            "on": null
+          }
+        }
+      ],
+      "latency_ms": {
+        "off_p50": 6.95553794503212,
+        "off_p95": 14.167938963510096,
+        "on_p50": 7.042082026600838,
+        "on_p95": 14.697480015456676,
+        "on_max": 50.467776018194854
+      },
+      "skipped": {}
+    },
+    {
+      "slack": 1,
+      "delta": 4,
+      "states": 800,
+      "guard_fired": 6,
+      "guard_fire_rate": 0.0075,
+      "decision_changed": 8,
+      "decision_changed_by_guard": 6,
+      "decision_changed_timing_noise": 2,
+      "examples": [
+        {
+          "seed": 290,
+          "off": {
+            "action": 3,
+            "level": "legacy-one-ply"
+          },
+          "on": {
+            "action": 3,
+            "level": "weighted-two-ply-partial"
+          },
+          "admitted": [
+            27,
+            32
+          ],
+          "dropped": [
+            8,
+            9
+          ],
+          "guard_effect": true,
+          "fallback": {
+            "off": null,
+            "on": null
+          }
+        },
+        {
+          "seed": 364,
+          "off": {
+            "action": 27,
+            "level": "legacy"
+          },
+          "on": {
+            "action": 27,
+            "level": "weighted-two-ply-v1"
+          },
+          "admitted": [],
+          "dropped": [],
+          "guard_effect": false,
+          "fallback": {
+            "off": "partial_not_acceptable",
+            "on": null
+          }
+        },
+        {
+          "seed": 374,
+          "off": {
+            "action": 24,
+            "level": "legacy-one-ply"
+          },
+          "on": {
+            "action": 24,
+            "level": "weighted-two-ply-partial"
+          },
+          "admitted": [
+            18,
+            21
+          ],
+          "dropped": [],
+          "guard_effect": true,
+          "fallback": {
+            "off": null,
+            "on": null
+          }
+        },
+        {
+          "seed": 492,
+          "off": {
+            "action": 10,
+            "level": "legacy-one-ply"
+          },
+          "on": {
+            "action": 10,
+            "level": "weighted-two-ply-partial"
+          },
+          "admitted": [
+            14,
+            26
+          ],
+          "dropped": [],
+          "guard_effect": true,
+          "fallback": {
+            "off": null,
+            "on": null
+          }
+        },
+        {
+          "seed": 529,
+          "off": {
+            "action": 6,
+            "level": "legacy-one-ply"
+          },
+          "on": {
+            "action": 6,
+            "level": "weighted-two-ply-partial"
+          },
+          "admitted": [
+            27,
+            30
+          ],
+          "dropped": [
+            20,
+            26
+          ],
+          "guard_effect": true,
+          "fallback": {
+            "off": null,
+            "on": null
+          }
+        }
+      ],
+      "latency_ms": {
+        "off_p50": 8.80644901189953,
+        "off_p95": 20.073927007615566,
+        "on_p50": 9.082557051442564,
+        "on_p95": 19.628146081231534,
+        "on_max": 66.16103497799486
+      },
+      "skipped": {}
+    },
+    {
+      "slack": 1,
+      "delta": 3,
+      "states": 800,
+      "guard_fired": 6,
+      "guard_fire_rate": 0.0075,
+      "decision_changed": 8,
+      "decision_changed_by_guard": 6,
+      "decision_changed_timing_noise": 2,
+      "examples": [
+        {
+          "seed": 114,
+          "off": {
+            "action": 27,
+            "level": "weighted-two-ply-v1"
+          },
+          "on": {
+            "action": 27,
+            "level": "legacy"
+          },
+          "admitted": [],
+          "dropped": [],
+          "guard_effect": false,
+          "fallback": {
+            "off": null,
+            "on": "partial_not_acceptable"
+          }
+        },
+        {
+          "seed": 290,
+          "off": {
+            "action": 3,
+            "level": "legacy-one-ply"
+          },
+          "on": {
+            "action": 3,
+            "level": "weighted-two-ply-partial"
+          },
+          "admitted": [
+            27,
+            32
+          ],
+          "dropped": [
+            8,
+            9
+          ],
+          "guard_effect": true,
+          "fallback": {
+            "off": null,
+            "on": null
+          }
+        },
+        {
+          "seed": 374,
+          "off": {
+            "action": 24,
+            "level": "legacy-one-ply"
+          },
+          "on": {
+            "action": 24,
+            "level": "weighted-two-ply-partial"
+          },
+          "admitted": [
+            18,
+            21
+          ],
+          "dropped": [],
+          "guard_effect": true,
+          "fallback": {
+            "off": null,
+            "on": null
+          }
+        },
+        {
+          "seed": 427,
+          "off": {
+            "action": 27,
+            "level": "weighted-two-ply-v1"
+          },
+          "on": {
+            "action": 27,
+            "level": "legacy"
+          },
+          "admitted": [],
+          "dropped": [],
+          "guard_effect": false,
+          "fallback": {
+            "off": null,
+            "on": "partial_not_acceptable"
+          }
+        },
+        {
+          "seed": 492,
+          "off": {
+            "action": 10,
+            "level": "legacy-one-ply"
+          },
+          "on": {
+            "action": 10,
+            "level": "weighted-two-ply-partial"
+          },
+          "admitted": [
+            14,
+            26
+          ],
+          "dropped": [],
+          "guard_effect": true,
+          "fallback": {
+            "off": null,
+            "on": null
+          }
+        }
+      ],
+      "latency_ms": {
+        "off_p50": 12.010050006210804,
+        "off_p95": 23.225188022479415,
+        "on_p50": 12.079669977538288,
+        "on_p95": 23.83039193227887,
+        "on_max": 60.45888608787209
+      },
+      "skipped": {}
+    },
+    {
+      "slack": 1,
+      "delta": 2,
+      "states": 800,
+      "guard_fired": 6,
+      "guard_fire_rate": 0.0075,
+      "decision_changed": 8,
+      "decision_changed_by_guard": 6,
+      "decision_changed_timing_noise": 2,
+      "examples": [
+        {
+          "seed": 56,
+          "off": {
+            "action": 28,
+            "level": "legacy"
+          },
+          "on": {
+            "action": 28,
+            "level": "weighted-two-ply-v1"
+          },
+          "admitted": [],
+          "dropped": [],
+          "guard_effect": false,
+          "fallback": {
+            "off": "partial_not_acceptable",
+            "on": null
+          }
+        },
+        {
+          "seed": 290,
+          "off": {
+            "action": 3,
+            "level": "legacy-one-ply"
+          },
+          "on": {
+            "action": 3,
+            "level": "weighted-two-ply-partial"
+          },
+          "admitted": [
+            27,
+            32
+          ],
+          "dropped": [
+            8,
+            9
+          ],
+          "guard_effect": true,
+          "fallback": {
+            "off": null,
+            "on": null
+          }
+        },
+        {
+          "seed": 374,
+          "off": {
+            "action": 24,
+            "level": "legacy-one-ply"
+          },
+          "on": {
+            "action": 24,
+            "level": "weighted-two-ply-partial"
+          },
+          "admitted": [
+            18,
+            21
+          ],
+          "dropped": [],
+          "guard_effect": true,
+          "fallback": {
+            "off": null,
+            "on": null
+          }
+        },
+        {
+          "seed": 492,
+          "off": {
+            "action": 10,
+            "level": "legacy-one-ply"
+          },
+          "on": {
+            "action": 10,
+            "level": "weighted-two-ply-partial"
+          },
+          "admitted": [
+            14,
+            26
+          ],
+          "dropped": [],
+          "guard_effect": true,
+          "fallback": {
+            "off": null,
+            "on": null
+          }
+        },
+        {
+          "seed": 529,
+          "off": {
+            "action": 6,
+            "level": "legacy-one-ply"
+          },
+          "on": {
+            "action": 6,
+            "level": "weighted-two-ply-partial"
+          },
+          "admitted": [
+            27,
+            30
+          ],
+          "dropped": [
+            20,
+            26
+          ],
+          "guard_effect": true,
+          "fallback": {
+            "off": null,
+            "on": null
+          }
+        }
+      ],
+      "latency_ms": {
+        "off_p50": 16.583645017817616,
+        "off_p95": 30.72029899340123,
+        "on_p50": 16.861595096997917,
+        "on_p95": 31.72917093615979,
+        "on_max": 51.34336405899376
+      },
+      "skipped": {}
+    }
+  ],
+  "baseline": {
+    "slack": 1,
+    "delta": 8
+  },
+  "latency_pass": true,
+  "outcome_evidence_available": false,
+  "enable_by_default": false
+}

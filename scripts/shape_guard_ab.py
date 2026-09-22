@@ -140,10 +140,14 @@ def main(argv=None):
     parser.add_argument("--states", type=int, default=800)
     parser.add_argument("--seed-start", type=int, default=0)
     parser.add_argument("--budget-ms", type=float, default=50.0)
+    parser.add_argument("--grid", default=None,
+                        help="逗号分隔的 slack:delta 列表;默认用声明网格")
     parser.add_argument("--json", type=Path, default=None)
     args = parser.parse_args(argv)
     seeds = list(range(args.seed_start, args.seed_start + args.states))
-    grid = [(0, 8), (1, 6), (1, 8), (1, 10), (2, 6), (2, 8), (2, 10)]
+    grid = ([(0, 8), (1, 6), (1, 8), (1, 10), (2, 6), (2, 8), (2, 10)]
+            if not args.grid else
+            [tuple(int(v) for v in item.split(":")) for item in args.grid.split(",")])
     results = []
     for slack, delta in grid:
         row = _compare(seeds, args.budget_ms, slack, delta)
