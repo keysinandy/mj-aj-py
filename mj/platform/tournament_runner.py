@@ -11,7 +11,7 @@ import threading
 import time
 
 from .api import Api, ApiError
-from .bot_client import BotClient
+from .bot_client import BotClient, FORMAL_POLL_INTERVAL
 from .config import TournamentConfigError, load_tournament_config
 from .recorder import Recorder
 from .runner import DumpingApi, make_decide
@@ -104,7 +104,9 @@ class TournamentWorker:
                  replay_trace=False, trace_root=None, stop=None,
                  recorder_root="local/games", api_factory=None,
                  bot_factory=None, recorder_factory=None,
-                 sleep=_sleep_stop):
+                 sleep=_sleep_stop, decide=None,
+                 wait_for_binding=False, log_sink=None,
+                 server_status_sink=None):
         self.label = label
         self.server = server
         self.token = token
@@ -126,6 +128,18 @@ class TournamentWorker:
         self.recorder_factory = (Recorder if recorder_factory is None
                                  else recorder_factory)
         self.sleep = sleep
+        # The CLI keeps its historical fail-fast behavior. Browser sessions
+        # can wait for tournament binding before entering the formal lifecycle.
+        self.wait_for_binding = bool(wait_for_binding)
+        self.log_sink = log_sink
+        self.server_status_sink = server_status_sink
+        self.server_connected = None
+        self.server_status = "checking"
+        self.server_message = "正在连接目标服务器"
+        self.server_checked_at = None
+        # Web sessions can inject the clientd ONNX strategy factory while
+        # keeping the same formal-tournament lifecycle and BotClient path.
+        self.decide = decide
         self.api = None
         self.bot = None
         self.context = None
@@ -133,8 +147,26 @@ class TournamentWorker:
         self._recorder = None
 
     def _log(self, message):
-        print(f"[{self.label}] {redact_text(message, [self.token])}",
-              flush=True)
+        safe = redact_text(message, [self.token])
+        print(f"[{self.label}] {safe}", flush=True)
+        if self.log_sink is not None:
+            lowered = safe.lower()
+            level = ("error" if any(
+                marker in lowered for marker in
+                ("失败", "异常", "错误", "error", "auth_failed")) else
+                "warning" if any(
+                    marker in lowered for marker in
+                    ("暂时", "重试", "回退", "等待")) else "info")
+            self.log_sink(level, safe)
+
+    def _report_server(self, connected, status, message):
+        self.server_connected = connected
+        self.server_status = status
+        self.server_message = redact_text(message, [self.token])
+        self.server_checked_at = time.time()
+        if self.server_status_sink is not None:
+            self.server_status_sink(
+                connected, status, self.server_message)
 
     def _failure(self, reason, exc=None):
         error = None
@@ -166,8 +198,21 @@ class TournamentWorker:
             if self.stop is not None and self.stop.is_set():
                 raise RuntimeError("INTERRUPTED")
             try:
-                return TournamentRules.from_response(self.api.rules())
+                rules = TournamentRules.from_response(self.api.rules())
+                self._report_server(True, "connected", "服务器可联通")
+                return rules
             except Exception as exc:
+                if isinstance(exc, ApiError):
+                    connected = exc.status != 0
+                    status = ("auth_failed" if _is_auth_error(exc) else
+                              "reachable_error" if connected else
+                              "unreachable")
+                elif isinstance(exc, (TimeoutError, OSError,
+                                      ConnectionError)):
+                    connected, status = False, "unreachable"
+                else:
+                    connected, status = True, "reachable_error"
+                self._report_server(connected, status, str(exc))
                 if _is_auth_error(exc) or not _is_transient_error(exc):
                     raise
                 self._log(f"rules 暂时失败, {delay:.1f}s 后重试")
@@ -181,8 +226,22 @@ class TournamentWorker:
             if self.stop is not None and self.stop.is_set():
                 raise RuntimeError("INTERRUPTED")
             try:
-                return self.api.me()
+                result = self.api.me()
+                self._report_server(
+                    True, "connected", "服务器联通，锦标赛 Key 可访问")
+                return result
             except Exception as exc:
+                if isinstance(exc, ApiError):
+                    connected = exc.status != 0
+                    status = ("auth_failed" if _is_auth_error(exc) else
+                              "reachable_error" if connected else
+                              "unreachable")
+                elif isinstance(exc, (TimeoutError, OSError,
+                                      ConnectionError)):
+                    connected, status = False, "unreachable"
+                else:
+                    connected, status = True, "reachable_error"
+                self._report_server(connected, status, str(exc))
                 if _is_auth_error(exc) or not _is_transient_error(exc):
                     raise
                 self._log(f"me 暂时失败, {delay:.1f}s 后重试")
@@ -191,11 +250,17 @@ class TournamentWorker:
                 delay = min(POLL_RETRY_MAX, delay * 2.0)
 
     def _preflight(self):
-        me = self._fetch_me()
-        self.context = TournamentContext.from_me(
-            token_label=self.label, server=self.server, response=me)
-        if not self.context.tournament_id:
-            raise RuntimeError("TOKEN_NOT_BOUND")
+        while True:
+            me = self._fetch_me()
+            self.context = TournamentContext.from_me(
+                token_label=self.label, server=self.server, response=me)
+            if self.context.tournament_id:
+                break
+            if not self.wait_for_binding:
+                raise RuntimeError("TOKEN_NOT_BOUND")
+            self._log("锦标赛 Key 尚未绑定赛事，每秒轮询等待")
+            if self.sleep(FORMAL_POLL_INTERVAL, self.stop):
+                raise RuntimeError("INTERRUPTED")
         self.rules = self._fetch_rules()
         self.context = TournamentContext(
             token_label=self.context.token_label,
@@ -283,8 +348,8 @@ class TournamentWorker:
             self._close_recorder()
             return result
         try:
-            decide = make_decide(self.strategy, self.ckpt,
-                                 evaluator=self.evaluator)
+            decide = self.decide or make_decide(
+                self.strategy, self.ckpt, evaluator=self.evaluator)
             self.bot = _make_bot(
                 self.bot_factory, self.api, self.label, decide,
                 self._recorder, self._log)

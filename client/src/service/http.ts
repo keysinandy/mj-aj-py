@@ -165,12 +165,50 @@ export interface SessionInfo {
     skipped?: number;
     games?: number;
     rooms?: number;
+    termination_reason?: string;
+    final_status?: string | null;
+    final_stage?: unknown;
+    actions?: number;
     scores?: unknown[];
     stats?: Record<string, unknown>;
     [key: string]: unknown;
   } | null;
   error: string | null;
-  progress: (AriaProgress & { rooms?: number }) | null;
+  progress: (Partial<AriaProgress> & {
+    rooms?: number;
+    phase?: string;
+    message?: string;
+    tournament_status?: string | null;
+    stage?: unknown;
+    poll_interval_sec?: number;
+    games?: number;
+    actions?: number;
+    strategy_loaded?: boolean | null;
+    strategy_status?: string;
+    strategy_name?: string;
+    evaluator?: string;
+    model_name?: string | null;
+    server_connected?: boolean | null;
+    server_status?: string;
+    server_message?: string;
+    last_server_check_at?: number | null;
+  }) | null;
+}
+
+export interface SessionLogEntry {
+  id: number;
+  timestamp: number;
+  level: "info" | "warning" | "error";
+  source: string;
+  message: string;
+}
+
+export interface SessionLogsResponse {
+  session_id: string;
+  logs: SessionLogEntry[];
+  next_cursor: number;
+  has_more: boolean;
+  truncated: boolean;
 }
 
 export const api = {
@@ -235,6 +273,10 @@ export const api = {
   },
   getSession(id: string): Promise<SessionInfo> {
     return fetchJson(`/api/sessions/${id}`);
+  },
+  getSessionLogs(id: string, after = 0, limit = 500): Promise<SessionLogsResponse> {
+    const query = new URLSearchParams({ after: String(after), limit: String(limit) });
+    return fetchJson(`/api/sessions/${encodeURIComponent(id)}/logs?${query}`);
   },
   stopSession(id: string): Promise<SessionInfo> {
     return fetchJson(`/api/sessions/${id}/stop`, { method: "POST" });

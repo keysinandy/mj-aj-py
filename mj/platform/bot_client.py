@@ -252,6 +252,10 @@ class BotClient:
         self.tournament_rules = None
         self.tournament_context = None
         self.tournament_status = None
+        self.tournament_server_connected = None
+        self.tournament_server_status = "checking"
+        self.tournament_server_message = "正在连接目标服务器"
+        self.tournament_server_checked_at = None
         self.tournament_stage = None
         self.tournament_qualified = None
         self.tournament_stage_history = []
@@ -639,6 +643,10 @@ class BotClient:
         self._tournament_stop = stop
         self.tournament_termination_reason = None
         self.tournament_status = None
+        self.tournament_server_connected = None
+        self.tournament_server_status = "checking"
+        self.tournament_server_message = "正在查询赛事状态"
+        self.tournament_server_checked_at = None
         self.tournament_stage = None
         self.tournament_qualified = None
         self.tournament_stage_history = []
@@ -695,9 +703,34 @@ class BotClient:
                     status = tournament.get("status")
                     if status not in LIFECYCLE_STATES:
                         raise ValueError(f"未知赛事状态: {status!r}")
+                    self.tournament_server_connected = True
+                    self.tournament_server_status = "connected"
+                    self.tournament_server_message = "服务器联通，赛事状态已更新"
+                    self.tournament_server_checked_at = time.time()
                     retry_delay = 0.5
                     gone_retries = 0
                 except Exception as exc:
+                    if isinstance(exc, ApiError):
+                        self.tournament_server_connected = exc.status != 0
+                        self.tournament_server_status = (
+                            "auth_failed" if self._formal_auth_error(exc)
+                            else "reachable_error"
+                            if self.tournament_server_connected
+                            else "unreachable")
+                    elif isinstance(exc, (TimeoutError, OSError,
+                                          ConnectionError)):
+                        self.tournament_server_connected = False
+                        self.tournament_server_status = "unreachable"
+                    else:
+                        self.tournament_server_connected = True
+                        self.tournament_server_status = "reachable_error"
+                    self.tournament_server_message = (
+                        "赛事查询鉴权失败" if
+                        self.tournament_server_status == "auth_failed" else
+                        "目标服务器暂时不可达" if
+                        self.tournament_server_status == "unreachable" else
+                        "服务器已响应，但赛事状态查询失败")
+                    self.tournament_server_checked_at = time.time()
                     if self._formal_auth_error(exc):
                         self.tournament_termination_reason = "AUTH_FAILED"
                         self._formal_log_error("赛事查询认证失败", exc)

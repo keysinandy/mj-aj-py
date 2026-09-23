@@ -331,6 +331,40 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--nav-active)
 
 /* 设置与模型管理 */
 .settings-page { max-width: 1180px; color: var(--text-primary); }
+.tournament-page { max-width: 1080px; }
+.tournament-field select { min-height: 2.25rem; padding: 0.42rem 0.55rem; border: 1px solid var(--border-soft); border-radius: 7px; background: var(--field-surface); color: var(--field-text); font: inherit; }
+.tournament-server, .tournament-model, .tournament-strategy-info { margin: -0.45rem 0 0.9rem; font-size: 0.8rem; }
+.tournament-strategy-info { line-height: 1.55; }
+.tournament-actions { display: flex; gap: 0.55rem; flex-wrap: wrap; align-items: center; margin-top: 0.2rem; }
+.tournament-actions .primary-button { margin-left: auto; }
+.tournament-running-note { margin: 0.8rem 0 0; }
+.tournament-steps { margin: 0; padding-left: 1.3rem; color: var(--text-secondary); line-height: 1.8; font-size: 0.86rem; }
+.tournament-session-list { margin-bottom: 1.5rem; }
+.tournament-session-message { flex: 1 1 100%; font-size: 0.86rem; }
+.tournament-grid { align-items: stretch; }
+.tournament-poll-card { min-height: 100%; }
+.tournament-log-card { grid-column: 1 / -1; }
+.tournament-runtime-status { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.7rem; margin-bottom: 1rem; }
+.tournament-runtime-item { min-width: 0; display: flex; flex-direction: column; gap: 0.25rem; padding: 0.7rem; border: 1px solid var(--border-soft); border-radius: 9px; background: var(--surface-subtle); }
+.tournament-runtime-item > span:first-child { font-size: 0.76rem; }
+.tournament-runtime-detail { overflow-wrap: anywhere; font-size: 0.8rem; }
+.tournament-runtime-time { font-size: 0.72rem; }
+.runtime-state.connected { color: var(--ok); }
+.runtime-state.warning, .runtime-state.pending { color: var(--warn); }
+.runtime-state.failed { color: var(--err); }
+.tournament-log-viewport { height: 360px; overflow: auto; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--surface-subtle); overscroll-behavior: contain; }
+.tournament-log-window { position: absolute; inset: 0 0 auto; }
+.tournament-log-row { width: 100%; display: grid; grid-template-columns: 5.3rem 2.8rem 5.5rem minmax(0, 1fr); gap: 0.55rem; align-items: center; padding: 0 0.6rem; border: 0; border-bottom: 1px solid var(--border-soft); background: transparent; color: var(--text-primary); text-align: left; font: inherit; font-size: 0.76rem; cursor: pointer; }
+.tournament-log-row:hover, .tournament-log-row.selected { background: var(--surface-hover); }
+.tournament-log-row time, .tournament-log-level, .tournament-log-source { color: var(--text-secondary); white-space: nowrap; }
+.tournament-log-row.level-warning .tournament-log-level { color: var(--warn); }
+.tournament-log-row.level-error .tournament-log-level, .tournament-log-row.level-error .tournament-log-message { color: var(--err); }
+.tournament-log-message { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tournament-log-empty, .tournament-log-empty-state { padding: 1rem; color: var(--text-secondary); font-size: 0.84rem; }
+.tournament-log-error { margin: 0 0 0.65rem; }
+.tournament-log-detail { margin-top: 0.7rem; padding: 0.65rem 0.75rem; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--surface-subtle); }
+.tournament-log-detail.level-error { border-color: var(--error-border); }
+.tournament-log-detail pre { max-height: 180px; margin: 0.45rem 0 0; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 0.78rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .settings-header { margin-bottom: 1rem; }
 .settings-header h1 { margin: 0.1rem 0 0; }
 .settings-notice, .settings-error {
@@ -538,6 +572,10 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--nav-active)
   .app-nav { gap: 0.55rem; }
   .theme-toggle { padding: 0.25rem 0.5rem; }
   .theme-toggle > span:last-child { display: none; }
+  .tournament-actions .primary-button { margin-left: 0; width: 100%; }
+  .tournament-runtime-status { grid-template-columns: 1fr; }
+  .tournament-log-row { grid-template-columns: 4.6rem 2.4rem minmax(0, 1fr); gap: 0.4rem; }
+  .tournament-log-source { display: none; }
   .table-seats { grid-template-columns: 1fr 1fr; grid-template-rows: auto auto auto; grid-template-areas: "top top" "left right" "bottom bottom"; min-height: 0; }
   .table-center { grid-column: 1 / -1; grid-row: 2; min-width: 0; }
   .player-left { grid-column: 1; grid-row: 3; }

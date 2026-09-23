@@ -17,6 +17,7 @@ from __future__ import annotations
 import threading
 import time
 import uuid
+from collections import deque
 
 from .errors import ConflictError, NotFoundError, ValidationError
 
@@ -29,6 +30,7 @@ STATUS_CANCELLED = "cancelled"
 STATUS_ERROR = "error"
 
 KINDS = ("arena", "match", "tournament", "test")
+SESSION_LOG_LIMIT = 5000
 
 
 class Session:
@@ -45,6 +47,10 @@ class Session:
         self.result = None
         self.error = None
         self.progress = None       # 长任务可在运行期更新(由 runner 写入)
+        self._progress_lock = threading.Lock()
+        self._logs = deque(maxlen=SESSION_LOG_LIMIT)
+        self._log_lock = threading.Lock()
+        self._next_log_id = 1
         self.stop_event = threading.Event()
         self._runner = runner
 
@@ -52,14 +58,57 @@ class Session:
     def stop_requested(self):
         return self.stop_event.is_set()
 
+    def update_progress(self, values):
+        """Merge one progress snapshot without dropping other status fields."""
+        with self._progress_lock:
+            current = self.progress if isinstance(self.progress, dict) else {}
+            self.progress = {**current, **values}
+            return dict(self.progress)
+
+    def append_log(self, message, *, level="info", source="session"):
+        """Append one bounded, JSON-safe UI log event."""
+        if level not in ("info", "warning", "error"):
+            level = "info"
+        with self._log_lock:
+            entry = {
+                "id": self._next_log_id,
+                "timestamp": round(time.time(), 3),
+                "level": level,
+                "source": str(source),
+                "message": str(message),
+            }
+            self._next_log_id += 1
+            self._logs.append(entry)
+            return dict(entry)
+
+    def logs_after(self, cursor=0, limit=500):
+        """Read a log page after a monotonic cursor."""
+        cursor = max(0, int(cursor))
+        limit = max(1, min(int(limit), 1000))
+        with self._log_lock:
+            current = list(self._logs)
+            first_id = current[0]["id"] if current else self._next_log_id
+            page = [entry for entry in current
+                    if entry["id"] > cursor][:limit]
+            next_cursor = page[-1]["id"] if page else cursor
+            return {
+                "logs": [dict(entry) for entry in page],
+                "next_cursor": next_cursor,
+                "has_more": bool(current and next_cursor < current[-1]["id"]),
+                "truncated": bool(current and cursor < first_id - 1),
+            }
+
     def as_dict(self):
+        with self._progress_lock:
+            progress = (dict(self.progress)
+                        if isinstance(self.progress, dict) else self.progress)
         return {
             "id": self.id, "kind": self.kind, "status": self.status,
             "config": self.config, "created_at": round(self.created_at, 3),
             "finished_at": round(self.finished_at, 3) if self.finished_at
             else None,
             "result": self.result, "error": self.error,
-            "progress": self.progress,
+            "progress": progress,
         }
 
 
@@ -101,6 +150,14 @@ class SessionManager:
         except Exception as exc:  # noqa: BLE001 - capture any runner failure
             session.error = f"{type(exc).__name__}: {exc}"
             session.status = STATUS_ERROR
+            if session.kind == "tournament":
+                session.update_progress({
+                    "phase": "error",
+                    "message": "锦标赛会话异常结束",
+                })
+                session.append_log(
+                    f"锦标赛会话异常：{type(exc).__name__}",
+                    level="error", source="error")
         finally:
             session.finished_at = time.time()
 

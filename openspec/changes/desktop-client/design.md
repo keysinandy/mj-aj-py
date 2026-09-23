@@ -113,6 +113,19 @@ React + TS,Tauri webview。组件树:控制台(对战配置)/ 房间墙 / 牌桌
 
 当听口达到 34 种时按花色分组渲染；听口全部未见时仍显示听牌和各项 `0 张`，并标记为死听。popover 通过牌桌上层定位，不能被牌面容器的溢出裁剪；它是纯展示，不产生动作、请求或改变回放游标。
 
+### D11 锦标赛 Web 会话复用正式 runner
+
+- 主导航新增置顶的“锦标赛”Tab,页面内编辑 tournament token 并显式选择策略;保存时只写入 `PlatformSettings`,创建会话时 token 不随 session config 传输。
+- clientd 的 tournament session 使用 `TournamentWorker` 承接 `Api`、Recorder 与正式赛预检,并将 clientd 的 stop event 传给 `BotClient.run()`。
+- 赛事阶段轮询、报名/ready 与活跃对局筛选继续使用 `BotClient._run_formal_tournament`:默认每秒查询赛事状态,`registering` / `stage_open` 时尝试入席,`running` 时只启动 `/api/me.active_games ∩ tournament.my_games`。浏览器专用预检在 Key 鉴权成功但尚未绑定赛事时每秒重查 `/api/me`;命令行 runner 保持原有未绑定即结束的行为。页面从 session progress 显示绑定等待、赛事等待、进行中、阶段结束状态;不另造一套平台协议循环。
+- ONNX policy 复用 clientd 已有策略工厂;BOT 评价器由会话配置传入。会话默认不设局数上限,运行到赛事终态或用户停止。
+
+### D12 锦标赛诊断状态与日志
+
+- 锦标赛会话进度包含策略构造结果、目标服务器连通性/最近检测时间、赛事状态与阶段。页面打开时使用已有 `/api/settings/test-connection` 探测已保存的锦标赛 Key,运行会话时以 runner 最近的 `/api/me` 与赛事轮询结果为准。
+- 会话日志通过独立 `GET /api/sessions/:id/logs?after=...` 游标接口增量读取,服务端只保留固定上限的最近日志。事件来自策略加载、连接检查、正式 runner 的安全日志与阶段轮询;令牌先经过既有 redaction 后才进入 UI 日志。
+- 前端固定行高的虚拟列表只渲染视窗与 overscan 行,默认跟随最新日志;用户向上滚动时暂停自动跟随,点击一行可查看完整错误或长消息。
+
 ## Risks / Trade-offs
 
 - [PyInstaller 三平台 torch 缺失导致的隐蔽 import 路径问题] → 服务层 import 纪律:torch 相关 import 只存在于开发机工具;制品冒烟测试含 policy 策略对局。

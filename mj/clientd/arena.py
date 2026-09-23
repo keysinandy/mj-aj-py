@@ -244,21 +244,31 @@ def _normalize_seats(config):
 
 
 def make_arena_session_manager(arena_root=None, max_concurrent=8,
-                               settings_path=None):
-    """构造面向 Web 的本地竞技场与线上匹配会话管理器。
+                               settings_path=None, games_root=None):
+    """构造面向 Web 的本地、匹配和锦标赛会话管理器。
 
     arena 会话运行本地批量对局；match 会话复用平台 ``/api/match`` 自动
-    入席循环。线上凭据由 runner 从本机设置读取，不进入 Web 请求配置。
+    入席循环；tournament 会话复用正式赛阶段轮询。线上凭据由 runner
+    从本机设置读取，不进入 Web 请求配置。
     """
     root = arena_root or DEFAULT_ARENA_DIR
+    online_games_root = games_root or "local/games"
 
     def _build_match_runner(config):
         from .match import make_match_runner
         return make_match_runner(config, settings_path=settings_path)
 
+    def _build_tournament_runner(config):
+        from .tournament import make_tournament_runner
+        return make_tournament_runner(
+            config, settings_path=settings_path,
+            games_root=online_games_root)
+
     def _factory(kind, config):
         if kind == "match":
             return _build_match_runner(config)
+        if kind == "tournament":
+            return _build_tournament_runner(config)
         if kind != "arena":
             raise ValidationError(
                 f"clientd web 会话仅支持 arena 或 match;got {kind!r}")

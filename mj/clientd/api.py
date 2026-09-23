@@ -325,6 +325,7 @@ def session_router(manager, model_resolver=None):
     - POST   /api/sessions            {kind, config} → 会话
     - GET    /api/sessions            全部会话列表
     - GET    /api/sessions/:id        单会话(含 progress/result)
+    - GET    /api/sessions/:id/logs   增量读取有界会话日志
     - POST   /api/sessions/:id/stop   请求停止(局边界生效)
     """
     router = Router()
@@ -348,6 +349,16 @@ def session_router(manager, model_resolver=None):
     @router.get("/api/sessions/:id")
     def _get(request):
         return 200, manager.get(request.params["id"]).as_dict()
+
+    @router.get("/api/sessions/:id/logs")
+    def _logs(request):
+        session = manager.get(request.params["id"])
+        query = parse_qs(urlsplit(request.path).query)
+        after = _query_int(query, ("after",), default=0, minimum=0)
+        limit = _query_int(
+            query, ("limit",), default=500, minimum=1, maximum=1000)
+        return 200, {"session_id": session.id,
+                     **session.logs_after(after, limit)}
 
     @router.post("/api/sessions/:id/stop")
     def _stop(request):

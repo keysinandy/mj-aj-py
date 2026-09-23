@@ -44,6 +44,8 @@
 - [ ] 4.5 会话 → 回放衔接:房间/会话详情直接打开已结束对局进入回放查看器。验证:`tests/test_clientd_records_index.py` 补充 gid 直开场景;手动验收一键直达。
 - [ ] 4.6 **实时观战听口流**:将 `discard_hints` 随单局观战帧增量推送,权威摸牌/缺口/settled 状态正确清理或恢复提示,并保证提示计算不进入 BotClient 路径。验证:`tests/test_spectate_stream.py` 扩展带/不带提示的源 jsonl、平台请求和动作记录逐行一致,并覆盖 seq 更新与缺口恢复。
 - [ ] 4.7 **P1 端到端验收**:测试房 4 令牌真实对弈(BOT legacy)全程观战 + 会话后回放;match 单令牌冒烟。验收记录落 `artifacts/p1_acceptance.md`。
+- [x] 4.8 **锦标赛 Tab 与等待入局**:主导航新增置顶锦标赛 Tab,支持本机 tournament key 保存、策略显式选择、启动/停止 tournament session 与阶段状态展示;会话复用 `TournamentWorker` / `BotClient` 的赛事轮询和自动入局,开赛前持续等待,运行后只加入本人赛事活跃对局。验收点:session config/list 不含 token;会话运行态展示注册等待与赛事 running;开始前停止可取消。
+- [x] 4.9 **锦标赛状态与虚拟日志**:显示策略加载与目标服务器连通状态,使用游标接口追加 bounded session logs,呈现轮询/赛事/错误事件并用固定行高虚拟列表查看长日志。验收点:最近连接检测时间可见;日志仅增量拉取且错误可展开全文;令牌不会进入日志。
 
 ## 5. P2 · ONNX 导出与对拍
 

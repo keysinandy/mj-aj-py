@@ -20,7 +20,7 @@ describe("App 路由骨架", () => {
     vi.clearAllTimers();
   });
 
-  it("导航含 控制台/房间/回放/设置,默认重定向到控制台", () => {
+  it("导航含 锦标赛/控制台/房间/回放/设置,默认重定向到锦标赛", () => {
     render(
       <MemoryRouter initialEntries={["/"]}>
         <App />
@@ -30,8 +30,8 @@ describe("App 路由骨架", () => {
     expect(screen.getByText("房间")).toBeTruthy();
     expect(screen.getByText("回放")).toBeTruthy();
     expect(screen.getByText("设置")).toBeTruthy();
-    // 默认重定向到 /console
-    expect(screen.getByText("对战控制台")).toBeTruthy();
+    // 默认重定向到 /tournament
+    expect(screen.getByRole("heading", { name: "锦标赛" })).toBeTruthy();
   });
 
   it("挂载即触发连接,并在页面显示已连接", () => {
@@ -50,13 +50,13 @@ describe("App 路由骨架", () => {
     expect(screen.getByRole("heading", { name: "房间" })).toBeTruthy();
   });
 
-  it("未知路由回退到控制台", () => {
+  it("未知路由回退到锦标赛", () => {
     render(
       <MemoryRouter initialEntries={["/nope"]}>
         <App />
       </MemoryRouter>,
     );
-    expect(screen.getByText("对战控制台")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "锦标赛" })).toBeTruthy();
   });
 
   it("明暗模式开关会更新根节点并持久化选择", async () => {

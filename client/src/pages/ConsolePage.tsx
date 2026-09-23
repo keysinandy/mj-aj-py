@@ -55,7 +55,9 @@ export function ConsolePage() {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
 
   const refresh = useCallback(() => {
-    api.listSessions().then((r) => setSessions(r.sessions)).catch(() => {});
+    api.listSessions().then((r) => setSessions(
+      r.sessions.filter((session) => session.kind !== "tournament"),
+    )).catch(() => {});
   }, []);
 
   useEffect(() => {
