@@ -26,7 +26,7 @@ class BotEvScoreEvalTests(unittest.TestCase):
 
     def test_runner_records_balanced_schedule_and_keeps_gate_closed(self):
         def fake_play(seed, seat, dealer, ycbk, evaluator, *, profile=None):
-            score = 2.0 if evaluator == "legacy" else 3.0
+            score = 2.0 if evaluator == "legacy-v1" else 3.0
             return {"score": score, "win": False, "mult": None,
                     "draw": False, "evaluation": {
                         "calls": 1, "ordinary_discard_calls": 1,

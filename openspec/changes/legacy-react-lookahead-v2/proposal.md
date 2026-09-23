@@ -20,8 +20,8 @@ commit `5e0a405` 已把 legacy 吃/碰/杠从“有动作就做/固定 ukeire �
 ## What Changes
 
 - 冻结当前 `legacy-shape-progress-v1` 为 rollback profile；新增 `legacy-react-v2`：
-  - 显式 `evaluator="legacy"` 保持 v1 行为；
-  - 默认 `legacyV2` 的 reaction/KONG 路由到 v2-online；
+  - 默认、`evaluator="legacy"`、`legacyV2` 与 `legacy-v2` aliases 的 reaction/KONG 均路由到启用的 v2-online；
+  - 显式 `evaluator="legacy-v1"` 保留冻结 v1 rollback；
   - `legacyV2-offline` 路由到 v2-offline，要求完整 U2，不允许静默退回 v1 标签。
 - 从 `mj/bot.py` 抽离 reaction/KONG 评价到独立 legacy 模块，`bot.py` 只保留 routing 和少量通用入口。
 - 在 `mj/legacy_eval.py` 增加可复用的 **standing frontier** API，直接复用现有 weighted two-ply Rust kernel，输出 `FutureEvaluation`（future improve / future ukeire / types / coverage / complete），不再为 reaction 另写 DFS。
@@ -75,5 +75,5 @@ commit `5e0a405` 已把 legacy 吃/碰/杠从“有动作就做/固定 ukeire �
   - 新增或拆分 `mj/legacy_kong.py`：KONG guards、continuation、PONG/KONG slow-path；
   - `mj/bot.py`：路由到 v1/v2 profile，减少 reaction/KONG 内联实现。
 - **测试**：新增 v1 行为冻结、U2 veto、tempo 座位差异、transactional fallback、offline fail-loud、KONG 完整 shape preserve、KONG continuation、PONG/KONG same-unit 的固定牌例。
-- **性能基线**：以 `5e0a405` 为冻结基线。实现前后同机同 Rust 内核交错跑 3×200 局；4-bots elapsed/games 中位退化必须 ≤15%。v2 同向听 U2 eligible 样本的完整/安全 partial 覆盖率必须 ≥90% 才允许默认开启。
-- **下游**：默认 `legacyV2` 的 reaction 标签会变化；显式 `legacy` 保持当前 v1 rollback。训练用 `legacyV2-offline` 在 reaction 上不再静默退回 v1。
+- **性能基线**：以 `5e0a405` 为冻结基线。同机同 Rust 内核交错压测、U2 coverage 与 KONG continuation 延迟作为发布观测门禁；online v2 保持默认启用，单次 U2/KONG 不完整时事务性回退整层 v1，不把预算不足的部分结果用于选择。
+- **下游**：默认、`legacy`、`legacyV2`、`legacy-v2` 的 reaction 标签走 v2；显式 `legacy-v1` 是冻结 rollback。训练用 `legacyV2-offline` 在 reaction 上不静默退回 v1。

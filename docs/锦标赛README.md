@@ -46,9 +46,9 @@ powershell -ExecutionPolicy Bypass -File scripts\setup.ps1 -Install -Venv
 | ⑤ | `local/platform.json` 不存在则写模板(server 预填,令牌留空——空值会被明确报错,不会塞占位符) | 提示填令牌 |
 | ⑥ | 引擎冒烟 `pytest tests/test_shanten.py tests/test_game.py` | 硬失败(`--skip-tests` 跳过) |
 
-关键事实:**锦标赛默认路径(bot + legacy/shape-v1)是纯标准库**——
-`api.py` 用 urllib 且 `CERT_NONE`(无需证书安装),bot/shanten 不依赖
-numpy/torch。裸 venv 零三方包即可上场(2026-09-20 实测:新建 .venv 后
+关键事实:**锦标赛默认路径(bot + legacyV2/shape-v1)不依赖 numpy/torch**——
+`api.py` 用 urllib 且 `CERT_NONE`(无需证书安装),Rust shanten/weighted
+内核缺失时回退纯 Python。裸 venv 零三方包也可上场(2026-09-20 实测:新建 .venv 后
 核心检查 6/6 通过,dry-run 真实探活平台成功)。
 
 `--venv`:创建/复用仓库根 `.venv`、升级其 pip、把 `--install` 委托给
@@ -100,7 +100,7 @@ TOURNAMENT_NOT_FOUND/终态/鉴权失败不重启)。开赛前 registering/stage
 ### 直接跑 runner(原方式)
 
 ```bash
-# 启发式 bot + legacy 评价器(线上首选;runner 默认 strategy=policy,必须显式指定)
+# 启发式 bot + legacyV2(线上首选;legacy 是兼容 v2 别名;legacy-v1 可显式回滚)
 python3 -m mj.platform.tournament_runner --strategy bot --bot-evaluator legacy \
     > local/tournament_$(date +%m%d_%H%M).log 2>&1 &
 
@@ -109,14 +109,15 @@ python3 -m mj.platform.tournament_runner --strategy bot --bot-evaluator legacy
 ```
 
 注意:`strategy=bot` 时 shape-v2 评价器**不可用**(平台镜像上材料守恒硬失败,
-见 `PROGRESS.md` shape-v2 节),线上只用 `legacy` / `shape-v1`。
+见 `PROGRESS.md` shape-v2 节),线上使用默认 `legacyV2`(兼容别名 `legacy`)
+或 `shape-v1`；U2/KONG continuation 单次不完整时该窗口安全回退冻结 v1。
 
 ### 参数速查
 
 | 参数 | 默认 | 说明 |
 |------|------|------|
 | `--strategy` | policy | `bot` / `policy` / `random` / `policy-v3`;线上优先 `bot` |
-| `--bot-evaluator` | legacy | `strategy=bot` 时的评价器;线上限 legacy/shape-v1 |
+| `--bot-evaluator` | legacyV2 | `strategy=bot` 时的评价器；`legacy` 映射到 v2，`legacy-v1` 是冻结回滚 |
 | `--ckpt` | runs/bc0/best.pt | `policy` 策略 checkpoint |
 | `--state-rate` | 16/s | 每 token `/state` 主动限速;429 抬升时回退 15 |
 | `--dump` | 关 | state/action 原始摘要写入 local/logs/ |

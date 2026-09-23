@@ -520,6 +520,76 @@ locked 手牌向听数虚高 bug(见下)。
     fallback 0。20260922 本地批次 40 局扫旧吃/碰/杠 209 个决策:
     186 个动作不变、23 个旧 PONG/KONG_OPEN 改 PASS;KONG 拒绝
     分布 post-KONG 未听 9、牌效下降 3、结构占用 1。
+13. **legacy reaction lookahead v2（2026-09-22, openspec change
+    `legacy-react-lookahead-v2`）**:冻结 `legacy-shape-progress-v1` rollback，
+    新增 reusable standing frontier、普通 CHOW/PONG 的 U2 veto/tempo guard、
+    KONG shape-preservation 与 public 两摸 score continuation；
+    `legacyV2` reaction profile 在门禁前显式 disabled，
+    `legacyV2-offline` 使用 private tie-guard 强制完整 Stage-B，缺失仍
+    fail-loud。1000 条真实 reaction shadow audit：v1↔v2=0、v2↔teacher=0、
+    teacher incomplete=5；eligible U2=145，complete/safe-partial=0%，
+    U2 p50/p95/p99=3.462/9.481/17.379ms，KONG continuation
+    p50/p95/p99=12.339/13.259/13.259ms。随后将 KONG continuation 改为
+    内层可中断的 bounded search（最低向听/听牌剪枝、standing cache、
+    score/cache/预算诊断），online profile 固定 node=512、soft/hard
+    8/15ms；200 局 online v1-first 复测（统计全部 KONG 候选）为
+    p50/p90/max=5.289/12.390/15.325ms，10 次 hard-deadline 整层回 v1。
+    严格 offline 无回退 200/200 完成，KONG p50/p90/max=16.023/46.157/313.894ms，
+    积分总向量仍
+    `[-125,266,197,-338]`，与 v1 逐局积分零差异。冻结 `5e0a4058…` 与当前候选
+    同种子交错 3×200 局：baseline 中位 0.12115s/局、candidate
+    0.15224s/局（+25.66%，超过 15%）；当时 coverage/吞吐门禁均未通过，
+    因此默认继续 v1。全量测试 `979 passed, 1 warning, 9 subtests`（bounded
+    search 修改前的首轮全量结果为 978 passed），
+    strict OpenSpec validate 通过；未从无真实分歧中伪造 9.5 regression
+    fixtures。
+
+    2026-09-23 修复 U2 `0/123`：PASS 单 root 被 Rust Stage-A 比较器的空集合
+    `all()` 误当成 strict winner，首个 draw 即跳过 Stage B，coverage 仅
+    3%–6%。online reaction 现在对每个 standing frontier 统一使用 Stage-A
+    safe-partial：所有 roots 达到 profile 的 90% coverage 后才停止并比较
+    `future_improve_weight`；普通 discard 不变，offline 仍强制 Stage-B。
+    增加 `rust-weighted-two-ply-v3` ABI 标识，旧 v2 wheel 显式 mismatch 回退，
+    不会误调用新参数。新增 singleton、coverage 与旧 wheel 回退回归。
+    真实 native 26 项、reaction/eval 相关 111 项通过。全量 suite 979 passed、
+    3 failed（仅 minisuphx cluster 测试因 coordinator `127.0.0.1:7890`
+    未运行而 connection refused），9 subtests 通过。
+
+    同机 v1/v2 同 seed 配对 3×200（600 局）报告：
+    `local/legacy_reaction_score_audit_stagea_fix_3x200_20260923.json`；
+    U2 eligible 385/385 complete-or-safe-partial（100%，fallback 0）。
+    v1/v2 每局 elapsed 中位数 110.24/89.16ms（候选快 19.1%，满足 ≤15%
+    退化门槛）；一次 200 局诊断 U2 extra p50/p90/p95/p99/max 为
+    3.000/4.707/5.392/6.202/7.006ms。积分方面 31/600 局动作有差异、
+    16/600 局积分有差异，累计 v2-v1 各座位 `[-42,-79,+7,+114]`，积分守恒；
+    该样本只能证明决策生效，不能证明策略胜率提升。KONG continuation
+    3×200 的 p95=15.097ms，略高于 15ms 门槛；默认 routing 保持 v1。9.5
+    分歧 regression fixtures 与 KONG p95 门槛仍未完成。
+
+    后续 bounded continuation 优化：同一批 3×200 通过按 standing 复用精确
+    per-wait score vector，并给在线 hard cutoff 留 2ms unwind reserve；末尾
+    追加 deadline 检查，避免最后一个不可中断 score 调用后误报 complete。
+    报告保存在
+    `local/legacy_reaction_score_audit_reserve_3x200_20260923.json`：KONG
+    continuation n=93，p50/p90/p95/p99/max=
+    5.569/13.072/13.135/13.894/15.015ms，p95 通过 ≤15ms 门槛（max 比名义
+    hard budget 高 0.015ms，按实测记录，不隐去）；U2 coverage 383/385
+    （99.48%，2 次 `u2_incomplete`），积分 delta 仍为
+    `[-42,-79,+7,+114]`，结论不变且默认 routing 仍为 v1。新增 1,800 局候选
+    self-play（seed 190000–191799）均未找到完整 PONG/KONG same-unit 翻转；
+    9.5 继续待真实 fixture，不以合成/伪造分歧代替。
+
+    2026-09-23 用户确认生产默认切到 v2：默认、`legacy`、`legacyV2`、
+    `legacy-v2` 与 weighted aliases 均使用 enabled online profile；冻结
+    v1 仍可显式通过 `legacy-v1` 回滚。此前同 seed 3×200 的 U2 coverage
+    99.48%、KONG continuation p95=13.135ms、elapsed/game 候选快 19.8% 为
+    路由启用的观测证据；两次 U2 incomplete 与任一 KONG continuation
+    incomplete 仍按当前窗口/杠整层回退 v1，记录 fallback，不提交部分结果。
+    当前工作机安装的扩展报告 `rust-weighted-two-ply-v2`，代码要求 v3；
+    已修复启动诊断，将旧 ABI 明确标为 degraded/version mismatch。实际在线
+    alias 仍路由 enabled v2，kernel mismatch 时返回 `u2_incomplete` 并整层
+    回退 v1；要在此机验证完整 v2 搜索需重建/部署 v3 扩展。9.5 的真实
+    PONG/KONG same-unit 分歧 fixture 仍未找到，不伪造。
 
 
 ### 性能现状(2026-09-03,shanten 剪枝界重构 + shanten/is_win 记忆化)

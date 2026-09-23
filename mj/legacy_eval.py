@@ -19,6 +19,7 @@ from typing import Callable, Iterable, Mapping, Sequence
 
 from .shanten import (
     LEGACY_TWO_PLY_KERNEL_VERSION,
+    WEIGHTED_TWO_PLY_KERNEL_REQUIRED,
     WEIGHTED_TWO_PLY_KERNEL_VERSION,
     legacy_two_ply_frontier,
     weighted_two_ply_frontier,
@@ -39,9 +40,8 @@ WEIGHTED_PROFILE_VERSION = LEGACY_V2_PROFILE_VERSION
 WEIGHTED_SORT_VERSION = "weighted-frontier-v1"
 WEIGHTED_DEADLINE_RESERVE_MS = 2.0
 # The weighted adapter passes the Stage B worker count, so it needs the kernel
-# revision that accepts it.  An older wheel falls back instead of raising a
+# revision that accepts it. An older wheel falls back instead of raising a
 # TypeError at the FFI boundary.
-WEIGHTED_TWO_PLY_KERNEL_REQUIRED = "rust-weighted-two-ply-v2"
 # 训练/离线标签生成使用:预算宽裕到不会因 deadline / work budget 回退,
 # 使 legacyV2 的标签始终由搜索本身给出。
 WEIGHTED_OFFLINE_PROFILE_VERSION = "legacyV2-offline"
@@ -57,17 +57,17 @@ LEGACY_V2_EVALUATORS = (
     "weighted_two_ply",
     "weighted-two-ply",
 )
-# Product default for the discard evaluator.  Callers that need the
-# historical rollback oracle continue to pass ``evaluator="legacy"``
-# explicitly; keeping the name centralized prevents CLI/clientd defaults from
-# drifting apart.
+# Product default evaluator. ``legacy`` is kept as a compatibility alias for
+# this v2 route; callers that need the frozen rollback oracle must explicitly
+# request ``legacy-v1``.
 DEFAULT_BOT_EVALUATOR = LEGACY_V2_PROFILE_VERSION
 
 
 def canonical_evaluator(value):
-    """Normalize public LegacyV2 aliases without touching explicit legacy."""
+    """Normalize default/legacy compatibility names to the online v2 route."""
     return (DEFAULT_BOT_EVALUATOR
-            if value in LEGACY_V2_EVALUATORS else value)
+            if value is None or value == "legacy"
+            or value in LEGACY_V2_EVALUATORS else value)
 
 
 def _canonical_json(value) -> str:
@@ -99,6 +99,9 @@ class LegacyTwoPlyProfile:
     shape_guard_enabled: bool = False
     shape_guard_ukeire_slack: int = 1
     shape_guard_shape_delta: int = 8
+    # Standing reaction callers may request a no-Stage-A-shortcut contract;
+    # discard evaluators keep the historical default False.
+    require_complete: bool = False
     enabled: bool = True
 
     def __post_init__(self):
@@ -149,6 +152,8 @@ class LegacyTwoPlyProfile:
         object.__setattr__(self, "min_partial_coverage", coverage)
         object.__setattr__(self, "lazy_child_ukeire",
                            bool(self.lazy_child_ukeire))
+        object.__setattr__(self, "require_complete",
+                           bool(self.require_complete))
         object.__setattr__(self, "enabled", bool(self.enabled))
 
     @classmethod
@@ -231,6 +236,7 @@ class LegacyTwoPlyProfile:
             not self.shape_guard_enabled and
             self.shape_guard_ukeire_slack == 1 and
             self.shape_guard_shape_delta == 8 and
+            not self.require_complete and
             self.soft_budget_ms == self.time_budget_ms and
             self.hard_budget_ms == self.time_budget_ms
         )
@@ -246,6 +252,7 @@ class LegacyTwoPlyProfile:
                 "shape_guard_enabled": self.shape_guard_enabled,
                 "shape_guard_ukeire_slack": self.shape_guard_ukeire_slack,
                 "shape_guard_shape_delta": self.shape_guard_shape_delta,
+                "require_complete": self.require_complete,
             })
         return payload
 
@@ -263,6 +270,7 @@ class LegacyTwoPlyProfile:
             "shape_guard_enabled": self.shape_guard_enabled,
             "shape_guard_ukeire_slack": self.shape_guard_ukeire_slack,
             "shape_guard_shape_delta": self.shape_guard_shape_delta,
+            "require_complete": self.require_complete,
         })
         result["fingerprint"] = self.fingerprint
         return result
@@ -360,6 +368,23 @@ class FutureEvaluation:
             "future_fallback_reason": self.fallback_reason,
         }
         return result
+
+
+@dataclass(frozen=True)
+class StandingRoot:
+    """One stable public standing hand for shared future evaluation."""
+
+    stable_id: str | int
+    hand: tuple[int, ...]
+    shanten: int
+
+    def __post_init__(self):
+        try:
+            hash(self.stable_id)
+        except TypeError as exc:
+            raise ValueError("standing root id must be hashable") from exc
+        object.__setattr__(self, "hand", tuple(int(value) for value in self.hand))
+        object.__setattr__(self, "shanten", int(self.shanten))
 
 
 @dataclass(frozen=True)
@@ -1094,7 +1119,7 @@ def _native_future_for_frontier(
 
 def _weighted_native_future_for_frontier(
     game, seat, frontier, locked, visible, profile, frozen,
-    shape_cost, feed_risk,
+    shape_cost, feed_risk, *, stage_a_only=False,
 ):
     """Map the weighted native rows while preserving committed root rows."""
     roots = [list(root.hand) for root in frontier]
@@ -1105,7 +1130,7 @@ def _weighted_native_future_for_frontier(
         roots, root_shantens, list(visible), legal_masks, locked, frozen,
         profile.node_budget, profile.soft_budget_ms, profile.hard_budget_ms,
         profile.cache_capacity, profile.min_partial_coverage, True,
-        profile.workers,
+        profile.workers, stage_a_only=stage_a_only,
     )
     elapsed_ms = (time.monotonic() - started) * 1000.0
     if rows is None:
@@ -1577,6 +1602,162 @@ def _weighted_evaluation(
     return selected, evaluation
 
 
+def evaluate_standing_frontier(
+        standings: Sequence[StandingRoot], locked: int,
+        visible: Sequence[int], profile: LegacyTwoPlyProfile, *,
+        shape_cost: Callable | None = None,
+) -> Mapping[str | int, FutureEvaluation]:
+    """Evaluate public standing hands through the shared weighted Rust kernel.
+
+    Every supplied root is already a standing candidate, so this entrypoint
+    does not apply the discard evaluator's current-ukeire frontier or inspect a
+    ``Game``.  No wall order or opponent concealed hand is accepted.
+    """
+    roots = tuple(standings)
+    ids = [root.stable_id for root in roots]
+    if not roots:
+        return OrderedDict()
+    if len(set(ids)) != len(ids):
+        raise ValueError("standing root ids must be unique")
+    if profile.mode != "weighted":
+        raise ValueError("standing frontier requires a weighted profile")
+
+    # Offline ``require_complete`` labels need Stage-B metrics even when the
+    # native kernel can stop at a strict Stage-A winner. Same-hand duplicates
+    # cannot be strict winners, so private tie guards force the native
+    # frontier to finish Stage A and enter Stage B. They are removed from the
+    # returned stable-id mapping below. Online reaction frontiers instead
+    # explicitly request a common Stage-A safe partial.
+    kernel_roots = roots
+    if profile.require_complete:
+        kernel_roots = roots + tuple(
+            StandingRoot(
+                f"{root.stable_id}::__offline_stage_b_guard",
+                root.hand, root.shanten,
+            ) for root in roots
+        )
+    if len(kernel_roots) > 68:
+        raise ValueError("standing frontier supports at most 68 roots")
+
+    try:
+        visible_tuple = _as_tuple(visible, name="visible")
+        synthetic = []
+        for index, standing in enumerate(kernel_roots):
+            hand = _validate_hand(standing.hand, locked)
+            if any(visible_tuple[tile] < count
+                   for tile, count in enumerate(hand)):
+                raise _InvalidPublicState("visible_missing_hand")
+            actual_shanten = shanten(hand, locked)
+            if actual_shanten != standing.shanten:
+                raise _InvalidPublicState("standing_shanten_mismatch")
+            synthetic.append(LegacyRootCandidate(
+                tile=index,
+                hand=hand,
+                shanten=actual_shanten,
+                shanten_verified=True,
+            ))
+    except (TypeError, ValueError, _InvalidPublicState) as exc:
+        reason = str(exc)
+        return OrderedDict((root.stable_id, FutureEvaluation(
+            complete=False,
+            root_shanten=root.shanten,
+            missing=(reason,),
+            fallback_reason=reason,
+            search_metrics={"profile_fingerprint": profile.fingerprint},
+        )) for root in roots)
+
+    fallback_reason = None
+    values = {}
+    if not profile.enabled:
+        fallback_reason = "profile_disabled"
+    elif profile.kernel == "python":
+        # The reaction layer must not grow a second Python draw-discard DFS.
+        fallback_reason = "standing_python_dfs_disallowed"
+    elif (weighted_two_ply_frontier is None
+          or WEIGHTED_TWO_PLY_KERNEL_VERSION is None):
+        fallback_reason = "native_weighted_kernel_unavailable"
+    elif WEIGHTED_TWO_PLY_KERNEL_VERSION != WEIGHTED_TWO_PLY_KERNEL_REQUIRED:
+        fallback_reason = "native_weighted_kernel_version_mismatch"
+    else:
+        try:
+            values, _metrics, _elapsed = _weighted_native_future_for_frontier(
+                None, 0, tuple(synthetic), int(locked), visible_tuple,
+                profile, False, shape_cost, None,
+                stage_a_only=(profile.allow_partial
+                              and not profile.require_complete))
+        except (_NativeKernelUnavailable, _NativeKernelInvalid,
+                _BudgetExceeded, _InvalidPublicState) as exc:
+            fallback_reason = str(exc)
+
+    all_present = len(values) == len(kernel_roots)
+    all_complete = all_present and all(
+        value.complete and (value.coverage is None or value.coverage >= 1.0)
+        for value in values.values()
+    )
+    stages = {
+        "stage_a" if value.future_ukeire_skipped else "stage_b"
+        for value in values.values()
+    }
+    safe_partial = (
+        not fallback_reason
+        and not all_complete
+        and profile.allow_partial
+        and all_present
+        and len(stages) == 1
+        and all(
+            value.coverage is not None
+            and value.coverage >= profile.min_partial_coverage
+            for value in values.values()
+        )
+    )
+    accepted = all_complete or safe_partial
+    if not fallback_reason and not accepted:
+        if not all_present:
+            fallback_reason = "standing_root_incomplete"
+        elif len(stages) > 1:
+            fallback_reason = "standing_stage_mismatch"
+        elif not profile.allow_partial:
+            fallback_reason = "standing_partial_disallowed"
+        else:
+            fallback_reason = "standing_coverage_insufficient"
+
+    result = OrderedDict()
+    for index, root in enumerate(roots):
+        value = values.get(index)
+        if value is None or not accepted:
+            # Do not commit incomplete decision metrics, but retain bounded
+            # search diagnostics so shadow/performance audits can account for
+            # the cost and coverage of transactional fallbacks.
+            result[root.stable_id] = FutureEvaluation(
+                complete=False,
+                root_shanten=root.shanten,
+                nodes=(value.nodes if value is not None else 0),
+                cache_hits=(value.cache_hits if value is not None else 0),
+                elapsed_ms=(value.elapsed_ms if value is not None else None),
+                covered_weight=(value.covered_weight
+                                if value is not None else None),
+                total_weight=(value.total_weight
+                              if value is not None else None),
+                coverage=(value.coverage if value is not None else None),
+                missing=(fallback_reason or "standing_incomplete",),
+                fallback_reason=fallback_reason or "standing_incomplete",
+                search_metrics={
+                    **(dict(value.search_metrics or {})
+                       if value is not None else {}),
+                    "profile_fingerprint": profile.fingerprint,
+                },
+            )
+            continue
+        metrics = dict(value.search_metrics or {})
+        metrics["profile_fingerprint"] = profile.fingerprint
+        result[root.stable_id] = FutureEvaluation(**{
+            **value.__dict__,
+            "partial_accepted": safe_partial,
+            "search_metrics": metrics,
+        })
+    return result
+
+
 def evaluate_legacy_two_ply(game, seat, root_candidates, locked, visible,
                              profile: LegacyTwoPlyProfile | None = None,
                              *, shape_cost: Callable | None = None,
@@ -1744,5 +1925,5 @@ __all__ = [
     "LEGACY_V2_PROFILE_VERSION", "PROFILE_VERSION", "WEIGHTED_PROFILE_VERSION",
     "LegacyDiscardEvaluation",
     "LegacyRootCandidate", "LegacyTwoPlyProfile", "FutureEvaluation",
-    "evaluate_legacy_two_ply",
+    "StandingRoot", "evaluate_legacy_two_ply", "evaluate_standing_frontier",
 ]

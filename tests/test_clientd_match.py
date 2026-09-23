@@ -7,6 +7,7 @@ import pytest
 from mj.clientd.arena import make_arena_session_manager
 from mj.clientd.errors import ValidationError
 from mj.clientd.match import make_match_runner, normalize_match_config
+from mj.clientd.tournament import normalize_tournament_config
 from mj.clientd.settings import PlatformSettings
 
 
@@ -28,6 +29,25 @@ def test_normalize_match_config_defaults_and_bounds():
 def test_normalize_match_config_accepts_legacy_v2_alias():
     cfg = normalize_match_config({"evaluator": "legacy-v2"})
     assert cfg["evaluator"] == "legacyV2"
+
+
+def test_normalize_match_config_routes_legacy_alias_to_v2():
+    cfg = normalize_match_config({"evaluator": "legacy"})
+    assert cfg["evaluator"] == "legacyV2"
+
+
+def test_normalize_match_config_keeps_explicit_v1_rollback():
+    cfg = normalize_match_config({"evaluator": "legacy-v1"})
+    assert cfg["evaluator"] == "legacy-v1"
+
+
+def test_clientd_tournament_routes_aliases_and_preserves_v1_rollback():
+    v2 = normalize_tournament_config({
+        "strategy": "bot", "evaluator": "legacy-v2"})
+    v1 = normalize_tournament_config({
+        "strategy": "bot", "evaluator": "legacy-v1"})
+    assert v2["evaluator"] == "legacyV2"
+    assert v1["evaluator"] == "legacy-v1"
 
 
 def test_match_runner_reads_local_settings_and_reports_progress(tmp_path,

@@ -345,6 +345,7 @@ DISCARD_FRONTIER_BATCH_KERNEL_VERSION = (
     else None)
 
 _FORCE_PY = os.environ.get("MJ_KERNELS", "").lower() == "python"
+WEIGHTED_TWO_PLY_KERNEL_REQUIRED = "rust-weighted-two-ply-v3"
 
 # bot 的爆头档只在 Rust 内核可用时启用(纯 Python 枚举 90~220ms/决策,
 # 不可用);MJ_KERNELS=python 视同不可用。决策行为因此确定性可复现。
@@ -367,32 +368,38 @@ WEIGHTED_TWO_PLY_KERNEL_VERSION = (
 def kernel_runtime_diagnostic():
     """启动诊断:实际内核、版本与降级影响面。
 
-    缺原生 weighted 内核时 LegacyV2 会静默退回 legacy 键,因此运行侧
-    (clientd / match runner)必须在启动时显式报告一次,而不是只在个别
-    决策字段里可查。
+    缺少兼容版本的原生 weighted 内核时 LegacyV2 会安全回退到 v1；
+    运行侧必须在启动时显式报告，而不是只在个别决策字段里可查。
     """
     forced_python = _FORCE_PY
     shanten_rust = _rust_shanten is not None and not forced_python
-    weighted_rust = (WEIGHTED_TWO_PLY_KERNEL_VERSION is not None
-                     and not forced_python)
+    weighted_present = (WEIGHTED_TWO_PLY_KERNEL_VERSION is not None
+                        and not forced_python)
+    weighted_compatible = (weighted_present and
+                           WEIGHTED_TWO_PLY_KERNEL_VERSION ==
+                           WEIGHTED_TWO_PLY_KERNEL_REQUIRED)
     if forced_python:
         reason = "MJ_KERNELS=python"
     elif _rust_shanten is None or _rust_ukeire is None:
         reason = "mj_kernels_missing"
-    elif not weighted_rust:
+    elif not weighted_present:
         reason = "weighted_kernel_missing"
+    elif not weighted_compatible:
+        reason = "weighted_kernel_version_mismatch"
     else:
         reason = None
-    degraded = not weighted_rust
+    degraded = reason is not None
     return {
         "shanten_kernel": "rust" if shanten_rust else "python",
-        "weighted_kernel": "rust" if weighted_rust else "unavailable",
+        "weighted_kernel": "rust" if weighted_present else "unavailable",
         "weighted_kernel_version": WEIGHTED_TWO_PLY_KERNEL_VERSION,
+        "weighted_kernel_required": WEIGHTED_TWO_PLY_KERNEL_REQUIRED,
+        "weighted_kernel_compatible": weighted_compatible,
         "legacy_two_ply_kernel_version": LEGACY_TWO_PLY_KERNEL_VERSION,
         "baotou_kernel": "rust" if BAOTOU_UKEIRE_RUST else "python",
         "degraded": degraded,
         "reason": reason,
-        "impact": ("legacyV2 weighted 前瞻不可用,决策将走 legacy 键"
+        "impact": ("legacyV2 weighted 前瞻不可用,当前决策将事务性回退 v1"
                    if degraded else None),
     }
 
@@ -403,6 +410,8 @@ def format_kernel_diagnostic():
     state = "降级" if info["degraded"] else "正常"
     detail = (f"weighted={info['weighted_kernel']}"
               f"({info['weighted_kernel_version'] or 'n/a'})")
+    if not info["weighted_kernel_compatible"]:
+        detail += f" required={info['weighted_kernel_required']}"
     if info["reason"]:
         detail += f" reason={info['reason']}"
     return f"[kernel] {state} {detail} shanten={info['shanten_kernel']}"
@@ -511,16 +520,20 @@ def weighted_two_ply_frontier(
         roots, root_shantens, visible, legal_masks, locked=0, frozen=False,
         node_budget=100000, soft_budget_ms=40.0, hard_budget_ms=50.0,
         cache_capacity=8192, min_partial_coverage=0.90,
-        include_best_discards=True, workers=0):
+        include_best_discards=True, workers=0, stage_a_only=False):
     """Optional weighted/partial native two-ply frontier."""
     if _rust_weighted_two_ply_frontier is None or _FORCE_PY:
         return None
-    return _rust_weighted_two_ply_frontier(
+    args = (
         roots, root_shantens, visible, legal_masks, locked, frozen,
         node_budget, float(soft_budget_ms), float(hard_budget_ms),
         cache_capacity, float(min_partial_coverage), include_best_discards,
         int(workers),
     )
+    if stage_a_only:
+        return _rust_weighted_two_ply_frontier(
+            *args, stage_a_only=True)
+    return _rust_weighted_two_ply_frontier(*args)
 
 
 def _left(t, vis):

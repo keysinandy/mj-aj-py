@@ -64,7 +64,7 @@ def _skipped_ranges(recs):
     return [tuple(m) for m in merged]
 
 
-def replay_game(recs, want_samples=True):
+def replay_game(recs, want_samples=True, decision_hook=None):
     """逐记录重放一场对局,返回 report。
 
     report 键:meta/my_seat/n_rounds/round_scores/end_scores/illegal/
@@ -111,7 +111,9 @@ def replay_game(recs, want_samples=True):
                 rep["warnings"].append(
                     f"决策 #{r.get('id')} 无前置状态(重放未达)")
                 continue
-            _on_decision(rep, mirror, r, want_samples, ok_ids)
+            _on_decision(
+                rep, mirror, r, want_samples, ok_ids,
+                decision_hook=decision_hook)
         elif t == "reset":
             mirror = None
         elif t == "end":
@@ -200,7 +202,8 @@ def _settle_own_hu_round_ended(rep, mirror, ev):
                    f"vs 平台 {data['scores']}"})
 
 
-def _on_decision(rep, mirror, r, want_samples, ok_ids):
+def _on_decision(rep, mirror, r, want_samples, ok_ids,
+                 decision_hook=None):
     if r.get("evaluation") is not None:
         evaluation = r["evaluation"]
         rep["evaluations"].append({
@@ -225,6 +228,8 @@ def _on_decision(rep, mirror, r, want_samples, ok_ids):
             "seq": r.get("seq"), "id": r.get("id"),
             "msg": f"合法集不符: 线上 {r.get('legal')} vs 重放 {legal}"})
         return
+    if decision_hook is not None:
+        decision_hook(g, mirror.me, r)
     if not want_samples or r.get("id") not in ok_ids:
         return
     planes, scalars = extract(g, mirror.me, oracle=False)

@@ -85,20 +85,21 @@ def _find_source_context(seed, seat, dealer, ycbk, *, min_shanten=None):
             context = _complete_context(game, seat)
             if first is None:
                 first = (copy.deepcopy(game), context,
-                         int(choose_action(game, seat, evaluator="legacy")))
+                         int(choose_action(game, seat,
+                                           evaluator="legacy-v1")))
             if (min_shanten is not None and
                     min(item.shanten for item in discard_frontier(
                         context, use_rust=True)) > int(min_shanten)):
-                action = choose_action(game, seat, evaluator="legacy")
+                action = choose_action(game, seat, evaluator="legacy-v1")
                 if action not in actions:
                     raise RuntimeError("source legacy action is not legal")
                 game.step(action)
                 continue
-            actual = choose_action(game, seat, evaluator="legacy")
+            actual = choose_action(game, seat, evaluator="legacy-v1")
             if actual not in actions:
                 raise RuntimeError("source legacy action is not legal")
             return game, context, int(actual)
-        action = choose_action(game, current, evaluator="legacy")
+        action = choose_action(game, current, evaluator="legacy-v1")
         if action not in actions:
             raise RuntimeError(
                 f"source legacy action {action} is illegal; legal={actions}")
@@ -114,7 +115,7 @@ def _as_json(value):
 
 def _policy_actions(game, seat, context, profile):
     """Return policy actions plus serialised explanations at one root."""
-    legacy = choose_action(game, seat, evaluator="legacy")
+    legacy = choose_action(game, seat, evaluator="legacy-v1")
     v1_result = choose_action(game, seat, evaluator="shape-v1",
                               return_evaluation=True)
     v1, v1_eval = (v1_result if isinstance(v1_result, tuple)

@@ -2,7 +2,7 @@
 
 策略:
 - policy:    policy_player(ckpt)(神经网络 argmax);
- - bot:       启发式,评价器 legacy / legacy-two-ply-v1 / legacyV2
+ - bot:       启发式,评价器 legacy(线上 v2) / legacy-v1(回滚) / legacyV2
              (兼容 weighted-two-ply-frontier-v1) / shape-v1 / shape-v2;
              shape-v2 经 ProfileSpec 注入回退窗口;
 - policy-v3: PolicyV3Runtime,置信度阈值高级项。

@@ -49,7 +49,7 @@ def main(argv=None):
     ap.add_argument("--strategy", default="policy",
                     choices=("policy", "bot", "random", "policy-v3"))
     ap.add_argument("--bot-evaluator", default=DEFAULT_BOT_EVALUATOR,
-                    choices=("legacy", "legacy-two-ply-v1",
+                    choices=("legacy", "legacy-two-ply-v1", "legacy-v1",
                              "legacyV2", "legacy-v2",
                              "weighted-two-ply-frontier-v1", "shape-v1",
                              "shape-v2", "policy-v3"),

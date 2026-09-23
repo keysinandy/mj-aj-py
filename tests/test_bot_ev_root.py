@@ -209,7 +209,7 @@ class ReactionDeltaRegressionTests(unittest.TestCase):
         game.freeze = 0
         game.freezer = None
         before = tuple(game.visible_counts(2))
-        legacy = choose_action(game, 2, evaluator="legacy")
+        legacy = choose_action(game, 2, evaluator="legacy-v1")
         shape, evaluation = choose_action(
             game, 2, evaluator="shape-v1", return_evaluation=True)
         self.assertIn(legacy, game.legal_actions())

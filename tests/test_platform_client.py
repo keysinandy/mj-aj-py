@@ -249,7 +249,9 @@ class TestMetaEvaluatorKernel(unittest.TestCase):
 
     def test_other_evaluators_have_no_kernel_label(self):
         self.assertIsNone(_meta_evaluator_kernel("shape-v1"))
-        self.assertIsNone(_meta_evaluator_kernel("legacy"))
+        self.assertEqual(
+            _meta_evaluator_kernel("legacy"),
+            shanten.WEIGHTED_TWO_PLY_KERNEL_VERSION or "python-fallback")
 
 
 if __name__ == "__main__":

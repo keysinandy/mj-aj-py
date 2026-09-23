@@ -203,7 +203,7 @@ if __name__ == "__main__":
     ap.add_argument("n", nargs="?", type=int, default=200,
                     help="对局数(兼容旧的第一个位置参数)")
     ap.add_argument("--bot-evaluator",
-                     choices=("legacy", "legacy-two-ply-v1",
+                     choices=("legacy", "legacy-two-ply-v1", "legacy-v1",
                               "legacyV2", "legacy-v2",
                               "weighted-two-ply-frontier-v1", "shape-v1"),
                     default=DEFAULT_BOT_EVALUATOR)

@@ -27,8 +27,6 @@
 
 import time
 import weakref
-from dataclasses import dataclass
-from functools import lru_cache
 
 from .tiles import W
 from .shanten import shanten, ukeire, BAOTOU_UKEIRE_RUST
@@ -40,6 +38,24 @@ from .legacy_eval import (
     LegacyTwoPlyProfile,
     evaluate_legacy_two_ply,
 )
+from .legacy_react import (
+    CHOW_MIN_ABS_GAIN,
+    LEGACY_MIN_GAIN_RATIO,
+    LEGACY_REACTION_V1 as LEGACY_SHAPE_PROGRESS_VERSION,
+    PONG_MIN_ABS_GAIN,
+    LegacyShapeProgress,
+    _LEGACY_PROGRESS_STATS,
+    _cached_legacy_shape_progress,
+    choose_reaction_v1,
+    choose_reaction_v2,
+    legacy_progress_diagnostics as _legacy_progress_diagnostics,
+    progress_not_worse as _progress_not_worse,
+    progress_sort_key as _progress_sort_key,
+    significant_progress as _significant_progress,
+    LegacyReactionProfile,
+)
+from . import legacy_kong as _legacy_kong
+from . import legacy_react as _legacy_react
 from .win import is_baotou, is_win, is_baotou_wait
 from .scoring import hand_multiplier, settle
 from .game import (
@@ -70,184 +86,22 @@ BAOTOU_PUSH_MIN_LIVE = 16    # Z:X=2 下不约束(与 Z=0 精跑逐位等值),�
 _push_rounds = weakref.WeakKeyDictionary()
 
 
-# ---------- Legacy shape progress(openspec legacy-shape-progress-kong-guard) ----------
-LEGACY_SHAPE_PROGRESS_VERSION = "legacy-shape-progress-v1"
-PONG_MIN_ABS_GAIN = 4
-CHOW_MIN_ABS_GAIN = 6
-LEGACY_MIN_GAIN_RATIO = 1.50
-
-_LEGACY_PROGRESS_STATS = {
-    "progress_calls": 0,
-    "cache_hits": 0,
-    "ukeire_calls": 0,
-    "baotou_ukeire_calls": 0,
-    "piao_enumerations": 0,
-    "decomposition_calls": 0,
-}
-
-
-@dataclass(frozen=True)
-class LegacyShapeProgress:
-    """Public-information summary of one standing legacy hand."""
-
-    shanten: int
-    ukeire_types: int
-    ukeire_live: int
-    baotou_ready: bool
-    baotou_ukeire_types: int | None
-    baotou_ukeire_live: int | None
-    piao_draw_types: int
-    piao_draw_live: int
-
-    def as_json(self):
-        return {
-            "shanten": self.shanten,
-            "ukeire_types": self.ukeire_types,
-            "ukeire_live": self.ukeire_live,
-            "baotou_ready": self.baotou_ready,
-            "baotou_ukeire_types": self.baotou_ukeire_types,
-            "baotou_ukeire_live": self.baotou_ukeire_live,
-            "piao_draw_types": self.piao_draw_types,
-            "piao_draw_live": self.piao_draw_live,
-        }
-
-
-def _legacy_progress_diagnostics():
-    return dict(_LEGACY_PROGRESS_STATS)
-
-
-@lru_cache(maxsize=512)
-def _cached_legacy_shape_progress(standing, locked, visible,
-                                  include_baotou, piao_allowed):
-    s, wait_types, ukeire_live = ukeire(standing, locked, visible)
-    _LEGACY_PROGRESS_STATS["ukeire_calls"] += 1
-    baotou_ready = is_baotou_wait(standing, locked)
-    baotou_types = None
-    baotou_live = None
-    if include_baotou and not baotou_ready and BAOTOU_UKEIRE_RUST:
-        from .shanten import baotou_ukeire
-        wait_tiles, baotou_live = baotou_ukeire(standing, locked, visible)
-        baotou_types = len(wait_tiles)
-        _LEGACY_PROGRESS_STATS["baotou_ukeire_calls"] += 1
-
-    piao_types = 0
-    piao_live = 0
-    if piao_allowed and standing[W] > 0 and s == 0:
-        remaining = [max(0, 4 - visible[t]) for t in range(34)]
-        for tile, mass in enumerate(remaining):
-            if mass <= 0:
-                continue
-            drawn = list(standing)
-            drawn[tile] += 1
-            if not is_win(drawn, locked):
-                continue
-            drawn[W] -= 1
-            if is_baotou(drawn, locked):
-                piao_types += 1
-                piao_live += mass
-        _LEGACY_PROGRESS_STATS["piao_enumerations"] += 1
-
-    return LegacyShapeProgress(
-        shanten=s,
-        ukeire_types=len(wait_types),
-        ukeire_live=ukeire_live,
-        baotou_ready=baotou_ready,
-        baotou_ukeire_types=baotou_types,
-        baotou_ukeire_live=baotou_live,
-        piao_draw_types=piao_types,
-        piao_draw_live=piao_live,
-    )
-
-
 def _legacy_shape_progress(standing, locked, visible, *,
                            include_baotou=False, piao_allowed=False):
-    """Evaluate a standing hand with lazy, cached expensive signals."""
-    _LEGACY_PROGRESS_STATS["progress_calls"] += 1
-    key = (tuple(standing), int(locked), tuple(visible),
-           bool(include_baotou), bool(BAOTOU_UKEIRE_RUST),
-           bool(piao_allowed))
-    before = dict(_LEGACY_PROGRESS_STATS)
-    result = _cached_legacy_shape_progress(
-        key[0], key[1], key[2], include_baotou and BAOTOU_UKEIRE_RUST,
-        key[5])
-    if dict(_LEGACY_PROGRESS_STATS) == before:
-        _LEGACY_PROGRESS_STATS["cache_hits"] += 1
-    return result
+    """Compatibility entrypoint for the extracted progress evaluator."""
+    from .legacy_react import legacy_shape_progress
+    return legacy_shape_progress(
+        standing, locked, visible,
+        include_baotou=include_baotou,
+        piao_allowed=piao_allowed,
+        baotou_kernel_available=BAOTOU_UKEIRE_RUST,
+    )
 
 
 def _piao_context_allowed(g, seat):
     if getattr(g, "live_wall_left", lambda: 0)() < PIAO_WALL_GUARD:
         return False
     return _push_abort_reason(g, seat, include_live=False) is None
-
-
-def _significant_live_gain(before, after, minimum):
-    delta = after - before
-    if delta < minimum:
-        return False
-    return before == 0 or after * 2 >= before * 3
-
-
-def _claim_gain_threshold(action):
-    return PONG_MIN_ABS_GAIN if action == PONG else CHOW_MIN_ABS_GAIN
-
-
-def _significant_progress(before, after, action):
-    minimum = _claim_gain_threshold(action)
-    if (not before.baotou_ready and after.baotou_ready):
-        return "baotou_progress"
-    if (before.baotou_ukeire_live is not None
-            and after.baotou_ukeire_live is not None
-            and _significant_live_gain(
-                before.baotou_ukeire_live,
-                after.baotou_ukeire_live, minimum)):
-        return "baotou_progress"
-    if before.piao_draw_live == 0 and after.piao_draw_live >= 2:
-        return "piao_progress"
-    if before.piao_draw_live > 0 and _significant_live_gain(
-            before.piao_draw_live, after.piao_draw_live, minimum):
-        return "piao_progress"
-    if before.shanten == 0 and after.shanten == 0:
-        if (after.ukeire_types - before.ukeire_types >= 2
-                and after.ukeire_live >= before.ukeire_live):
-            return "wait_expansion"
-        if _significant_live_gain(before.ukeire_live,
-                                  after.ukeire_live, minimum):
-            return "wait_expansion"
-    if before.shanten > 0 and after.shanten > 0:
-        if _significant_live_gain(before.ukeire_live,
-                                  after.ukeire_live, minimum):
-            return "ukeire_expansion"
-    return None
-
-
-def _progress_sort_key(progress, shape, action):
-    baotou_live = progress.baotou_ukeire_live
-    if baotou_live is None:
-        baotou_live = 0
-    return (
-        progress.shanten,
-        not progress.baotou_ready,
-        -progress.piao_draw_live,
-        -baotou_live,
-        -progress.ukeire_live,
-        -progress.ukeire_types,
-        shape,
-        action,
-    )
-
-
-def _progress_not_worse(left, right):
-    left_baotou = left.baotou_ukeire_live or 0
-    right_baotou = right.baotou_ukeire_live or 0
-    return (
-        left.shanten <= right.shanten
-        and left.baotou_ready >= right.baotou_ready
-        and left.piao_draw_live >= right.piao_draw_live
-        and left_baotou >= right_baotou
-        and left.ukeire_live >= right.ukeire_live
-        and left.ukeire_types >= right.ukeire_types
-    )
 
 
 def _bump_push_rounds(g, seat):
@@ -472,17 +326,12 @@ def _choose_discard_baotou(cands, locked, vis, info):
 
 def _kong_action_tile(action):
     """Return ``(kind, tile)`` for a self-draw kong action."""
-    if KONG_CLOSED_BASE - 33 <= action <= KONG_CLOSED_BASE:
-        return "closed", KONG_CLOSED_BASE - action
-    if KONG_ADD_BASE - 33 <= action <= KONG_ADD_BASE:
-        return "add", KONG_ADD_BASE - action
-    return None
+    return _legacy_kong.kong_action_tile(action)
 
 
 def _kong_actions(actions):
     """Return the legal self-draw KONG actions in stable engine order."""
-    return tuple(action for action in actions
-                 if _kong_action_tile(action) is not None)
+    return _legacy_kong.kong_actions(actions)
 
 
 def _seat_value(value, seat):
@@ -584,282 +433,133 @@ def _immediate_hu_reward(g, seat):
     )[seat])
 
 
-def _post_discard_chain(g, seat, tile, standing):
+def _post_discard_chain(g, seat, tile, standing, locked=None):
     """Apply the existing chain reset/piao rule to a baseline discard."""
-    if tile == W and is_baotou(standing, len(g.melds[seat])):
+    locked = len(g.melds[seat]) if locked is None else int(locked)
+    if tile == W and is_baotou(standing, locked):
         return (_seat_value(g.chain, seat) + 1,
                 _seat_value(g.chain_piao, seat) + 1)
     return 0, 0
 
 
-def _decomposition_target_usage(decomposition, tile):
-    sequence_used = False
-    pair_or_taatsu_used = False
-    triplet_count = 0
-    single = False
-    for kind, tiles, _wild in decomposition.melds:
-        if kind == "triplet":
-            triplet_count += sum(1 for value in tiles if value == tile)
-        elif kind == "sequence" and tile in tiles:
-            sequence_used = True
-    if decomposition.pair and tile in decomposition.pair[0]:
-        pair_or_taatsu_used = True
-    for tiles, _wild in decomposition.extra_pairs:
-        if tile in tiles:
-            pair_or_taatsu_used = True
-    for _kind, tiles, _wild in decomposition.taatsu:
-        if tile in tiles:
-            pair_or_taatsu_used = True
-    single = tile in decomposition.singles
-    return sequence_used, pair_or_taatsu_used, triplet_count, single
-
-
 def _kong_structure_guard(hand, locked, kind, tile):
     """Check target-tile material use in one optimal standard decomposition."""
-    from .hand_eval import enumerate_decompositions
+    def bump_decomposition_calls():
+        _LEGACY_PROGRESS_STATS["decomposition_calls"] += 1
 
-    _LEGACY_PROGRESS_STATS["decomposition_calls"] += 1
-    target = shanten(hand, locked)
-    decompositions = enumerate_decompositions(hand, locked, optimal=True)
-    optimal_standard = [
-        decomposition for decomposition in decompositions
-        if decomposition.kind == "standard" and decomposition.score == target
-    ]
-    if not optimal_standard:
-        return {
-            "structure_safe": False,
-            "structure_reason": "no_optimal_standard",
-        }
-
-    safe = False
-    saw_sequence = False
-    saw_pair_or_taatsu = False
-    for decomposition in optimal_standard:
-        sequence_used, pair_or_taatsu_used, triplet_count, single = \
-            _decomposition_target_usage(decomposition, tile)
-        saw_sequence = saw_sequence or sequence_used
-        saw_pair_or_taatsu = saw_pair_or_taatsu or pair_or_taatsu_used
-        if sequence_used or pair_or_taatsu_used:
-            continue
-        if kind == "closed":
-            safe = safe or (triplet_count >= 3 and single)
-        elif kind == "add":
-            safe = safe or single
-        elif kind == "open":
-            safe = safe or triplet_count >= 3
-        if safe:
-            break
-
-    if safe:
-        reason = "safe_triplet_plus_single"
-    elif saw_sequence:
-        reason = "tile_used_by_sequence"
-    elif saw_pair_or_taatsu:
-        reason = "tile_used_by_pair_or_taatsu"
-    else:
-        reason = "no_redundant_single"
-    return {
-        "structure_safe": safe,
-        "structure_reason": reason,
-    }
+    return _legacy_kong.structure_guard(
+        hand, locked, kind, tile,
+        on_decomposition=bump_decomposition_calls,
+    )
 
 
 def _kong_shape_gate(baseline, post):
-    if post.shanten > baseline.shanten:
-        return "shape_shanten_worse"
-    if post.shanten == baseline.shanten and post.ukeire_live < baseline.ukeire_live:
-        return "shape_ukeire_lower"
-    if baseline.baotou_ready and not post.baotou_ready:
-        return "shape_baotou_lost"
-    return None
+    return _legacy_kong.shape_gate(baseline, post)
 
 
 def _kong_winning_tiles(standing, locked, remaining):
-    winning_tiles = []
-    winning_mass = 0
-    for tile, mass in enumerate(remaining):
-        if mass <= 0:
-            continue
-        completed = list(standing)
-        completed[tile] += 1
-        if is_win(completed, locked):
-            winning_tiles.append(tile)
-            winning_mass += mass
-    return tuple(winning_tiles), winning_mass
+    return _legacy_kong.winning_tiles(standing, locked, remaining)
 
 
 def _kong_kai_gate(g, seat, standing, locked, post, remaining):
-    try:
-        live_wall = g.live_wall_left()
-    except AttributeError:
-        live_wall = 0
-    if post.shanten != 0:
-        return False, (), 0, "post_kong_not_tenpai"
-    if live_wall <= 0:
-        return False, (), 0, "no_replacement_draw"
-    winning_tiles, winning_mass = _kong_winning_tiles(
-        standing, locked, remaining)
-    if winning_mass <= 0:
-        return False, winning_tiles, 0, "no_live_winning_mass"
-    return True, winning_tiles, winning_mass, None
+    return _legacy_kong.kong_kai_gate(
+        g, seat, standing, locked, post, remaining)
 
 
 def _post_kong_state(g, seat, kind, tile, visible):
-    standing = list(g.hands[seat])
-    if kind == "closed":
-        standing[tile] -= 4
-        locked = len(g.melds[seat]) + 1
-    elif kind == "add":
-        standing[tile] -= 1
-        locked = len(g.melds[seat])
-    elif kind == "open":
-        standing[tile] -= 3
-        locked = len(g.melds[seat]) + 1
-    else:
-        raise ValueError(f"unknown kong kind: {kind}")
-    progress = _legacy_shape_progress(
-        standing, locked, visible,
-        include_baotou=False, piao_allowed=_piao_context_allowed(g, seat))
-    return standing, locked, progress
-
-
-def _evaluate_kong_open(g, seat, tile, baseline, visible):
-    hand = g.hands[seat]
-    structure = _kong_structure_guard(hand, len(g.melds[seat]), "open", tile)
-    standing, locked, post = _post_kong_state(g, seat, "open", tile, visible)
-    shape_reason = _kong_shape_gate(baseline, post)
-    remaining = [max(0, 4 - count) for count in visible]
-    kai_passed, wait_tiles, winning_mass, kai_reason = _kong_kai_gate(
-        g, seat, standing, locked, post, remaining)
-    gate_passed = (structure["structure_safe"] and shape_reason is None
-                   and kai_passed)
-    result = {
-        "action": KONG_OPEN,
-        "kind": "open",
-        "tile": tile,
-        "structure_safe": structure["structure_safe"],
-        "structure_reason": structure["structure_reason"],
-        "shape_preserved": shape_reason is None,
-        "shape_rejection_reason": shape_reason,
-        "kong_kai_passed": kai_passed,
-        "kong_rejection_reason": kai_reason,
-        "kong_wait_tiles": list(wait_tiles),
-        "kong_winning_mass": winning_mass,
-        "kong_win_probability": 0.0,
-        "kong_expected_value": 0.0,
-        "baseline_progress": baseline.as_json(),
-        "post_kong_progress": post.as_json(),
-        "gate_passed": gate_passed,
-        "progress": post,
-        "reason": "kong_expected_value" if gate_passed else (
-            structure["structure_reason"] if not structure["structure_safe"]
-            else shape_reason if shape_reason is not None else kai_reason),
-        "rejection_reason": None if gate_passed else (
-            structure["structure_reason"] if not structure["structure_safe"]
-            else shape_reason if shape_reason is not None else kai_reason),
-    }
-    if not gate_passed:
-        return result
-
-    evaluation = _expected_next_draw_reward(
-        g, seat, standing, locked,
-        _seat_value(g.chain, seat) + 1,
-        _seat_value(g.chain_piao, seat),
-        True, remaining, draw_delay=1,
+    return _legacy_kong.post_kong_state(
+        g,
+        seat,
+        kind,
+        tile,
+        visible,
+        shape_progress=_legacy_shape_progress,
+        piao_allowed=_piao_context_allowed(g, seat),
     )
-    result.update({
-        "kong_win_probability": evaluation["win_probability"],
-        "kong_expected_value": evaluation["value"],
-        "value": evaluation["value"],
-        "win_probability": evaluation["win_probability"],
-        "wall_left": evaluation["wall_left"],
-    })
-    return result
 
 
-def _evaluate_self_kong(g, seat, action, baseline, visible):
-    decoded = _kong_action_tile(action)
-    if decoded is None:
-        return None
-    kind, tile = decoded
-    hand = g.hands[seat]
-    structure = _kong_structure_guard(hand, len(g.melds[seat]), kind, tile)
-    standing, locked, post = _post_kong_state(g, seat, kind, tile, visible)
-    shape_reason = _kong_shape_gate(baseline, post)
-    remaining = [max(0, 4 - count) for count in visible]
-    kai_passed, wait_tiles, winning_mass, kai_reason = _kong_kai_gate(
-        g, seat, standing, locked, post, remaining)
-    gate_passed = (structure["structure_safe"] and shape_reason is None
-                   and kai_passed)
-    rejection_reason = None if gate_passed else (
-        structure["structure_reason"] if not structure["structure_safe"]
-        else shape_reason if shape_reason is not None else kai_reason)
-    result = {
-        "action": action,
-        "kind": kind,
-        "tile": tile,
-        "structure_safe": structure["structure_safe"],
-        "structure_reason": structure["structure_reason"],
-        "shape_preserved": shape_reason is None,
-        "shape_rejection_reason": shape_reason,
-        "kong_kai_passed": kai_passed,
-        "kong_rejection_reason": kai_reason,
-        "kong_wait_tiles": list(wait_tiles),
-        "kong_winning_mass": winning_mass,
-        "kong_win_probability": 0.0,
-        "kong_expected_value": 0.0,
-        "baseline_progress": baseline.as_json(),
-        "post_kong_progress": post.as_json(),
-        "gate_passed": gate_passed,
-        "progress": post,
-        "rejection_reason": rejection_reason,
-        "reason": "kong_expected_value" if gate_passed else rejection_reason,
-    }
-    if not gate_passed:
-        return result
+def _evaluate_kong_open(g, seat, tile, baseline, visible, *, v2=False,
+                        reaction_profile=None):
+    return _legacy_kong.evaluate_kong_open(
+        g,
+        seat,
+        tile,
+        baseline,
+        visible,
+        structure_guard_fn=_kong_structure_guard,
+        post_kong_state_fn=_post_kong_state,
+        expected_next_draw_reward=_expected_next_draw_reward,
+        seat_value=_seat_value,
+        shape_gate_fn=(_legacy_kong.shape_gate_v2
+                       if v2 else _legacy_kong.shape_gate),
+        score_continuation_fn=(
+            _legacy_kong.public_score_continuation if v2 else None),
+        post_discard_chain=_post_discard_chain,
+        continuation_node_budget=(
+            reaction_profile.continuation_node_budget
+            if reaction_profile is not None else 2048),
+        continuation_soft_budget_ms=(
+            reaction_profile.continuation_soft_budget_ms
+            if reaction_profile is not None else 0.0),
+        continuation_hard_budget_ms=(
+            reaction_profile.continuation_hard_budget_ms
+            if reaction_profile is not None else 15.0),
+    )
 
-    evaluation = _evaluate_kong_next_draw(g, seat, action, remaining)
-    result.update({
-        "kong_win_probability": evaluation["win_probability"],
-        "kong_expected_value": evaluation["value"],
-        "value": evaluation["value"],
-        "win_probability": evaluation["win_probability"],
-        "wall_left": evaluation["wall_left"],
-    })
-    return result
+
+def _evaluate_self_kong(g, seat, action, baseline, visible, *, v2=False,
+                        reaction_profile=None):
+    return _legacy_kong.evaluate_self_kong(
+        g,
+        seat,
+        action,
+        baseline,
+        visible,
+        structure_guard_fn=_kong_structure_guard,
+        post_kong_state_fn=_post_kong_state,
+        evaluate_kong_next_draw_fn=(
+            (lambda g_, seat_, action_, remaining_:
+             _evaluate_kong_next_draw(
+                 g_, seat_, action_, remaining_,
+                 reaction_profile=reaction_profile))
+            if v2 else _evaluate_kong_next_draw),
+        shape_gate_fn=(_legacy_kong.shape_gate_v2
+                       if v2 else _legacy_kong.shape_gate),
+    )
 
 
 def _kong_public_result(result):
-    public = dict(result)
-    public.pop("progress", None)
-    return public
+    return _legacy_kong.public_result(result)
 
 
-def _evaluate_kong_next_draw(g, seat, action, remaining):
+def _evaluate_kong_next_draw(g, seat, action, remaining,
+                             reaction_profile=None):
     """Score one already-guarded closed/add-kong replacement draw."""
-    decoded = _kong_action_tile(action)
-    if decoded is None:
-        return None
-    kind, tile = decoded
-    standing = list(g.hands[seat])
-    remove = 4 if kind == "closed" else 1
-    if standing[tile] < remove:
-        return None
-    standing[tile] -= remove
-    # A closed kong creates a new locked meld; an add-kong upgrades the
-    # existing pong in place, so its locked count stays unchanged.
-    locked = len(g.melds[seat]) + (1 if kind == "closed" else 0)
-    result = _expected_next_draw_reward(
-        g, seat, standing, locked,
-        _seat_value(g.chain, seat) + 1,
-        _seat_value(g.chain_piao, seat),
-        True, remaining, draw_delay=1,
+    return _legacy_kong.evaluate_kong_next_draw(
+        g,
+        seat,
+        action,
+        remaining,
+        expected_next_draw_reward=_expected_next_draw_reward,
+        seat_value=_seat_value,
+        score_continuation_fn=(
+            _legacy_kong.public_score_continuation
+            if reaction_profile is not None else None),
+        post_discard_chain=_post_discard_chain,
+        continuation_node_budget=(
+            reaction_profile.continuation_node_budget
+            if reaction_profile is not None else 0),
+        continuation_soft_budget_ms=(
+            reaction_profile.continuation_soft_budget_ms
+            if reaction_profile is not None else 0.0),
+        continuation_hard_budget_ms=(
+            reaction_profile.continuation_hard_budget_ms
+            if reaction_profile is not None else 0.0),
     )
-    result.update({"action": action, "kind": kind, "tile": tile})
-    return result
 
 
-def _choose_draw_action(g, seat, actions=None, discard_profile=None):
+def _choose_draw_action(g, seat, actions=None, discard_profile=None,
+                        reaction_profile=None):
     """Choose HU/piao, self-kong, or discard at a draw decision point.
 
     KONG is accepted only when its public next-replacement score expectation
@@ -894,17 +594,29 @@ def _choose_draw_action(g, seat, actions=None, discard_profile=None):
                 g, seat, W, standing)
             visible = _public_visible_counts(g, seat)
             remaining = [max(0, 4 - count) for count in visible]
-            baseline_eval = _expected_next_draw_reward(
-                g, seat, standing, len(g.melds[seat]), chain, chain_piao,
-                False, remaining, draw_delay=4,
-            )
-            baseline_value = baseline_eval["value"]
+            if reaction_profile is None:
+                baseline_eval = _expected_next_draw_reward(
+                    g, seat, standing, len(g.melds[seat]), chain, chain_piao,
+                    False, remaining, draw_delay=4)
+                baseline_value = baseline_eval["value"]
+            else:
+                # Defer the expensive score continuation until at least one
+                # self-KONG passes its hard gate.  A rejected KONG has no
+                # score comparison to make and must not spend/abort the
+                # continuation budget (especially in offline fail-loud mode).
+                baseline_eval = None
+                baseline_value = None
             baseline_reason = "piao_expected_value"
         else:
             baseline = HU
             baseline_progress_tile = choose_discard(
                 g, seat, profile=discard_profile)
             baseline_value = _immediate_hu_reward(g, seat)
+            baseline_eval = {
+                "complete": True,
+                "fallback_reason": None,
+                "total_reward_ev": baseline_value,
+            }
             baseline_reason = "hu_legacy"
     else:
         baseline = choose_discard(g, seat, profile=discard_profile)
@@ -915,11 +627,14 @@ def _choose_draw_action(g, seat, actions=None, discard_profile=None):
             g, seat, baseline, standing)
         visible = _public_visible_counts(g, seat)
         remaining = [max(0, 4 - count) for count in visible]
-        baseline_eval = _expected_next_draw_reward(
-            g, seat, standing, len(g.melds[seat]), chain, chain_piao,
-            False, remaining, draw_delay=4,
-        )
-        baseline_value = baseline_eval["value"]
+        if reaction_profile is None:
+            baseline_eval = _expected_next_draw_reward(
+                g, seat, standing, len(g.melds[seat]), chain, chain_piao,
+                False, remaining, draw_delay=4)
+            baseline_value = baseline_eval["value"]
+        else:
+            baseline_eval = None
+            baseline_value = None
         baseline_reason = "discard_expected_value"
 
     visible = _public_visible_counts(g, seat)
@@ -931,11 +646,43 @@ def _choose_draw_action(g, seat, actions=None, discard_profile=None):
         include_baotou=False, piao_allowed=_piao_context_allowed(g, seat))
     evaluations = [
         result for result in (
-            _evaluate_self_kong(g, seat, action, baseline_progress, visible)
+            _evaluate_self_kong(
+                g, seat, action, baseline_progress, visible,
+                v2=reaction_profile is not None,
+                reaction_profile=reaction_profile)
             for action in kongs)
         if result is not None
     ]
     gated = [result for result in evaluations if result["gate_passed"]]
+    if reaction_profile is not None and gated:
+        if baseline_eval is None:
+            baseline_chain, baseline_chain_piao = _post_discard_chain(
+                g, seat, baseline_progress_tile, baseline_standing)
+            baseline_eval = _legacy_kong.public_score_continuation(
+                g, seat, baseline_standing, len(g.melds[seat]),
+                baseline_chain, baseline_chain_piao, False, remaining,
+                first_draw_delay=4,
+                post_discard_chain=_post_discard_chain,
+                node_budget=reaction_profile.continuation_node_budget,
+                soft_budget_ms=reaction_profile.continuation_soft_budget_ms,
+                hard_budget_ms=reaction_profile.continuation_hard_budget_ms)
+            baseline_value = baseline_eval["total_reward_ev"]
+        continuation_complete = baseline_eval.get("complete", True) and all(
+            result.get("continuation_complete", True) for result in gated)
+        if not continuation_complete:
+            if reaction_profile.require_complete:
+                from .legacy_react import IncompleteReactionFuture
+                raise IncompleteReactionFuture(
+                    "self-KONG continuation incomplete")
+            action, detail = _choose_draw_action(
+                g, seat, actions, discard_profile=discard_profile)
+            detail["continuation_fallback_reason"] = (
+                baseline_eval.get("fallback_reason")
+                or next((result.get("continuation_fallback_reason")
+                         for result in gated
+                         if not result.get("continuation_complete", True)),
+                        "continuation_incomplete"))
+            return action, detail
     best = max(
         gated,
         key=lambda result: (result["value"], result["win_probability"],
@@ -1030,7 +777,7 @@ def _eval_standing(hand, locked, vis):
     _choose_react 出于性能将其内联为懒算(shanten 先行、等向听才
     ukeire),本函数是同语义的规范入口(测试用)。
     """
-    return (shanten(hand, locked), ukeire(hand, locked, vis)[2])
+    return _legacy_react.evaluate_standing(hand, locked, vis)
 
 
 def _post_claim_min_shanten(hand, locked):
@@ -1041,18 +788,7 @@ def _post_claim_min_shanten(hand, locked):
     若"打财神"是唯一能再降向听的舍牌,必须让 claim 评价看到,
     否则吃/碰会被系统性低估(甚至错判 PASS)。手牌非空则候选非空。
     """
-    best_s, cands = None, []
-    for d in range(34):
-        if hand[d] <= 0:
-            continue
-        c = list(hand)
-        c[d] -= 1
-        s = shanten(c, locked)
-        if best_s is None or s < best_s:
-            best_s, cands = s, [(d, c)]
-        elif s == best_s:
-            cands.append((d, c))
-    return best_s, cands
+    return _legacy_react.post_claim_min_shanten(hand, locked)
 
 
 def _best_standing(cands, locked, vis, post_hand):
@@ -1062,14 +798,8 @@ def _best_standing(cands, locked, vis, post_hand):
     舍牌编号(稳定)——财神保护只在同向听候选内部生效,向听数
     仍是硬约束。
     """
-    best = None  # (排序键, uke, shape, d)
-    for d, c in cands:
-        uke = ukeire(c, locked, vis)[2]
-        shape = _discard_shape_cost(post_hand, d)
-        key = (d == W, -uke, shape, d)
-        if best is None or key < best[0]:
-            best = (key, uke, shape, d)
-    return (best[1], best[2], best[3])
+    return _legacy_react.best_standing(
+        cands, locked, vis, post_hand, shape_cost=_discard_shape_cost)
 
 
 def _best_post_claim_discard(hand, locked, vis):
@@ -1081,26 +811,22 @@ def _best_post_claim_discard(hand, locked, vis):
     向听的舍牌不可能胜出)。财神保护与 choose_discard 同口径:
     参与最小向听比较、同向听时非财神优先。
     """
-    best_s, cands = _post_claim_min_shanten(hand, locked)
-    uke, shape, d = _best_standing(cands, locked, vis, hand)
-    return (best_s, uke, shape, d)
+    return _legacy_react.best_post_claim_discard(
+        hand, locked, vis, shape_cost=_discard_shape_cost)
 
 
 def _best_post_claim_state(hand, locked, visible, *, include_baotou,
                            piao_allowed):
     """Return the best post-claim standing under the legacy progress order."""
-    best_s, cands = _post_claim_min_shanten(hand, locked)
-    best = None
-    for discard, standing in cands:
-        progress = _legacy_shape_progress(
-            standing, locked, visible,
-            include_baotou=include_baotou, piao_allowed=piao_allowed)
-        shape = _discard_shape_cost(hand, discard)
-        key = _progress_sort_key(progress, shape, discard)
-        if best is None or key < best[0]:
-            best = (key, progress, shape, discard, standing)
-    _, progress, shape, discard, standing = best
-    return progress, shape, discard, standing
+    return _legacy_react.best_post_claim_state(
+        hand,
+        locked,
+        visible,
+        include_baotou=include_baotou,
+        piao_allowed=piao_allowed,
+        shape_progress=_legacy_shape_progress,
+        shape_cost=_discard_shape_cost,
+    )
 
 
 def _should_piao(g, seat):
@@ -1178,11 +904,15 @@ def choose_action(g, seat, evaluator=DEFAULT_BOT_EVALUATOR,
     """统一入口:返回该 seat 的动作。
 
     The two-argument production path uses the weighted two-ply frontier.
-    Passing ``evaluator='legacy'`` explicitly selects the historical rollback
-    oracle; ``evaluator='shape-v1'`` opts into the shared shape evaluator.
+    ``None`` and ``evaluator='legacy'`` are compatibility aliases for the
+    enabled legacyV2 route. ``evaluator='legacy-v1'`` explicitly selects the
+    frozen rollback oracle; ``evaluator='shape-v1'`` opts into the shared
+    shape evaluator.
     Callers that need an explanation can additionally request
     ``return_evaluation``.
     """
+    if evaluator is None or evaluator == "legacy":
+        evaluator = DEFAULT_BOT_EVALUATOR
     if evaluator not in (None, "legacy", "shape-v1", "shape_v1", "shape",
                          "shape-v2", "shape_v2", "ev2", "policy-v3",
                          "policy_v3", "legacy-two-ply-v1", "legacy_v1",
@@ -1205,10 +935,13 @@ def choose_action(g, seat, evaluator=DEFAULT_BOT_EVALUATOR,
                          + LEGACY_V2_OFFLINE_EVALUATORS):
             if evaluator in LEGACY_V2_OFFLINE_EVALUATORS:
                 profile = LegacyTwoPlyProfile.weighted_offline()
+                reaction_profile = LegacyReactionProfile.v2_offline()
             elif evaluator in LEGACY_V2_EVALUATORS:
                 profile = LegacyTwoPlyProfile.weighted_online()
+                reaction_profile = LegacyReactionProfile.v2_online()
             else:
                 profile = LegacyTwoPlyProfile.default()
+                reaction_profile = LegacyReactionProfile.v1()
             acts = g.legal_actions()
             if len(acts) == 1:
                 evaluation = {
@@ -1229,7 +962,11 @@ def choose_action(g, seat, evaluator=DEFAULT_BOT_EVALUATOR,
                 return ((acts[0], evaluation) if return_evaluation else acts[0])
             if g.phase == "discard":
                 action, evaluation = _choose_draw_action(
-                    g, seat, acts, discard_profile=profile)
+                    g, seat, acts, discard_profile=profile,
+                    reaction_profile=(reaction_profile
+                                      if reaction_profile.enabled
+                                      and reaction_profile.future_enabled
+                                      else None))
                 if not isinstance(evaluation, dict) or "version" not in evaluation:
                     scoped = _legacy_v1_scope_info(
                         profile, action, "hu_kong_scope")
@@ -1237,29 +974,10 @@ def choose_action(g, seat, evaluator=DEFAULT_BOT_EVALUATOR,
                     evaluation = scoped
                 return ((action, evaluation)
                         if return_evaluation else action)
-            # V1 is discard-only by contract.  Keep reaction/HU/KONG routing
-            # on the existing rules and make that scope explicit in logs.
-            if return_evaluation:
-                action, legacy_detail = _choose_react(
-                    g, seat, acts, return_evaluation=True)
-                evaluation = {
-                    "version": profile.version,
-                    "profile": profile.name,
-                    "profile_fingerprint": profile.fingerprint,
-                    "level": "legacy",
-                    "complete": False,
-                    "mode": profile.mode,
-                    "selected": action,
-                    "legacy_best": action,
-                    "future_model": profile.model,
-                    "candidates": [],
-                    "missing": ["reaction_scope"],
-                    "fallback_reason": "reaction_scope",
-                    "partial_accepted": False,
-                    "legacy_detail": legacy_detail,
-                }
-                return action, evaluation
-            return _choose_react(g, seat, acts)
+            action, evaluation = _choose_react_evaluated(
+                g, seat, acts, return_evaluation=True,
+                reaction_profile=reaction_profile)
+            return ((action, evaluation) if return_evaluation else action)
         action, evaluation = choose_shape_action(g, seat)
         return (action, evaluation) if return_evaluation else action
     acts = g.legal_actions()
@@ -1271,181 +989,59 @@ def choose_action(g, seat, evaluator=DEFAULT_BOT_EVALUATOR,
     return _choose_react(g, seat, acts, return_evaluation=return_evaluation)
 
 
-def _choose_react(g, seat, acts, return_evaluation=False):
+def _choose_react(g, seat, acts, return_evaluation=False,
+                  reaction_profile=None):
     """Choose CHOW/PONG/KONG_OPEN using shape progress and hard gates."""
     action, evaluation = _choose_react_evaluated(
-        g, seat, acts, return_evaluation=return_evaluation)
+        g, seat, acts, return_evaluation=return_evaluation,
+        reaction_profile=reaction_profile)
     return (action, evaluation) if return_evaluation else action
 
 
-def _choose_react_evaluated(g, seat, acts, return_evaluation=True):
+def _choose_react_evaluated(g, seat, acts, return_evaluation=True,
+                            reaction_profile=None):
     """Return ``(action, evaluation)`` for the legacy react window."""
 
-    owner, tile = g.pending
-    hand = g.hands[seat]
-    locked = len(g.melds[seat])
-    vis = g.visible_counts(seat)  # claim 前后可见总量不变,快照复用
-    piao_allowed = _piao_context_allowed(g, seat)
-    pass_progress = None
-    pass_shanten = shanten(hand, locked)
-
-    candidates = []
-    stats_before = _legacy_progress_diagnostics() if return_evaluation else None
-
-    def consider(act, remove):
-        nonlocal pass_progress
-        post_hand = list(hand)
-        for t, n in remove:
-            post_hand[t] -= n
-        best_s, post_cands = _post_claim_min_shanten(post_hand, locked + 1)
-        progress = shape = discard = standing = None
-        multiple_discards = len(post_cands) > 1
-        if best_s < pass_shanten:
-            reason = "shanten_drop"
-        elif best_s > pass_shanten:
-            reason = None
-        else:
-            if pass_progress is None:
-                pass_progress = _legacy_shape_progress(
-                    hand, locked, vis, include_baotou=False,
-                    piao_allowed=piao_allowed)
-            progress, shape, discard, standing = _best_post_claim_state(
-                post_hand, locked + 1, vis,
-                include_baotou=multiple_discards,
-                piao_allowed=piao_allowed)
-            reason = _significant_progress(pass_progress, progress, act)
-            if (reason is None and BAOTOU_UKEIRE_RUST
-                    and pass_progress.baotou_ukeire_live is None):
-                pass_progress = _legacy_shape_progress(
-                    hand, locked, vis, include_baotou=True,
-                    piao_allowed=piao_allowed)
-                if not multiple_discards:
-                    progress, shape, discard, standing = \
-                        _best_post_claim_state(
-                            post_hand, locked + 1, vis,
-                            include_baotou=True, piao_allowed=piao_allowed)
-                reason = _significant_progress(pass_progress, progress, act)
-        candidates.append({
-            "action": act,
-            "accepted": reason is not None,
-            "reason": reason or "pass",
-            "shanten": best_s,
-            "post_cands": post_cands,
-            "post_hand": post_hand,
-            "discard": discard,
-            "progress": progress,
-            "shape_cost": shape,
-            "standing": standing,
+    profile_disabled = (reaction_profile is not None
+                        and not reaction_profile.enabled)
+    chooser = (choose_reaction_v2 if reaction_profile is not None
+               and not profile_disabled
+               else choose_reaction_v1)
+    kwargs = {}
+    if reaction_profile is not None and not profile_disabled:
+        kwargs.update({
+            "profile": reaction_profile,
+            "shape_cost": _discard_shape_cost,
+            "post_discard_chain": _post_discard_chain,
         })
-
-    if PONG in acts:
-        consider(PONG, [(tile, 2)])
-    for a in (CHOW_LOW, CHOW_MID, CHOW_HIGH):
-        if a not in acts:
-            continue
-        pos = CHOW_LOW - a
-        start = tile - pos
-        remove = [(x, 1) for x in (start, start + 1, start + 2) if x != tile]
-        consider(a, remove)
-
-    kong = None
-    if KONG_OPEN in acts:
-        if pass_progress is None:
-            pass_progress = _legacy_shape_progress(
-                hand, locked, vis, include_baotou=True,
-                piao_allowed=piao_allowed)
-        kong = _evaluate_kong_open(g, seat, tile, pass_progress, vis)
-
-    accepted = [candidate for candidate in candidates if candidate["accepted"]]
-    if accepted:
-        best_shanten = min(candidate["shanten"] for candidate in accepted)
-        top = [candidate for candidate in accepted
-               if candidate["shanten"] == best_shanten]
-        need_progress = (
-            len(top) > 1
-            or (kong is not None and kong["gate_passed"])
-            or return_evaluation)
-        if need_progress:
-            for candidate in top:
-                if candidate["progress"] is None:
-                    candidate["progress"], candidate["shape_cost"], \
-                        candidate["discard"], candidate["standing"] = \
-                        _best_post_claim_state(
-                            candidate["post_hand"], locked + 1, vis,
-                            include_baotou=(best_shanten == pass_shanten),
-                            piao_allowed=piao_allowed)
-    else:
-        top = []
-    if len(top) == 1:
-        best_claim = top[0]
-    else:
-        best_claim = min(
-            top,
-            key=lambda candidate: _progress_sort_key(
-                candidate["progress"], candidate["shape_cost"],
-                candidate["action"]),
-            default=None,
-        )
-
-    if kong is not None and kong["gate_passed"]:
-        if best_claim is None:
-            selected = kong
-        elif kong["progress"].shanten < best_claim["progress"].shanten:
-            selected = kong
-        elif kong["progress"].shanten > best_claim["progress"].shanten:
-            selected = best_claim
-        elif _progress_not_worse(kong["progress"], best_claim["progress"]):
-            selected = kong
-        else:
-            selected = best_claim
-    else:
-        selected = best_claim
-
-    action = selected["action"] if selected is not None else PASS
-    reason = selected["reason"] if selected is not None else "pass"
-    if not return_evaluation:
-        return action, None
-
-    if pass_progress is None:
-        pass_progress = _legacy_shape_progress(
-            hand, locked, vis, include_baotou=True, piao_allowed=piao_allowed)
-    elif return_evaluation and pass_progress.baotou_ukeire_live is None \
-            and BAOTOU_UKEIRE_RUST:
-        pass_progress = _legacy_shape_progress(
-            hand, locked, vis, include_baotou=True, piao_allowed=piao_allowed)
-    stats_after = _legacy_progress_diagnostics()
-    evaluation = {
-        "version": LEGACY_SHAPE_PROGRESS_VERSION,
-        "reason": reason,
-        "before_progress": pass_progress.as_json(),
-        "thresholds": {
-            "pong_absolute": PONG_MIN_ABS_GAIN,
-            "chow_absolute": CHOW_MIN_ABS_GAIN,
-            "ratio": LEGACY_MIN_GAIN_RATIO,
-        },
-        "candidates": [{
-            "action": candidate["action"],
-            "accepted": candidate["accepted"],
-            "reason": candidate["reason"],
-            "discard": candidate["discard"],
-            "progress": (
-                candidate["progress"].as_json()
-                if candidate["progress"] is not None else None),
-            "shape_cost": candidate["shape_cost"],
-        } for candidate in candidates],
-        "kong": _kong_public_result(kong) if kong is not None else None,
-        "progress_diagnostics": {
-            key: stats_after[key] - stats_before[key]
-            for key in stats_before
-        },
-    }
-    if selected is None:
-        evaluation["after_progress"] = pass_progress.as_json()
-    elif selected is not kong:
-        evaluation["after_progress"] = selected["progress"].as_json()
-    elif kong is not None:
-        evaluation["after_progress"] = kong["progress"].as_json()
-    return action, evaluation
+    evaluate_kong = _evaluate_kong_open
+    if reaction_profile is not None and not profile_disabled:
+        def evaluate_kong(g_, seat_, tile_, baseline_, visible_):
+            return _evaluate_kong_open(
+                g_, seat_, tile_, baseline_, visible_, v2=True,
+                reaction_profile=reaction_profile)
+    result = chooser(
+        g,
+        seat,
+        acts,
+        piao_allowed=_piao_context_allowed(g, seat),
+        shape_progress=_legacy_shape_progress,
+        post_claim_min_shanten=_post_claim_min_shanten,
+        best_post_claim_state=_best_post_claim_state,
+        evaluate_kong_open=evaluate_kong,
+        kong_public_result=_kong_public_result,
+        baotou_kernel_available=BAOTOU_UKEIRE_RUST,
+        return_evaluation=return_evaluation,
+        **kwargs,
+    )
+    if profile_disabled:
+        action, evaluation = result
+        if evaluation is not None:
+            evaluation["reaction_profile"] = reaction_profile.as_json()
+            evaluation["u2_fallback_reason"] = "profile_disabled"
+            evaluation["selected"] = action
+        return action, evaluation
+    return result
 
 
 def _legacy_claim_react(g, seat, acts):

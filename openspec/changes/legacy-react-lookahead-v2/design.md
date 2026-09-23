@@ -47,8 +47,11 @@ LegacyReactionProfile.v2_online()
     version = legacy-react-v2
     future_enabled = true
     future_mode = weighted
-    soft budget ~= 6ms
-    hard budget ~= 10ms
+    reaction U2 soft budget ~= 6ms
+    reaction U2 hard budget ~= 10ms
+    KONG continuation node budget = 512
+    KONG continuation soft budget = 8ms
+    KONG continuation hard budget = 15ms
     allow_partial = true
     min_partial_coverage = 0.90
     tempo_guard = true
@@ -56,7 +59,7 @@ LegacyReactionProfile.v2_online()
 LegacyReactionProfile.v2_offline()
     version = legacy-react-v2-offline
     future_mode = weighted
-    大节点/时间预算
+    大节点/时间预算（KONG continuation soft/hard ~= 2000ms）
     require_complete = true
     incomplete = error/fail-loud
 ```
@@ -64,8 +67,9 @@ LegacyReactionProfile.v2_offline()
 路由：
 
 ```text
-evaluator="legacy"       -> reaction v1
-legacyV2 aliases         -> reaction v2_online
+default / evaluator="legacy" -> enabled reaction v2_online
+evaluator="legacy-v1"        -> frozen reaction v1 rollback
+legacyV2 / legacy-v2 aliases  -> enabled reaction v2_online
 legacyV2-offline aliases -> reaction v2_offline
 shape-v1 / shape-v2      -> 保持各自既有路由
 ```
@@ -139,6 +143,8 @@ U2 只对“需要它做决策”的共同候选集合运行。比较必须处�
 - offline：共同层级不可得直接 fail-loud，不能生成 v1 标签冒充 v2。
 
 若 weighted partial 已满足 profile 的安全 commit 条件，可按 `FutureEvaluation.partial_accepted=true` 使用；coverage 不达标则回退。
+
+online reaction 的 standing frontier 使用共同 Stage-A-only 评价：内核继续累积公开 draw mass，直到该批所有 roots 都达到 `min_partial_coverage`，然后跳过 Stage B，并以 `future_improve_weight` 做同层比较。这样 PASS 的单 root frontier 不会因“只有一个 root 可胜”而在首张 draw 后提前短路，也不会让 PASS 与 claim 落在不同 stage。未在预算内达到覆盖阈值时仍整层回退；普通 discard 沿用原两阶段策略，offline `require_complete` 仍强制 Stage B。
 
 ### D5 v1 Gate 继续决定“有没有资格副露”
 
@@ -288,6 +294,18 @@ diagnostics 必须记录 `pass_draw_index / claim_draw_index / tempo_cost`。
 
 KONG 仍必须先通过 structure/shape/KONG-KAI 硬门，continuation EV 不能绕过硬门。
 
+线上 bounded implementation 还必须把截止检查下沉到 replacement、discard、
+next-draw score 的内层循环，避免一个未打断的 34 张扫描越过 hard budget；
+post-replacement discard 先按最低向听裁剪，只有能在下一次本家摸牌胡的
+tenpai standing 才进入精确 score，重复 standing 在本次 continuation 内复用
+cache。诊断至少记录 replacement/discard frontier、unique standings、score
+calls、cache hit/miss、soft/hard budget hit。该剪枝对“一次下一摸胡牌”
+目标是语义等价的；若 online 仍触及 hard budget，调用方整层回 v1，offline
+仍按 require-complete fail-loud。线上 effective cutoff 要比 profile hard
+budget 提前 2ms，并在 replacement 遍历结束后再检查一次截止时间，给不可中断
+的单次精确 score 调用和事务回退留出 unwind 余量；原子截止点触发时整层结果仍
+回退到 v1，不提交部分 continuation EV。
+
 ### D12 PONG vs KONG_OPEN 只在双方都通过 Gate 时走 same-unit slow-path
 
 若只有一方过 Gate，直接选该方/按 PASS 规则处理。
@@ -331,11 +349,11 @@ teacher 不得进入 production action path。
 
 首轮至少扫描 1,000 个 reaction 决策（若现有本地 replay 不足，则全量扫描可用样本并明确数量），按 CHOW/PONG/KONG_OPEN、tempo_cost、reason 分桶报告分歧。
 
-### D14 性能与启用门禁
+### D14 性能与发布观测
 
 冻结 `5e0a405` 为行为/性能基线。
 
-默认开启 `legacy-react-v2` 前必须同时满足：
+默认路由已按用户决定启用 `legacy-react-v2`。以下项目是发布验收和持续观测指标，不再作为全局关闭 online profile 的开关：
 
 - 同机同 Rust 内核，基线/候选交错各至少 3×200 局，4-bots elapsed/games 中位退化 ≤15%；
 - online U2 eligible reaction 的 complete + safe-partial coverage ≥90%；
@@ -344,7 +362,7 @@ teacher 不得进入 production action path。
 - 不允许 Python baotou 全枚举或新 Python DFS 进入热路径；
 - 全量测试通过，v1 parity fixtures 零漂移。
 
-若未过门禁，代码可以合入但 `legacyV2` 默认仍保持 reaction v1，并通过 profile 开关 opt-in v2；不得静默牺牲 deadline。
+以上指标作为发布与持续观测门禁，不再关闭默认 v2 路由。生产默认/兼容 alias 使用 enabled online profile；某个窗口 U2 coverage 不足、U2 incomplete 或 KONG continuation 超预算时，必须整层回到冻结 v1，并记录 fallback reason；不得混用部分结果或延长 action deadline。显式 `legacy-v1` 始终可用于基线和人工回滚。
 
 ## Risks / Trade-offs
 

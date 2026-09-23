@@ -432,7 +432,7 @@ def build_parser():
     parser.add_argument("--ckpt", default="runs/bc0/best.pt",
                         help="policy 策略 checkpoint")
     parser.add_argument("--bot-evaluator", default=DEFAULT_BOT_EVALUATOR,
-                        choices=("legacy", "legacy-two-ply-v1",
+                        choices=("legacy", "legacy-two-ply-v1", "legacy-v1",
                                  "legacyV2", "legacy-v2",
                                  "weighted-two-ply-frontier-v1", "shape-v1",
                                  "shape-v2", "policy-v3"),

@@ -23,7 +23,7 @@ type ShantenCacheKey = ([i32; 34], i32);
 type FutureCacheKey = ([i32; 34], [i32; 34], i32);
 type UkeireCacheKey = ([i32; 34], [i32; 34], i32);
 const LEGACY_TWO_PLY_KERNEL_VERSION: &str = "rust-legacy-two-ply-v1";
-const WEIGHTED_TWO_PLY_KERNEL_VERSION: &str = "rust-weighted-two-ply-v2";
+const WEIGHTED_TWO_PLY_KERNEL_VERSION: &str = "rust-weighted-two-ply-v3";
 const WORK_BUDGET_EXCEEDED: &str = "work_budget_exceeded";
 const HARD_DEADLINE_EXCEEDED: &str = "hard_deadline";
 const STAGE_B_INTERNAL_ERROR: &str = "stage_b_internal_error";
@@ -1743,8 +1743,9 @@ fn run_stage_b_units(
 /// improvement bounds cannot decide the root, avoiding the expensive child
 /// ukeire DFS for the common easy-to-rank states.  Stage B may run its
 /// ``(root, draw)`` units in parallel workers; the aggregation order is fixed,
-/// so the reported metrics never depend on the worker count.
-#[pyfunction(signature = (roots, root_shantens, visible, legal_masks, locked=0, frozen=false, node_budget=100000, soft_budget_ms=40.0, hard_budget_ms=50.0, cache_capacity=8192, min_partial_coverage=0.90, include_best_discards=true, workers=0))]
+/// so the reported metrics never depend on the worker count.  Callers may
+/// request a Stage-A-only partial once every root reaches the coverage floor.
+#[pyfunction(signature = (roots, root_shantens, visible, legal_masks, locked=0, frozen=false, node_budget=100000, soft_budget_ms=40.0, hard_budget_ms=50.0, cache_capacity=8192, min_partial_coverage=0.90, include_best_discards=true, workers=0, stage_a_only=false))]
 fn weighted_two_ply_frontier(
     roots: Vec<Vec<i32>>,
     root_shantens: Vec<i32>,
@@ -1759,6 +1760,7 @@ fn weighted_two_ply_frontier(
     min_partial_coverage: f64,
     include_best_discards: bool,
     workers: i64,
+    stage_a_only: bool,
 ) -> PyResult<Vec<WeightedRootRow>> {
     if roots.is_empty() {
         return Err(PyValueError::new_err("roots must not be empty"));
@@ -1868,8 +1870,17 @@ fn weighted_two_ply_frontier(
     let mut hard_exhausted = false;
     let soft_stopped = false;
     let mut stage_a_winner = None;
+    let mut stage_a_only_stopped = false;
 
     'stage_a: for &draw in &draw_order {
+        let all_covered = accumulators.iter().all(|acc| {
+            acc.coverage() >= min_partial_coverage
+                || (acc.total_weight == 0 && acc.covered_weight == 0)
+        });
+        if stage_a_only && total_weight > 0 && all_covered {
+            stage_a_only_stopped = true;
+            break 'stage_a;
+        }
         if counters.shanten_cache_misses >= work_budget {
             break;
         }
@@ -1993,9 +2004,11 @@ fn weighted_two_ply_frontier(
                 .stage_a_rows
                 .push((draw as i32, weight, best_s, best_discards));
 
-            if let Some(winner) = strict_improvement_winner(&accumulators) {
-                stage_a_winner = Some(winner);
-                break 'stage_a;
+            if !stage_a_only {
+                if let Some(winner) = strict_improvement_winner(&accumulators) {
+                    stage_a_winner = Some(winner);
+                    break 'stage_a;
+                }
             }
         }
     }
@@ -2006,7 +2019,7 @@ fn weighted_two_ply_frontier(
         && accumulators
             .iter()
             .all(|acc| acc.covered_weight >= acc.total_weight);
-    if stage_a_winner.is_none() && stage_a_complete && total_weight > 0 {
+    if !stage_a_only && stage_a_winner.is_none() && stage_a_complete && total_weight > 0 {
         let max_improve = accumulators
             .iter()
             .map(|acc| acc.improve_weight)
@@ -2021,11 +2034,13 @@ fn weighted_two_ply_frontier(
             stage_a_winner = winners.first().copied();
         }
     }
+    let stage_a_only_result =
+        stage_a_only && total_weight > 0 && (stage_a_only_stopped || stage_a_complete);
 
     let mut stage_b_complete = total_weight == 0;
     let mut resolved_workers: i64 = 1;
     let mut stage_b_entered = false;
-    if stage_a_winner.is_none() && stage_a_complete && total_weight > 0 {
+    if stage_a_winner.is_none() && !stage_a_only_result && stage_a_complete && total_weight > 0 {
         stage_b_entered = true;
         let mut units: Vec<StageBUnit> = Vec::new();
         for (root_index, accumulator) in accumulators.iter().enumerate() {
@@ -2166,7 +2181,7 @@ fn weighted_two_ply_frontier(
         }
     }
 
-    if let Some(_winner) = stage_a_winner {
+    if stage_a_winner.is_some() || stage_a_only_result {
         for accumulator in &mut accumulators {
             accumulator.reason = "future_ukeire_skipped".to_string();
             accumulator.future_ukeire = 0;

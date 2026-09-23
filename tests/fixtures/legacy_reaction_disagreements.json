@@ -1,0 +1,38 @@
+{
+  "schema": "legacy-reaction-public-regression-fixtures-v1",
+  "cases": [
+    {
+      "id": "replay-u1-good-high-tempo-no-gain-001",
+      "origin": "offline replay disagreement sample, seq 1399 / decision 80",
+      "context": {
+        "seat": 0,
+        "pending_owner": 3,
+        "pending_tile": 0,
+        "hand": [2, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        "visible": [3, 2, 1, 1, 1, 3, 1, 0, 3, 4, 1, 3, 0, 1, 1, 1, 0, 1, 3, 3, 2, 3, 2, 1, 2, 4, 4, 3, 3, 0, 2, 4, 4, 1],
+        "meld_counts": [2, 3, 1, 1],
+        "wall_left": 24,
+        "dealer": 0,
+        "base": 1,
+        "you_cai_bi_kao": false,
+        "chain": [0, 0, 0, 0],
+        "chain_piao": [0, 0, 0, 0],
+        "freeze": 0,
+        "freezer": null,
+        "chows": [1, 2, 1, 0],
+        "react_idx": 0,
+        "n_claim": 1,
+        "legal_actions": [-1, -5]
+      },
+      "expected": {
+        "v1_action": -5,
+        "v1_reason": "wait_expansion",
+        "v2_action": -1,
+        "candidate_action": -5,
+        "candidate_v1_reason": "wait_expansion",
+        "candidate_v2_reason": "tempo_no_strict_future_gain",
+        "tempo_cost": 3
+      }
+    }
+  ]
+}

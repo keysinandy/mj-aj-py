@@ -206,9 +206,10 @@ def _meta_evaluator_kernel(evaluator):
     Rust 内核升级会改版本串(2026-09-21 起 weighted 为 v2),记录必须跟着走,
     否则离线分析会把升级/降级读错;纯 Python 或强制回退时给显式回退名。
     """
-    from mj.legacy_eval import LEGACY_V2_PROFILE_VERSION
+    from mj.legacy_eval import LEGACY_V2_PROFILE_VERSION, canonical_evaluator
     from mj.shanten import (LEGACY_TWO_PLY_KERNEL_VERSION,
                             WEIGHTED_TWO_PLY_KERNEL_VERSION)
+    evaluator = canonical_evaluator(evaluator)
     if evaluator == LEGACY_V2_PROFILE_VERSION:
         return WEIGHTED_TWO_PLY_KERNEL_VERSION or "python-fallback"
     if evaluator in ("legacy-two-ply-v1", "legacy_v1", "legacy-v1"):

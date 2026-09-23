@@ -165,7 +165,7 @@ def _play(seed, seat, dealer, ycbk, *, evaluator, profile=None):
             # timing includes only the local decision, not JSON serialization.
             _note_evaluation(stats, evaluation)
         else:
-            action = choose_action(game, current, evaluator="legacy")
+            action = choose_action(game, current, evaluator="legacy-v1")
         legal = tuple(game.legal_actions())
         if action not in legal:
             raise RuntimeError(
@@ -205,7 +205,7 @@ def run(games=1, seed_start=190000, ycbk=False, *, node_budget=10_000_000,
     for i in range(int(games)):
         seat, dealer = i % 4, (i // 4) % 4
         seed = int(seed_start) + i
-        legacy = _play(seed, seat, dealer, ycbk, evaluator="legacy")
+        legacy = _play(seed, seat, dealer, ycbk, evaluator="legacy-v1")
         full = _play(seed, seat, dealer, ycbk, evaluator="full-ev2",
                      profile=profile)
         rows.append({

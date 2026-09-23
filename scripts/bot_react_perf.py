@@ -65,7 +65,8 @@ def _decision(context, world, mode):
     game = build_world_game(context, world)
     legal = tuple(game.legal_actions())
     if mode == "legacy":
-        action = choose_action(game, context.hero_seat, evaluator="legacy")
+        action = choose_action(game, context.hero_seat,
+                               evaluator="legacy-v1")
         evaluation = {
             "version": "legacy", "profile": "legacy", "scope": "legacy",
             "level": "legacy", "selected": int(action),
@@ -81,7 +82,8 @@ def _decision(context, world, mode):
         # Project the actual world Game to the public value object inside the
         # timed call.  Opponent tile identities are never passed to v2.
         public = PublicDecisionContext.from_game(game, context.hero_seat)
-        legacy = choose_action(game, context.hero_seat, evaluator="legacy")
+        legacy = choose_action(game, context.hero_seat,
+                               evaluator="legacy-v1")
         result = evaluate_root_context(
             public, _profile(), legacy_action=legacy)
         action = result.selected if result.selected is not None else legacy

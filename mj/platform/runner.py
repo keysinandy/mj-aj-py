@@ -218,7 +218,7 @@ def main(argv=None):
     ap.add_argument("--strategy", default="policy",
                     choices=("policy", "bot", "random", "policy-v3"))
     ap.add_argument("--bot-evaluator", default=DEFAULT_BOT_EVALUATOR,
-                    choices=("legacy", "legacy-two-ply-v1",
+                    choices=("legacy", "legacy-two-ply-v1", "legacy-v1",
                              "legacyV2", "legacy-v2",
                              "weighted-two-ply-frontier-v1", "shape-v1",
                              "shape-v2", "policy-v3"),
@@ -240,8 +240,8 @@ def main(argv=None):
                     help="trace 侧车目录(默认跟随 local/games)")
     args = ap.parse_args(argv)
     cfg = load_config(args.config)
-    # 启动诊断:缺原生 weighted 内核时 legacyV2 会走 legacy 键,必须在
-    # 启动时显式可见,而不是只在决策记录里可查。
+    # 启动诊断:缺兼容版本的 native weighted 内核时 v2 会事务性回退 v1；
+    # 启动时显式报告实际 ABI,避免把旧 wheel 显示成可用。
     from ..shanten import format_kernel_diagnostic
 
     print(format_kernel_diagnostic(), flush=True)

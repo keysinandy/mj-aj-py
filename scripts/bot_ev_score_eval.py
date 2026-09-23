@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Run paired score evidence for a frozen bot evaluator profile.
 
-The source game is rebuilt independently for legacy and the candidate
-evaluator.  Only the hero's round settlement score is compared.  Evaluation
+The source game is rebuilt independently for the frozen ``legacy-v1`` baseline
+and the candidate evaluator. Only the hero's round settlement score is compared. Evaluation
 metadata is aggregated separately so a high fallback rate cannot masquerade
 as a complete v2 result.  This is an offline evidence runner; it does not
 change the production/default strategy.
@@ -108,8 +108,8 @@ def _play(seed, seat, dealer, ycbk, evaluator, *, profile=None):
     eval_stats = _new_eval_stats()
     while not game.done:
         current = game.current_seat()
-        if current != seat or evaluator == "legacy":
-            action = choose_action(game, current, evaluator="legacy")
+        if current != seat:
+            action = choose_action(game, current, evaluator="legacy-v1")
         elif evaluator == "shape-v2":
             started = time.perf_counter()
             action, evaluation = choose_game_action(game, current, profile)
@@ -198,7 +198,7 @@ def run(games=16, seed_start=240000, ycbk=False, evaluator="shape-v2",
     """Run a paired source-seed study and return a JSON-safe artifact."""
     if int(games) <= 0:
         raise ValueError("games must be positive")
-    if evaluator not in ("legacy", "shape-v1", "shape-v2"):
+    if evaluator not in ("legacy", "legacy-v1", "shape-v1", "shape-v2"):
         raise ValueError(f"unsupported evaluator: {evaluator}")
     profile = profile or ProfileSpec.shape_v2_discard()
     if evaluator == "shape-v2" and profile.scope != "discard":
@@ -215,7 +215,7 @@ def run(games=16, seed_start=240000, ycbk=False, evaluator="shape-v2",
         seat = index % 4
         dealer = (index // 4) % 4
         try:
-            legacy = _play(seed, seat, dealer, ycbk, "legacy")
+            legacy = _play(seed, seat, dealer, ycbk, "legacy-v1")
             candidate = _play(seed, seat, dealer, ycbk, evaluator,
                               profile=profile)
             rows.append({
@@ -360,7 +360,8 @@ def main(argv=None):
     parser.add_argument("--games", type=int, default=16)
     parser.add_argument("--seed-start", type=int, default=240000)
     parser.add_argument("--you-cai-bi-kao", action="store_true")
-    parser.add_argument("--evaluator", choices=("legacy", "shape-v1", "shape-v2"),
+    parser.add_argument("--evaluator", choices=("legacy", "legacy-v1",
+                                                  "shape-v1", "shape-v2"),
                         default="shape-v2")
     parser.add_argument("--node-budget", type=int)
     parser.add_argument("--time-budget-ms", type=float)

@@ -45,7 +45,8 @@ from mj.platform.tournament import TERMINAL_STATES  # noqa: E402
 from mj.legacy_eval import DEFAULT_BOT_EVALUATOR  # noqa: E402
 
 STRATEGIES = ("policy", "bot", "random", "policy-v3")
-EVALUATORS = ("legacy", "legacyV2", "legacy-v2",
+EVALUATORS = ("legacy", "legacy-v1", "legacy-two-ply-v1",
+              "legacyV2", "legacy-v2",
               "weighted-two-ply-frontier-v1", "shape-v1", "shape-v2",
               "policy-v3")
 
@@ -256,7 +257,7 @@ def build_parser():
                     help="默认 bot(线上首选;runner 原默认 policy,此处已改)")
     ap.add_argument("--bot-evaluator", default=DEFAULT_BOT_EVALUATOR,
                     choices=EVALUATORS,
-                    help="默认 legacyV2;可显式回退 legacy")
+                    help="默认 legacyV2;可显式回退 legacy-v1")
     ap.add_argument("--ckpt", default="runs/bc0/best.pt")
     ap.add_argument("--state-rate", type=float, default=16.0)
     ap.add_argument("--dump", action="store_true")

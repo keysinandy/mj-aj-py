@@ -24,13 +24,17 @@
 
 系统 SHALL 提供版本化 reaction profile，并把 reaction 行为与 discard profile 显式路由。
 
-- `evaluator="legacy"` MUST 使用冻结的 `legacy-shape-progress-v1`；
-- `legacyV2` aliases SHALL 使用 `legacy-react-v2` online profile（仅当性能/coverage 门禁启用，否则显式 profile-disabled 回 v1）；
+- 默认 evaluator、`evaluator="legacy"`、`legacyV2` 与 `legacy-v2` aliases MUST 使用 enabled `legacy-react-v2` online profile；
+- `evaluator="legacy-v1"`（及 `legacy-two-ply-v1` / `legacy_v1`）MUST 使用冻结的 `legacy-shape-progress-v1` rollback；
 - `legacyV2-offline` SHALL 使用 require-complete 的 offline profile；
 - profile 的 future mode、预算、coverage、tempo guard、版本号 MUST 进入 fingerprint/诊断。
 
-#### Scenario: 显式 legacy 保持 v1
-- **WHEN** 同一固定 reaction state 分别在 `5e0a405` 与新代码中以 `evaluator="legacy"` 执行
+#### Scenario: 默认与兼容别名启用 v2
+- **WHEN** 同一 reaction state 分别使用默认 evaluator、`legacy`、`legacyV2` 或 `legacy-v2`
+- **THEN** 它们都路由至 enabled online v2；冻结 v1 parity 通过显式 `legacy-v1` 验证
+
+#### Scenario: 显式 v1 rollback
+- **WHEN** 固定 reaction state 使用 `evaluator="legacy-v1"`
 - **THEN** 动作和核心 reason 与冻结 v1 fixture 一致
 
 #### Scenario: offline 不允许静默 v1 标签
@@ -43,6 +47,7 @@
 
 - complete 与 safe partial 可按 profile 规则使用；
 - Stage-A-only 与 Stage-B 结果不得直接混排；
+- online reaction 可统一请求 Stage-A-only safe partial，但每个参与 frontier 的所有 roots 都必须达到 profile coverage 门槛；
 - coverage 不足或任一必要候选缺结果时，online MUST 整层回退 v1；
 - 回退 MUST 记录 `u2_fallback_reason`、coverage 和 kernel diagnostics；
 - 不得使用“先算完的候选”做部分选择。
@@ -50,6 +55,10 @@
 #### Scenario: 一个 claim 超预算
 - **WHEN** PASS 与两个 claim 需要 U2，其中一个 claim 没有达到安全 coverage
 - **THEN** online 返回冻结 v1 的窗口结果，而不是在 PASS 与已算完 claim 中继续选择
+
+#### Scenario: 单 root PASS 不得被误判为 Stage-A strict winner
+- **WHEN** online reaction 的 PASS 基线只有一个 standing root
+- **THEN** 内核累积到 profile coverage 门槛后才可返回 Stage-A-only safe partial；不得在首个 draw 后因空集合比较而短路
 
 ### Requirement: reaction tempo SHALL 以离散摸牌距离表达
 

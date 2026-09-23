@@ -109,6 +109,59 @@ class TestWeightedTwoPlyFrontier(unittest.TestCase):
         self.assertEqual(row["future_short_circuit_reason"],
                          "frontier_singleton")
 
+    def test_stage_a_only_returns_safe_coverage_without_stage_b(self):
+        game = _seq100_game()
+        locked = len(game.melds[0])
+        visible = tuple(game.visible_counts(0))
+        tile = next(index for index, count in enumerate(game.hands[0])
+                    if count > 0)
+        hand = list(game.hands[0])
+        hand[tile] -= 1
+        root = LegacyRootCandidate(
+            tile=tile, hand=tuple(hand), shanten=shanten(hand, locked))
+        rows = weighted_two_ply_frontier(
+            [hand], [root.shanten], list(visible),
+            _native_legal_masks((root,), visible, False),
+            locked, False, 100000, 1000.0, 1000.0, 8192, 0.90, True,
+            1, stage_a_only=True)
+
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertFalse(row[2])
+        self.assertEqual(row[7], "future_ukeire_skipped")
+        self.assertGreaterEqual(row[3][0] / row[3][1], 0.90)
+        self.assertEqual(row[5][10], 0)
+
+    def test_stage_a_only_waits_until_every_root_is_covered(self):
+        game = _seq100_game()
+        locked = len(game.melds[0])
+        visible = tuple(game.visible_counts(0))
+        roots = []
+        for tile, count in enumerate(game.hands[0]):
+            if count <= 0:
+                continue
+            hand = list(game.hands[0])
+            hand[tile] -= 1
+            roots.append(LegacyRootCandidate(
+                tile=tile, hand=tuple(hand),
+                shanten=shanten(hand, locked)))
+            if len(roots) == 2:
+                break
+
+        rows = weighted_two_ply_frontier(
+            [list(root.hand) for root in roots],
+            [root.shanten for root in roots], list(visible),
+            _native_legal_masks(roots, visible, False),
+            locked, False, 100000, 1000.0, 1000.0, 8192, 0.90, True,
+            1, stage_a_only=True)
+
+        self.assertEqual(len(rows), 2)
+        for row in rows:
+            self.assertFalse(row[2])
+            self.assertEqual(row[7], "future_ukeire_skipped")
+            self.assertGreaterEqual(row[3][0] / row[3][1], 0.90)
+            self.assertEqual(row[5][10], 0)
+
     def test_partial_result_falls_back_when_bounds_overlap(self):
         game = _seq100_game()
         profile = self._exact_weighted(

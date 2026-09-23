@@ -30,7 +30,8 @@ DEFAULT_MATCH_CONFIG = {
 }
 MATCH_STRATEGIES = {"policy", "policy-v3", "bot", "random"}
 MATCH_EVALUATORS = {
-    "legacy", "legacy-two-ply-v1", *LEGACY_V2_EVALUATORS,
+    "legacy", "legacy-two-ply-v1", "legacy_v1", "legacy-v1",
+    *LEGACY_V2_EVALUATORS,
     "shape-v1", "shape-v2", "policy-v3",
 }
 

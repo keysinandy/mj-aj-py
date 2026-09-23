@@ -259,7 +259,8 @@ class BotEvDiscardTests(unittest.TestCase):
 
     def test_online_explanation_keeps_actual_legacy_choice_and_horizon(self):
         game = Game(seed=41)
-        legacy = choose_action(game, game.current_seat(), evaluator="legacy")
+        legacy = choose_action(game, game.current_seat(),
+                               evaluator="legacy-v1")
         action, evaluation = choose_action(
             game, game.current_seat(), evaluator="shape-v2",
             return_evaluation=True)

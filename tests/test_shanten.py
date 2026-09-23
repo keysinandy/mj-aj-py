@@ -1,12 +1,32 @@
 import random
 import unittest
+from unittest.mock import patch
 
+import mj.shanten as shanten_module
 from mj.tiles import counts, W
-from mj.shanten import shanten, ukeire, waits, baotou_ukeire
+from mj.shanten import (shanten, ukeire, waits, baotou_ukeire,
+                        kernel_runtime_diagnostic, format_kernel_diagnostic)
 from mj.win import is_baotou_wait
 
 
 class TestShanten(unittest.TestCase):
+    def test_old_weighted_kernel_abi_is_reported_as_degraded(self):
+        with patch.object(shanten_module, "_FORCE_PY", False), \
+                patch.object(shanten_module, "_rust_shanten", object()), \
+                patch.object(shanten_module, "_rust_ukeire", object()), \
+                patch.object(shanten_module,
+                             "WEIGHTED_TWO_PLY_KERNEL_VERSION",
+                             "rust-weighted-two-ply-v2"):
+            diagnostic = kernel_runtime_diagnostic()
+            message = format_kernel_diagnostic()
+        self.assertTrue(diagnostic["degraded"])
+        self.assertEqual(diagnostic["reason"],
+                         "weighted_kernel_version_mismatch")
+        self.assertFalse(diagnostic["weighted_kernel_compatible"])
+        self.assertEqual(diagnostic["weighted_kernel_required"],
+                         "rust-weighted-two-ply-v3")
+        self.assertIn("required=rust-weighted-two-ply-v3", message)
+
     def test_tenpai(self):
         self.assertEqual(shanten(counts("123m456m789m123p5p")), 0)
 
