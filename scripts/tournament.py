@@ -141,9 +141,9 @@ class RoomProbe:
             return True
         if isinstance(exc, ApiError):
             if exc.status == 404:
-                # 2026-09-17 实弹(bot_client.py:690 同口径):瞬时 404
-                # TOURNAMENT_GONE 房间仍在,应重试;其余 404(如
-                # TOURNAMENT_NOT_FOUND)是房间真注销,不应重启。
+                # 2026-09-17 实弹(同 BotClient._formal_gone_error,v35
+                # 具名口径):瞬时 404 TOURNAMENT_GONE 房间仍在,应重试;
+                # 其余 404(如 TOURNAMENT_NOT_FOUND)是房间真注销,不应重启。
                 return exc.code == "TOURNAMENT_GONE"
             return (exc.status in (0, 408, 425, 429)
                     or 500 <= exc.status < 600)

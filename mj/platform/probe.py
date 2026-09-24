@@ -17,7 +17,7 @@ from .config import load_config
 import mj.replay as replay_mod
 
 SERVER_DEFAULT = "https://10.240.169.190:18080"
-SUPPORTED_GUIDE_VERSION = 34
+SUPPORTED_GUIDE_VERSION = 35
 
 
 def probe(args):

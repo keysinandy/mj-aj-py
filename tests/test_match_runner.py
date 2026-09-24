@@ -12,6 +12,7 @@ import queue
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 from mj.log2data import collect
 from mj.platform.api import ApiError
@@ -23,23 +24,30 @@ from test_platform_client import FakeApi
 PORTAL_BINDING = json.dumps(
     {"code": "PORTAL_BINDING_REQUIRED", "message": "匿名令牌禁入"})
 MATCH_BUSY = json.dumps({"code": "MATCH_BUSY", "message": "在途房满 50"})
+# v35:404 TOURNAMENT_GONE = 房仍在但没等到 actor 回执(暂时条件),
+# 与房间真关停的 404 共用状态码,只能按 code 判型。
+TOURNAMENT_GONE = json.dumps(
+    {"code": "TOURNAMENT_GONE", "message": "房暂不可达"})
 
 
 class FakeMatchApi:
     """auto 房序列假服务器:match() 开新房,每房恰一场 synth 局。
 
     room_gone=True 时房内局打完不走 finished,而是 tournament 直接
-    404(模拟关停后玩家 API 404 的正常生命周期)。busy_before=n 时
-    前 n 次 match() 抛 409 MATCH_BUSY(退避重试路径)。
+    404(模拟关停后玩家 API 404 的正常生命周期)。gone_before=n 时
+    前 n 次 tournament() 抛 404 TOURNAMENT_GONE(模拟 v35 的「房暂时
+    不可达」:房仍在、actor 超预算)。busy_before=n 时前 n 次 match()
+    抛 409 MATCH_BUSY(退避重试路径)。
     """
 
     def __init__(self, results, seat, busy_before=0, room_gone=False,
-                 refuse_403=False):
+                 refuse_403=False, gone_before=0):
         self.results = list(results)
         self.seat = seat
         self.busy_before = busy_before
         self.room_gone = room_gone
         self.refuse_403 = refuse_403
+        self.gone_before = gone_before
         self.match_calls = 0
         self.room_idx = -1
         self.room_id = None
@@ -71,6 +79,9 @@ class FakeMatchApi:
 
     def tournament(self, tid):
         self._check_room(tid)
+        if self.gone_before:
+            self.gone_before -= 1
+            raise ApiError(404, TOURNAMENT_GONE)
         st = self.game.tournament(tid)
         if self.room_gone and st["status"] == "finished":
             raise ApiError(404, json.dumps({"message": "room closed"}))
@@ -198,6 +209,20 @@ class TestRunMatch(unittest.TestCase):
         api, stats = _drive_match(2, room_gone=True)
         self.assertEqual(stats["games"], 2)
         self.assertEqual(stats["rooms"], 2)
+
+    def test_transient_room_gone_404_keeps_room(self):
+        """auto 房瞬时 404 TOURNAMENT_GONE:房仍在,不能当关停弃房。
+
+        v35:该 404 与「房已关停」共用状态码,只能按 body 的 code 判型。
+        旧行为见码即 break → re-match,把仍在跑的房判成结束(在途场次
+        会被服务端按超时代打)。修好后应原地重试,不产生第二次 match。
+        """
+        with mock.patch("mj.platform.bot_client.time.sleep",
+                        side_effect=lambda value: None):
+            api, stats = _drive_match(1, gone_before=2)
+        self.assertEqual(stats["games"], 1)
+        self.assertEqual(stats["rooms"], 1)
+        self.assertEqual(api.match_calls, 1)
 
     def test_match_busy_backoff(self):
         """409 MATCH_BUSY 退避重试后正常入席。"""

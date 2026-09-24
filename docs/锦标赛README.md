@@ -132,10 +132,15 @@ python3 -m mj.platform.tournament_runner --strategy bot --bot-evaluator legacy
   一键启动 `scripts/tournament.py` 已用 `PYTHONUNBUFFERED=1` + 实时 tee 修掉。
   进程存活与对局进度优先看 `local/games/<日期>/` 是否有新 `.jsonl`
   (文件名 = `user_id_<gid>.jsonl`;一键启动还会周期打印计数)。
-- **瞬时 404 `TOURNAMENT_GONE`**:registering 期服务端会偶发瞬时 404
-  (房间实际仍在,2026-09-17 实测)。worker 会退避重试最多 12 次
+- **瞬时 404 `TOURNAMENT_GONE`**(v35 具名:与 `TOURNAMENT_NOT_FOUND`
+  共用 404,**只能按 body 的 `code` 判型**):房仍在、只是 2s 内没等到房
+  actor 回执(房忙/库慢,开赛与结算瞬间最常见)。registering 期实测会偶发
+  (2026-09-17)。worker 会退避重试最多 12 次
   (`FORMAL_TOURNAMENT_GONE_RETRY_MAX`,累计 ~80s);持续 404 才按
-  PROTOCOL_FATAL 退出。worker 意外退出后先用令牌查一次
+  PROTOCOL_FATAL 退出。**register/ready 提交同样按此判型**:
+  `FORMAL_ATTEND_GONE_RETRY_MAX=12` 次内释放占位、下一轮轮询(≈1s)重投
+  (幂等,重复提交安全),避免开赛瞬间一次 GONE 就丢席位被服务端代打。
+  worker 意外退出后先用令牌查一次
   `api.me()` / `api.tournament(tid)` 确认房间状态,房间还在就重新执行
   启动命令——报名状态在服务端,重启无副作用。
 

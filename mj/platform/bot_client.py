@@ -62,6 +62,13 @@ MAX_WINDOW_CONFIRM_PENDING_RETRIES = 8
 # (房间实际仍在、/me 正常),无界重试会把 worker 错杀成 PROTOCOL_FATAL;
 # 超过本上限(退避累计 ~80s)仍 404 才按真离赛处理。
 FORMAL_TOURNAMENT_GONE_RETRY_MAX = 12
+# register/ready 撞上瞬时 404 TOURNAMENT_GONE(v35)时的重投上限。占位每
+# 轮释放一次 ⇒ 重投节奏 ≈ 监督轮询(1s),累计约 12 次后放弃:既覆盖开赛/
+# 结算瞬间的 actor 超预算,又不产生无界 POST 循环。
+FORMAL_ATTEND_GONE_RETRY_MAX = 12
+# auto 房监督遇 404 TOURNAMENT_GONE 的重试间隔与上限(超过则按终止处理,
+# 交给 re-match 幂等返原房兜底)。
+MATCH_ROOM_GONE_RETRY_WAIT = 3.0
 # window-snapshot-identity-decision: deadline-driven confirmation budget.
 # Another WINDOW_CONFIRM pull is worth scheduling only while the remaining
 # window time still affords the round trip plus the decide+POST margin;
@@ -460,6 +467,19 @@ class BotClient:
             return False
         return exc.status in (0, 408, 425, 429) or 500 <= exc.status < 600
 
+    @staticmethod
+    def _formal_gone_error(exc):
+        """404 TOURNAMENT_GONE:房仍在,只是没等到 actor 回执(v35)。
+
+        它与 TOURNAMENT_NOT_FOUND **共用 404**,必须按 body 的 code 判
+        型:本 code = 暂时条件(房忙/库慢,开赛与结算瞬间最常见)⇒ 退避
+        后重试同一端点(register/ready 幂等,重复提交安全);缺 code 或
+        TOURNAMENT_NOT_FOUND = 永久条件 ⇒ 放弃。只看状态码会把「暂时不
+        可达」读成「房已删」而提前退出(2026-09-23 事故)。
+        """
+        return (isinstance(exc, ApiError) and exc.status == 404
+                and exc.code == "TOURNAMENT_GONE")
+
     def _formal_log_error(self, prefix, exc):
         safe = redact_exception(exc, [getattr(self.api, "token", None)])
         self._log(f"{prefix}: {safe.get('type')}: {safe.get('message')}")
@@ -525,7 +545,11 @@ class BotClient:
             except Exception as exc:
                 if self._formal_auth_error(exc):
                     raise
-                if not self._formal_transient_error(exc):
+                # GET /api/tournaments/me/rules 也在 v35 的 TOURNAMENT_GONE
+                # 端点清单里:它是暂时条件,按瞬态重试,而不是把整轮赛事判成
+                # PROTOCOL_FATAL 静默退出。
+                if not (self._formal_transient_error(exc)
+                        or self._formal_gone_error(exc)):
                     raise
                 self._formal_log_error("rules 拉取失败", exc)
                 if self._sleep_stop(delay, stop):
@@ -583,11 +607,16 @@ class BotClient:
     def _formal_attend(self, tid, stage_key):
         if stage_key in self._formal_attended:
             return
+        attempts = self._formal_attendance_attempts.get(stage_key, 0)
         # Reserve the key before making requests: a repeated poll or a
         # TOURNAMENT_STARTED race cannot create an unbounded POST loop.
+        # 唯一的例外是 v35 的 404 TOURNAMENT_GONE —— 那是「房暂时不可达」
+        # 而非「房不存在」,占位在下文按上限释放,由下一轮轮询(≈1s)重投;
+        # 否则开赛瞬间一次 GONE 就会永久丢掉本阶段席位(座位无人操作,
+        # 服务端代打)。
         self._formal_attended.add(stage_key)
-        self._formal_attendance_attempts[stage_key] = (
-            self._formal_attendance_attempts.get(stage_key, 0) + 1)
+        self._formal_attendance_attempts[stage_key] = attempts + 1
+        gone = False
         for operation, label in ((self.api.register, "register"),
                                  (self.api.ready, "ready")):
             try:
@@ -601,12 +630,24 @@ class BotClient:
                     self._formal_attendance_lost.add(stage_key)
                 elif self._formal_auth_error(exc):
                     raise
+                elif self._formal_gone_error(exc):
+                    gone = True
+                    self._formal_log_error(f"{label} 房暂不可达", exc)
                 elif not self._formal_transient_error(exc):
                     self._formal_log_error(f"{label} 失败", exc)
                 else:
                     self._formal_log_error(f"{label} 暂时失败", exc)
             except (ConnectionError, OSError, TimeoutError) as exc:
                 self._formal_log_error(f"{label} 暂时失败", exc)
+        if gone:
+            if attempts + 1 < FORMAL_ATTEND_GONE_RETRY_MAX:
+                # 释放占位 ⇒ 下一轮轮询重投(register/ready 幂等)。
+                self._formal_attended.discard(stage_key)
+            else:
+                self.tournament_warnings.append({
+                    "reason": "TOURNAMENT_GONE_ATTEND_EXHAUSTED",
+                    "stage": stage_key,
+                })
 
     def _formal_active_games(self, tournament):
         me = self.api.me()
@@ -736,8 +777,7 @@ class BotClient:
                         self.tournament_termination_reason = "AUTH_FAILED"
                         self._formal_log_error("赛事查询认证失败", exc)
                         break
-                    if (isinstance(exc, ApiError) and exc.status == 404
-                            and exc.code == "TOURNAMENT_GONE"
+                    if (self._formal_gone_error(exc)
                             and gone_retries < FORMAL_TOURNAMENT_GONE_RETRY_MAX):
                         # registering 期实测出现过瞬时 404(房间仍在,/me
                         # 正常)——有界退避重试,不把 worker 错杀成
@@ -919,15 +959,28 @@ class BotClient:
 
         与 run() 的锦标赛监督分离:auto 房无 register/ready(直连 409
         AUTO_MATCH_ONLY),registering = 等其他人入席满 4;finished/
-        closed/void 或房间 404(关停)= 本房结束,循环回去 re-match。
+        closed/void 或房间 404(关停,缺 code/NO_ROOM 语义)= 本房结束,
+        循环回去 re-match。404 TOURNAMENT_GONE(v35)是**暂时**不可达,
+        不能当关停——否则会把仍在跑的房判成结束,在途场次被服务端代打。
         """
         workers = {}
         idle = 0.0
+        # 同一房连续 GONE 的计数(成功一次即清零);超上限才按终止处理,
+        # 交给 re-match 兜底(在途 auto 房重调幂等返原房)。
+        gone_retries = 0
         while not (stop is not None and stop.is_set()):
             try:
                 t = self.api.tournament(tid)
             except ApiError as e:
-                if e.status == 404:
+                if self._formal_gone_error(e):
+                    gone_retries += 1
+                    if gone_retries <= FORMAL_TOURNAMENT_GONE_RETRY_MAX:
+                        self._log(f"auto 房 {tid} 暂不可达"
+                                  f"(TOURNAMENT_GONE {gone_retries}),重试")
+                        time.sleep(MATCH_ROOM_GONE_RETRY_WAIT)
+                        continue
+                    self._log(f"auto 房 {tid} 持续不可达,按终止处理")
+                elif e.status == 404:
                     self._log(f"auto 房 {tid} 已关停(正常生命周期)")
                 else:
                     self._log(f"tournament 查询失败: {e}")
@@ -938,6 +991,7 @@ class BotClient:
                 self._log(f"tournament 网络瞬断({e}),3s 重试")
                 time.sleep(3)
                 continue
+            gone_retries = 0
             status = t.get("status")
             if status in TERMINAL:
                 break

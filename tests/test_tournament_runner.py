@@ -14,7 +14,8 @@ from unittest import mock
 
 from mj.platform.api import Api, ApiError
 from mj.platform.bot_client import (
-    BotClient, FORMAL_POLL_INTERVAL, FORMAL_TOURNAMENT_GONE_RETRY_MAX)
+    BotClient, FORMAL_ATTEND_GONE_RETRY_MAX, FORMAL_POLL_INTERVAL,
+    FORMAL_TOURNAMENT_GONE_RETRY_MAX)
 from mj.platform.config import TournamentConfigError, load_tournament_config
 from mj.platform.recorder import Recorder
 from mj.platform.runner import DumpingApi
@@ -28,6 +29,11 @@ from mj.platform.tournament_runner import (TournamentWorker, build_parser,
 
 def _api_error(status, code, message=""):
     return ApiError(status, json.dumps({"code": code, "message": message}))
+
+
+def _code_less_error(status, message="room closed"):
+    """404 无 code 体(v35:判型必须用 code,缺失即按永久条件处理)。"""
+    return ApiError(status, json.dumps({"message": message}))
 
 
 class FakeTournamentApi:
@@ -70,6 +76,9 @@ class FakeTournamentApi:
     def rules(self):
         self.plan.setdefault("rules_calls", 0)
         self.plan["rules_calls"] += 1
+        failures = self.plan.get("rules_errors", [])
+        if failures:
+            raise failures.pop(0)
         exc = self.plan.get("rules_error")
         if exc is not None:
             raise exc
@@ -368,6 +377,103 @@ class TestFormalLifecycle(unittest.TestCase):
         self.assertEqual(stats["termination_reason"], "PROTOCOL_FATAL")
         self.assertEqual(api.tournament_calls,
                          FORMAL_TOURNAMENT_GONE_RETRY_MAX + 1)
+
+    def test_tournament_not_found_404_is_never_retried(self):
+        """v35 的另一半:缺 GONE 判型的 404 是永久条件,必须立刻放弃。
+
+        2026-09-23 事故是「把暂时读成永久」,这条守相反方向的回归:
+        补上 TOURNAMENT_GONE 判型不能顺带把 TOURNAMENT_NOT_FOUND(或
+        无 code 的 404)也拖成可重试。
+        """
+        for failure in (_api_error(404, "TOURNAMENT_NOT_FOUND"),
+                        _code_less_error(404)):
+            with self.subTest(failure=failure):
+                api = self._make_api(
+                    statuses=[{"status": "finished", "stage_id": "final"}],
+                    tournament_failures=[failure])
+                stats = _formal_bot(api).run()
+                self.assertEqual(stats["termination_reason"],
+                                 "PROTOCOL_FATAL")
+                self.assertEqual(api.tournament_calls, 1)
+
+    def test_attend_retries_transient_tournament_gone_404(self):
+        """register/ready 撞瞬时 TOURNAMENT_GONE:释放占位、下轮重投。
+
+        v35:该 404 与 TOURNAMENT_NOT_FOUND 共用状态码,语义是「房暂时
+        不可达」。旧行为把占位永久留在 _formal_attended ⇒ 开赛瞬间一次
+        GONE 就永久丢席位(座位无人操作,服务端代打)。
+        """
+        api = self._make_api(
+            statuses=["registering", "registering", "finished"],
+            register_errors=[_api_error(404, "TOURNAMENT_GONE")],
+            ready_errors=[_api_error(404, "TOURNAMENT_GONE")])
+        bot = _formal_bot(api)
+        with mock.patch("mj.platform.bot_client.time.sleep",
+                        side_effect=lambda value: None):
+            stats = bot.run()
+        self.assertEqual(stats["termination_reason"], "FINISHED")
+        self.assertEqual(len(api.register_calls), 2)
+        self.assertEqual(len(api.ready_calls), 2)
+        self.assertEqual(stats["tournament_warnings"], [])
+
+    def test_attend_gone_404_gives_up_after_bounded_retries(self):
+        """持续 GONE 只重投有限次:占位释放不能让 POST 变成无界循环。"""
+        api = self._make_api(
+            statuses=["registering"] * (FORMAL_ATTEND_GONE_RETRY_MAX + 2)
+                     + ["finished"],
+            register_errors=[_api_error(404, "TOURNAMENT_GONE")]
+                            * (FORMAL_ATTEND_GONE_RETRY_MAX + 4))
+        bot = _formal_bot(api)
+        with mock.patch("mj.platform.bot_client.time.sleep",
+                        side_effect=lambda value: None):
+            stats = bot.run()
+        self.assertEqual(stats["termination_reason"], "FINISHED")
+        self.assertEqual(len(api.register_calls),
+                         FORMAL_ATTEND_GONE_RETRY_MAX)
+        self.assertEqual(stats["tournament_warnings"], [{
+            "reason": "TOURNAMENT_GONE_ATTEND_EXHAUSTED",
+            "stage": ("top", "stage_id", "s1"),
+        }])
+
+    def test_rules_transient_gone_404_is_retried_not_fatal(self):
+        """GET /api/tournaments/me/rules 的 GONE 也在 v35 端点清单里。
+
+        旧行为把它判成永久条件 → 预检 raise → 整个 worker
+        PROTOCOL_FATAL 静默退出(预检失败不重开),正是事故形态。
+        """
+        api = self._make_api(
+            statuses=[{"status": "finished", "stage_id": "final"}],
+            rules_errors=[_api_error(404, "TOURNAMENT_GONE")])
+        bot = BotClient(api, "main", lambda *_: -1, mode="tournament",
+                        use_notify=False)
+        bot.configure_tournament(TournamentContext.from_me(
+            token_label="main", server=api.base,
+            response={"user_id": "user-main",
+                      "tournament_id": api.tournament_id,
+                      "active_games": []}))
+        bot._formal_poll_interval = 0
+        with mock.patch.object(
+                BotClient, "_sleep_stop",
+                side_effect=lambda seconds, stop: False):
+            stats = bot.run()
+        self.assertEqual(stats["termination_reason"], "FINISHED")
+        self.assertGreaterEqual(api.plan["rules_calls"], 2)
+
+    def test_rules_tournament_not_found_is_still_fatal(self):
+        api = self._make_api(
+            statuses=[{"status": "finished", "stage_id": "final"}],
+            rules_errors=[_code_less_error(404)])
+        bot = BotClient(api, "main", lambda *_: -1, mode="tournament",
+                        use_notify=False)
+        bot.configure_tournament(TournamentContext.from_me(
+            token_label="main", server=api.base,
+            response={"user_id": "user-main",
+                      "tournament_id": api.tournament_id,
+                      "active_games": []}))
+        bot._formal_poll_interval = 0
+        stats = bot.run()
+        self.assertEqual(stats["termination_reason"], "PROTOCOL_FATAL")
+        self.assertEqual(api.plan["rules_calls"], 1)
 
     def test_fallback_stage_key_spans_registering_and_stage_open(self):
         api = self._make_api(
