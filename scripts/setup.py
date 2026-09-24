@@ -18,8 +18,22 @@
     python3 scripts/setup.py --install --venv
                                           # 推荐:创建 .venv 并把整套环境装进去
     python3 scripts/setup.py --skip-tests  # 跳过引擎冒烟测试(快速)
+    python3 scripts/setup.py --install --venv --no-rust
+                                          # 缺 Rust 工具链时不构建内核
+    python3 scripts/setup.py --interpreter-check
+                                          # 只回答"这个解释器能不能建 Rust 内核",
+                                          # 供 setup.ps1/setup.sh 判断
 
 退出码:锦标赛核心路径就绪 = 0,否则 1。
+        --interpreter-check:0 = 可用且支持 Rust 内核,
+                            2 = 可用但超出内核支持范围,
+                            1 = 版本过低。
+
+环境变量:
+    MJ_SETUP_NO_AUTO_INSTALL=1
+        关掉全部自动改动:引导层在版本不符时不自动安装 Python,
+        本脚本也不自动删除版本不一致的 .venv(只警告)。
+        CI / 他人机器上跑检查时用得上。
 装好后启动锦标赛(在 .venv 里):
     .venv/bin/python scripts/tournament.py            # macOS
     .venv\\Scripts\\python.exe scripts\\tournament.py  # Windows
@@ -31,6 +45,7 @@ import argparse
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 
@@ -40,6 +55,14 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 MIN_PY = (3, 10)  # mj/platform 使用 `float | None` 联合类型语法
+# Rust shanten 内核(rust/Cargo.toml 的 pyo3 0.22)支持的解释器上限。
+# 超出这个区间锦标赛照样能跑(纯 Python 回退),只是内核构建会失败。
+# 引导层(setup.ps1/setup.sh)通过 --interpreter-check 的退出码读这个判据,
+# 不要把 3.13 这个数字抄到那两个脚本里。
+RUST_KERNEL_MAX_PY = (3, 13)
+
+# 设为 1 则关掉全部自动改动(自动安装 Python / 自动删除 .venv)
+NO_AUTO_INSTALL_ENV = "MJ_SETUP_NO_AUTO_INSTALL"
 
 DEFAULT_SERVER = "https://10.240.169.190:18080"
 PLATFORM_JSON = os.path.join("local", "platform.json")
@@ -90,9 +113,84 @@ def in_venv():
     return sys.prefix != getattr(sys, "base_prefix", sys.prefix)
 
 
-def bootstrap_venv(skip_tests):
+def venv_python_version(root=None):
+    """`.venv` 里解释器的 (major, minor);读不到返回 None。
+
+    读 pyvenv.cfg 的 version 键(3.3+ 都会写),省掉一次子进程。读不到时
+    必须当成"不确定"而不是"不匹配"——调用方据此决定要不要动这个目录。
+    """
+    root = _ROOT if root is None else root
+    cfg = os.path.join(root, ".venv", "pyvenv.cfg")
+    try:
+        with open(cfg, encoding="utf-8") as f:
+            for line in f:
+                key, sep, val = line.partition("=")
+                if not sep or key.strip() not in ("version", "version_info"):
+                    continue
+                parts = val.strip().split(".")
+                return (int(parts[0]), int(parts[1]))
+    except (OSError, ValueError, IndexError):
+        return None
+    return None
+
+
+def _no_auto_install():
+    """MJ_SETUP_NO_AUTO_INSTALL 是否开启(空/0/false/no 都算关)。"""
+    val = os.environ.get(NO_AUTO_INSTALL_ENV, "").strip().lower()
+    return val not in ("", "0", "false", "no")
+
+
+def _drop_mismatched_venv(py):
+    """解释器版本对不上时删掉 `.venv`,好让调用方重建。
+
+    返回 True = 已删除、需要重建;False = 版本一致、读不到版本(不碰),
+    或设了 MJ_SETUP_NO_AUTO_INSTALL(只警告)。不交互。
+    """
+    if not os.path.exists(py):
+        return False
+    current = (sys.version_info.major, sys.version_info.minor)
+    existing = venv_python_version()
+    if existing is None or existing == current:
+        return False
+    cur_s = ".".join(map(str, current))
+    old_s = ".".join(map(str, existing))
+    root = os.path.join(_ROOT, ".venv")
+    if _no_auto_install():
+        _warn(f".venv 由 Python {old_s} 创建,与当前解释器 {cur_s} 不一致;"
+              f"已设 {NO_AUTO_INSTALL_ENV},不自动删除")
+        print(f"         手动删除后重跑:{root}")
+        return False
+    print(f"  .venv 由 Python {old_s} 创建,与当前解释器 {cur_s} 不一致,"
+          f"删除重建(其中的包需重新下载)…", flush=True)
+    try:
+        shutil.rmtree(root)
+    except OSError as exc:  # noqa: BLE001
+        _fail(f"删除 .venv 失败:{exc}")
+        return False
+    return True
+
+
+def interpreter_verdict(version_info=None):
+    """当前解释器的三态判据,供引导层读退出码:
+
+    0 = 满足 MIN_PY 且不超出 Rust 内核支持范围;
+    2 = 满足 MIN_PY 但超出内核范围(锦标赛照跑,内核装不上);
+    1 = 低于 MIN_PY。
+    """
+    vi = sys.version_info if version_info is None else version_info
+    cur = (vi[0], vi[1])
+    if cur < MIN_PY:
+        return 1
+    if cur > RUST_KERNEL_MAX_PY:
+        return 2
+    return 0
+
+
+def bootstrap_venv(skip_tests, no_rust=False):
     """创建 .venv(若缺)并把安装流程委托给 venv 内的解释器重跑本脚本。
 
+    `.venv` 已存在但其解释器版本与当前解释器不一致时删除重建——否则
+    "换用 3.11"永远不会生效,后续都委托给旧解释器。
     web_client.sh / web_client.ps1 已优先选用 .venv 解释器;
     tournament.py 用 sys.executable,从 venv 里启动即落在 venv。
     """
@@ -101,7 +199,7 @@ def bootstrap_venv(skip_tests):
     if in_venv():
         _ok(f"已在 venv 中({sys.prefix})")
         return None  # 直接继续本进程的安装流程
-    if os.path.exists(py):
+    if os.path.exists(py) and not _drop_mismatched_venv(py):
         _ok(f".venv 已存在({py}),复用")
     else:
         cmd = [sys.executable, "-m", "venv", os.path.join(_ROOT, ".venv")]
@@ -119,6 +217,8 @@ def bootstrap_venv(skip_tests):
     inner = [py, os.path.abspath(__file__), "--install"]
     if skip_tests:
         inner.append("--skip-tests")
+    if no_rust:
+        inner.append("--no-rust")
     print(f"  在 venv 内继续安装:{' '.join(inner)}\n", flush=True)
     return subprocess.call(inner, cwd=_ROOT)
 
@@ -156,7 +256,7 @@ def check_core_imports():
     return ok
 
 
-def check_rust_kernel(install):
+def check_rust_kernel(install, allow_rust=True):
     print("\n[3/6] Rust shanten 内核(可选,缺省回退纯 Python)")
     if importlib.util.find_spec("mj_kernels") is not None:
         try:
@@ -171,9 +271,29 @@ def check_rust_kernel(install):
         except Exception as exc:  # noqa: BLE001
             _warn(f"mj_kernels 导入失败,回退纯 Python:{exc}")
             return False
+    if not allow_rust:
+        _warn("--no-rust,跳过 Rust 内核(纯 Python 回退)")
+        return False
     _warn("未安装 mj_kernels —— shanten/ukeire 走纯 Python,"
           "锦标赛可跑但决策稍慢")
     if install:
+        # 缺 cargo 时 maturin 会在构建元数据阶段长时间挂住,所以先查后走。
+        if shutil.which("cargo") is None:
+            _warn("未找到 cargo(Rust 工具链未安装),跳过构建;"
+                  "装上后重跑本脚本即自动构建")
+            print("         winget install --id Rustlang.Rustup -e")
+            print("         winget install --id Microsoft.VisualStudio"
+                  ".2022.BuildTools -e")
+            if sys.version_info[:2] > RUST_KERNEL_MAX_PY:
+                _warn("注意:当前 Python "
+                      f"{sys.version_info.major}.{sys.version_info.minor}"
+                      " 超出 Rust 内核支持范围(最高 "
+                      f"{'.'.join(map(str, RUST_KERNEL_MAX_PY))});"
+                      "若构建报版本不匹配,请用 3.11/3.12 重建 .venv")
+                print("         py install 3.11"
+                      "            # Windows(Python installation manager)")
+                print("         brew install python@3.11   # macOS")
+            return False
         if importlib.util.find_spec("maturin") is None:
             if not _pip_install(["maturin"]):
                 _warn("maturin 安装失败,跳过 Rust 内核")
@@ -184,7 +304,7 @@ def check_rust_kernel(install):
         if subprocess.call(cmd, cwd=_ROOT) == 0:
             _ok("Rust 内核已构建")
             return True
-        _warn("Rust 内核构建失败(缺 cargo?),继续用纯 Python")
+        _warn("Rust 内核构建失败,继续用纯 Python(见上方日志)")
     return False
 
 
@@ -276,11 +396,28 @@ def main(argv=None):
                     help="创建/复用 .venv 并在其中完成 --install(推荐)")
     ap.add_argument("--skip-tests", action="store_true",
                     help="跳过引擎冒烟测试")
+    ap.add_argument("--no-rust", action="store_true",
+                    help="跳过 Rust shanten 内核构建(纯 Python 回退)")
+    ap.add_argument("--interpreter-check", action="store_true",
+                    help="只报告当前解释器能否支撑 Rust 内核,以退出码返回:"
+                         "0 可用 / 2 超出内核范围 / 1 版本过低")
     args = ap.parse_args(argv)
+
+    if args.interpreter_check:
+        verdict = interpreter_verdict()
+        reason = {
+            0: "满足全部要求",
+            2: "可跑锦标赛,但超出 Rust 内核支持范围(最高 "
+               + ".".join(map(str, RUST_KERNEL_MAX_PY)) + ")",
+            1: "低于最低要求 " + ".".join(map(str, MIN_PY)),
+        }
+        print(f"Python {sys.version_info.major}.{sys.version_info.minor}."
+              f"{sys.version_info.micro}:{reason[verdict]}")
+        return verdict
 
     print(f"仓库根:{_ROOT}")
     if args.venv and not in_venv():
-        rc = bootstrap_venv(args.skip_tests)
+        rc = bootstrap_venv(args.skip_tests, args.no_rust)
         if rc is not None:
             if rc == 0:
                 print("\n===== 结论 =====")
@@ -293,7 +430,7 @@ def main(argv=None):
         print("已在 venv 内,继续当前进程安装流程。", flush=True)
 
     core_ok = check_python() and check_core_imports()
-    check_rust_kernel(args.install)
+    check_rust_kernel(args.install, allow_rust=not args.no_rust)
     check_optional(args.install)
     config_ok = ensure_platform_config()
     smoke_ok = run_smoke_tests(args.skip_tests)

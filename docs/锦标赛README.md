@@ -20,20 +20,54 @@
 scripts/setup.sh --install --venv
 
 # Windows
-powershell -ExecutionPolicy Bypass -File scripts\setup.ps1 -Install -Venv
+powershell -ExecutionPolicy Bypass -File scripts\setup.ps1 --install --venv
 ```
 
 ### 1.1 引导层(setup.sh / setup.ps1)
 
-- 依次探测 `python3.11`/`python3.10`/`python3`/`python`(Windows 先试
-  `py -3` 启动器),取第一个版本 ≥ 3.10 的——macOS CLT 自带 `python3`
-  常是 3.9,版本不符视同没有;
-- 都没有:交互模式征求同意后自动安装(mac 走 `brew install python@3.11`,
-  Windows 走 `winget install --id Python.Python.3.11 -e --scope user`);
-  非交互/无包管理器则打印手动路线(CLT / brew / python.org,
-  Windows 提醒勾 "Add python.exe to PATH");
-- winget 装完需**重开终端**(新 PATH 只在新会话生效)再跑一次脚本;
-  brew 装完直接用显式前缀路径继续执行。
+探测是**两段式**,带版本号的候选排前面:只有这样才能命中已装的旧版。
+`py -3` / `python3` 永远指向最新版,机器上装了 3.14 就会把 3.11 顶掉,所以
+它们只能垫底兜底。
+
+每个候选都问一次 `setup.py --interpreter-check`,按退出码分三态:
+
+| 退出码 | 含义 | 引导层动作 |
+|--------|------|-----------|
+| `0` | ≥ 3.10 且在 Rust 内核支持范围内(≤ 3.13) | 选它,直接跑 setup.py |
+| `2` | ≥ 3.10 但超出内核区间(例如只有 3.14) | 跳过,记为降级候选 |
+| `1` | 低于 3.10(macOS CLT 自带的 `python3` 常是 3.9) | 跳过 |
+| 其他 | 该命令不是可用的 Python(如 Microsoft Store 占位 exe) | 跳过 |
+
+探测顺序:
+- Windows:`py -3.11` → `-3.12` → `-3.13` → `-3.10` → `python3.11` → `3.12` →
+  `3.13` → `3.10` → `py -3` → `python3` → `python`;
+- macOS/Linux:`python3.11` → `python3.12` → `python3.13` → `python3.10` →
+  `python3` → `python`。
+
+取第一个 `0`;一个都没有时:
+
+1. **有降级候选(verdict 2)或完全没有 Python → 不再征求同意,直接安装**:
+2. 安装路径:
+   - Windows 优先 `py install 3.11`(Python installation manager,装进自己的
+     目录并注册到启动器,**本会话立即可用,不用重开终端**);
+   - 它不可用时回退
+     `winget install --id Python.Python.3.11 -e --scope user --source winget`
+     ——装完需**重开终端**(新 PATH 只在新会话生效)才能被 `python3.11` 找到,
+     故脚本还会兜一下 `%LOCALAPPDATA%\Programs\Python\Python311\python.exe`;
+   - mac/Linux 走 `brew install python@3.11`,装完用显式前缀路径
+     `/opt/homebrew/bin/python3.11`(Intel 是 `/usr/local/bin/...`)继续执行,
+     不必重开终端;
+3. 装不上(无 brew / 无 winget / 安装失败)→ **降级**用那个 3.13+ 的解释器
+   继续跑,并警告 Rust 内核不可用:锦标赛照跑,shanten/ukeire 走纯 Python,
+   决策稍慢;
+4. 连降级候选都没有 → 退出 1,打印手动路线(CLT / brew / python.org;
+   Windows 提醒勾 "Add python.exe to PATH")。
+
+想关掉自动安装:设 `MJ_SETUP_NO_AUTO_INSTALL=1`(同时会让 setup.py 不自动
+删除版本不一致的 `.venv`,只警告),CI 或他人机器上跑检查时用得上。
+
+**版本判据只在 `setup.py` 的 `MIN_PY` / `RUST_KERNEL_MAX_PY` 一处维护**,
+引导层只读退出码——不要在 `setup.ps1` / `setup.sh` 里再抄一份 `3.13`。
 
 ### 1.2 安装层(scripts/setup.py,六步分层,先保命再锦上添花)
 
@@ -53,6 +87,12 @@ powershell -ExecutionPolicy Bypass -File scripts\setup.ps1 -Install -Venv
 
 `--venv`:创建/复用仓库根 `.venv`、升级其 pip、把 `--install` 委托给
 venv 解释器重入本脚本(所有包装进 venv,不污染系统 Python)。
+
+`.venv` 已存在但**其解释器版本与当前解释器不一致**时(例如换成 3.11 后重跑),
+会**直接删除 `.venv` 重建**——否则"改用 3.11"永远不会生效,后续都会委托给
+那个旧解释器。注意其中的包(如 torch)要重新下载;不想让它动,设
+`MJ_SETUP_NO_AUTO_INSTALL=1`。读不到 `.venv/pyvenv.cfg` 时视为"不确定",
+保持复用不动。
 
 装好后后续命令一律用 `.venv/bin/python`(Windows:
 `.venv\Scripts\python.exe`);`scripts/web_client.sh` / `web_client.ps1`
