@@ -107,7 +107,12 @@ def dataset_fingerprint(data_dir: str, teacher: str) -> str:
         keys = ("schema", "feature_contract", "big_hand_shadow_contract",
                 "evaluator", "teacher_version",
                 "teacher_fingerprint", "scope", "you_cai_bi_kao",
-                "seed_domain", "games", "n_shards", "git_commit")
+                "seed_domain", "games", "n_shards", "git_commit",
+                # Match-level rule identity is part of the value-label
+                # semantics; campaign fields make a resumed corpus fail loud
+                # if it was generated under a different frozen campaign.
+                "per_shard", "match_rules", "campaign_id",
+                "campaign_fingerprint", "shards")
         payload = {k: manifest[k] for k in keys if k in manifest}
         payload["teacher"] = teacher
         return fingerprint(payload, 24)
