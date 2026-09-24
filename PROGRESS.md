@@ -66,6 +66,14 @@
 > 估算；同窗重建时允许更高等级证据替换较早粗估，只有同等级才保守取最小。
 > 同时跨相位确认日志不再把 `response_peng.window_deadline_ms` 伪记为吃窗
 > `exact_deadline_at`。专项测试覆盖精确截止升级及跨相位日志口径。
+>
+> **线上可靠性发布门（2026-09-24）**：`scripts/window_acceptance.py --gate`
+> 将既有归因报告升级为可自动化阻断的发布门；仅 `--scope fresh_acceptance`
+> 且提供冻结 commit 时有效。默认要求未决策服务端超时、确认预算耗尽、动作
+> 拒绝/不确定、镜像漂移、窗口 409、重复 POST、canonical client loss 与
+> hard-fail 全为 0，重放/合法集错误返回 1、可靠性门失败返回 2。日志发现
+> 同时支持自由对战与 `tournament_<tid>_b*_t*.jsonl` 正式赛命名。完整命令、
+> 指标口径与失败归因见 `docs/平台窗口修复与验收.md`。
 
 > **弱键决策（window-snapshot-identity-decision，2026-09-17）**：服务端
 > 不部署窗口身份字段（guide v34 全字段普查零命中，见

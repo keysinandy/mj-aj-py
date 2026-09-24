@@ -221,8 +221,10 @@ python3 -m mj.logview <gid> --windows
 # 自记日志对账(合法集 + 胡结算 + 积分)
 python3 -m mj.log_replay <gid>
 
-# 窗口验收归因(弱键决策/确认预算/409 分布)
-python3 scripts/window_acceptance.py <roomId>
+# 窗口可靠性发布门（0=通过、1=重放/合法性失败、2=可靠性失败）
+python3 scripts/window_acceptance.py <tournamentId> \
+  --scope fresh_acceptance --commit "$(git rev-parse HEAD)" --gate \
+  --out local/acceptance/<tournamentId>_report.json
 ```
 
 正式赛无免认证事件流(锦标赛 id 走 test-rooms 端点一律 404),

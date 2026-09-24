@@ -1,7 +1,8 @@
 """Summarize one recorded room without contacting the server or changing logs.
 
 Usage: python3 scripts/window_acceptance.py ROOM [--out local/report.json]
-Exit 0 means no detected replay/legal errors, not complete window acceptance.
+Without ``--gate``, exit 0 only means no replay/legal errors.  With ``--gate``,
+exit 2 means the online-reliability release gate failed.
 """
 
 import argparse
@@ -1611,9 +1612,60 @@ def _transport_diagnostic_summary(diagnostics, external_rows):
     }
 
 
+def _reliability_gate(report, *, max_window_409=0, max_mirror_drift=0):
+    """Evaluate a fresh run against the online reliability release gate."""
+    reliability = report.get("reliability", {}).get("counts", {})
+    window_409 = report.get("window_409", {})
+    hard_fail = report.get("hard_fail_checks", {})
+    metrics = {
+        "chosen_null_server_timeout": reliability.get(
+            "chosen_null_server_timeout", 0),
+        "confirmation_retry_exhausted": reliability.get(
+            "confirmation_retry_exhausted", 0),
+        "identity_confirmation_budget_exhausted": reliability.get(
+            "identity_confirmation_budget_exhausted", 0),
+        "action_rejected": reliability.get("action_rejected", 0),
+        "action_uncertain": reliability.get("action_uncertain", 0),
+        "mirror_drift": reliability.get("mirror_drift", 0),
+        "window_409": window_409.get("window_409_count", 0),
+        "duplicate_post_after_409": window_409.get(
+            "duplicate_post_after_409", 0),
+        "duplicate_post_after_uncertain": window_409.get(
+            "duplicate_post_after_uncertain", 0),
+        "canonical_client_loss": report.get(
+            "window_attribution", {}).get("canonical_client_loss_count", 0),
+        "hard_fail_total": sum(int(value or 0)
+                               for value in hard_fail.values()),
+    }
+    limits = {key: 0 for key in metrics}
+    limits["window_409"] = max(0, int(max_window_409))
+    limits["mirror_drift"] = max(0, int(max_mirror_drift))
+    violations = [
+        {"metric": key, "actual": value, "limit": limits[key]}
+        for key, value in metrics.items()
+        if int(value or 0) > limits[key]
+    ]
+    scope = report.get("acceptance_scope", {})
+    if not scope.get("eligible_for_final_denominator"):
+        violations.append({
+            "metric": "acceptance_scope",
+            "actual": scope.get("kind", "unspecified"),
+            "required": "fresh_acceptance",
+        })
+    if not scope.get("commit"):
+        violations.append({
+            "metric": "commit",
+            "actual": None,
+            "required": "non-empty commit",
+        })
+    return {"ok": not violations, "metrics": metrics,
+            "limits": limits, "violations": violations}
+
+
 def summarize(paths, *, acceptance_scope="unspecified", commit=None,
               transport_logs=None):
     types, actions, misses, confirms, transport = (Counter() for _ in range(5))
+    reliability = Counter()
     gap_reasons = Counter()
     gap_impacts = Counter()
     strong_gap_risks = 0
@@ -1727,6 +1779,8 @@ def summarize(paths, *, acceptance_scope="unspecified", commit=None,
                     if legal != row["legal"]:
                         audit["legal_mismatches"] += 1
             elif kind == "reset":
+                if "mirror_drift:" in str(row.get("reason") or ""):
+                    reliability["mirror_drift"] += 1
                 mirror = None
             elif kind == "req":
                 requests.append(row)
@@ -1802,16 +1856,29 @@ def summarize(paths, *, acceptance_scope="unspecified", commit=None,
                 if row.get("ok") and row.get("decision") in decision_keys:
                     successful_keys.add(decision_keys[row["decision"]])
             elif kind == "claim_miss":
-                misses[f'{row.get("phase")}/{row.get("reason")}'] += 1
-                room_misses[f'{row.get("phase")}/{row.get("reason")}'] += 1
+                reason = str(row.get("reason") or "")
+                misses[f'{row.get("phase")}/{reason}'] += 1
+                room_misses[f'{row.get("phase")}/{reason}'] += 1
                 room_miss_rows.append(row)
-                if row.get("reason") == "decision_boundary_resync" and mirror is not None:
+                if row.get("chosen") is None \
+                        and reason.startswith("server_timeout_"):
+                    reliability["chosen_null_server_timeout"] += 1
+                if reason.startswith("action_rejected"):
+                    reliability["action_rejected"] += 1
+                if reason.startswith("action_uncertain"):
+                    reliability["action_uncertain"] += 1
+                if reason == "decision_boundary_resync" and mirror is not None:
                     boundary_keys.append((row["phase"], mirror.round_no,
                                           mirror.pending, row.get("seq", cursor)))
             elif kind == "window_confirm":
                 outcome = row.get("outcome", row.get("stage", "unknown"))
                 confirms[outcome] += 1
                 room_confirms[outcome] += 1
+                reason = str(row.get("reason") or "")
+                if reason == "confirmation_retry_exhausted":
+                    reliability["confirmation_retry_exhausted"] += 1
+                elif reason == "identity_confirmation_budget_exhausted":
+                    reliability["identity_confirmation_budget_exhausted"] += 1
                 eligible_key = _authoritative_eligible_window_key(row)
                 if eligible_key is not None:
                     room_eligible_keys.add(eligible_key)
@@ -2353,6 +2420,18 @@ def summarize(paths, *, acceptance_scope="unspecified", commit=None,
             "eligible_for_final_denominator": (
                 acceptance_scope == "fresh_acceptance"),
         },
+        "reliability": {
+            "counts": {
+                key: reliability.get(key, 0) for key in (
+                    "chosen_null_server_timeout",
+                    "confirmation_retry_exhausted",
+                    "identity_confirmation_budget_exhausted",
+                    "action_rejected",
+                    "action_uncertain",
+                    "mirror_drift",
+                )
+            },
+        },
         "window_409": {
             "all_action_409": len(window_409_chains) + len(normal_409_chains),
             "window_409_count": len(window_409_chains),
@@ -2476,20 +2555,42 @@ def main():
     parser.add_argument("--transport-log", action="append", type=Path,
                         default=[],
                         help="Optional gateway/server timing JSONL; repeatable")
+    parser.add_argument(
+        "--gate", action="store_true",
+        help="Enforce the fresh-run online reliability release gate")
+    parser.add_argument(
+        "--max-window-409", type=int, default=0,
+        help="Maximum tolerated window action 409 count in gate mode")
+    parser.add_argument(
+        "--max-mirror-drift", type=int, default=0,
+        help="Maximum tolerated mirror drift reset count in gate mode")
     args = parser.parse_args()
-    paths = sorted(args.root.glob(f"**/*_{args.room}_r*_b*.jsonl"))
+    patterns = (f"**/*_{args.room}_r*_b*.jsonl",
+                f"**/tournament_{args.room}_b*_t*.jsonl")
+    paths = sorted({path for pattern in patterns
+                    for path in args.root.glob(pattern)})
     if not paths:
         parser.error(f"No logs for room {args.room}")
     report = summarize(paths, acceptance_scope=args.scope, commit=args.commit,
                        transport_logs=args.transport_log)
+    if args.gate:
+        report["reliability"]["gate"] = _reliability_gate(
+            report, max_window_409=args.max_window_409,
+            max_mirror_drift=args.max_mirror_drift)
     result = json.dumps(report, ensure_ascii=False, indent=2)
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(result + "\n", encoding="utf8")
     else:
         print(result)
-    return int(any(g["replay_illegal"] or g["coverage"].get("legal_mismatches")
-                   for g in report["games"]))
+    replay_failed = any(
+        g["replay_illegal"] or g["coverage"].get("legal_mismatches")
+        for g in report["games"])
+    if replay_failed:
+        return 1
+    if args.gate and not report["reliability"]["gate"]["ok"]:
+        return 2
+    return 0
 
 
 if __name__ == "__main__":

@@ -1,8 +1,8 @@
 import json
 
 from mj.platform.bot_client import BotClient
-from scripts.window_acceptance import (_confirm_diagnostic, _transport_attribution,
-                                       summarize)
+from scripts.window_acceptance import (_confirm_diagnostic, _reliability_gate,
+                                       _transport_attribution, summarize)
 from test_window_recovery import _snapshot
 
 
@@ -767,3 +767,61 @@ def test_legacy_identity_and_window_409_are_reported_as_weak_evidence(tmp_path):
     assert report["window_409"]["window_409_linked"] == 1
     assert report["window_409"]["duplicate_post_after_409"] == 0
     assert report["window_409"]["chains"][0]["gid"] == "g"
+
+
+def test_reliability_gate_counts_unresolved_online_failures(tmp_path):
+    records = [
+        {"type": "claim_miss", "phase": "response_chi",
+         "reason": "server_timeout_chi", "chosen": None},
+        {"type": "claim_miss", "phase": "response_peng",
+         "reason": "server_timeout_peng", "chosen": -5},
+        {"type": "claim_miss", "phase": "response_peng",
+         "reason": "action_rejected", "chosen": -5},
+        {"type": "claim_miss", "phase": "response_peng",
+         "reason": "action_uncertain", "chosen": -5},
+        {"type": "window_confirm", "phase": "response_chi",
+         "outcome": "expired", "reason": "confirmation_retry_exhausted"},
+        {"type": "window_confirm", "phase": "response_peng",
+         "outcome": "unconfirmed",
+         "reason": "identity_confirmation_budget_exhausted"},
+        {"type": "reset",
+         "reason": "动作结果需重锚: mirror_drift:draw:hand_count=14"},
+        {"type": "end", "reason": "finished"},
+    ]
+    path = tmp_path / "reliability.jsonl"
+    path.write_text("\n".join(json.dumps(row) for row in records))
+
+    report = summarize([path], acceptance_scope="fresh_acceptance",
+                       commit="deadbeef")
+    counts = report["reliability"]["counts"]
+
+    assert counts == {
+        "chosen_null_server_timeout": 1,
+        "confirmation_retry_exhausted": 1,
+        "identity_confirmation_budget_exhausted": 1,
+        "action_rejected": 1,
+        "action_uncertain": 1,
+        "mirror_drift": 1,
+    }
+    gate = _reliability_gate(report)
+    assert gate["ok"] is False
+    assert {item["metric"] for item in gate["violations"]} >= {
+        "chosen_null_server_timeout", "confirmation_retry_exhausted",
+        "identity_confirmation_budget_exhausted", "action_rejected",
+        "action_uncertain", "mirror_drift",
+    }
+
+
+def test_reliability_gate_requires_fresh_scope_and_commit(tmp_path):
+    path = tmp_path / "clean.jsonl"
+    path.write_text(json.dumps({"type": "end", "reason": "finished"}))
+
+    incomplete = _reliability_gate(summarize([path]))
+    assert incomplete["ok"] is False
+    assert {item["metric"] for item in incomplete["violations"]} == {
+        "acceptance_scope", "commit",
+    }
+
+    fresh = summarize([path], acceptance_scope="fresh_acceptance",
+                      commit="deadbeef")
+    assert _reliability_gate(fresh)["ok"] is True
