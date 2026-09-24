@@ -1,4 +1,4 @@
-# One-click 浏览器启动本地对战客户端:拉起 clientd sidecar + Vite 前端,打开浏览器。
+﻿# One-click 浏览器启动本地对战客户端:拉起 clientd sidecar + Vite 前端,打开浏览器。
 #
 # 用法:
 #   powershell -ExecutionPolicy Bypass -File scripts\web_client.ps1
@@ -11,6 +11,8 @@
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $Root
+
+Write-Host "正在启动本地对战客户端(浏览器)…"
 
 $BaseHttpPort = 17320
 $MaxHttpPort = 17418
@@ -178,3 +180,5 @@ try {
         }
     }
 }
+
+Write-Host "web_client 退出时会停止本次启动的 clientd；下次运行会重启旧实例。"
