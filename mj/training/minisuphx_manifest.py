@@ -10,9 +10,14 @@
 的数值定义 ``clip(score/96,-1,1)``(= 设计 §3 的 ``clip(score/24,-4,4)/4``),
 这里只给出稳定命名与校验,不重复实现 tanh head。
 
+特征契约(R3):v1 训练线统一使用 ``public-v1``(75 公共平面);
+``oracle-v1``(75 公共 + 16 oracle)只在 Champion-v1 冻结后的 Oracle Guiding
+阶段使用;``big-hand-shadow-v1`` 为 metadata-only,不计入网络输入。任何跨
+public/oracle 的补零或尽量加载都会被 fail-loud 拒绝。
+
 所有 fingerprint 使用 :func:`mj.decision.profile.fingerprint`(canonical JSON,
 稳定键序)。manifest 携带 ``schema`` + ``version`` 字段,任何旧 checkpoint/rollout
-的 value contract 归属不同时,构造/merge 必须显式拒绝。
+的 value/feature contract 归属不同时,构造/merge 必须显式拒绝。
 """
 
 from __future__ import annotations
@@ -39,7 +44,119 @@ ACTION_SCOPE_DISCARD = "discard-only-v1"
 _ACTION_SCOPES = (ACTION_SCOPE_DISCARD,)       # v1 阶梯:discard -> +PONG-> +CHOW
 
 MODEL_ARCH = "resnet-6x128"
-FEATURE_CONTRACT = "planes-91-oracle-16-scalars-8"  # features.N_PLANES(+oracle)
+
+# ===== feature contracts (R3: public-only v1, oracle only post-Champion-v1) ====
+#
+# 历史命名把含混的 "planes-91" 直接当训练特征契约,但 v1 的 BC-v1/DAgger/PPO
+# 与线上推理实际用 75 公共平面(MahjongDiscardEnv.extract(oracle=False))。
+# 这里冻结三个显式契约,网络输入维度一经声明即绑定指纹,不允许靠补零或尽量
+# 加载在 public(75)/oracle(91) 之间伪装成同一 policy(R3 MUST fail-loud)。
+
+FEATURE_PUBLIC = "public-v1"                # n_planes=75, scalars=8, runtime
+FEATURE_ORACLE = "oracle-v1"                # n_planes=91 (+16 oracle), runtime
+FEATURE_BIG_HAND_SHADOW = "big-hand-shadow-v1"   # metadata-only, 无 runtime tensor
+
+# v1 训练线默认公共特征契约;只有在 Champion-v1 冻结后才允许 oracle-v1。
+FEATURE_CONTRACT = FEATURE_PUBLIC
+
+
+@dataclass(frozen=True)
+class FeatureContract:
+    """一个冻结的 NN 输入特征契约,身份由 name+维度+verbose 共同决定。
+
+    ``runtime`` 为 False 时仅表示 shard metadata / hard-state / 分桶身份
+    (如 ``big-hand-shadow-v1``),不得承载网络输入张量。
+    """
+
+    name: str
+    n_planes: int
+    n_scalars: int
+    oracle_planes: int
+    display: str
+    runtime: bool
+    schema: str = "minisuphx-feature-contract-v1"
+
+    def __post_init__(self):
+        if self.schema != "minisuphx-feature-contract-v1":
+            raise ValueError(f"unsupported feature contract schema: {self.schema!r}")
+        if not self.name:
+            raise ValueError("feature contract name must not be empty")
+        if int(self.n_planes) < 0 or int(self.n_scalars) < 0:
+            raise ValueError("feature dimensions must be non-negative")
+        if int(self.oracle_planes) < 0:
+            raise ValueError("oracle plane count must be non-negative")
+        if self.runtime:
+            if int(self.n_planes) == 0 or int(self.n_scalars) == 0:
+                raise ValueError("runtime feature contract must describe a tensor")
+            if bool(self.oracle_planes) != (self.name == FEATURE_ORACLE):
+                raise ValueError(
+                    "oracle feature contract must be the only one carrying "
+                    "oracle planes")
+        elif int(self.n_planes) != 0 or int(self.n_scalars) != 0:
+            raise ValueError(
+                "non-runtime (metadata-only) feature contract must not claim "
+                "a tensor dimension")
+        object.__setattr__(self, "n_planes", int(self.n_planes))
+        object.__setattr__(self, "n_scalars", int(self.n_scalars))
+        object.__setattr__(self, "oracle_planes", int(self.oracle_planes))
+
+    @property
+    def total_planes(self) -> int:
+        return int(self.n_planes + self.oracle_planes)
+
+    def payload(self) -> dict:
+        return asdict(self)
+
+    @property
+    def fingerprint(self) -> str:
+        return fingerprint(self.payload(), 24)
+
+    def as_json(self) -> dict:
+        value = self.payload()
+        value["fingerprint"] = self.fingerprint
+        return value
+
+
+FEATURE_CONTRACTS: dict[str, FeatureContract] = {
+    FEATURE_PUBLIC: FeatureContract(
+        name=FEATURE_PUBLIC, n_planes=75, n_scalars=8, oracle_planes=0,
+        display="planes-75-scalars-8", runtime=True),
+    FEATURE_ORACLE: FeatureContract(
+        name=FEATURE_ORACLE, n_planes=75, n_scalars=8, oracle_planes=16,
+        display="planes-91-oracle16-scalars-8", runtime=True),
+    FEATURE_BIG_HAND_SHADOW: FeatureContract(
+        name=FEATURE_BIG_HAND_SHADOW, n_planes=0, n_scalars=0, oracle_planes=0,
+        display="metadata-only", runtime=False),
+}
+
+
+def feature_contract(name: str) -> FeatureContract:
+    """按 name 取冻结特征契约;未知契约 fail-loud,不允许静默近似。"""
+    try:
+        return FEATURE_CONTRACTS[str(name)]
+    except (KeyError, ValueError) as exc:
+        raise ValueError(
+            f"unknown feature contract {name!r}; known: "
+            f"{', '.join(sorted(FEATURE_CONTRACTS))}") from exc
+
+
+def require_feature_contract(name: str, expected: str = FEATURE_CONTRACT) -> None:
+    """校验一个(可能来自 checkpoint/rollout/配置)的特征契约身份。"""
+    if str(name) != expected:
+        raise ValueError(
+            f"feature contract mismatch: got {name!r}, expected {expected!r}")
+
+
+def verify_feature_planes(name: str, n_planes: int) -> None:
+    """校验网络/观测张量的平面数与该契约一致,避免 75/91 补零互称同一 policy。"""
+    contract = feature_contract(name)
+    if not contract.runtime:
+        raise ValueError(
+            f"feature contract {name!r} is metadata-only and has no tensor width")
+    if int(n_planes) != contract.total_planes:
+        raise ValueError(
+            f"feature contract {name!r} declares {contract.total_planes} planes "
+            f"but a tensor with {int(n_planes)} planes was supplied")
 
 # ===== value contract ==========================================================
 
@@ -119,6 +236,7 @@ class MiniSuphxRunManifest:
             raise ValueError(f"unknown action scope: {self.action_scope!r}")
         if self.value_contract != VALUE_CONTRACT:
             raise ValueError(f"unknown value contract: {self.value_contract!r}")
+        feature_contract(self.feature_contract)  # fail-loud on unknown contract
         if self.allow_final_test:
             raise ValueError(
                 "training campaigns MUST NOT allow final-test seeds")
@@ -163,6 +281,7 @@ class PolicyManifest:
             raise ValueError("policy_version must be a non-negative int")
         if self.value_contract != VALUE_CONTRACT:
             raise ValueError(f"unknown value contract: {self.value_contract!r}")
+        feature_contract(self.feature_contract)  # fail-loud on unknown contract
 
     def payload(self) -> dict:
         return asdict(self)
@@ -208,6 +327,7 @@ class RolloutManifest:
             raise ValueError("transition_count must be non-negative")
         if self.value_contract != VALUE_CONTRACT:
             raise ValueError(f"value contract mismatch: {self.value_contract!r}")
+        feature_contract(self.feature_contract)  # fail-loud on unknown contract
 
     def payload(self) -> dict:
         return asdict(self)

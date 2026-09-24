@@ -5,6 +5,87 @@ import pytest
 from mj.training import minisuphx_manifest as m
 
 
+# ===== feature contracts (task 13.1) ===========================================
+
+def test_feature_contract_registry_is_frozen():
+    public = m.feature_contract(m.FEATURE_PUBLIC)
+    oracle = m.feature_contract(m.FEATURE_ORACLE)
+    shadow = m.feature_contract(m.FEATURE_BIG_HAND_SHADOW)
+
+    # v1 训练线默认公共特征契约
+    assert m.FEATURE_CONTRACT == m.FEATURE_PUBLIC
+    assert public.n_planes == 75 and public.n_scalars == 8
+    assert public.oracle_planes == 0
+    assert public.runtime is True
+
+    assert oracle.n_planes == 75 and oracle.n_scalars == 8
+    assert oracle.oracle_planes == 16
+    assert oracle.total_planes == 91
+    assert oracle.runtime is True
+
+    # metadata-only 契约不得声称网络输入张量
+    assert shadow.n_planes == 0 and shadow.n_scalars == 0
+    assert shadow.runtime is False
+
+    # 身份由 name+维度共同决定;public 与 oracle 必须是不同指纹
+    assert public.fingerprint != oracle.fingerprint
+    assert oracle.fingerprint != shadow.fingerprint
+    # 每个契约指纹可重放
+    assert public.fingerprint == m.feature_contract(m.FEATURE_PUBLIC).fingerprint
+
+
+def test_feature_contract_unknown_fails_loud():
+    with pytest.raises(ValueError, match="unknown feature contract"):
+        m.feature_contract("planes-91-oracle-16-scalars-8")   # 旧含混命名必须拒绝
+    with pytest.raises(ValueError, match="unknown feature contract"):
+        m.feature_contract("oracle+1 dropped")
+
+
+def test_require_feature_contract_mismatch_rejects():
+    m.require_feature_contract(m.FEATURE_PUBLIC, expected=m.FEATURE_PUBLIC)
+    with pytest.raises(ValueError, match="feature contract mismatch"):
+        m.require_feature_contract(m.FEATURE_ORACLE, expected=m.FEATURE_PUBLIC)
+
+
+def test_verify_feature_planes_rejects_pad_trick():
+    # 75 公共特征禁止冒充 91 oracle 网络(反之亦然)——R3 不允许补零伪装
+    m.verify_feature_planes(m.FEATURE_PUBLIC, 75)
+    m.verify_feature_planes(m.FEATURE_ORACLE, 91)
+    with pytest.raises(ValueError, match="declares 75 planes"):
+        m.verify_feature_planes(m.FEATURE_PUBLIC, 91)     # 75->91 补零伪装被拒绝
+    with pytest.raises(ValueError, match="declares 91 planes"):
+        m.verify_feature_planes(m.FEATURE_ORACLE, 75)     # 91->75 截断伪装被拒绝
+    with pytest.raises(ValueError, match="metadata-only"):
+        m.verify_feature_planes(m.FEATURE_BIG_HAND_SHADOW, 0)
+
+
+def test_manifests_default_to_public_v1():
+    run = m.MiniSuphxRunManifest(run_id="x", git_commit="g")
+    assert run.feature_contract == m.FEATURE_PUBLIC
+    pol = m.PolicyManifest(policy_version=0, generation=0, git_commit="g")
+    assert pol.feature_contract == m.FEATURE_PUBLIC
+    roll = m.RolloutManifest(
+        campaign_id="c", job_id="j", worker_id="w", policy_version=0,
+        git_commit="g", policy_fingerprint="pf")
+    assert roll.feature_contract == m.FEATURE_PUBLIC
+
+
+def test_manifests_reject_unknown_feature_contract():
+    with pytest.raises(ValueError, match="unknown feature contract"):
+        m.MiniSuphxRunManifest(run_id="x", git_commit="g",
+                               feature_contract="oracle-v2")
+    with pytest.raises(ValueError, match="unknown feature contract"):
+        m.PolicyManifest(policy_version=0, generation=0, git_commit="g",
+                         feature_contract="planes-91-oracle-16-scalars-8")
+
+
+def test_feature_contract_is_identity_bearing_in_manifest():
+    a = m.MiniSuphxRunManifest(run_id="r", git_commit="g")
+    b = m.MiniSuphxRunManifest(run_id="r", git_commit="g",
+                               feature_contract=m.FEATURE_ORACLE)
+    assert a.fingerprint != b.fingerprint
+
+
 def test_value_contract_matches_design():
     c = m.value_contract()
     assert c.version == "round-score-v2-normalized"

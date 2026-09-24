@@ -109,9 +109,19 @@
 
 ## 13. 2026-09-24 训练计划 v2 收口
 
-- [ ] 13.1 新增并冻结 `public-v1=planes-75-scalars-8` 与
+- [x] 13.1 新增并冻结 `public-v1=planes-75-scalars-8` 与
   `oracle-v1=planes-91-oracle16-scalars-8`，修复当前 manifest 与 custom PPO
   实际 75-plane 输入的身份歧义；不兼容 checkpoint/rollout 必须 fail-loud。
+  (实现:`FeatureContract` + `FEATURE_CONTRACTS` 注册表,
+  `feature_contract/require_feature_contract/verify_feature_planes`,
+  manifest 默认 `feature_contract=FEATURE_PUBLIC`,未知契约/跨 75↔91
+  补零伪装均 ValueError;测试 `test_feature_contract_*`。)
+
+  **注意**:13.1 仅修复「契约层」身份(tasks 13.2 的 BC 训练主线迁移与
+  13.6 的 streaming BC 一并处理)。当前 `bc_train.py`/`train_ppo.py` 仍按
+  91(oracle) 维度建网,其内部 75→91 补零迁移属遗留路径;v1 正式 BC/PPO 必须
+  等 streaming BC(refactor bc_data/bc_train)落定时统一改为 public-v1
+  直训,这是下一步(training-plan §15 step 2)。
 - [ ] 13.2 BC-v1 改为直接训练 public-v1 网络；禁止靠 75→91 补零后再在 PPO
   侧变回 75 来声称同一 feature contract。
 - [ ] 13.3 BigHandIntent 接入 BC/DAgger/platform replay shard 的 shadow metadata；
