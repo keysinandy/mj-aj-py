@@ -6,8 +6,10 @@ import {
   type PlatformSettings,
 } from "../service/http";
 
+export const DEFAULT_PLATFORM_SERVER = "https://10.240.169.190:18080";
+
 const EMPTY_SETTINGS: PlatformSettings = {
-  server: "",
+  server: DEFAULT_PLATFORM_SERVER,
   tokens: { tournament: "", match: "", test_room: [] },
   selected_model: null,
 };
@@ -56,6 +58,7 @@ export function SettingsPage() {
         setSettings({
           ...EMPTY_SETTINGS,
           ...loadedSettings,
+          server: loadedSettings.server || DEFAULT_PLATFORM_SERVER,
           tokens: {
             ...EMPTY_SETTINGS.tokens,
             ...(loadedSettings.tokens ?? {}),
@@ -238,7 +241,7 @@ export function SettingsPage() {
             <input
               aria-label="服务器地址"
               value={settings.server}
-              placeholder="https://mahjong.example.com"
+              placeholder={DEFAULT_PLATFORM_SERVER}
               onChange={(event) => setSettings((current) => ({ ...current, server: event.target.value }))}
             />
           </label>
@@ -246,7 +249,7 @@ export function SettingsPage() {
             <label className="settings-field">
               锦标赛令牌
               <input
-                type="password"
+                type="text"
                 autoComplete="off"
                 aria-label="锦标赛令牌"
                 value={settings.tokens.tournament}

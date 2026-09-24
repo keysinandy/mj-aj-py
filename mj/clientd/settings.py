@@ -34,6 +34,7 @@ __all__ = [
 
 
 DEFAULT_SETTINGS_PATH = "local/platform.json"
+DEFAULT_PLATFORM_SERVER = "https://10.240.169.190:18080"
 DEFAULT_MODEL_DIR = "local/models"
 MAX_MODEL_BYTES = 512 * 1024 * 1024
 _MODES = {"tournament", "match", "test_room"}
@@ -63,7 +64,7 @@ def _harden_fd(fd):
 
 def _default_settings():
     return {
-        "server": "",
+        "server": DEFAULT_PLATFORM_SERVER,
         "tokens": {"tournament": "", "match": "", "test_room": []},
         "selected_model": None,
     }
@@ -175,8 +176,11 @@ class PlatformSettings:
         selected = raw.get("selected_model")
         if selected:
             selected = _safe_model_name(str(selected))
+        server_raw = raw.get("server")
+        if server_raw is None or server_raw == "":
+            server_raw = DEFAULT_PLATFORM_SERVER
         return {
-            "server": _validate_server(raw.get("server", "")),
+            "server": _validate_server(server_raw),
             "tokens": _normalize_tokens(raw.get("tokens", {})),
             "selected_model": selected,
         }
