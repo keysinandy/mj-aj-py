@@ -64,26 +64,49 @@ powershell -ExecutionPolicy Bypass -File scripts\setup.ps1 --install --venv
    Windows 提醒勾 "Add python.exe to PATH")。
 
 想关掉自动安装:设 `MJ_SETUP_NO_AUTO_INSTALL=1`(同时会让 setup.py 不自动
-删除版本不一致的 `.venv`,只警告),CI 或他人机器上跑检查时用得上。
+安装 Node、不自动删除版本不一致的 `.venv`,只警告),CI 或他人机器上跑检查时
+用得上。
 
-**版本判据只在 `setup.py` 的 `MIN_PY` / `RUST_KERNEL_MAX_PY` 一处维护**,
-引导层只读退出码——不要在 `setup.ps1` / `setup.sh` 里再抄一份 `3.13`。
+**版本判据只在 `setup.py` 的 `MIN_PY` / `RUST_KERNEL_MAX_PY` / `MIN_NODE` 一处
+维护**,引导层只读退出码——不要在 `setup.ps1` / `setup.sh` 里再抄一份 `3.13`
+或 `22`(Node 由 setup.py 自己管,引导层完全不碰)。
 
-### 1.2 安装层(scripts/setup.py,六步分层,先保命再锦上添花)
+### 1.2 安装层(scripts/setup.py,七步分层,先保命再锦上添花)
 
 | 步 | 内容 | 不满足的后果 |
 |----|------|--------------|
 | ① | Python ≥ 3.10(`mj/platform` 用 `X \| Y` 联合类型语法) | 硬失败 |
 | ② | 锦标赛核心路径 import 冒烟(tournament_runner/bot_client/bot/win/shanten/scoring) | 硬失败 |
 | ③ | Rust shanten 内核(`--install` 且有 cargo 时 `pip install -e ./rust`) | 只警告:自动回退纯 Python,决策稍慢 |
-| ④ | 可选组件:web(numpy+websockets,浏览器客户端 clientd 运行依赖)/ policy(torch + `runs/bc0/best.pt`)/ tests(pytest+numpy)/ onnx(onnx+onnxruntime) | 只警告,不影响 bot 策略;装后复验 import;缺 web 时 `web_client.sh` 会自检报错并给出安装命令 |
-| ⑤ | `local/platform.json` 不存在则写模板(server 预填,令牌留空——空值会被明确报错,不会塞占位符) | 提示填令牌 |
-| ⑥ | 引擎冒烟 `pytest tests/test_shanten.py tests/test_game.py` | 硬失败(`--skip-tests` 跳过) |
+| ④ | Node ≥ 22(`client/` 与 `web/replay_debugger/` 的构建工具链) | 只警告,**且不影响退出码**:锦标赛核心路径不依赖 Node;缺 Node 时 `client/` 与 `web_client.*` 起不来 |
+| ⑤ | 可选组件:web(numpy+websockets,浏览器客户端 clientd 运行依赖)/ policy(torch + `runs/bc0/best.pt`)/ tests(pytest+numpy)/ onnx(onnx+onnxruntime) | 只警告,不影响 bot 策略;装后复验 import;缺 web 时 `web_client.sh` 会自检报错并给出安装命令 |
+| ⑥ | `local/platform.json` 不存在则写模板(server 预填,令牌留空——空值会被明确报错,不会塞占位符) | 提示填令牌 |
+| ⑦ | 引擎冒烟 `pytest tests/test_shanten.py tests/test_game.py` | 硬失败(`--skip-tests` 跳过) |
 
-关键事实:**锦标赛默认路径(bot + legacyV2/shape-v1)不依赖 numpy/torch**——
-`api.py` 用 urllib 且 `CERT_NONE`(无需证书安装),Rust shanten/weighted
+关键事实:**锦标赛默认路径(bot + legacyV2/shape-v1)不依赖 numpy/torch,也不
+依赖 Node**——`api.py` 用 urllib 且 `CERT_NONE`(无需证书安装),Rust shanten/weighted
 内核缺失时回退纯 Python。裸 venv 零三方包也可上场(2026-09-20 实测:新建 .venv 后
-核心检查 6/6 通过,dry-run 真实探活平台成功)。
+核心检查全通过,dry-run 真实探活平台成功;当时分六层,2026-09-24 加 Node 层后为七层)。
+
+Node 层(`--install` 时自动装;判据 `node >= 22` 是**下界**——已经是 22 以上
+就一律不动,不降级):
+
+- **Windows**:`winget install --id OpenJS.NodeJS.22 -e --source winget`。
+  必须写**带版本号**的包(winget 的 LTS 通道现在是 24,`OpenJS.NodeJS.LTS`
+  不代表"要 22");`--source` 也必须带(存在多个源时 winget 会因歧义静默
+  no-op 却返回 0)。该 MSI 装到 `C:\Program Files\nodejs`,会**替换同目录的
+  现有 node**,并可能弹 UAC。
+- **macOS**:`brew install node@22`。该 formula 是 **keg-only**,装完**不会进
+  PATH**,脚本靠 `/opt/homebrew/opt/node@22/bin/node` 兜底探测;**脚本探得到
+  不等于你终端里敲得到**,要在 shell 里直接用需
+  `brew link --force --overwrite node@22` 或把该目录加进 PATH(该 formula 的
+  `deprecation_date` 是 2026-10-28,届时这条命令可能失效)。
+- 装完一律**重探判定成败,不看安装器退出码**(`setup.ps1` 曾因把安装器输出
+  当退出码,把两次成功的安装都判成失败)。winget 改的是系统级 PATH,而本进程
+  的 PATH 是启动时的快照,所以装成功也可能探不到——这时脚本会提示**重开终端
+  后重跑**,而不是报"装失败"。
+- node 由 nvm / fnm / volta 等版本管理器接管时,装完谁在 PATH 前面由它们决定,
+  脚本只提示、不代为处理。
 
 `--venv`:创建/复用仓库根 `.venv`、升级其 pip、把 `--install` 委托给
 venv 解释器重入本脚本(所有包装进 venv,不污染系统 Python)。

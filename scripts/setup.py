@@ -7,6 +7,8 @@
          —— 纯标准库,零三方依赖,只要 Python 3.10+ 能 import 就能跑;
   [策略] policy/policy-v3 策略所需(torch + checkpoint);
   [内核] Rust shanten 内核(未装自动回退纯 Python,不影响正确性);
+  [前端] Node >= 22(client/ 与 web/replay_debugger/ 的构建工具链;
+         缺 Node 不影响锦标赛核心路径,只是前端起不来);
   [网页] 浏览器 web 对战客户端(clientd)运行依赖:numpy + websockets;
   [开发] 测试套件(pytest/numpy)与 ONNX 导出(onnx/onnxruntime);
   [配置] local/platform.json 模板与令牌提示;
@@ -32,7 +34,7 @@
 环境变量:
     MJ_SETUP_NO_AUTO_INSTALL=1
         关掉全部自动改动:引导层在版本不符时不自动安装 Python,
-        本脚本也不自动删除版本不一致的 .venv(只警告)。
+        本脚本也不自动删除版本不一致的 .venv、不自动安装 Node(只警告)。
         CI / 他人机器上跑检查时用得上。
 装好后启动锦标赛(在 .venv 里):
     .venv/bin/python scripts/tournament.py            # macOS
@@ -61,7 +63,21 @@ MIN_PY = (3, 10)  # mj/platform 使用 `float | None` 联合类型语法
 # 不要把 3.13 这个数字抄到那两个脚本里。
 RUST_KERNEL_MAX_PY = (3, 13)
 
-# 设为 1 则关掉全部自动改动(自动安装 Python / 自动删除 .venv)
+# Node 下界:client/(Tauri2+Vite+React+TS)与 web/replay_debugger/ 的构建
+# 工具链要求。这是**下界** —— node 主版本 >= 22 一律不动,不降级。
+# 判据只在本文件维护:setup.ps1/setup.sh 不碰 Node(它们的职责只是搞到一个
+# 能跑本脚本的 Python)。写成元组只为与 MIN_PY 对称,眼下只有主版本故取 [0]。
+MIN_NODE = (22,)
+
+# 版本化包的标识。winget 的 LTS 通道现在是 24(OpenJS.NodeJS.LTS → 24.19.0),
+# 所以"要 22"必须写死带版本号的包;brew 的 node@22 是 keg-only,装完不会进
+# PATH,得靠 detect_node 的 opt 前缀兜底,且要让用户知道终端里仍敲不到。
+# (brew 侧该 formula 的 deprecation_date 是 2026-10-28(upstream unsupported),
+#  届时 `brew install node@22` 可能失效,需换成当时的 LTS 或 nodejs@22 继任者。)
+NODE_WINGET_ID = "OpenJS.NodeJS.22"
+NODE_BREW_FORMULA = "node@22"
+
+# 设为 1 则关掉全部自动改动(自动安装 Python / 自动安装 Node / 自动删除 .venv)
 NO_AUTO_INSTALL_ENV = "MJ_SETUP_NO_AUTO_INSTALL"
 
 DEFAULT_SERVER = "https://10.240.169.190:18080"
@@ -186,6 +202,107 @@ def interpreter_verdict(version_info=None):
     return 0
 
 
+def node_major(version_text):
+    """`node -v` 的输出 → 主版本号;拿不到或解析失败返回 None。
+
+    实测形态有 "v22.22.0"、"22.1.0"、"v22.0.0-pre"。不抛异常:调用方用
+    None 表示"这个值不可信",而不是"版本是 0"。
+    """
+    if not version_text:
+        return None
+    head = version_text.strip().lstrip("vV").split(".")[0].strip()
+    if not head.isdigit():
+        return None
+    return int(head)
+
+
+def node_verdict(major):
+    """Node 三态判据。0 = 满足 MIN_NODE;1 = 主版本过低;2 = 缺失/探不到。
+
+    形状与 interpreter_verdict 对齐,**但 `2` 的含义不同**(那边是"能跑,
+    只是超出 Rust 内核上限")。两者返回值都是给各自调用点用的,不要互相
+    套用判据。
+    """
+    if major is None:
+        return 2
+    if major < MIN_NODE[0]:
+        return 1
+    return 0
+
+
+def node_install_cmd(platform=None):
+    """按平台给出安装 Node >= 22 的命令(列表)。
+
+    平台当参数注入,好让 Windows 上也能单测 darwin 分支。
+    """
+    platform = sys.platform if platform is None else platform
+    if platform == "win32":
+        # --source winget 必须带:存在多个源时 winget 因歧义什么都不做却返回 0。
+        return ["winget", "install", "--id", NODE_WINGET_ID, "-e",
+                "--source", "winget"]
+    if platform == "darwin":
+        return ["brew", "install", NODE_BREW_FORMULA]
+    # Linux 各发行版差异太大,只给一条最常见的,失败就让用户手动装。
+    return ["apt", "install", "-y", "nodejs"]
+
+
+def _node_version(exe):
+    """跑 `node -v` 取版本串;任何失败都返回 None(不抛)。"""
+    try:
+        result = subprocess.run([exe, "-v"], capture_output=True, text=True,
+                                timeout=15)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    return (result.stdout or "").strip() or None
+
+
+def detect_node():
+    """返回 (解释器路径, 版本串);两层探测:先 PATH,再固定前缀兜底。
+
+    兜底那层专为 brew 的 keg-only 准备:`brew install node@22` 不会把 node
+    链进 PATH,只有 /opt/homebrew/opt/node@22/bin 里才有。Windows 侧兜
+    Program Files\\nodejs —— winget 装完的新 PATH 要新会话才生效,本会话仍能
+    用显式路径找到它(与引导层 find_python311 是同一套路)。
+
+    PATH 上的 node 若是 nvm/volta 的 .cmd 垫片,subprocess 可能起不来 →
+    返回 None,此时兜底路径往往还能命中真正的 node.exe。
+    """
+    fallbacks = {
+        "darwin": ["/opt/homebrew/opt/node@22/bin/node",
+                   "/usr/local/opt/node@22/bin/node"],
+        "win32": [os.path.join(os.environ.get("ProgramFiles",
+                                              r"C:\Program Files"),
+                               "nodejs", "node.exe")],
+    }
+    found = shutil.which("node")
+    candidates = ([found] if found else []) + [
+        p for p in fallbacks.get(sys.platform, []) if os.path.exists(p)]
+    for exe in candidates:
+        version = _node_version(exe)
+        if version:
+            return exe, version
+    return None, None
+
+
+def _npm_beside(node_exe):
+    """node 同目录下的 npm 路径;找不到返回 None。
+
+    Windows 的 npm 是 npm.cmd(批处理垫片),Linux/macOS 是无扩展名的脚本,
+    所以两边候选名不同。同目录找不到再退回 PATH(发行版/包管理器可能把它
+    装在别处)。
+    """
+    base = os.path.dirname(node_exe or "")
+    names = ("npm.cmd", "npm") if os.name == "nt" else ("npm",)
+    if base:
+        for name in names:
+            cand = os.path.join(base, name)
+            if os.path.exists(cand):
+                return cand
+    return shutil.which("npm")
+
+
 def bootstrap_venv(skip_tests, no_rust=False):
     """创建 .venv(若缺)并把安装流程委托给 venv 内的解释器重跑本脚本。
 
@@ -224,7 +341,7 @@ def bootstrap_venv(skip_tests, no_rust=False):
 
 
 def check_python():
-    print("\n[1/6] Python 版本")
+    print("\n[1/7] Python 版本")
     if sys.version_info >= MIN_PY:
         _ok(f"{sys.version_info.major}.{sys.version_info.minor}"
             f" ({sys.executable})")
@@ -236,7 +353,7 @@ def check_python():
 
 def check_core_imports():
     """锦标赛默认路径(bot + legacy)的 import 冒烟——全部标准库。"""
-    print("\n[2/6] 锦标赛核心路径(bot 策略,零三方依赖)")
+    print("\n[2/7] 锦标赛核心路径(bot 策略,零三方依赖)")
     ok = True
     for module, attr in [
             ("mj.platform.tournament_runner", None),
@@ -257,7 +374,7 @@ def check_core_imports():
 
 
 def check_rust_kernel(install, allow_rust=True):
-    print("\n[3/6] Rust shanten 内核(可选,缺省回退纯 Python)")
+    print("\n[3/7] Rust shanten 内核(可选,缺省回退纯 Python)")
     if importlib.util.find_spec("mj_kernels") is not None:
         try:
             import mj_kernels  # noqa: F401
@@ -308,8 +425,88 @@ def check_rust_kernel(install, allow_rust=True):
     return False
 
 
+def check_node(install):
+    """Node 前端工具链层:client/(Tauri+Vite)与 web/replay_debugger/ 的构建。
+
+    与其它层的关键差别:**永不 _fail,返回值也不影响退出码** —— 锦标赛
+    核心路径(bot + legacy 评价器)不依赖 Node,缺它只是前端起不来。
+
+    成败一律以「装完重探」为准,不看安装器退出码:本次会话在 setup.ps1
+    已经因为把安装器 stdout 当退出码踩过一次(两次成功的安装全被判失败)。
+    """
+    print("\n[4/7] Node 前端工具链(client/ 与 web/replay_debugger/)")
+    path, version = detect_node()
+    verdict = node_verdict(node_major(version))
+
+    if verdict == 0:
+        _ok(f"node {version} ({path})")
+        on_path = shutil.which("node")
+        if not (on_path and os.path.abspath(on_path).lower()
+                == os.path.abspath(path).lower()):
+            # 靠固定前缀探到、PATH 上没有:说明终端里未必敲得到 node。
+            # 两边成因不同,给的补救命令必须分开(先前无条件打 brew 的提示,
+            # 在 Windows 上会让人去跑一条不存在的命令)。
+            if sys.platform == "darwin":
+                # brew 的 node@22 是 keg-only,装完不 link。
+                _warn("以上是脚本用绝对路径探到的,你的终端里未必能直接调用 node")
+                print(f"         brew link --force --overwrite "
+                      f"{NODE_BREW_FORMULA}   # 或把该目录加进 PATH", flush=True)
+            else:
+                _warn(f"PATH 上还没有 node,以上取自 {path};"
+                      "新会话的 PATH 生效后才会命中")
+        npm = _npm_beside(path)
+        if npm:
+            _ok(f"npm ({npm})")
+        else:
+            # 可能被 nvm/volta 拆到了别处,也可能是装坏了。改动别人的 Node
+            # 管理工具容易打架,这里只提示。
+            _warn("node 同目录下没有 npm —— 装得不完整,或被 nvm/volta 接管;"
+                  "本脚本不处理,请自行确认 npm 可用")
+        return True
+
+    if verdict == 1:
+        _warn(f"node {version} ({path}) 低于 {MIN_NODE[0]} —— client/ 与 "
+              "web/replay_debugger/ 的构建工具链要求")
+    else:
+        _warn(f"未找到 node(需要 >= {MIN_NODE[0]})")
+
+    cmd = node_install_cmd()
+    manual = "         " + " ".join(cmd)
+    if not install:
+        _warn("未加 --install,只报告;手动安装:")
+        print(manual, flush=True)
+        return False
+    if _no_auto_install():
+        _warn(f"已设 {NO_AUTO_INSTALL_ENV},不自动安装 Node;手动安装:")
+        print(manual, flush=True)
+        return False
+    if shutil.which(cmd[0]) is None:
+        _warn(f"未找到 {cmd[0]},无法自动安装 Node;手动安装:")
+        print(manual, flush=True)
+        return False
+
+    if verdict == 1:
+        print(f"  注意:会替换 PATH 上现有的 node({path});若它由 nvm/fnm/"
+              "volta 管理,装完谁生效取决于它们的 PATH 优先级", flush=True)
+    print(f"  安装:{' '.join(cmd)}", flush=True)
+    if sys.platform == "win32":
+        _warn("该安装包落在 Program Files,可能弹 UAC 需要点确认")
+    subprocess.call(cmd, cwd=_ROOT)
+    new_path, new_version = detect_node()
+    if node_verdict(node_major(new_version)) == 0:
+        _ok(f"重探通过:node {new_version} ({new_path})")
+        return True
+    # 别断言"装失败":winget 写的是系统 PATH,本进程的 PATH 是启动时的快照,
+    # 新装的 node 常常要新会话才可见(detect_node 的固定路径兜底会救一部分)。
+    _warn("安装命令已执行,但本会话仍探不到可用的 node —— "
+          "PATH 多半只在新终端生效")
+    print("         请重开终端后重跑本脚本;仍不行就手动执行上面那条命令。",
+          flush=True)
+    return False
+
+
 def check_optional(install):
-    print("\n[4/6] 可选组件")
+    print("\n[5/7] 可选组件")
     status = {}
     for name, spec in OPTIONAL.items():
         missing = [p for p in spec["pkgs"]
@@ -341,7 +538,7 @@ def check_optional(install):
 
 
 def ensure_platform_config(root=None):
-    print("\n[5/6] 平台配置 local/platform.json")
+    print("\n[6/7] 平台配置 local/platform.json")
     root = _ROOT if root is None else root
     path = os.path.join(root, PLATFORM_JSON)
     if not os.path.exists(path):
@@ -371,7 +568,7 @@ def ensure_platform_config(root=None):
 
 
 def run_smoke_tests(skip):
-    print("\n[6/6] 引擎冒烟测试")
+    print("\n[7/7] 引擎冒烟测试")
     if skip:
         _warn("--skip-tests,跳过")
         return True
@@ -431,6 +628,9 @@ def main(argv=None):
 
     core_ok = check_python() and check_core_imports()
     check_rust_kernel(args.install, allow_rust=not args.no_rust)
+    # 故意不并进 core_ok:Node 只服务 client/ 与 replay_debugger/ 的构建,
+    # 锦标赛核心路径不依赖它,缺了不该让整个 setup 判失败。
+    check_node(args.install)
     check_optional(args.install)
     config_ok = ensure_platform_config()
     smoke_ok = run_smoke_tests(args.skip_tests)

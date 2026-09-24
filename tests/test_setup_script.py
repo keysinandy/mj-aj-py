@@ -201,3 +201,169 @@ def test_bootstrap_venv_recreates_on_version_mismatch(monkeypatch, tmp_path):
     # 删完必须走创建流程,而不是继续复用旧环境
     assert calls[0][:3] == [sys.executable, "-m", "venv"]
     assert calls[-1][:2] == [str(py), s.os.path.abspath(s.__file__)]
+
+
+def test_node_major_parses():
+    assert s.node_major("v22.22.0") == 22
+    assert s.node_major("22.1.0") == 22
+    assert s.node_major("V9.11.2") == 9
+    assert s.node_major("v22.0.0-pre") == 22
+    # 拿不到一律 None(表示"不可信"),不是 0 —— 否则会被当成"版本过低"
+    assert s.node_major("") is None
+    assert s.node_major("node") is None
+    assert s.node_major(None) is None
+
+
+def test_node_verdict_three_states():
+    assert s.node_verdict(22) == 0
+    assert s.node_verdict(24) == 0  # 下界判据,更高版本不动
+    assert s.node_verdict(21) == 1
+    assert s.node_verdict(None) == 2  # 缺失按"要装"算
+
+
+def test_min_node_locked():
+    # 只在这里维护下界;client/ 与 web/replay_debugger/ 的构建工具链要求
+    assert s.MIN_NODE == (22,)
+
+
+def test_node_install_cmd_per_platform():
+    win = s.node_install_cmd("win32")
+    assert s.NODE_WINGET_ID in win
+    # --source 必须带:多源歧义会让 winget 静默 no-op 却返回 0
+    assert "--source" in win
+    # 带版本号的包:LTS 通道现在是 24,不能拿 OpenJS.NodeJS.LTS 代表"要 22"
+    assert "LTS" not in " ".join(win)
+    assert s.node_install_cmd("darwin") == ["brew", "install", s.NODE_BREW_FORMULA]
+    assert s.node_install_cmd("linux")[0] == "apt"
+
+
+def test_bootstrap_scripts_do_not_touch_node():
+    # 与「Rust 内核上限只在 setup.py 一处维护」同一条约定:引导层只负责把
+    # Python 搞到 >= 3.10,Node 判据不要在 setup.sh / setup.ps1 里再抄一份。
+    for name in ("setup.sh", "setup.ps1"):
+        with open(os.path.join(_SCRIPTS, name), encoding="utf-8") as f:
+            text = f.read().lower()
+        for token in ("nodejs", "openjs", "node@22", "node -v"):
+            assert token not in text, f"{name} 不应出现 {token}"
+
+
+def _fake_node_dir(tmp_path):
+    """造一个「node + npm 同目录」的落地形态,两个平台的 npm 候选名都建上。"""
+    node = tmp_path / "node.exe"
+    node.write_text("", encoding="utf-8")
+    for name in ("npm", "npm.cmd"):
+        (tmp_path / name).write_text("", encoding="utf-8")
+    return node
+
+
+def test_npm_beside_prefers_sibling(tmp_path, monkeypatch):
+    node = _fake_node_dir(tmp_path)
+    monkeypatch.setattr(s.shutil, "which", lambda name: "/elsewhere/npm")
+    expected = "npm.cmd" if os.name == "nt" else "npm"
+    assert s._npm_beside(str(node)) == os.path.join(str(tmp_path), expected)
+    # 同目录没有时退回 PATH(发行版/包管理器常把 npm 装到别处)。
+    # 注意判据是「node 所在目录」而不是 node 文件本身在不在。
+    bare = tmp_path / "bare"
+    bare.mkdir()
+    assert s._npm_beside(str(bare / "node")) == "/elsewhere/npm"
+
+
+def test_check_node_satisfied_is_ok(monkeypatch, tmp_path, capsys):
+    node = _fake_node_dir(tmp_path)
+    monkeypatch.setattr(s, "detect_node", lambda: (str(node), "v22.22.0"))
+    monkeypatch.setattr(s.shutil, "which",
+                        lambda name: str(node) if name == "node" else None)
+    assert s.check_node(install=False) is True
+    out = capsys.readouterr().out
+    assert "v22.22.0" in out and "[FAIL]" not in out
+
+
+def test_check_node_keg_only_path_warns_shell_may_lack_it(monkeypatch, tmp_path,
+                                                          capsys):
+    # brew 的 node@22 是 keg-only:脚本用绝对路径探得到,用户终端里未必敲得到
+    node = _fake_node_dir(tmp_path)
+    monkeypatch.setattr(s, "detect_node", lambda: (str(node), "v22.23.3"))
+    monkeypatch.setattr(s.shutil, "which",
+                        lambda name: "/opt/homebrew/bin/node" if name == "node"
+                        else None)
+    monkeypatch.setattr(s.sys, "platform", "darwin")
+    assert s.check_node(install=False) is True
+    out = capsys.readouterr().out
+    assert "brew link --force --overwrite" in out
+    assert s.NODE_BREW_FORMULA in out
+
+
+def test_check_node_offpath_on_windows_does_not_suggest_brew(monkeypatch,
+                                                             tmp_path, capsys):
+    # 真机实测踩到过:Windows 上靠 Program Files 兜底探到 node(PATH 里还没有,
+    # 正是 winget 刚装完的形态)时,提示语却让人去跑 brew link。
+    node = _fake_node_dir(tmp_path)
+    monkeypatch.setattr(s, "detect_node", lambda: (str(node), "v22.23.2"))
+    monkeypatch.setattr(s.shutil, "which", lambda name: None)
+    monkeypatch.setattr(s.sys, "platform", "win32")
+    assert s.check_node(install=False) is True
+    out = capsys.readouterr().out
+    assert "brew" not in out
+    assert "PATH" in out
+
+
+def test_check_node_low_version_only_warns_without_install(monkeypatch, tmp_path,
+                                                           capsys):
+    node = _fake_node_dir(tmp_path)
+    monkeypatch.setattr(s, "detect_node", lambda: (str(node), "v20.11.0"))
+    calls = []
+    monkeypatch.setattr(s.subprocess, "call",
+                        lambda cmd, cwd=None: calls.append(cmd) or 0)
+    assert s.check_node(install=False) is False
+    assert calls == []  # 没 --install 就不许动手
+    out = capsys.readouterr().out
+    assert "v20.11.0" in out and "[FAIL]" not in out
+
+
+def test_check_node_missing_warns_only(monkeypatch, capsys):
+    monkeypatch.setattr(s, "detect_node", lambda: (None, None))
+    assert s.check_node(install=False) is False
+    out = capsys.readouterr().out
+    assert " ".join(s.node_install_cmd()) in out  # 打印了手动命令
+    assert "[FAIL]" not in out  # 永不 _fail:锦标赛核心路径不依赖 Node
+
+
+def test_check_node_no_auto_install_does_not_install(monkeypatch, capsys):
+    monkeypatch.setenv(s.NO_AUTO_INSTALL_ENV, "1")
+    monkeypatch.setattr(s, "detect_node", lambda: (None, None))
+    calls = []
+    monkeypatch.setattr(s.subprocess, "call",
+                        lambda cmd, cwd=None: calls.append(cmd) or 0)
+    assert s.check_node(install=True) is False
+    assert calls == []
+    out = capsys.readouterr().out
+    assert s.NO_AUTO_INSTALL_ENV in out
+    assert " ".join(s.node_install_cmd()) in out
+
+
+def test_check_node_judged_by_reprobe_not_installer_exit_code(monkeypatch,
+                                                              tmp_path, capsys):
+    # 安装器返回 1 但重探到了 → 必须判成功。setup.ps1 就是拿安装器的输出/
+    # 退出码当判据,把 py install 与 winget 两次成功的安装都判成了失败。
+    node = _fake_node_dir(tmp_path)
+    replies = iter([(None, None), (str(node), "v22.23.2")])
+    monkeypatch.setattr(s, "detect_node", lambda: next(replies))
+    monkeypatch.setattr(s.shutil, "which",
+                        lambda name: "winget" if name == "winget" else None)
+    monkeypatch.setattr(s.subprocess, "call", lambda cmd, cwd=None: 1)
+    assert s.check_node(install=True) is True
+    out = capsys.readouterr().out
+    assert "重探通过" in out and "v22.23.2" in out
+
+
+def test_check_node_install_but_reprobe_fails_says_reopen_terminal(monkeypatch,
+                                                                   capsys):
+    # winget 写的是系统级 PATH,而本进程的 PATH 是启动时的快照 —— 装成功也
+    # 可能探不到。这时不能说"装失败",要指引重开终端。
+    monkeypatch.setattr(s, "detect_node", lambda: (None, None))
+    monkeypatch.setattr(s.shutil, "which",
+                        lambda name: "winget" if name == "winget" else None)
+    monkeypatch.setattr(s.subprocess, "call", lambda cmd, cwd=None: 0)
+    assert s.check_node(install=True) is False
+    out = capsys.readouterr().out
+    assert "重开终端" in out and "[FAIL]" not in out
