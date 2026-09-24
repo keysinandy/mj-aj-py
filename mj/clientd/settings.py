@@ -40,6 +40,27 @@ _MODES = {"tournament", "match", "test_room"}
 _MODEL_NAME = re.compile(r"^[^/\\\x00]+\.onnx$", re.IGNORECASE)
 
 
+def _harden_fd(fd):
+    """把(临时)文件的权限收到 0600 —— 仅 POSIX 可用。
+
+    Windows 的 ``os`` 模块**没有** ``fchmod`` 属性,直接调用抛的是
+    ``AttributeError`` —— 不是调用方 ``os.chmod`` 那句所防的 ``OSError``,
+    两层兜底都接不住(实测:保存平台设置与导入 ONNX 模型在 Windows 上必抛,
+    经 service 边界一律变成 500 INTERNAL)。
+    Windows 的权限模型是 ACL、``os.chmod`` 也只认只读位,"收紧到 0600"在那里
+    没有对应物,跳过即可。
+    """
+    fchmod = getattr(os, "fchmod", None)
+    if fchmod is None:
+        return
+    try:
+        fchmod(fd, 0o600)
+    except OSError:
+        # 与调用方 os.chmod 那句同口径:权限收紧是尽力而为,失败不该让设置/
+        # 模型写入整体失败(例如不支持权限位的文件系统)。
+        pass
+
+
 def _default_settings():
     return {
         "server": "",
@@ -53,7 +74,7 @@ def _atomic_json(path: Path, payload):
     fd, temporary = tempfile.mkstemp(
         prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
     try:
-        os.fchmod(fd, 0o600)
+        _harden_fd(fd)
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
             json.dump(payload, stream, ensure_ascii=False, indent=2)
             stream.write("\n")
@@ -315,7 +336,7 @@ class ModelStore:
             fd, temporary = tempfile.mkstemp(
                 prefix=f".{name}.", suffix=".tmp", dir=str(self.root))
             try:
-                os.fchmod(fd, 0o600)
+                _harden_fd(fd)
                 with os.fdopen(fd, "wb") as stream:
                     stream.write(content)
                 contract = validate_onnx_file(temporary)
