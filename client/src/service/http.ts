@@ -11,9 +11,26 @@ export function setApiBase(url: string): void {
   base = url.replace(/\/$/, "");
 }
 
+/**
+ * fetchJson 的默认超时(毫秒)。clientd 自身最慢的端点(平台连通性探测)服务端
+ * 上限 6s,其余都是本地磁盘/内存操作;超过这个时间通常意味着后台没起来或已卡死,
+ * 而不是请求真的很大。需要更长预算的调用可显式传 timeoutMs。
+ */
+export const DEFAULT_TIMEOUT_MS = 15_000;
+
+/** 网络层失败(连接被拒 / 超时 / 读体中断)统一话术;本地服务未启动是最常见原因。 */
+export const NETWORK_ERROR_MESSAGE = "无法连接本地服务，请确认客户端后台已启动";
+
+export interface FetchJsonOptions {
+  method?: string;
+  body?: unknown;
+  /** 覆盖默认超时;<= 0 表示不设超时(仅供确知的长任务使用)。 */
+  timeoutMs?: number;
+}
+
 export async function fetchJson<T = unknown>(
   path: string,
-  opts: { method?: string; body?: unknown } = {},
+  opts: FetchJsonOptions = {},
 ): Promise<T> {
   const url = `${base}${path}`;
   const init: RequestInit = {
@@ -23,8 +40,29 @@ export async function fetchJson<T = unknown>(
       : undefined,
   };
   if (opts.body !== undefined) init.body = JSON.stringify(opts.body);
-  const resp = await fetch(url, init);
-  const text = await resp.text();
+
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const controller = timeoutMs > 0 ? new AbortController() : null;
+  if (controller) {
+    init.signal = controller.signal;
+  }
+  const timer = controller
+    ? setTimeout(() => controller.abort(), timeoutMs)
+    : undefined;
+
+  let resp: Response;
+  let text: string;
+  try {
+    resp = await fetch(url, init);
+    text = await resp.text();
+  } catch {
+    // 连接被拒 / DNS / 超时中断 / 读体失败:不把 "Failed to fetch" 之类原文
+    // 抛给界面,统一给可操作的中文提示。
+    throw new Error(NETWORK_ERROR_MESSAGE);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+
   let data: unknown = null;
   try {
     data = JSON.parse(text);
@@ -32,6 +70,7 @@ export async function fetchJson<T = unknown>(
     data = text;
   }
   if (!resp.ok) {
+    // 后端结构化错误(优先 message 字段)原样透出,不与网络错误混淆。
     const msg =
       data && typeof data === "object" && "message" in data
         ? String((data as { message: unknown }).message)

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type SessionInfo } from "../service/http";
 
@@ -41,6 +41,10 @@ function seatConfig(strategy: string) {
   return hit.config;
 }
 
+function errorMessage(reason: unknown, fallback: string): string {
+  return reason instanceof Error && reason.message ? reason.message : fallback;
+}
+
 export function ConsolePage() {
   const [battleMode, setBattleMode] = useState<BattleMode>("arena");
   const [nGames, setNGames] = useState(16);
@@ -53,27 +57,42 @@ export function ConsolePage() {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  const [listError, setListError] = useState<string | null>(null);
+  const mountedRef = useRef(true);
 
-  const refresh = useCallback(() => {
-    api.listSessions().then((r) => setSessions(
-      r.sessions.filter((session) => session.kind !== "tournament"),
-    )).catch(() => {});
+  const refresh = useCallback(async () => {
+    try {
+      const result = await api.listSessions();
+      if (!mountedRef.current) return;
+      setSessions(result.sessions.filter((session) => session.kind !== "tournament"));
+      setListError(null);
+    } catch (reason) {
+      if (!mountedRef.current) return;
+      // 不静默吞掉:后端未启动/已掉线时给出可重试的错误,下一次成功刷新自动恢复。
+      setListError(errorMessage(reason, "读取会话列表失败"));
+    }
   }, []);
 
-  useEffect(() => {
-    refresh();
-    const timer = window.setInterval(() => {
-      refresh();
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [refresh]);
+  const hasRunningSession = sessions.some((session) => session.status === "running");
 
   useEffect(() => {
-    const hasRunning = sessions.some((s) => s.status === "running");
-    if (!hasRunning) return;
-    const timer = window.setInterval(refresh, 1000);
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  // 单一轮询源:挂载先拉一次,之后仅在存在运行中会话时按 1s 刷新。
+  // (此前"无条件 1s 轮询"与"有运行中会话再 1s 轮询"两个 effect 叠加,
+  //  运行期间每次 tick 会重复请求两次。)
+  useEffect(() => {
+    void refresh();
+    if (!hasRunningSession) return;
+    const timer = window.setInterval(() => {
+      void refresh();
+    }, 1000);
     return () => window.clearInterval(timer);
-  }, [sessions, refresh]);
+  }, [hasRunningSession, refresh]);
 
   async function startBattle() {
     setStarting(true);
@@ -85,7 +104,7 @@ export function ConsolePage() {
       await api.createSession("arena", { n_games: nGames, concurrency, seats });
       await refresh();
     } catch (e) {
-      setError(String((e as Error).message ?? "启动失败"));
+      setError(errorMessage(e, "启动失败"));
     } finally {
       setStarting(false);
     }
@@ -105,7 +124,7 @@ export function ConsolePage() {
       });
       await refresh();
     } catch (e) {
-      setError(String((e as Error).message ?? "启动线上匹配失败"));
+      setError(errorMessage(e, "启动线上匹配失败"));
     } finally {
       setStarting(false);
     }
@@ -230,7 +249,21 @@ export function ConsolePage() {
       </div>
 
       <h2 className="section-title">进行中 / 历史会话</h2>
-      {sessions.length === 0 && <p className="muted">暂无会话。选择本地竞技场或线上匹配开始对战。</p>}
+      {listError && (
+        <p className="error session-list-error" role="alert">
+          读取会话列表失败：{listError}
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => { void refresh(); }}
+          >
+            重试
+          </button>
+        </p>
+      )}
+      {sessions.length === 0 && !listError && (
+        <p className="muted">暂无会话。选择本地竞技场或线上匹配开始对战。</p>
+      )}
       <ul className="session-list">
         {sessions.map((s) => {
           const running = s.status === "running";
@@ -255,7 +288,14 @@ export function ConsolePage() {
                 </Link>
               )}
               {running && (
-                <button className="stop" onClick={() => api.stopSession(s.id).then(refresh)}>
+                <button
+                  className="stop"
+                  onClick={() => {
+                    void api.stopSession(s.id)
+                      .then(() => refresh())
+                      .catch((reason) => setError(errorMessage(reason, "停止会话失败")));
+                  }}
+                >
                   停止
                 </button>
               )}

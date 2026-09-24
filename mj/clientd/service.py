@@ -234,12 +234,16 @@ class ControlServer:
     def stop(self):
         if self.server is None:
             return
-        try:
-            self.server.shutdown()
-        except OSError:
-            pass
+        # 仅在 serve_forever 已启动时才 shutdown:未启动的 loop 上调用
+        # shutdown() 会永久阻塞(它在等一个永远不来的循环退出)。
+        if self._thread is not None:
+            try:
+                self.server.shutdown()
+            except OSError:
+                pass
         self.server.server_close()
         self.server = None
+        self._thread = None
 
 
 def make_ws_handler(on_message=None, on_open=None):
@@ -268,36 +272,70 @@ def make_ws_handler(on_message=None, on_open=None):
 
 
 class WsServer:
-    """WS 数据面服务器(asyncio,in 后台线程)。"""
+    """WS 数据面服务器(asyncio,in 后台线程)。
 
-    def __init__(self, host, handler, port=0):
+    ``start()`` 阻塞至监听套接字真正绑定,因此返回时 ``self.port`` 一定是
+    实际端口(端口 0 入参时也如此),绑定失败则原样抛出异常。旧实现让线程
+    自己慢慢绑定、``start()`` 立刻返回,调用方会在端口仍是 0 时写入发现
+    文件,壳据此连到 0 端口。
+    """
+
+    def __init__(self, host, handler, port=0, ready_timeout=10.0):
         self.host = host
         self.port = port
         self.handler = handler
+        self.ready_timeout = ready_timeout
         self._loop = None
         self._thread = None
         self._stop_wait = None
         self._server = None
+        self._ready = threading.Event()
+        self._error = None
+
+    @property
+    def ready(self):
+        """已绑定且无绑定错误。"""
+        return self._ready.is_set() and self._error is None
 
     def start(self):
+        if self._thread is not None:
+            return
         self._loop = asyncio.new_event_loop()
+        # 提前在调用线程创建 future:stop() 可能在 _run 进入事件循环之前
+        # 被调用,若届时 _stop_wait 仍是 None,停机信号会丢失。
+        self._stop_wait = self._loop.create_future()
+        self._ready.clear()
+        self._error = None
         self._thread = threading.Thread(target=self._run, name="clientd-ws",
                                         daemon=True)
         self._thread.start()
+        if not self._ready.wait(self.ready_timeout):
+            raise TimeoutError(
+                f"WS 服务在 {self.ready_timeout}s 内未绑定 "
+                f"{self.host}:{self.port}")
+        if self._error is not None:
+            raise self._error
 
     def _run(self):
-        import websockets.asyncio.server as wsserver  # lazy: optional dep
-        self._stop_wait = self._loop.create_future()
+        try:
+            import websockets.asyncio.server as wsserver  # lazy: optional dep
 
-        async def _amain():
-            async with wsserver.serve(self.handler, self.host, self.port) as server:
-                self._server = server
-                sock = server.sockets[0] if server.sockets else None
-                if sock is not None:
-                    self.port = sock.getsockname()[1]
-                await self._stop_wait
+            async def _amain():
+                async with wsserver.serve(self.handler, self.host,
+                                          self.port) as server:
+                    self._server = server
+                    sock = server.sockets[0] if server.sockets else None
+                    if sock is not None:
+                        self.port = sock.getsockname()[1]
+                    self._ready.set()
+                    await self._stop_wait
 
-        self._loop.run_until_complete(_amain())
+            self._loop.run_until_complete(_amain())
+        except BaseException as exc:  # noqa: BLE001 - 绑定错误经 start() 上抛
+            self._error = exc
+        finally:
+            # 无论成功/失败都放行等待者,避免 start() 因线程早退而空等超时。
+            self._ready.set()
 
     def _set_stop(self):
         if self._stop_wait is not None and not self._stop_wait.done():
@@ -312,6 +350,11 @@ class WsServer:
             pass
         if self._thread is not None:
             self._thread.join(timeout=5)
+        try:
+            if not self._loop.is_closed():
+                self._loop.close()
+        except RuntimeError:
+            pass
         self._loop = None
         self._thread = None
         self._server = None
@@ -360,10 +403,20 @@ class Service:
         from ..shanten import format_kernel_diagnostic
 
         print(format_kernel_diagnostic(), flush=True)
-        self.ws = WsServer(self.host, self.ws_handler, self.ws_port)
-        self.ws.start()
+        # 先构造 HTTP(构造即 bind,端口冲突在这里同步抛出),再启动 WS 并
+        # 等它真正绑定。任一失败都不留半启状态,更不会写出 ws=0 的发现文件。
         self.http = ControlServer(self.host, self.router, self.http_port,
                                   cors_origins=self.cors_origins)
+        try:
+            self.ws = WsServer(self.host, self.ws_handler, self.ws_port)
+            self.ws.start()
+        except BaseException:
+            if self.ws is not None:
+                self.ws.stop()
+            self.http.stop()
+            self.http = None
+            self.ws = None
+            raise
         self.http.start()
         self.ports["http"] = self.http.port
         self.ports["ws"] = self.ws.port

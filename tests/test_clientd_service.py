@@ -9,12 +9,13 @@
 import json
 import os
 import socket
+import time
 import urllib.request
 
 import pytest
 
 from mj.clientd.errors import ValidationError
-from mj.clientd.service import Router, Service
+from mj.clientd.service import Router, Service, WsServer, make_ws_handler
 
 
 @pytest.fixture
@@ -154,3 +155,90 @@ def test_running_flag_idempotent(service):
         assert status == 200
     finally:
         svc.stop()
+
+
+# ---------------------------------------------------------------------------
+# 动态端口发现的竞态回归
+# ---------------------------------------------------------------------------
+
+def _occupy(host="127.0.0.1"):
+    """占住一个端口并返回 (socket, port);调用方负责 close。"""
+    sock = socket.socket()
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind((host, 0))
+    sock.listen(1)
+    return sock, sock.getsockname()[1]
+
+
+def test_discovery_ports_nonzero_and_ws_reachable(service):
+    """启动返回时发现文件必须已是真实端口,且 WS 口立即可连。
+
+    旧实现里 WS 在后台线程绑定、start() 立即返回,ports['ws'] 会以 0
+    落盘,壳按 0 端口连接必然失败。
+    """
+    build, discovery = service
+    svc = build()
+    svc.start()
+    try:
+        assert svc.ports["http"] != 0
+        assert svc.ports["ws"] != 0
+        assert svc.ws.ready is True
+        with open(discovery, encoding="utf-8") as f:
+            recorded = json.load(f)
+        assert recorded["http"] == svc.ports["http"] != 0
+        assert recorded["ws"] == svc.ports["ws"] != 0
+        # 此刻监听已就绪:发现文件里的端口可直接建立 TCP 连接。
+        for port in (recorded["http"], recorded["ws"]):
+            with socket.create_connection(("127.0.0.1", port), timeout=2):
+                pass
+    finally:
+        svc.stop()
+
+
+def test_ws_start_blocks_until_port_is_bound(monkeypatch):
+    """start() 必须等绑定完成:即使绑定被拖慢,返回时端口也已确定。"""
+    import websockets.asyncio.server as wsserver
+
+    real_serve = wsserver.serve
+
+    def delayed_serve(*args, **kwargs):
+        time.sleep(0.3)
+        return real_serve(*args, **kwargs)
+
+    monkeypatch.setattr(wsserver, "serve", delayed_serve)
+    ws = WsServer("127.0.0.1", make_ws_handler(), 0)
+    started = time.monotonic()
+    ws.start()
+    try:
+        assert time.monotonic() - started >= 0.3
+        assert ws.port != 0
+        assert ws.ready is True
+    finally:
+        ws.stop()
+
+
+def test_ws_bind_conflict_raises_instead_of_returning_port_zero():
+    """端口被占时 start() 抛出绑定错误,而不是留下 port=0 的假成功。"""
+    busy, port = _occupy()
+    try:
+        ws = WsServer("127.0.0.1", make_ws_handler(), port)
+        with pytest.raises(OSError):
+            ws.start()
+        assert ws.ready is False
+    finally:
+        busy.close()
+
+
+def test_service_ws_conflict_leaves_no_half_state(tmp_path):
+    """WS 绑定失败时 Service 不写发现文件、不留 running 状态。"""
+    busy, port = _occupy()
+    discovery = str(tmp_path / "ports.json")
+    svc = Service(ws_port=port, discovery=discovery)
+    try:
+        with pytest.raises(OSError):
+            svc.start()
+        assert svc.running is False
+        assert svc.http is None and svc.ws is None
+        assert not os.path.exists(discovery)
+    finally:
+        busy.close()
