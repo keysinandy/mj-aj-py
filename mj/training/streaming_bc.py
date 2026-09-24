@@ -98,14 +98,24 @@ def dataset_fingerprint(data_dir: str, teacher: str) -> str:
     """数据集身份指纹:manifest 在场则冻结其身份,否则按分片路径集合。"""
     manifest = load_manifest(data_dir)
     if manifest:
-        keys = ("schema", "feature_contract", "evaluator", "scope",
-                "you_cai_bi_kao", "seed_domain", "games", "n_shards",
-                "git_commit")
+        keys = ("schema", "feature_contract", "evaluator", "teacher_version",
+                "teacher_fingerprint", "scope", "you_cai_bi_kao",
+                "seed_domain", "games", "n_shards", "git_commit")
         payload = {k: manifest[k] for k in keys if k in manifest}
         payload["teacher"] = teacher
         return fingerprint(payload, 24)
     paths = sorted(glob.glob(str(Path(data_dir) / "shard_*.npz")))
-    return fingerprint({"shards": paths, "teacher": teacher}, 24)
+    return fingerprint({"shards": paths, "teacher": teacher, "teacher_fp": _frozen_teacher_fp()}, 24)
+
+
+def _frozen_teacher_fp() -> str:
+    """当前冻结的 legacyV2-offline teacher 指纹(供无 manifest 兜底)。"""
+    try:
+        from ..bc_data import TRAINING_TEACHER_FINGERPRINT, training_teacher_fingerprint
+        training_teacher_fingerprint()  # fail-loud:live 已漂移则直接拒绝
+        return TRAINING_TEACHER_FINGERPRINT
+    except (ImportError, RuntimeError):
+        return ""
 
 
 def _find_shards(data_dir: str) -> list[str]:
@@ -437,6 +447,8 @@ def main(argv=None):
 
     # teacher 身份:训练标签来源的训练评价器常量(bc_data.TRAINING_BOT_EVALUATOR)。
     from ..bc_data import TRAINING_BOT_EVALUATOR as TEACHER
+    from ..bc_data import training_teacher_fingerprint
+    training_teacher_fingerprint()   # fail-loud:live teacher 漂移则拒绝训练
 
     torch.manual_seed(args.seed)
     if args.threads:

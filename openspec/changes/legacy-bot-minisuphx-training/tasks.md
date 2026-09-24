@@ -150,6 +150,14 @@
   (脚手架已就绪:streaming_bc.py 真·分片流式 + DataLoader/AMP/pin_memory/
   num_workers + 严格 resume + dataset/teacher fingerprint;真实 30k BC0
   campaign 属 §15 step 6,留待 step 3-5 冻结 teacher/profile 后启动)
+
+  **13.6 补:legacyV2-offline teacher fingerprint 冻结(§15 step 3)已落地。**
+  `TRAINING_TEACHER_FINGERPRINT="e2daa34942eb1bbc"` 冻结加权离线 profile
+  的完整语义(version/model/rules_version/预算/big-hand 等);`bc_data`
+  默认 evaluator 生成时调用 `training_teacher_fingerprint()` 对 live profile
+  fail-loud(飘移即拒绝),manifest 记录 `teacher_version/teacher_fingerprint`;
+  streaming trainer 的 dataset_fingerprint 绑定该指纹(manifest 与无 manifest
+  兜底均验),训练启动时同样校验。改 teacher 动作 → 先升级冻结常量再生成。
 - [ ] 13.7 正式 Champion PPO profile 设 `shape_k=0`；shanten shaping 只保留
   smoke/debug ablation，promotion eval 继续只使用 terminal score。
 - [ ] 13.8 将 Gen0 缩为 0..50k PPO smoke；通过 NaN/illegal/KL/entropy/value/resume

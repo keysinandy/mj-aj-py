@@ -162,6 +162,22 @@ def test_load_checkpoint_rejects_mismatches(tmp_path):
         s.load_checkpoint(ck_path, bad_spec, fp, torch.device("cpu"))
 
 
+def test_frozen_teacher_fingerprint_is_stable():
+    from mj.bc_data import (
+        TRAINING_BOT_EVALUATOR,
+        TRAINING_TEACHER_FINGERPRINT,
+        training_teacher_fingerprint,
+    )
+    from mj.legacy_eval import LegacyTwoPlyProfile
+
+    # live profile 与冻结值一致(未漂移),否则此用例会失败并强制升级冻结常量
+    assert training_teacher_fingerprint() == TRAINING_TEACHER_FINGERPRINT
+    # 冻结值确实等于当前 weighted_offline 的指纹(双重确认)
+    assert LegacyTwoPlyProfile.weighted_offline().fingerprint == TRAINING_TEACHER_FINGERPRINT
+    # teacher 默认走冻结 profile
+    assert TRAINING_BOT_EVALUATOR == "legacyV2-offline"
+
+
 def test_bc_data_manifest_roundtrip(tmp_path):
     from types import SimpleNamespace
 
@@ -181,6 +197,7 @@ def test_bc_data_manifest_roundtrip(tmp_path):
         manifest = json.load(f)
     assert manifest["feature_contract"] == FEATURE_PUBLIC
     assert manifest["evaluator"] == "legacyV2-offline"
+    assert manifest["teacher_fingerprint"] == s._frozen_teacher_fp()
     assert manifest["fingerprint"]
     # streaming trainer 读取 manifest 后指纹稳定,且语义不为空
     fp1 = s.dataset_fingerprint(d, "legacyV2-offline")

@@ -24,6 +24,7 @@ from .features import N_ACTIONS, N_PLANES, N_SCALARS, extract, legal_mask, actio
 from .legacy_eval import (
     LEGACY_V2_EVALUATORS,
     LEGACY_V2_OFFLINE_EVALUATORS,
+    LegacyTwoPlyProfile,
     WEIGHTED_OFFLINE_PROFILE_VERSION,
 )
 
@@ -34,6 +35,27 @@ SEARCH_EVALUATORS = LEGACY_V2_EVALUATORS + LEGACY_V2_OFFLINE_EVALUATORS
 # 设计内的作用域委托(不算预算回退):V1 契约只在 discard 相位给出搜索
 # 结论,爆头/胡杠/吃碰窗以 ``*_scope`` 记录,唯一合法动作单独命名。
 SCOPE_DELEGATION_REASONS = frozenset({"only_legal_action"})
+
+# 冻结的 legacyV2-offline teacher 身份(plan §15 step 3)。
+# 任何影响 label 的 profile 动作/预算/规则版本改动都必须显式升级此常量:
+# 这是 teacher 的一次版本变更,dataset/checkpoint 指纹随之全部改变。
+TRAINING_TEACHER_FINGERPRINT = "e2daa34942eb1bbc"
+TRAINING_TEACHER_VERSION = LegacyTwoPlyProfile.weighted_offline().version
+
+
+def training_teacher_fingerprint() -> str:
+    """返回冻结的 teacher 指纹;live profile 与冻结值不一致时 fail-loud。
+
+    BC/DAgger 的 label 来源一旦改变而不更新冻结常量,就是无标记的 teacher
+    漂移——直接拒绝生成,而不是悄悄换一种 label 口径。
+    """
+    live = LegacyTwoPlyProfile.weighted_offline().fingerprint
+    if live != TRAINING_TEACHER_FINGERPRINT:
+        raise RuntimeError(
+            f"legacyV2-offline teacher profile 已变化:live {live!r} != "
+            f"frozen {TRAINING_TEACHER_FINGERPRINT!r};teacher 身份冻结,"
+            f"变更须显式升级 TRAINING_TEACHER_FINGERPRINT")
+    return live
 
 
 def search_fallback_reason(evaluation):
@@ -184,6 +206,11 @@ def _write_manifest(args, total_samples: int, n_shards: int) -> None:
     from .decision.profile import fingerprint
     from .training.minisuphx_manifest import FEATURE_PUBLIC, git_head
 
+    # 训练标签走冻结 legacyV2-offline teacher 时,写入其冻结指纹并 fail-loud
+    if args.evaluator == TRAINING_BOT_EVALUATOR:
+        teacher_fp = training_teacher_fingerprint()
+    else:
+        teacher_fp = ""
     domain = {
         "train_seed_lo": args.seed0,
         "train_seed_hi": args.seed0 + args.games - 1,
@@ -193,6 +220,8 @@ def _write_manifest(args, total_samples: int, n_shards: int) -> None:
         "schema": "minisuphx-bc-data-v1",
         "feature_contract": FEATURE_PUBLIC,
         "evaluator": args.evaluator,
+        "teacher_version": TRAINING_TEACHER_VERSION if teacher_fp else "",
+        "teacher_fingerprint": teacher_fp,
         "scope": args.scope,
         "you_cai_bi_kao": bool(args.you_cai_bi_kao),
         "allow_search_fallback": bool(args.allow_search_fallback),
