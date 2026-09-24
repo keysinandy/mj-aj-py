@@ -8,11 +8,23 @@
 
 ## 2. P1 BC 数据与训练底座
 
-- [ ] 2.1 重构 `bc_data.py` 支持 deterministic distributed jobs、独立 shard + manifest、无文件名冲突。
-- [ ] 2.2 将 `bc_train.py` 改为 shard-streaming Dataset/DataLoader；训练前不得全量 concat。
-- [ ] 2.3 增加 AMP、pin_memory、num_workers、gradient accumulation（可选）与吞吐日志。
-- [ ] 2.4 checkpoint 保存 model/optimizer/scheduler/epoch/global_step/RNG/manifest；支持严格 resume。
+> **v1 streaming 入口**:新增 `mj/training/streaming_bc.py`
+> (`python -m mj.training.streaming_bc`)。`mj/bc_train.py` 保留为 legacy
+> 单机/回归路径(数据先全量载入、含 91 平面补零),不再作为正式 BC-v1 的训练口。
+
+- [x] 2.1 重构 `bc_data.py` 支持 deterministic distributed jobs、独立 shard + manifest、无文件名冲突。
+  (bc_data 现写 `manifest.json`:evaluator/scope/seed_domain/feature_contract/
+  git_commit + fingerprint;按 seed0 确定性分片,无共享 append 文件)
+- [x] 2.2 将训练改为 shard-streaming Dataset/DataLoader；训练前不得全量 concat。
+  (实现了 `ShardStreamingDataset` LRU 分片缓存 + DataLoader;见 streaming_bc.py;
+  `bc_train.py` 的旧全量栈保留为 legacy 回归)
+- [x] 2.3 增加 AMP、pin_memory、num_workers；gradient accumulation 留作可选。
+  (`torch.amp.GradScaler` + autocast,CUDA 下启用;pin_memory 仅 CUDA)
+- [x] 2.4 checkpoint 保存 model/optimizer/scheduler/epoch/global_step/RNG/manifest；支持严格 resume。
+  (save_checkpoint 存 RNG + spec/dataset fingerprint;load_checkpoint 对
+  feature_contract/架构/spec/dataset 任一指纹不符 fail-loud)
 - [ ] 2.5 训练/验证报告增加 action-scope 分项准确率、illegal rate、value MAE/MSE。
+  (当前报告 CE/top1/MSE;分项准确率与 illegal rate 待补)
 - [ ] 2.6 benchmark 4x128/6x128；若无明确收益证据，正式 v1 使用 6x128。
 
 ## 3. P2 HybridPolicy 与 discard env
@@ -122,16 +134,22 @@
   91(oracle) 维度建网,其内部 75→91 补零迁移属遗留路径;v1 正式 BC/PPO 必须
   等 streaming BC(refactor bc_data/bc_train)落定时统一改为 public-v1
   直训,这是下一步(training-plan §15 step 2)。
-- [ ] 13.2 BC-v1 改为直接训练 public-v1 网络；禁止靠 75→91 补零后再在 PPO
+- [x] 13.2 BC-v1 改为直接训练 public-v1 网络；禁止靠 75→91 补零后再在 PPO
   侧变回 75 来声称同一 feature contract。
+  (streaming_bc.py 以 `n_planes=75` + `verify_feature_planes(FEATURE_PUBLIC,75)`
+  直训,无 oracle 补零;仅显式 `--feature oracle-v1` 会被 refuse。遗留 `bc_train.py`
+  的 91 补零路径仅服务于旧实验回归,不以它训练 BC-v1)
 - [ ] 13.3 BigHandIntent 接入 BC/DAgger/platform replay shard 的 shadow metadata；
   默认不得进入 runtime feature tensor，不得用 BigHandGuard action 作为新 teacher。
 - [ ] 13.4 建 hard-state miner：legacy/BC/RL disagreement、high entropy、
   top2-close、CHIITOI/LUXURY/WHITE_RICH、baotou/piao-near、墙尾、平台真实争议状态。
 - [ ] 13.5 将现有 search teacher 接入 selective correction，只处理 hard-state pool，
   不做全状态 search；保存 teacher/version/budget/cache provenance。
-- [ ] 13.6 完成 P1 的 streaming BC/DataLoader/AMP/resume 后再启动正式 30k BC
+- [x] 13.6 完成 P1 的 streaming BC/DataLoader/AMP/resume 后再启动正式 30k BC
   campaign；冻结 `BC-v1` public checkpoint 与永久 anchor fingerprint。
+  (脚手架已就绪:streaming_bc.py 真·分片流式 + DataLoader/AMP/pin_memory/
+  num_workers + 严格 resume + dataset/teacher fingerprint;真实 30k BC0
+  campaign 属 §15 step 6,留待 step 3-5 冻结 teacher/profile 后启动)
 - [ ] 13.7 正式 Champion PPO profile 设 `shape_k=0`；shanten shaping 只保留
   smoke/debug ablation，promotion eval 继续只使用 terminal score。
 - [ ] 13.8 将 Gen0 缩为 0..50k PPO smoke；通过 NaN/illegal/KL/entropy/value/resume

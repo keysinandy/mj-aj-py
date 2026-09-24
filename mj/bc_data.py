@@ -12,6 +12,7 @@ planes 用 float16 省一半磁盘)。
 """
 
 import argparse
+import json
 import os
 import time
 from concurrent.futures import ProcessPoolExecutor
@@ -174,6 +175,42 @@ def _write_shard(args):
     return path, sum(len(p["action"]) for p in parts)
 
 
+def _write_manifest(args, total_samples: int, n_shards: int) -> None:
+    """写出数据集身份 manifest(json + fingerprint),供 streaming BC 校验。
+
+    task 13.6 / 2.1:数据集身份由 teacher(evaluator/scope)、seed_domain、
+    特征契约、样本量共同冻结;streaming trainer 在 resume 时用它做防呆。
+    """
+    from .decision.profile import fingerprint
+    from .training.minisuphx_manifest import FEATURE_PUBLIC, git_head
+
+    domain = {
+        "train_seed_lo": args.seed0,
+        "train_seed_hi": args.seed0 + args.games - 1,
+        "games": args.games,
+    }
+    payload = {
+        "schema": "minisuphx-bc-data-v1",
+        "feature_contract": FEATURE_PUBLIC,
+        "evaluator": args.evaluator,
+        "scope": args.scope,
+        "you_cai_bi_kao": bool(args.you_cai_bi_kao),
+        "allow_search_fallback": bool(args.allow_search_fallback),
+        "seed_domain": domain,
+        "games": args.games,
+        "n_shards": n_shards,
+        "per_shard": args.per_shard,
+        "samples": int(total_samples),
+        "git_commit": git_head(),
+    }
+    manifest = dict(payload)
+    manifest["fingerprint"] = fingerprint(payload, 24)
+    out = os.path.join(args.out, "manifest.json")
+    with open(out, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2, ensure_ascii=False)
+    print(f"manifest: {out} ({manifest['fingerprint']})")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="data/bc")
@@ -219,6 +256,8 @@ def main():
         for path, n in ex.map(_write_shard, jobs):
             total += n
             print(f"{path}: {n} 样本 ({time.time() - t0:.0f}s)", flush=True)
+    if not args.legacy_layout:
+        _write_manifest(args, total, n_shards)
     print(f"共 {total} 样本, {n_shards} 分片, {time.time() - t0:.0f}s, "
           f"{total / (time.time() - t0):.0f} 样本/秒")
 
