@@ -106,3 +106,39 @@
 - [ ] 12.3 replay debugger 展示 policy version、legacy gate、RL suggestion、value、entropy、fallback reason。
 - [ ] 12.4 Windows 两机重启恢复测试：coordinator/worker/learner 任一中断均可恢复且不污染 generation。
 - [ ] 12.5 README/训练手册记录 PC-A/PC-B 启动方式与 rollback 流程。
+
+## 13. 2026-09-24 训练计划 v2 收口
+
+- [ ] 13.1 新增并冻结 `public-v1=planes-75-scalars-8` 与
+  `oracle-v1=planes-91-oracle16-scalars-8`，修复当前 manifest 与 custom PPO
+  实际 75-plane 输入的身份歧义；不兼容 checkpoint/rollout 必须 fail-loud。
+- [ ] 13.2 BC-v1 改为直接训练 public-v1 网络；禁止靠 75→91 补零后再在 PPO
+  侧变回 75 来声称同一 feature contract。
+- [ ] 13.3 BigHandIntent 接入 BC/DAgger/platform replay shard 的 shadow metadata；
+  默认不得进入 runtime feature tensor，不得用 BigHandGuard action 作为新 teacher。
+- [ ] 13.4 建 hard-state miner：legacy/BC/RL disagreement、high entropy、
+  top2-close、CHIITOI/LUXURY/WHITE_RICH、baotou/piao-near、墙尾、平台真实争议状态。
+- [ ] 13.5 将现有 search teacher 接入 selective correction，只处理 hard-state pool，
+  不做全状态 search；保存 teacher/version/budget/cache provenance。
+- [ ] 13.6 完成 P1 的 streaming BC/DataLoader/AMP/resume 后再启动正式 30k BC
+  campaign；冻结 `BC-v1` public checkpoint 与永久 anchor fingerprint。
+- [ ] 13.7 正式 Champion PPO profile 设 `shape_k=0`；shanten shaping 只保留
+  smoke/debug ablation，promotion eval 继续只使用 terminal score。
+- [ ] 13.8 将 Gen0 缩为 0..50k PPO smoke；通过 NaN/illegal/KL/entropy/value/resume
+  检查后尽早进入 league。
+- [ ] 13.9 实现并冻结 Gen1/2/3 opponent schedule：60/20/20 →
+  40/20/40 → 25/15/60，长期保持 legacy>=20%、BC>=10%。
+- [ ] 13.10 增加 `local-smoke` / `single-machine` / `dual-machine` runtime
+  profiles；单/双机只允许 worker/job-placement 差异，训练契约和 promotion
+  schedule 必须完全相同。
+- [ ] 13.11 单机闭环验收：BC job → DAgger job → rollout → merge → PPO update →
+  checkpoint/resume → paired gate 全部只用 PC-A 完成，产物随后可无迁移切到双机。
+- [ ] 13.12 PC-A benchmark 2/4/5 rollout actors，记录 decisions/min、learner update
+  wall time、CPU 利用率、learner idle fraction，选吞吐最优而非 CPU 最满配置。
+- [ ] 13.13 PC-B 仅作为额外 compute worker；RX6600 默认不做梯度训练。若启用
+  DirectML/ONNX inference，必须有数值 parity + end-to-end throughput 证据。
+- [ ] 13.14 每个 promotion report 增加 BigHand/hard-state strata；大牌发生率只作
+  描述，最终晋级仍由 paired hero round score + CI + hard-set 决定。
+- [ ] 13.15 更新 `scripts/train_minisuphx.py` / run summary，使同一 campaign 可在
+  single-machine 与 dual-machine 间 resume，且 policy/opponent/feature/value
+  fingerprints 不变化。

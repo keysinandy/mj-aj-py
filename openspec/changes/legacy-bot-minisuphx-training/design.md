@@ -641,3 +641,230 @@ Champion-v2 额外满足：
 - search/distillation 相对 Champion-v1 有独立 paired 改善；
 - Oracle 不成为线上隐藏信息依赖；
 - reaction unlock 若启用，逐能力单独验收。
+
+## 2026-09-24 训练计划 v2 修订
+
+本节 supersede 本 change 中与当前实现/实验结论冲突的旧 roadmap；未冲突的
+manifest、value contract、action scope、paired promotion 与 distributed job
+契约继续有效。完整执行版见 `docs/minisuphx-training-plan-v2.md`。
+
+### R1 BigHandIntent 降级为 shadow/training metadata
+
+`legacy-v2-big-hand-intent` Phase A/B 已完成 paired/perf 验收，结论为生产
+默认继续关闭。训练主线不得把 BigHandGuard/plus-one override 的动作当作新的
+专家真值。
+
+BigHandIntent 在训练中的身份改为：
+
+- hard-state detector；
+- active-sampling signal；
+- replay/evaluation stratum；
+- 可选 auxiliary target；
+- shard shadow metadata。
+
+它不进入 Champion-v1 的 runtime public feature contract，不直接给 policy 动作加
+bonus，也不改变 terminal-score promotion 口径。
+
+### R2 Teacher 分为 T0/T1/T2
+
+训练 teacher 不再视为单一 BOT：
+
+```text
+T0 = legacyV2-offline
+     大规模 BC / DAgger label，必须 fail-loud，不允许 fallback label
+
+T1 = BigHandIntent + legacy diagnostics
+     只做 shadow 标签和困难状态发现，不决定 expert action
+
+T2 = shape-v2 / information-set search teacher
+     只处理 disagreement / high-entropy / top2-close / BigHand / hard-set 状态
+```
+
+平台真实日志首先提供真实状态分布；普通训练样本应 replay 后由 T0/T2 relabel，
+不得把当前线上 BOT 自己提交的动作直接等价成高质量 expert label。
+
+### R3 Champion-v1 使用 public-only feature contract
+
+正式 BC-v1、DAgger、PPO 与线上推理统一使用 public-only 输入。当前实现里
+`MahjongDiscardEnv.extract(..., oracle=False)` 与 custom PPO learner 都使用
+75 public planes，因此正式 campaign 前 MUST 把 manifest contract 从含混的
+91-plane 命名拆开：
+
+```text
+public-v1 = planes-75-scalars-8
+oracle-v1 = planes-91-oracle16-scalars-8
+big-hand-shadow-v1 = metadata only
+```
+
+BC-v1 与 PPO MUST 同构使用 public-v1。91-plane oracle 网络只能在
+Champion-v1 已冻结后进入 Oracle Guiding 阶段。不同 feature contract 的
+checkpoint/rollout MUST fail-loud，不能通过补零或尽量加载伪装成同一 policy。
+
+### R4 正式 RL 不使用 shanten shaping 作为主 reward
+
+历史 PPO 证明 BC prior 能抑制累积 policy drift，但固定 legacy 对手没有稳定提供
+超越 BC 的收益证据。新的正式 Champion campaign 以真实 terminal round score 为
+唯一主 reward：
+
+```text
+shape_k = 0
+reward  = round-score-v2-normalized terminal return
+```
+
+shanten potential 只保留 smoke/debug ablation，不参与 promotion candidate 的
+正式训练身份。长期大牌价值由 terminal score + search correction 学习，而不是由
+“更快降向听” shaping 预先规定。
+
+### R5 BC / DAgger / Search / RL 新顺序
+
+```text
+Contract Repair
+ -> Streaming BC substrate
+ -> 30k legacyV2-offline BC games
+ -> BC0
+ -> DAgger 3k / 3k / 4k
+ -> BC-v1 frozen anchor
+ -> hard-state mining
+ -> selective search correction
+ -> PPO smoke 0..50k
+ -> League Gen1 50k..300k
+ -> League Gen2 300k..700k
+ -> League Gen3 700k..1.2M
+ -> 4096 paired full gate
+ -> Champion-v1
+ -> Oracle / belief / search / distill iteration
+ -> Champion-v2
+```
+
+Gen0 的 100% legacy 阶段缩短为 50k discard decisions，只验证 PPO 系统正确性，
+不把它当主要牌力提升阶段。
+
+### R6 League 对手池提前进入
+
+正式 opponent schedule 调整为：
+
+```text
+Gen0  0..50k
+  legacy 100%                # smoke only
+
+Gen1  50k..300k
+  legacy 60%
+  BC-v1 20%
+  historical RL 20%
+
+Gen2  300k..700k
+  legacy 40%
+  BC-v1 20%
+  RL league 40%
+
+Gen3  700k..1.2M
+  legacy 25%
+  BC-v1 15%
+  RL league 60%
+```
+
+永久 anchor 仍保持：
+
+```text
+legacy >= 20%
+BC-v1 >= 10%
+```
+
+历史 RL checkpoint 进入 pool 前必须通过 manifest/illegal/basic paired smoke，
+不得“每个 checkpoint 自动入池”。
+
+### R7 单机是完整运行模式，双机仅横向扩容
+
+分布式架构 MUST 支持三种 profile：
+
+```text
+local-smoke
+  1~2 actors
+  2k~4k rollout
+  128/256 paired
+
+single-machine
+  coordinator + learner + actors + evaluator 同机
+  正式 16k~32k rollout/update
+  完整 BC / DAgger / PPO / paired / resume 闭环
+
+dual-machine
+  PC-A: coordinator + learner + merge/promotion
+  PC-B: additional actors / BC / DAgger / evaluation / search
+  与 single-machine 使用完全相同的 policy/rollout/manifest contract
+```
+
+运行 profile 只允许改变：
+
+- worker 数；
+- job placement；
+- local cache/staging 位置；
+- 吞吐相关并发参数。
+
+它 MUST NOT 改变：
+
+- feature/value/action contracts；
+- teacher identity；
+- PPO 超参和 policy-version 语义；
+- opponent-pool fingerprint；
+- promotion gate；
+- seed schedule。
+
+因此 single-machine 产物可以直接继续到 dual-machine，不需要模型迁移或重新生成
+训练身份。
+
+### R8 当前两台机器的默认角色
+
+```text
+PC-A: GTX 2060 + i5-9400F + 48 GB
+  coordinator
+  CUDA learner
+  merge/checkpoint/promotion
+  少量本地 rollout actors
+
+PC-B: RX 6600 8 GB + i5-13400F + 64 GB
+  主要 rollout actors
+  BC/DAgger generation
+  paired evaluation
+  hard-state/search jobs
+```
+
+v1 不要求 RX 6600 参与梯度训练；只有独立 ONNX/DirectML benchmark 证明推理吞吐
+提升且数值一致，才允许把它作为 actor inference capability。
+
+单机正式闭环优先使用 PC-A（CUDA learner）；actor 数必须从 2/4/5 等档位实测，
+不得为了占满 CPU 牺牲 learner/merge 吞吐。
+
+### R9 单机 PPO 默认采用同步交替式
+
+单机正式模式优先：
+
+```text
+freeze policy_N
+ -> local actors collect 16k~32k decisions
+ -> stop/freeze collection
+ -> merge/validate
+ -> GPU learner update
+ -> publish policy_N+1
+ -> next rollout round
+```
+
+后续可让 evaluation/preprocessing 与 learner 重叠，但正式 PPO rollout 不得在
+policy_N+1 尚未发布时偷偷使用旧 policy 开始下一 update 的 on-policy shard。
+
+### R10 BigHand 专项只作为 promotion 分桶
+
+每个 BC/RL candidate 增加描述性 stratum：
+
+```text
+ordinary
+CHIITOI opportunity
+LUXURY_CHIITOI opportunity
+WHITE_RICH
+baotou/piao-near
+```
+
+报告 score delta、action disagreement、终局七对/豪华/爆头/财飘率。后四者只用于
+解释，绝不能代替 hero round score 作为 promotion 目标。若 overall 提升但某个
+BigHand/hard-state 桶出现预声明的系统性灾难回归，则 candidate 不晋级并进入
+hard-state/search correction。

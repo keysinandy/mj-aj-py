@@ -104,3 +104,24 @@
 - `mj/training/run_summary.py`
 
 本 change 的第一发布目标是 `Champion-v1`。Oracle/Belief/Search/Distillation 属于同一 roadmap 的 v2 milestone，但只有在 v1 gate 完成后才能成为默认训练路径。
+
+## 2026-09-24 Roadmap Revision
+
+根据 `legacy-v2-big-hand-intent` Phase A/B paired/performance 实验，BigHandIntent
+不进入生产默认 legacyV2，也不作为新的 BC expert action source。它改为
+shadow/hard-state/active-sampling 标签，长期做大牌能力由 selective search teacher
+与 terminal-score league RL 学习。
+
+训练 roadmap 同时从“双机专用”收口为“单机完整、双机横向扩容”：
+
+- 单机必须能独立完成 BC、DAgger、PPO rollout/update、paired gate、resume；
+- 双机只新增 remote workers，不改变任何训练语义、manifest 或 checkpoint；
+- Champion-v1 正式输入统一为 public 75 planes + 8 scalars；
+- 91-plane oracle 输入推迟到 Champion-v1 后的 Oracle Guiding；
+- 正式 RL 主 reward 只使用 normalized terminal round score，shanten shaping
+  降级为 debug ablation；
+- 100% legacy PPO 仅保留 50k smoke，之后提前进入 opponent league；
+- search teacher 从 v2 大规模阶段前移为 hard-state selective correction，
+  尤其覆盖 BigHand/disagreement/high-entropy/platform-real 状态。
+
+完整当前执行计划见 `docs/minisuphx-training-plan-v2.md`。
