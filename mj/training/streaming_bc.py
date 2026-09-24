@@ -230,6 +230,42 @@ class ShardStreamingDataset(torch.utils.data.Dataset):
         return planes, scalars, mask, action, target
 
 
+class ShardBatchSampler(torch.utils.data.Sampler[list[int]]):
+    """Yield batches that stay within one shard.
+
+    A regular ``RandomSampler`` mixes global sample indices from all shards in
+    every batch.  With large NPZ shards that defeats the small LRU cache and
+    can turn one epoch into millions of full-shard reads.  This sampler keeps
+    the same sample-level randomness while shuffling the shard order first and
+    then the indices inside each selected shard.  It draws from Torch's global
+    RNG, so the existing checkpoint RNG snapshot also preserves resume
+    semantics.
+    """
+
+    def __init__(self, dataset: ShardStreamingDataset, batch_size: int):
+        if not isinstance(dataset, ShardStreamingDataset):
+            raise TypeError("ShardBatchSampler requires ShardStreamingDataset")
+        if int(batch_size) <= 0:
+            raise ValueError("batch_size must be positive")
+        self.dataset = dataset
+        self.batch_size = int(batch_size)
+
+    def __len__(self) -> int:
+        return (len(self.dataset) + self.batch_size - 1) // self.batch_size
+
+    def __iter__(self):
+        # ``_kept`` is the list of physical shard indices selected for this
+        # split; starts/ends are the corresponding logical dataset ranges.
+        order = torch.randperm(len(self.dataset._kept)).tolist()
+        for kept_pos in order:
+            start = int(self.dataset._kept_start[kept_pos])
+            end = int(self.dataset._kept_end[kept_pos])
+            indices = torch.randperm(end - start).tolist()
+            for offset in range(0, len(indices), self.batch_size):
+                yield [start + index for index in
+                       indices[offset:offset + self.batch_size]]
+
+
 def _augment_sample(planes, mask, action, perm):
     """单样本花色置换增广(75 平面,无 oracle 补零)—— 方向与 features 一致。"""
     q, a = perm
@@ -279,9 +315,9 @@ def build_dataloaders(data_dir: str, *, batch_size: int, seed: int,
         val_ds = ShardStreamingDataset(
             data_dir, shard_flags=val_flags, augmented=False, seed=seed)
         train = torch.utils.data.DataLoader(
-            train_ds, batch_size=batch_size, shuffle=True,
+            train_ds, batch_sampler=ShardBatchSampler(train_ds, batch_size),
             num_workers=num_workers, pin_memory=pin_memory,
-            collate_fn=collate, drop_last=False)
+            collate_fn=collate)
         val = torch.utils.data.DataLoader(
             val_ds, batch_size=batch_size, shuffle=False, num_workers=0,
             pin_memory=pin_memory, collate_fn=collate, drop_last=False)

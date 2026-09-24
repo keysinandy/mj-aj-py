@@ -98,6 +98,18 @@ def test_shard_flags_subset_and_loader_partition(data_dir):
     assert batch["action"].dtype == torch.int64
 
 
+def test_shard_batch_sampler_keeps_batches_local_to_one_shard(data_dir):
+    ds = s.ShardStreamingDataset(data_dir, augmented=False, seed=0)
+    sampler = s.ShardBatchSampler(ds, batch_size=8)
+    batches = list(iter(sampler))
+    flattened = [index for batch in batches for index in batch]
+    assert sorted(flattened) == list(range(len(ds)))
+    for batch in batches:
+        positions = [int(np.searchsorted(ds._kept_end, index, side="right"))
+                     for index in batch]
+        assert len(set(positions)) == 1
+
+
 def test_dataset_fingerprint_with_and_without_manifest(data_dir):
     fp_plain = s.dataset_fingerprint(data_dir, teacher="legacy-v2-offline")
     # 写 manifest 后身份冻结为 manifest 内容

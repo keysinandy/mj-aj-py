@@ -1,6 +1,7 @@
 __pycache__/
 .pytest_cache/
 data/
+runs/legacy_bc_v1_30k_20260924_bc0/
 *.npz
 .qoder/
 local/
