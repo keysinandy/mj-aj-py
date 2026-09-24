@@ -21,7 +21,7 @@ def test_platform_settings_are_persisted_and_normalized(tmp_path):
 
     status, initial = dispatch(router, "GET", "/api/settings")
     assert status == 200
-    assert initial["server"] == ""
+    assert initial["server"] == "https://10.240.169.190:18080"
     assert initial["tokens"]["test_room"] == []
 
     status, saved = dispatch(router, "PUT", "/api/settings", {

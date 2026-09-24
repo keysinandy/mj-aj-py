@@ -527,8 +527,8 @@ export function TournamentPage() {
           <label className="settings-field tournament-field">
             锦标赛 Key
             <input
-              type="password"
-              autoComplete="new-password"
+              type="text"
+              autoComplete="off"
               aria-label="锦标赛 Key"
               value={tournamentKey}
               onChange={(event) => setTournamentKey(event.target.value)}
