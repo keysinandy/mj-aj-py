@@ -127,7 +127,7 @@ def report(name, stats, n):
     return stats
 
 
-def policy_player(ckpt, device="cpu", temperature=0.0):
+def policy_player(ckpt, device="cpu", temperature=0.0, *, weights_only=False):
     """加载 checkpoint(BC 的 best.pt 或 PPO 的 final.pt),返回
     (g, seat) -> 合法 mask 内策略动作。temperature=0 取 argmax,
     >0 按温度采样(自博弈数据多样性用)。
@@ -146,7 +146,12 @@ def policy_player(ckpt, device="cpu", temperature=0.0):
     )
     from mj.model import Net
 
-    ck = torch.load(ckpt, map_location=device, weights_only=True)
+    # PPO campaign checkpoints also contain optimizer and RNG state so they
+    # can be resumed.  Those full checkpoints are trusted run artifacts and
+    # cannot be deserialized by PyTorch's restricted weights-only unpickler
+    # when NumPy RNG state is present.  Callers evaluating untrusted files can
+    # opt back into the restricted loader explicitly.
+    ck = torch.load(ckpt, map_location=device, weights_only=weights_only)
     # 输入宽度从 checkpoint 推断:BC(75 平面)与 PPO(91 平面,
     # 含 oracle 通道,推理时置零)的 Net 同构不同宽,按 stem 形状取
     n_planes = ck["state_dict"]["stem.0.weight"].shape[1] - N_SCALARS \

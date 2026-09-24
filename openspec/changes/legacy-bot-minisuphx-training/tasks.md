@@ -23,9 +23,14 @@
 - [x] 2.4 checkpoint 保存 model/optimizer/scheduler/epoch/global_step/RNG/manifest；支持严格 resume。
   (save_checkpoint 存 RNG + spec/dataset fingerprint;load_checkpoint 对
   feature_contract/架构/spec/dataset 任一指纹不符 fail-loud)
-- [ ] 2.5 训练/验证报告增加 action-scope 分项准确率、illegal rate、value MAE/MSE。
-  (当前报告 CE/top1/MSE;分项准确率与 illegal rate 待补)
-- [ ] 2.6 benchmark 4x128/6x128；若无明确收益证据，正式 v1 使用 6x128。
+- [x] 2.5 训练/验证报告增加 action-scope 分项准确率、illegal rate、value MAE/MSE。
+  (`streaming_bc.evaluate(..., detailed=True)` 输出 discard/non-discard 分项、
+  raw argmax illegal rate、label illegal rate、value MAE/MSE；日志、config 与
+  checkpoint 均保存详细验证报告)
+- [x] 2.6 benchmark 4x128/6x128；若无明确收益证据，正式 v1 使用 6x128。
+  (`scripts/benchmark_streaming_bc.py` 使用 public-v1 同形状输入和完整
+  optimizer step；artifact=`artifacts/bc_architecture_benchmark_20260924.json`；
+  当前证据仅覆盖吞吐/参数量，未证明 4x128 质量收益，故冻结正式 v1 为 6x128)
 
 ## 3. P2 HybridPolicy 与 discard env
 
@@ -121,7 +126,7 @@
 
 ## 12. P11 发布与运维
 
-- [ ] 12.1 `scripts/train_minisuphx.py` 支持 campaign create/status/resume/gate/promote。
+- [x] 12.1 `scripts/train_minisuphx.py` 支持 campaign create/status/resume/gate/promote。
 - [ ] 12.2 run summary 汇总 BC/DAgger/RL/cluster/paired/hard-set 证据。
 - [ ] 12.3 replay debugger 展示 policy version、legacy gate、RL suggestion、value、entropy、fallback reason。
 - [ ] 12.4 Windows 两机重启恢复测试：coordinator/worker/learner 任一中断均可恢复且不污染 generation。
@@ -182,7 +187,7 @@
 - [ ] 13.10 增加 `local-smoke` / `single-machine` / `dual-machine` runtime
   profiles；单/双机只允许 worker/job-placement 差异，训练契约和 promotion
   schedule 必须完全相同。
-- [ ] 13.11 单机闭环验收：BC job → DAgger job → rollout → merge → PPO update →
+- [x] 13.11 单机闭环验收：BC job → DAgger job → rollout → merge → PPO update →
   checkpoint/resume → paired gate 全部只用 PC-A 完成，产物随后可无迁移切到双机。
 - [ ] 13.12 PC-A benchmark 2/4/5 rollout actors，记录 decisions/min、learner update
   wall time、CPU 利用率、learner idle fraction，选吞吐最优而非 CPU 最满配置。

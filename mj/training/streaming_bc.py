@@ -41,12 +41,18 @@ from ..decision.profile import fingerprint
 from ..features import N_ACTIONS, N_PLANES, N_SCALARS, SUIT_PERMS
 from ..model import Net, masked_ce
 from .minisuphx_manifest import (
+    ACTION_SCOPE_DISCARD,
     FEATURE_PUBLIC,
     feature_contract,
     verify_feature_planes,
 )
 
 MAX_CACHED_SHARDS = 2
+N_DISCARD_ACTIONS = 34
+ACTION_SCOPE_NON_DISCARD = "non-discard"
+ACTION_SCOPE_NAMES = (ACTION_SCOPE_DISCARD, ACTION_SCOPE_NON_DISCARD)
+V1_DEFAULT_BLOCKS = 6
+V1_DEFAULT_WIDTH = 128
 
 
 # ===== 数据 ====================================================================
@@ -304,35 +310,115 @@ def build_model(spec: TrainSpec, device: torch.device) -> Net:
     return net
 
 
+def _safe_ratio(total: float, count: int):
+    """Return a JSON-friendly mean, using null for an empty partition."""
+    return float(total / count) if count else None
+
+
+def _format_metric(value) -> str:
+    """Format nullable report values for the human-readable epoch log."""
+    return "nan" if value is None else f"{float(value):.4f}"
+
+
+def _validation_report(*, total_ce: float, total_mae: float,
+                       total_mse: float, correct: int, illegal: int,
+                       label_illegal: int, n: int,
+                       scope_counts: Mapping[str, int],
+                       scope_correct: Mapping[str, int]) -> dict:
+    """Build the stable validation report consumed by logs and config files.
+
+    ``top1`` and the per-scope accuracies use the legal-mask prediction.  The
+    separate ``illegal_rate`` deliberately uses the raw, unmasked policy
+    argmax; otherwise masking would make this safety diagnostic meaningless.
+    ``label_illegal_rate`` is retained as a data-quality diagnostic for shards
+    whose teacher action is not present in their legal mask.
+    """
+    action_scope = {
+        name: {
+            "count": int(scope_counts[name]),
+            "accuracy": _safe_ratio(scope_correct[name], scope_counts[name]),
+        }
+        for name in ACTION_SCOPE_NAMES
+    }
+    return {
+        "samples": int(n),
+        "ce": _safe_ratio(total_ce, n),
+        "top1": _safe_ratio(correct, n),
+        "illegal_rate": _safe_ratio(illegal, n),
+        "illegal_count": int(illegal),
+        "label_illegal_rate": _safe_ratio(label_illegal, n),
+        "label_illegal_count": int(label_illegal),
+        "value_mae": _safe_ratio(total_mae, n),
+        "value_mse": _safe_ratio(total_mse, n),
+        "action_scope": action_scope,
+        # Flat accuracy mapping makes the report convenient for tables while
+        # ``action_scope`` retains per-scope sample counts for interpretation.
+        "action_scope_accuracy": {
+            name: values["accuracy"] for name, values in action_scope.items()
+        },
+    }
+
+
 def evaluate(model: Net, loader: torch.utils.data.DataLoader, device: torch.device,
-             value_w: float):
-    """验证:masked CE、top-1 准确率、value MSE(无增广)。"""
+             value_w: float, *, detailed: bool = False):
+    """Validate without augmentation and report policy/value safety metrics.
+
+    The default three-value return is kept for callers of the original
+    streaming trainer API.  ``detailed=True`` returns the full report used by
+    the training entrypoint: masked CE/top-1, action-scope accuracy, raw
+    illegal-action rate, and value MAE/MSE.
+    """
+    del value_w  # retained in the public signature for backward compatibility
     model.eval()
-    total_ce = total_mse = 0.0
-    n = correct = 0
+    total_ce = total_mae = total_mse = 0.0
+    n = correct = illegal = label_illegal = 0
+    scope_counts = {name: 0 for name in ACTION_SCOPE_NAMES}
+    scope_correct = {name: 0 for name in ACTION_SCOPE_NAMES}
     with torch.no_grad():
         for batch in loader:
             planes = batch["planes"].to(device)
             scalars = batch["scalars"].to(device)
-            mask = batch["mask"].to(device)
+            mask = batch["mask"].to(device).bool()
             action = batch["action"].to(device)
             target = batch["value_target"].to(device)
             logits, v = model(planes, scalars)
             total_ce += masked_ce(logits, mask, action).item() * len(action)
-            total_mse += float(torch.mean((v - target) ** 2).item()) * len(action)
+            error = v - target
+            total_mae += float(torch.mean(torch.abs(error)).item()) * len(action)
+            total_mse += float(torch.mean(error ** 2).item()) * len(action)
+
+            raw_pred = logits.argmax(dim=-1)
             pred = logits.masked_fill(~mask, float("-inf")).argmax(dim=-1)
-            correct += int((pred == action).sum().item())
+            raw_is_legal = mask.gather(1, raw_pred.unsqueeze(1)).squeeze(1)
+            label_is_legal = mask.gather(1, action.unsqueeze(1)).squeeze(1)
+            row_correct = pred == action
+            row_scope = action < N_DISCARD_ACTIONS
+            for name, selected in (
+                    (ACTION_SCOPE_DISCARD, row_scope),
+                    (ACTION_SCOPE_NON_DISCARD, ~row_scope)):
+                scope_counts[name] += int(selected.sum().item())
+                scope_correct[name] += int((row_correct & selected).sum().item())
+            correct += int(row_correct.sum().item())
+            illegal += int((~raw_is_legal).sum().item())
+            label_illegal += int((~label_is_legal).sum().item())
             n += len(action)
+    report = _validation_report(
+        total_ce=total_ce, total_mae=total_mae, total_mse=total_mse,
+        correct=correct, illegal=illegal, label_illegal=label_illegal, n=n,
+        scope_counts=scope_counts, scope_correct=scope_correct)
     model.train()
+    if detailed:
+        return report
     if n == 0:
         return float("nan"), float("nan"), float("nan")
-    return total_ce / n, correct / n, total_mse / n
+    return report["ce"], report["top1"], report["value_mse"]
 
 
 def save_checkpoint(path: str, model: Net, opt: torch.optim.Optimizer,
                     sched, *, global_step: int, epoch: int, best_val: float,
                     spec: TrainSpec, dataset_fp: str, source_state: dict,
-                    rng: Mapping[str, str]):
+                    rng: Mapping[str, str], validation_metrics: Mapping | None = None,
+                    best_validation_metrics: Mapping | None = None):
     """保存含完整训练身份与 RNG 状态的 checkpoint(严格 resume 用)。"""
     torch.save({
         "schema": "minisuphx-streaming-bc-ckpt-v1",
@@ -345,6 +431,10 @@ def save_checkpoint(path: str, model: Net, opt: torch.optim.Optimizer,
         "global_step": int(global_step),
         "epoch": int(epoch),
         "best_val_top1": float(best_val),
+        "validation_metrics": (dict(validation_metrics)
+                               if validation_metrics is not None else None),
+        "best_validation_metrics": (dict(best_validation_metrics)
+                                    if best_validation_metrics is not None else None),
         "spec": spec.payload(),
         "spec_fingerprint": spec.spec_fingerprint,
         "dataset_fingerprint": dataset_fp,
@@ -447,8 +537,8 @@ def main(argv=None):
     ap.add_argument("--epochs", type=int, default=10)
     ap.add_argument("--bs", type=int, default=512)
     ap.add_argument("--lr", type=float, default=3e-4)
-    ap.add_argument("--blocks", type=int, default=6)
-    ap.add_argument("--width", type=int, default=128)
+    ap.add_argument("--blocks", type=int, default=V1_DEFAULT_BLOCKS)
+    ap.add_argument("--width", type=int, default=V1_DEFAULT_WIDTH)
     ap.add_argument("--value-w", type=float, default=0.5)
     ap.add_argument("--val-pct", type=float, default=0.1)
     ap.add_argument("--workers", type=int, default=0)
@@ -507,6 +597,8 @@ def main(argv=None):
         autocast = contextlib.nullcontext()
 
     start_epoch, global_step, best_val = 1, 0, 0.0
+    last_validation_metrics = None
+    best_validation_metrics = None
     source_state = {}
     if args.resume:
         ck = load_checkpoint(args.resume, spec, ds_fp, device)
@@ -516,6 +608,12 @@ def main(argv=None):
         start_epoch = int(ck["epoch"]) + 1
         global_step = int(ck["global_step"])
         best_val = float(ck["best_val_top1"])
+        last_validation_metrics = ck.get("validation_metrics")
+        best_validation_metrics = ck.get("best_validation_metrics")
+        if best_validation_metrics is None:
+            # Checkpoints written before the detailed report existed only
+            # carried the last scalar validation score.
+            best_validation_metrics = last_validation_metrics
         source_state = ck.get("source_state", {})
         restore_rng(ck.get("rng", {}), device)
         print(f"续训自 {args.resume}: epoch {start_epoch}, "
@@ -539,20 +637,38 @@ def main(argv=None):
             model, train, spec, opt, args.value_w, scaler, autocast,
             device, global_step)
         sched.step()
-        ce, acc, mse = evaluate(model, val, device, args.value_w)
+        validation_metrics = evaluate(
+            model, val, device, args.value_w, detailed=True)
+        last_validation_metrics = validation_metrics
+        ce = validation_metrics["ce"]
+        acc = validation_metrics["top1"]
+        mse = validation_metrics["value_mse"]
         ck_msg = ""
-        if acc > best_val:
+        if acc is not None and acc > best_val:
             best_val = acc
+            best_validation_metrics = validation_metrics
             torch.save({"state_dict": model.state_dict(),
                         "blocks": spec.blocks, "width": spec.width,
-                        "feature_contract": spec.feature_contract},
+                        "feature_contract": spec.feature_contract,
+                        "validation_metrics": validation_metrics},
                        best_path)
             ck_msg = "  saved"
         save_checkpoint(last_path, model, opt, sched, global_step=global_step,
                         epoch=ep, best_val=best_val, spec=spec, dataset_fp=ds_fp,
-                        source_state=source_state, rng=_snapshot_rng())
+                        source_state=source_state, rng=_snapshot_rng(),
+                        validation_metrics=last_validation_metrics,
+                        best_validation_metrics=best_validation_metrics)
+        scope = validation_metrics["action_scope_accuracy"]
+        scope_text = "  ".join((
+            f"val_discard_top1 {_format_metric(scope[ACTION_SCOPE_DISCARD])}",
+            f"val_non_discard_top1 "
+            f"{_format_metric(scope[ACTION_SCOPE_NON_DISCARD])}"))
         print(f"epoch {ep:3d}: train_loss {loss_sum / n_seen:.4f}  "
-              f"val_CE {ce:.4f}  val_top1 {acc:.4f}  val_MSE {mse:.4f}"
+              f"val_CE {_format_metric(ce)}  val_top1 {_format_metric(acc)}  "
+              f"{scope_text}  "
+              f"val_illegal_rate {_format_metric(validation_metrics['illegal_rate'])}  "
+              f"val_MAE {_format_metric(validation_metrics['value_mae'])}  "
+              f"val_MSE {_format_metric(mse)}"
               f"{ck_msg}  ({time.time() - t0:.0f}s)", flush=True)
 
     with open(os.path.join(args.out, "config.json"), "w") as f:
@@ -563,6 +679,8 @@ def main(argv=None):
             "feature_contract_fingerprint": fc.fingerprint,
             "dataset_fingerprint": ds_fp,
             "best_val_top1": best_val,
+            "validation_metrics": last_validation_metrics,
+            "best_validation_metrics": best_validation_metrics,
             "global_step": global_step,
             "amp": use_amp,
             "workers": args.workers,

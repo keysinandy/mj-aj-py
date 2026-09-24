@@ -15,7 +15,12 @@ from __future__ import annotations
 
 import os
 
-from ..bc_data import TRAINING_BOT_EVALUATOR, _write_shard
+from ..bc_data import (
+    DEFAULT_CONSECUTIVE_DEALS,
+    DEFAULT_MATCH_ROUNDS,
+    TRAINING_BOT_EVALUATOR,
+    _write_shard,
+)
 
 HANDLERS: dict = {}
 
@@ -31,18 +36,23 @@ def execute_legacy_bc_games(job: dict, *, cache_dir: str) -> dict:
     scope = str(payload.get("scope", "all-root"))
     include_meta = bool(payload.get("include_metadata", False))
     allow_fallback = bool(payload.get("allow_search_fallback", False))
+    rounds = int(payload.get("rounds", DEFAULT_MATCH_ROUNDS))
+    default_consecutive_deals = int(payload.get(
+        "default_consecutive_deals", DEFAULT_CONSECUTIVE_DEALS))
     local_dir = os.path.join(cache_dir, job["job_id"])
     os.makedirs(local_dir, exist_ok=True)
     out = os.path.join(local_dir, "rollout.npz")
     # 复用 bc_data 的单 worker 分片原语(_write_shard 返回 (path, n_samples))
     _, n_samples = _write_shard(
         [seed_start, games, out, ycbk, include_meta, evaluator, scope,
-         allow_fallback])
+         allow_fallback, rounds, default_consecutive_deals])
     return {
         "campaign_id": job["campaign_id"],
         "transition_count": int(n_samples),
         "seed_start": seed_start,
         "games": int(games),
+        "rounds": rounds,
+        "default_consecutive_deals": default_consecutive_deals,
         "value_contract": "round-score-v2-normalized",
         "action_scope": "discard-only-v1",
     }

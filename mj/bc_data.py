@@ -27,6 +27,7 @@ from .legacy_eval import (
     LegacyTwoPlyProfile,
     WEIGHTED_OFFLINE_PROFILE_VERSION,
 )
+from .match import DEFAULT_CONSECUTIVE_DEALS, DEFAULT_MATCH_ROUNDS, Match
 
 # 训练标签默认走"离线、不因预算回退"的 legacyV2 profile;legacy 与
 # shape-* 评价器不受影响。
@@ -126,15 +127,20 @@ def big_hand_shadow_from_game(game, seat):
 
 def generate_game(seed, you_cai_bi_kao=False, evaluator=TRAINING_BOT_EVALUATOR,
                   scope="all-root", teacher_metadata=None,
-                  allow_search_fallback=False):
+                  allow_search_fallback=False,
+                  rounds=DEFAULT_MATCH_ROUNDS,
+                  default_consecutive_deals=DEFAULT_CONSECUTIVE_DEALS):
     """跑一局 bot 自博弈,返回 dict(样本数组 + 终局得分)。
 
     每个决策点采当前行动者一个样本;合法动作只有一个时也采
     (网络仍需学会该局面下唯一解,且分布里有大量此类窗口)。
     """
-    from .game import Game
-
-    g = Game(seed=seed, you_cai_bi_kao=you_cai_bi_kao)
+    match = Match(
+        seed=seed,
+        you_cai_bi_kao=you_cai_bi_kao,
+        rounds=rounds,
+        default_consecutive_deals=default_consecutive_deals,
+    )
     planes, scalars, masks, actions, seats = [], [], [], [], []
     context_hashes, label_sources, evaluator_names = [], [], []
     scopes, teacher_confidence, teacher_ev = [], [], []
@@ -142,7 +148,13 @@ def generate_game(seed, you_cai_bi_kao=False, evaluator=TRAINING_BOT_EVALUATOR,
     oracle, counterfactual = [], []
     teacher_metadata = teacher_metadata or {}
     big_hand_shadow = []
-    while not g.done:
+    round_nos, dealers, dealer_runs = [], [], []
+    score_rows, match_score_rows = [], []
+    hand_sample_indexes = []
+    while not match.done:
+        g = match.current_game
+        if g is None:
+            raise RuntimeError("match has no active hand")
         seat = g.current_seat()
         # PublicDecisionContext deliberately projects only the actor hand and
         # public material.  The hash is useful metadata, not an oracle input.
@@ -180,6 +192,12 @@ def generate_game(seed, you_cai_bi_kao=False, evaluator=TRAINING_BOT_EVALUATOR,
         masks.append(mask)
         actions.append(action_to_flat(act))
         seats.append(seat)
+        round_nos.append(match.round_no)
+        dealers.append(g.dealer)
+        dealer_runs.append(match.dealer_run)
+        hand_sample_indexes.append(len(actions) - 1)
+        score_rows.append(None)
+        match_score_rows.append(None)
         context_hashes.append(context_hash)
         # evaluator=None 走 bot 的 legacy 启发式,记录时按 legacy 记名。
         evaluator_names.append(str(evaluator or "legacy"))
@@ -193,7 +211,17 @@ def generate_game(seed, you_cai_bi_kao=False, evaluator=TRAINING_BOT_EVALUATOR,
         teacher_ev.append(float(teacher.get("EV", np.nan)))
         oracle.append(False)
         counterfactual.append(False)
-        g.step(act)
+        hand_result = match.step(act)
+        if hand_result is not None:
+            hand_score = np.asarray(hand_result["scores"], dtype=np.int32)
+            match_score = np.asarray(
+                hand_result["cumulative_scores"], dtype=np.int32)
+            for sample_index in hand_sample_indexes:
+                score_rows[sample_index] = hand_score
+                match_score_rows[sample_index] = match_score
+            hand_sample_indexes = []
+    if hand_sample_indexes or any(row is None for row in score_rows):
+        raise RuntimeError("match ended with unresolved BC score labels")
     return {
         "planes": np.asarray(planes, dtype=np.float16),
         "scalars": np.asarray(scalars, dtype=np.float32),
@@ -201,7 +229,11 @@ def generate_game(seed, you_cai_bi_kao=False, evaluator=TRAINING_BOT_EVALUATOR,
         "action": np.asarray(actions, dtype=np.int16),
         "seat": np.asarray(seats, dtype=np.int8),
         # 逐样本终局得分(该样本所属局的四家分),value_target 直接索引
-        "score": np.tile(np.asarray(g.scores, dtype=np.int32), (len(seats), 1)),
+        "score": np.asarray(score_rows, dtype=np.int32),
+        "round_no": np.asarray(round_nos, dtype=np.int16),
+        "dealer": np.asarray(dealers, dtype=np.int8),
+        "dealer_run": np.asarray(dealer_runs, dtype=np.int16),
+        "match_score": np.asarray(match_score_rows, dtype=np.int32),
         "context_hash": np.asarray(context_hashes, dtype="U16"),
         "label_source": np.asarray(label_sources, dtype="U32"),
         "evaluator": np.asarray(evaluator_names, dtype="U24"),
@@ -223,9 +255,14 @@ def _write_shard(args):
     evaluator = str(args[5]) if len(args) > 5 else TRAINING_BOT_EVALUATOR
     scope = str(args[6]) if len(args) > 6 else "all-root"
     allow_fallback = bool(args[7]) if len(args) > 7 else False
+    rounds = int(args[8]) if len(args) > 8 else DEFAULT_MATCH_ROUNDS
+    default_consecutive_deals = (
+        int(args[9]) if len(args) > 9 else DEFAULT_CONSECUTIVE_DEALS)
     parts = [generate_game(seed0 + i, you_cai_bi_kao=ycbk,
                            evaluator=evaluator, scope=scope,
-                           allow_search_fallback=allow_fallback)
+                           allow_search_fallback=allow_fallback,
+                           rounds=rounds,
+                           default_consecutive_deals=default_consecutive_deals)
              for i in range(n_games)]
     payload = dict(
         planes=np.concatenate([p["planes"] for p in parts]),
@@ -239,7 +276,8 @@ def _write_shard(args):
         for key in ("context_hash", "label_source", "evaluator", "scope",
                     "label_level", "label_fallback_reason",
                     "teacher_confidence", "teacher_ev", "oracle",
-                    "counterfactual", "big_hand_shadow"):
+                    "counterfactual", "big_hand_shadow", "round_no",
+                    "dealer", "dealer_run", "match_score"):
             payload[key] = np.concatenate([p[key] for p in parts])
     # Keep the historical six-array shard shape for direct legacy callers;
     # production CLI jobs opt into the versioned metadata contract below.
@@ -277,6 +315,15 @@ def _write_manifest(args, total_samples: int, n_shards: int) -> None:
         "scope": args.scope,
         "you_cai_bi_kao": bool(args.you_cai_bi_kao),
         "allow_search_fallback": bool(args.allow_search_fallback),
+        "match_rules": {
+            "schema": "legacy-match-v1",
+            "rounds": int(getattr(args, "rounds", DEFAULT_MATCH_ROUNDS)),
+            "default_consecutive_deals": int(getattr(
+                args, "default_consecutive_deals", DEFAULT_CONSECUTIVE_DEALS)),
+            "dealer_continues_on": ["dealer_win", "draw"],
+            "winner_becomes_dealer": True,
+            "settlement": "dealer-x8",
+        },
         "seed_domain": domain,
         "games": args.games,
         "n_shards": n_shards,
@@ -299,6 +346,13 @@ def main():
     ap.add_argument("--per-shard", type=int, default=100)
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--seed0", type=int, default=0)
+    ap.add_argument("--rounds", type=int, default=DEFAULT_MATCH_ROUNDS,
+                    help="hands per match (default: 8)")
+    ap.add_argument(
+        "--default-consecutive-deals", type=int,
+        default=DEFAULT_CONSECUTIVE_DEALS,
+        help="default dealer-run marker (default: 3; no hard cap)",
+    )
     ap.add_argument("--legacy-layout", action="store_true",
                     help="兼容旧的六数组 NPZ 布局(默认写入 provenance 元数据)")
     ap.add_argument("--evaluator", choices=("legacy", "legacy-two-ply-v1",
@@ -315,6 +369,10 @@ def main():
     ap.add_argument("--you-cai-bi-kao", action="store_true",
                     help="有财必拷响(手有财神须爆头/杠开才可胡)")
     args = ap.parse_args()
+    if args.rounds < 1:
+        ap.error("--rounds must be >= 1")
+    if args.default_consecutive_deals < 1:
+        ap.error("--default-consecutive-deals must be >= 1")
 
     os.makedirs(args.out, exist_ok=True)
     n_shards = (args.games + args.per_shard - 1) // args.per_shard
@@ -330,6 +388,8 @@ def main():
             args.evaluator,
             args.scope,
             args.allow_search_fallback,
+            args.rounds,
+            args.default_consecutive_deals,
         ))
     t0 = time.time()
     total = 0

@@ -90,6 +90,16 @@ class TestGenerateGame(unittest.TestCase):
         # 平面值域
         self.assertTrue(float(d["planes"].astype(np.float32).max()) <= 1.0)
 
+    def test_default_generation_covers_eight_hand_match(self):
+        d = generate_game(seed=20260924)
+        self.assertEqual(set(d["round_no"].tolist()), set(range(1, 9)))
+        self.assertEqual(d["dealer"].shape, d["seat"].shape)
+        self.assertEqual(d["dealer_run"].shape, d["seat"].shape)
+        self.assertEqual(d["match_score"].shape, d["score"].shape)
+        # score remains a per-hand value target and is conserved per row;
+        # match_score is the cumulative diagnostic channel.
+        self.assertTrue(np.all(np.sum(d["score"], axis=1) == 0))
+
     def test_big_hand_shadow_metadata(self):
         from mj.bc_data import SHADOW_KEYS
 

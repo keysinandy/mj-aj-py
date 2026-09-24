@@ -199,6 +199,14 @@ def test_bc_data_manifest_roundtrip(tmp_path):
     assert manifest["evaluator"] == "legacyV2-offline"
     assert manifest["teacher_fingerprint"] == s._frozen_teacher_fp()
     assert manifest["fingerprint"]
+    assert manifest["match_rules"] == {
+        "schema": "legacy-match-v1",
+        "rounds": 8,
+        "default_consecutive_deals": 3,
+        "dealer_continues_on": ["dealer_win", "draw"],
+        "winner_becomes_dealer": True,
+        "settlement": "dealer-x8",
+    }
     # streaming trainer 读取 manifest 后指纹稳定,且语义不为空
     fp1 = s.dataset_fingerprint(d, "legacyV2-offline")
     fp2 = s.dataset_fingerprint(d, "legacyV2-offline")
@@ -223,6 +231,64 @@ def test_single_shard_falls_back_to_sample_split(tmp_path):
     assert len(train.dataset) > 0 and len(val.dataset) > 0
 
 
+def test_validation_report_breaks_down_scope_and_illegal_rate():
+    class FixedModel(torch.nn.Module):
+        def forward(self, planes, scalars):
+            logits = torch.zeros((len(planes), N_ACTIONS), device=planes.device)
+            # Row 0: raw argmax is illegal, but masked argmax selects the
+            # correct discard. Row 1 selects the legal non-discard action.
+            logits[0, 34] = 10.0
+            logits[0, 0] = 9.0
+            logits[1, 34] = 10.0
+            logits[1, 0] = 9.0
+            value = torch.tensor([0.5, -0.5], device=planes.device)
+            return logits, value
+
+    mask = torch.zeros((2, N_ACTIONS), dtype=torch.bool)
+    mask[0, 0] = True
+    mask[1, 34] = True
+    batch = {
+        "planes": torch.zeros((2, N_PLANES, 34)),
+        "scalars": torch.zeros((2, N_SCALARS)),
+        "mask": mask,
+        "action": torch.tensor([0, 34]),
+        "value_target": torch.zeros(2),
+    }
+    report = s.evaluate(FixedModel(), [batch], torch.device("cpu"), 0.5,
+                       detailed=True)
+
+    assert report["top1"] == pytest.approx(1.0)
+    assert report["illegal_rate"] == pytest.approx(0.5)
+    assert report["label_illegal_rate"] == pytest.approx(0.0)
+    assert report["value_mae"] == pytest.approx(0.5)
+    assert report["value_mse"] == pytest.approx(0.25)
+    assert report["action_scope"][s.ACTION_SCOPE_DISCARD] == {
+        "count": 1, "accuracy": 1.0}
+    assert report["action_scope"][s.ACTION_SCOPE_NON_DISCARD] == {
+        "count": 1, "accuracy": 1.0}
+
+
+def test_architecture_benchmark_report_keeps_v1_baseline():
+    from scripts import benchmark_streaming_bc as bench
+
+    # A tiny smoke run exercises the same public-v1 forward/train-step path;
+    # the full 4x128/6x128 comparison is run by the command-line benchmark.
+    row = bench.benchmark_architecture(
+        blocks=1, width=4, device="cpu", batch_size=2, warmup=0, steps=1)
+    assert row["architecture"] == "1x4"
+    assert row["parameters"] > 0
+    assert row["forward"]["count"] == 1
+    assert row["train_step"]["count"] == 1
+    assert row["train_samples_per_sec"] > 0
+
+    report = bench.build_report(
+        [{"architecture": "4x128"}, {"architecture": "6x128"}],
+        device="cpu", batch_size=2, warmup=0, steps=1, seed=0)
+    assert report["decision"]["formal_v1_model"] == "6x128"
+    assert report["decision"]["measured_formal_v1_model"] is True
+    assert report["benchmark"]["quality_comparison"] is False
+
+
 def test_end_to_end_train_and_resume(tmp_path, capsys):
     d = str(tmp_path / "data")
     Path(d).mkdir()
@@ -240,6 +306,12 @@ def test_end_to_end_train_and_resume(tmp_path, capsys):
     assert (Path(out) / "config.json").exists()
     cfg = json.loads((Path(out) / "config.json").read_text(encoding="utf-8"))
     assert cfg["feature_contract_display"] == "planes-75-scalars-8"
+    report = cfg["validation_metrics"]
+    assert report["value_mae"] is not None
+    assert report["value_mse"] is not None
+    assert report["illegal_rate"] is not None
+    assert report["action_scope"][s.ACTION_SCOPE_DISCARD]["count"] > 0
+    assert report["action_scope"][s.ACTION_SCOPE_NON_DISCARD]["count"] == 0
 
     # resume 续训到 epoch 3(轮数可延长),身份校验通过
     rv2 = s.main([

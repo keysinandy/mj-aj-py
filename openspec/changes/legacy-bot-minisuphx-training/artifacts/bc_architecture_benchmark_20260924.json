@@ -1,0 +1,82 @@
+{
+  "schema": "minisuphx-bc-architecture-benchmark-v1",
+  "benchmark": {
+    "kind": "public-v1-forward-and-train-step",
+    "device": "cpu",
+    "batch_size": 8,
+    "warmup_steps": 3,
+    "measure_steps": 20,
+    "seed": 0,
+    "threads": 1,
+    "quality_comparison": false,
+    "python_version": "3.10.6",
+    "torch_version": "2.14.0+cpu",
+    "platform": "Windows-10-10.0.22621-SP0"
+  },
+  "results": [
+    {
+      "architecture": "4x128",
+      "blocks": 4,
+      "width": 128,
+      "parameters": 444517,
+      "device": "cpu",
+      "batch_size": 8,
+      "warmup_steps": 3,
+      "measure_steps": 20,
+      "forward": {
+        "count": 20,
+        "mean_ms": 3.491410004789941,
+        "p50_ms": 3.431499993894249,
+        "p95_ms": 3.8562000263482332,
+        "min_ms": 2.991099958308041,
+        "max_ms": 3.86410002829507
+      },
+      "train_step": {
+        "count": 20,
+        "mean_ms": 13.695300006656907,
+        "p50_ms": 13.576800003647804,
+        "p95_ms": 14.416399993933737,
+        "min_ms": 12.195700022857636,
+        "max_ms": 14.844599994830787
+      },
+      "train_samples_per_sec": 584.1420046374611,
+      "last_loss": 0.00025401904713362455
+    },
+    {
+      "architecture": "6x128",
+      "blocks": 6,
+      "width": 128,
+      "parameters": 642149,
+      "device": "cpu",
+      "batch_size": 8,
+      "warmup_steps": 3,
+      "measure_steps": 20,
+      "forward": {
+        "count": 20,
+        "mean_ms": 4.878709997865371,
+        "p50_ms": 4.824400006327778,
+        "p95_ms": 5.338999966625124,
+        "min_ms": 4.326399997808039,
+        "max_ms": 5.482500011567026
+      },
+      "train_step": {
+        "count": 20,
+        "mean_ms": 19.00568999699317,
+        "p50_ms": 18.790500005707145,
+        "p95_ms": 20.155099977273494,
+        "min_ms": 17.703999998047948,
+        "max_ms": 20.858399977441877
+      },
+      "train_samples_per_sec": 420.92657521329954,
+      "last_loss": 3.581451892387122e-05
+    }
+  ],
+  "decision": {
+    "formal_v1_model": "6x128",
+    "formal_v1_blocks": 6,
+    "formal_v1_width": 128,
+    "measured_formal_v1_model": true,
+    "rule": "keep-6x128-when-no-clear-quality-benefit",
+    "reason": "This artifact measures throughput and model size only; it does not establish validation or playing-strength benefit for 4x128. Keep the frozen 6x128 v1 baseline."
+  }
+}
