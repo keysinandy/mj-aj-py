@@ -43,6 +43,17 @@ LOAD_LIMIT = 1.0
 P50_TOLERANCE = 1.05
 
 
+def _system_load() -> float:
+    """系统负载。Windows 无 os.getloadavg,退化到 psutil.cpu_percent/100(无 psutil 则 0)。"""
+    if hasattr(os, "getloadavg"):
+        return os.getloadavg()[0]
+    try:
+        import psutil  # noqa: PLC0415
+        return psutil.cpu_percent(interval=0.2) / 100.0
+    except Exception:
+        return 0.0
+
+
 def _set_mode(memo: bool) -> None:
     if memo:
         os.environ[MEMO_ENV] = "memo"
@@ -54,7 +65,7 @@ def _measure(memo: bool, workers: int, states: int, seed: int) -> dict:
     _set_mode(memo)
     os.environ[THREADS_ENV] = str(workers)
     profile = LegacyTwoPlyProfile.weighted_online(kernel="rust", workers=workers)
-    load_before = os.getloadavg()[0]
+    load_before = _system_load()
     cpu_before = time.process_time()
     summary = bench_run(states, seed, profile)
     cpu_ms = (time.process_time() - cpu_before) * 1000.0
@@ -74,7 +85,7 @@ def _measure(memo: bool, workers: int, states: int, seed: int) -> dict:
         "e2e_p99_ms": end["p99_ms"],
         "cpu_ms_per_call": cpu_ms / max(1, 2 * states),
         "load_before": load_before,
-        "load_after": os.getloadavg()[0],
+        "load_after": _system_load(),
     }
 
 
