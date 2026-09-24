@@ -39,7 +39,11 @@
 
 - [ ] 4.1 两机生成首批 30k legacy self-play games，冻结 campaign fingerprint。
 - [ ] 4.2 训练 BC0，并运行 validation/final-test（final 只评估不调参）。
-- [ ] 4.3 实现 DAgger generator，保存 executor/teacher/disagreement provenance。
+- [x] 4.3 实现 DAgger generator，保存 executor/teacher/disagreement provenance。
+  (mj/training/dagger_games.py:generate_dagger_game 逐 hero 普通弃牌采样,
+  label 恒来自 T0;保存 source_policy/teacher_action/executed_action/
+  disagreement;dagger_games job kind 已注册;输入 shard 与 streaming BC
+  格式兼容,可直接载入续训)
 - [ ] 4.4 完成 D1 3k（70/30）、D2 3k（40/60）、D3 4k（10/90）。
 - [ ] 4.5 训练并冻结 `BC-v1`；记录 checkpoint hash、hard-set baseline、paired baseline。
 - [ ] 4.6 建立永久 BC anchor，后续 run 不得覆盖该 artifact identity。
@@ -62,7 +66,11 @@
 > 以及 A-only == A+B 语义等价测试(`tests/test_minisuphx_cluster.py`)。
 > rl_rollout/policy-version merge 守卫/基准 benchmark 属后续子任务。
 
-- [ ] 6.1 扩展 distributed job kinds：`legacy_bc_games`、`dagger_games`、`rl_rollout`。
+- [x] 6.1 扩展 distributed job kinds：`legacy_bc_games`、`dagger_games`、`rl_rollout`。
+  (新增 `mj/training/dagger_games.py`:dagger_games handler + 共享 HANDLERS
+  注册,worker_runtime 已导入;三类 job kind 均可经统一 coordinator/worker
+  派发。legacy_bc_games 复用 bc_data 原语,rl_rollout 由 distributed_rollout
+  提供)
 - [ ] 6.2 worker 注册 rollout capability；PC-B 默认 benchmark 6/8/10 actors。
 - [x] 6.3 每轮发布 immutable `policy_N` 与 manifest，actor lease 前验证 git/model/value/action scope。
 - [x] 6.4 rollout shard 保存 obs/mask/action/logprob/value/reward/done/episode/opponent provenance。

@@ -23,6 +23,7 @@ from .artifact_store import publish_result, sha256_file
 from .distributed_jobs import WorkerCapabilities
 from . import distributed_bc       # 注册 legacy_bc_games + 共享 HANDLERS
 from . import distributed_rollout  # 注册 rl_rollout(rl worker 依赖 torch)
+from . import dagger_games         # 注册 dagger_games(DAgger job kind)
 from .distributed_bc import HANDLERS
 from .minisuphx_manifest import RolloutManifest
 
