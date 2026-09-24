@@ -42,7 +42,10 @@
 
 ## 4. P3 Legacy BC + DAgger
 
-- [ ] 4.1 两机生成首批 30k legacy self-play games，冻结 campaign fingerprint。
+- [x] 4.1 两机生成首批 30k legacy self-play games，冻结 campaign fingerprint。
+  （本次在单机 8 workers 完成确定性 campaign；seed/shard contract 支持双机等价执行；证据：
+  `artifacts/legacy_bc_v1_30k_manifest_20260924.json`，campaign fingerprint=
+  `849ecb2a65119760daa64a39`，dataset fingerprint=`d23881d8cd09652dd34ef736`。）
 - [ ] 4.2 训练 BC0，并运行 validation/final-test（final 只评估不调参）。
 - [x] 4.3 实现 DAgger generator，保存 executor/teacher/disagreement provenance。
   (mj/training/dagger_games.py:generate_dagger_game 逐 hero 普通弃牌采样,
