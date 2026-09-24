@@ -98,7 +98,8 @@ def dataset_fingerprint(data_dir: str, teacher: str) -> str:
     """数据集身份指纹:manifest 在场则冻结其身份,否则按分片路径集合。"""
     manifest = load_manifest(data_dir)
     if manifest:
-        keys = ("schema", "feature_contract", "evaluator", "teacher_version",
+        keys = ("schema", "feature_contract", "big_hand_shadow_contract",
+                "evaluator", "teacher_version",
                 "teacher_fingerprint", "scope", "you_cai_bi_kao",
                 "seed_domain", "games", "n_shards", "git_commit")
         payload = {k: manifest[k] for k in keys if k in manifest}
@@ -245,28 +246,54 @@ def collate(batch):
 def build_dataloaders(data_dir: str, *, batch_size: int, seed: int,
                       val_pct: float, num_workers: int, pin_memory: bool,
                       augmented: bool = True):
-    """按分片划分 train/val(不打散单分片),返回 (train_loader, val_loader)。"""
-    n_shards = len(_find_shards(data_dir))
-    rng = np.random.default_rng(seed)
-    order = rng.permutation(n_shards)
-    n_val = max(1, int(round(n_shards * val_pct)))
-    val_flags = [False] * n_shards
-    for i in order[:n_val]:
-        val_flags[int(i)] = True
-    train_flags = [not f for f in val_flags]
+    """按分片划分 train/val(不打散单分片),返回 (train_loader, val_loader)。
 
-    train_ds = ShardStreamingDataset(
-        data_dir, shard_flags=train_flags, augmented=augmented, seed=seed)
-    val_ds = ShardStreamingDataset(
-        data_dir, shard_flags=val_flags, augmented=False, seed=seed)
-    train = torch.utils.data.DataLoader(
-        train_ds, batch_size=batch_size, shuffle=True,
-        num_workers=num_workers, pin_memory=pin_memory,
-        collate_fn=collate, drop_last=False)
-    val = torch.utils.data.DataLoader(
-        val_ds, batch_size=batch_size, shuffle=False, num_workers=0,
-        pin_memory=pin_memory, collate_fn=collate, drop_last=False)
-    return train, val
+    分片充足时保持分片级划分(至少留 1 个训练分片);仅当数据只有 1 个分片
+    (smoke/单机小数据)时退化为样本级划分,保证 train/val 均非空。
+    划分种子区分于训练 seed,train/val 分配稳定且与训练样本顺序无关。
+    """
+    n_shards = len(_find_shards(data_dir))
+
+    if n_shards >= 2:
+        rng = np.random.default_rng(0x5EED ^ seed)
+        order = rng.permutation(n_shards)
+        n_val = max(1, min(int(round(n_shards * val_pct)), n_shards - 1))
+        val_flags = [False] * n_shards
+        for i in order[:n_val]:
+            val_flags[int(i)] = True
+        train_flags = [not f for f in val_flags]
+
+        train_ds = ShardStreamingDataset(
+            data_dir, shard_flags=train_flags, augmented=augmented, seed=seed)
+        val_ds = ShardStreamingDataset(
+            data_dir, shard_flags=val_flags, augmented=False, seed=seed)
+        train = torch.utils.data.DataLoader(
+            train_ds, batch_size=batch_size, shuffle=True,
+            num_workers=num_workers, pin_memory=pin_memory,
+            collate_fn=collate, drop_last=False)
+        val = torch.utils.data.DataLoader(
+            val_ds, batch_size=batch_size, shuffle=False, num_workers=0,
+            pin_memory=pin_memory, collate_fn=collate, drop_last=False)
+        return train, val
+
+    # 单分片:样本级划分
+    full = ShardStreamingDataset(data_dir, augmented=False, seed=seed)
+    n = len(full)
+    n_val = max(1, int(round(n * val_pct)))
+    rng = np.random.default_rng(0x5EED ^ seed)
+    idx = rng.permutation(n)
+    val_idx = sorted(idx[:n_val].tolist())
+    train_idx = sorted(idx[n_val:].tolist())
+
+    def _loader(subset_idx, shuffle, aug):
+        ds = ShardStreamingDataset(data_dir, augmented=aug, seed=seed)
+        subset = torch.utils.data.Subset(ds, subset_idx)
+        return torch.utils.data.DataLoader(
+            subset, batch_size=batch_size, shuffle=shuffle, num_workers=0,
+            pin_memory=pin_memory, collate_fn=collate, drop_last=False)
+
+    return (_loader(train_idx, True, augmented),
+            _loader(val_idx, False, False))
 
 
 # ===== 训练 ====================================================================
@@ -495,8 +522,11 @@ def main(argv=None):
               f"global_step {global_step}, best {best_val:.4f}")
 
     n_train = len(train.dataset)
+    def _kept(split):
+        ds = split.dataset if isinstance(split, torch.utils.data.Subset) else split
+        return getattr(ds, "_kept", "sample-split")
     print(f"训练 {n_train} / 验证 {len(val.dataset)} 样本 "
-          f"(shards {len(train.dataset._kept)}/{len(_find_shards(args.data))}), "
+          f"(shards {_kept(train.dataset)}/{len(_find_shards(args.data))}), "
           f"feature={args.feature} ({fc.display}), amp={use_amp}, "
           f"workers={args.workers}")
 

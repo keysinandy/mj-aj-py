@@ -78,6 +78,52 @@ def search_fallback_reason(evaluation):
         return None
     return reason
 
+# ===== BigHand shadow metadata (plan §15 step 4 / R2 T1) ======================
+# 只做 shard shadow / hard-state 发现 / 分桶,不进 runtime feature tensor,
+# 也不用 BigHandGuard 的动作当 teacher。schema=big-hand-shadow-v1(metadata-only)。
+SHADOW_CONTRACT = "big-hand-shadow-v1"
+SHADOW_KEYS = (
+    "chiitoi_shanten", "pair_units", "natural_pairs", "luxury_groups",
+    "luxury_upgrade_live", "wild_count", "white_rich", "intent_strength",
+    "live_wall", "opponent_melds",
+)
+_STRENGTH_CODE = {"NONE": 0, "WEAK": 1, "MEDIUM": 2, "STRONG": 3}
+
+
+def big_hand_shadow_from_game(game, seat):
+    """从一局公共状态提取 BigHand shadow 元数据行(确定性的数值向量)。
+
+    返回长度 ``len(SHADOW_KEYS)`` 的 float32 行。live_wall=活墙余量,
+    opponent_melds=三家吃碰杠最多的副露数。WHITE_RICH、intent_strength
+    编码为 0/1、0..3。
+    """
+    from .big_hand_intent import WHITE_RICH, evaluate_big_hand_intent
+
+    intent = evaluate_big_hand_intent(
+        game.hands[seat], locked=len(game.melds[seat]),
+        visible=game.visible_counts(seat),
+        live_wall=game.live_wall_left(),
+        max_opponent_melds=max(len(game.melds[(seat + r) % 4])
+                               for r in (1, 2, 3)))
+    strength = _STRENGTH_CODE.get(str(intent.strength), 0)
+    white_rich = 1.0 if WHITE_RICH in intent.kinds else 0.0
+    live = float(game.live_wall_left() if intent.live_wall is None
+                 else intent.live_wall)
+    opp = float(intent.max_opponent_melds
+                if intent.max_opponent_melds is not None else 0)
+    return np.asarray([
+        float(intent.chiitoi_shanten),
+        float(intent.pair_units),
+        float(intent.natural_pairs),
+        float(intent.luxury_groups),
+        float(intent.luxury_upgrade_live),
+        float(intent.wild_count),
+        white_rich,
+        float(strength),
+        live,
+        opp,
+    ], dtype=np.float32)
+
 def generate_game(seed, you_cai_bi_kao=False, evaluator=TRAINING_BOT_EVALUATOR,
                   scope="all-root", teacher_metadata=None,
                   allow_search_fallback=False):
@@ -95,6 +141,7 @@ def generate_game(seed, you_cai_bi_kao=False, evaluator=TRAINING_BOT_EVALUATOR,
     label_levels, label_fallbacks = [], []
     oracle, counterfactual = [], []
     teacher_metadata = teacher_metadata or {}
+    big_hand_shadow = []
     while not g.done:
         seat = g.current_seat()
         # PublicDecisionContext deliberately projects only the actor hand and
@@ -103,6 +150,7 @@ def generate_game(seed, you_cai_bi_kao=False, evaluator=TRAINING_BOT_EVALUATOR,
         context_hash = PublicDecisionContext.from_game(g, seat).context_hash
         p, s = extract(g, seat, oracle=False)
         mask = legal_mask(g)
+        big_hand_shadow.append(big_hand_shadow_from_game(g, seat))
         result = choose_action(
             g, seat, evaluator=evaluator,
             return_evaluation=evaluator not in (None, "legacy"))
@@ -164,6 +212,8 @@ def generate_game(seed, you_cai_bi_kao=False, evaluator=TRAINING_BOT_EVALUATOR,
         "teacher_ev": np.asarray(teacher_ev, dtype=np.float32),
         "oracle": np.asarray(oracle, dtype=np.bool_),
         "counterfactual": np.asarray(counterfactual, dtype=np.bool_),
+        # BigHand shadow metadata(metadata-only,不进 runtime tensor)
+        "big_hand_shadow": np.asarray(big_hand_shadow, dtype=np.float32),
     }
 
 
@@ -189,7 +239,7 @@ def _write_shard(args):
         for key in ("context_hash", "label_source", "evaluator", "scope",
                     "label_level", "label_fallback_reason",
                     "teacher_confidence", "teacher_ev", "oracle",
-                    "counterfactual"):
+                    "counterfactual", "big_hand_shadow"):
             payload[key] = np.concatenate([p[key] for p in parts])
     # Keep the historical six-array shard shape for direct legacy callers;
     # production CLI jobs opt into the versioned metadata contract below.
@@ -219,6 +269,8 @@ def _write_manifest(args, total_samples: int, n_shards: int) -> None:
     payload = {
         "schema": "minisuphx-bc-data-v1",
         "feature_contract": FEATURE_PUBLIC,
+        "big_hand_shadow_contract": SHADOW_CONTRACT,
+        "big_hand_shadow_keys": list(SHADOW_KEYS),
         "evaluator": args.evaluator,
         "teacher_version": TRAINING_TEACHER_VERSION if teacher_fp else "",
         "teacher_fingerprint": teacher_fp,

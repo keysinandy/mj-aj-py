@@ -139,8 +139,15 @@
   (streaming_bc.py 以 `n_planes=75` + `verify_feature_planes(FEATURE_PUBLIC,75)`
   直训,无 oracle 补零;仅显式 `--feature oracle-v1` 会被 refuse。遗留 `bc_train.py`
   的 91 补零路径仅服务于旧实验回归,不以它训练 BC-v1)
-- [ ] 13.3 BigHandIntent 接入 BC/DAgger/platform replay shard 的 shadow metadata；
+- [x] 13.3 BigHandIntent 接入 BC/DAgger/platform replay shard 的 shadow metadata；
   默认不得进入 runtime feature tensor，不得用 BigHandGuard action 作为新 teacher。
+  (bc_data.generate_game 逐决策点输出 `big_hand_shadow` 通道
+  (schema=big-hand-shadow-v1,10 列:chiitoi_shanten/pair_units/natural_pairs/
+  luxury_groups/luxury_upgrade_live/wild_count/white_rich/intent_strength/
+  live_wall/opponent_melds);_write_shard 随元数据写入;manifest 记录
+  big_hand_shadow_contract+keys;streaming trainer 只在 metadata key,
+  不进 ShardStreamingDataset 的 runtime 张量,不参与网络输入。hard-state
+  mining / active sampling 可直接读该列。)
 - [ ] 13.4 建 hard-state miner：legacy/BC/RL disagreement、high entropy、
   top2-close、CHIITOI/LUXURY/WHITE_RICH、baotou/piao-near、墙尾、平台真实争议状态。
 - [ ] 13.5 将现有 search teacher 接入 selective correction，只处理 hard-state pool，

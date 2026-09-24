@@ -208,6 +208,21 @@ def test_bc_data_manifest_roundtrip(tmp_path):
     assert s.dataset_fingerprint(d, "legacy") != fp1
 
 
+def test_single_shard_falls_back_to_sample_split(tmp_path):
+    from torch.utils.data import Subset
+    from mj.training.streaming_bc import build_dataloaders
+
+    d = str(tmp_path / "one")
+    Path(d).mkdir()
+    _write_shard(d, "shard_00000.npz", 40, seed=0)
+    train, val = build_dataloaders(d, batch_size=8, seed=0, val_pct=0.1,
+                                   num_workers=0, pin_memory=False)
+    assert isinstance(train.dataset, Subset)
+    assert isinstance(val.dataset, Subset)
+    assert len(train.dataset) + len(val.dataset) == 40
+    assert len(train.dataset) > 0 and len(val.dataset) > 0
+
+
 def test_end_to_end_train_and_resume(tmp_path, capsys):
     d = str(tmp_path / "data")
     Path(d).mkdir()

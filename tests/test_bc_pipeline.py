@@ -90,6 +90,27 @@ class TestGenerateGame(unittest.TestCase):
         # 平面值域
         self.assertTrue(float(d["planes"].astype(np.float32).max()) <= 1.0)
 
+    def test_big_hand_shadow_metadata(self):
+        from mj.bc_data import SHADOW_KEYS
+
+        d = generate_game(seed=1)
+        n = len(d["action"])
+        shadow = d["big_hand_shadow"]
+        # (n, K) 浮点列;确定性、无 NaN
+        self.assertEqual(shadow.shape, (n, len(SHADOW_KEYS)))
+        self.assertEqual(shadow.dtype, np.float32)
+        self.assertFalse(np.isnan(shadow).any())
+        det = generate_game(seed=1)["big_hand_shadow"]
+        self.assertTrue((shadow == det).all())
+        # 编码范围:white_rich ∈ {0,1},intent_strength ∈ 0..3,live_wall>=0
+        self.assertTrue(set(np.unique(shadow[:, 6])).issubset({0.0, 1.0}))
+        self.assertTrue(set(np.unique(shadow[:, 7])).issubset(
+            {0.0, 1.0, 2.0, 3.0}))
+        self.assertTrue(shadow[:, 8].min() >= 0)
+        # 最高强度 + 爆材组合至少出现在部分决策点(编码被真实命中)
+        peaked = generate_game(seed=40)["big_hand_shadow"]
+        self.assertGreaterEqual(int(peaked[:, 7].max()), 2)
+
     def test_value_target(self):
         from mj.bc_train import value_target
 
