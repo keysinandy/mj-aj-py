@@ -153,20 +153,43 @@ def _std(counts, locked):
     return best[0]
 
 
-def _chiitoi(counts, locked):
+def chiitoi_shanten_components(natural_pairs, natural_singles, wilds,
+                               locked=0):
+    """Shared chiitoi rule over precomputed natural pair/single components."""
+    natural_pairs = int(natural_pairs)
+    natural_singles = int(natural_singles)
+    wilds = int(wilds)
+    locked = int(locked)
+    if min(natural_pairs, natural_singles, wilds, locked) < 0:
+        raise ValueError("chiitoi components must be non-negative")
     if locked:
         return 9
-    wilds = counts[W]
+    pairs = natural_pairs
+    pairs += min(natural_singles, wilds)
+    rest = wilds - min(natural_singles, wilds)
+    pairs += rest // 2
+    odd = rest % 2
+    return 7 - pairs - (1 if natural_singles + odd > 0 else 0)
+
+
+def chiitoi_shanten(counts, locked=0):
+    """Return the existing seven-pairs distance without selecting standard form.
+
+    This is the single source used by :func:`shanten_py` and public
+    feature/guard consumers.  The input is the concealed count vector; a
+    locked meld disables the seven-pairs shape exactly as before.
+    """
+    if len(counts) != 34:
+        raise ValueError("chiitoi counts must contain 34 tile counts")
     nat = counts[:33]
     pairs = sum(c // 2 for c in nat)
     singles = sum(c % 2 for c in nat)
-    # 财神配单张成对;剩余奇数财神可配摸进的任意牌
-    pairs += min(singles, wilds)
-    rest = wilds - min(singles, wilds)
-    pairs += rest // 2
-    odd = rest % 2
-    # 任意单张或奇数财神都意味着"摸进一张即可再成一对"
-    return 7 - pairs - (1 if singles + odd > 0 else 0)
+    return chiitoi_shanten_components(pairs, singles, counts[W], locked)
+
+
+def _chiitoi(counts, locked):
+    """Compatibility alias for the shared seven-pairs helper."""
+    return chiitoi_shanten(counts, locked)
 
 
 def waits(counts, locked=0):

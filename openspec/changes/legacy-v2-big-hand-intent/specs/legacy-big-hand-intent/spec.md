@@ -76,6 +76,8 @@ BigHandIntent 使用的 `chiitoi_shanten` MUST 与 `mj.shanten` 当前七对分�
 
 ### Requirement: BigHandIntent MUST NOT 修改真实向听数
 
+BigHandIntent MUST NOT 修改用于速度比较的真实 shanten 数值。
+
 任何 intent、strength、豪华潜力不得通过修改 shanten 值参与排序。
 
 #### Scenario: 豪华路线不伪造向听

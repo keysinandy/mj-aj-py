@@ -10,7 +10,7 @@ partial score to the selected action.
 from __future__ import annotations
 
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 import json
 import math
@@ -25,6 +25,13 @@ from .shanten import (
     weighted_two_ply_frontier,
     shanten,
     ukeire,
+)
+from .big_hand_intent import (
+    CHIITOI,
+    INTENT_MEDIUM,
+    INTENT_STRONG,
+    LUXURY_CHIITOI,
+    WHITE_RICH,
 )
 from .tiles import W
 
@@ -57,6 +64,14 @@ LEGACY_V2_EVALUATORS = (
     "weighted_two_ply",
     "weighted-two-ply",
 )
+LEGACY_V2_BASELINE_EVALUATORS = ("legacy-v2-baseline",)
+LEGACY_V2_PHASE_A_EVALUATORS = ("legacy-v2-phase-a",)
+LEGACY_V2_PHASE_B_EVALUATORS = ("legacy-v2-phase-b",)
+LEGACY_V2_EXPERIMENT_EVALUATORS = (
+    *LEGACY_V2_BASELINE_EVALUATORS,
+    *LEGACY_V2_PHASE_A_EVALUATORS,
+    *LEGACY_V2_PHASE_B_EVALUATORS,
+)
 # Product default evaluator. ``legacy`` is kept as a compatibility alias for
 # this v2 route; callers that need the frozen rollback oracle must explicitly
 # request ``legacy-v1``.
@@ -77,7 +92,7 @@ def _canonical_json(value) -> str:
 
 @dataclass(frozen=True)
 class LegacyTwoPlyProfile:
-    """Versioned knobs that can affect the V1 result or its cost."""
+    """Versioned knobs that affect the legacy weighted result or its cost."""
 
     name: str = PROFILE_VERSION
     version: str = PROFILE_VERSION
@@ -103,6 +118,16 @@ class LegacyTwoPlyProfile:
     # discard evaluators keep the historical default False.
     require_complete: bool = False
     enabled: bool = True
+    big_hand_version: str = "legacy-big-hand-intent-v1"
+    big_hand_enabled: bool = False
+    big_hand_same_shanten_enabled: bool = True
+    big_hand_plus_one_enabled: bool = False
+    big_hand_min_live: int = 24
+    big_hand_max_opponent_melds: int = 1
+    big_hand_min_ukeire: int = 4
+    big_hand_max_ukeire_loss: int = 4
+    big_hand_min_pair_units: int = 4
+    big_hand_min_luxury_upgrade_live: int = 1
 
     def __post_init__(self):
         if not self.name or not self.version or not self.model:
@@ -131,6 +156,14 @@ class LegacyTwoPlyProfile:
             raise ValueError("shape_guard_ukeire_slack must be non-negative")
         if int(self.shape_guard_shape_delta) < 0:
             raise ValueError("shape_guard_shape_delta must be non-negative")
+        if not self.big_hand_version:
+            raise ValueError("big_hand_version is required")
+        for name in ("big_hand_min_live", "big_hand_max_opponent_melds",
+                     "big_hand_min_ukeire", "big_hand_max_ukeire_loss",
+                     "big_hand_min_pair_units",
+                     "big_hand_min_luxury_upgrade_live"):
+            if int(getattr(self, name)) < 0:
+                raise ValueError(f"{name} must be non-negative")
         coverage = float(self.min_partial_coverage)
         if not math.isfinite(coverage) or not 0 <= coverage <= 1:
             raise ValueError("min_partial_coverage must be between 0 and 1")
@@ -155,6 +188,17 @@ class LegacyTwoPlyProfile:
         object.__setattr__(self, "require_complete",
                            bool(self.require_complete))
         object.__setattr__(self, "enabled", bool(self.enabled))
+        object.__setattr__(self, "big_hand_enabled",
+                           bool(self.big_hand_enabled))
+        object.__setattr__(self, "big_hand_same_shanten_enabled",
+                           bool(self.big_hand_same_shanten_enabled))
+        object.__setattr__(self, "big_hand_plus_one_enabled",
+                           bool(self.big_hand_plus_one_enabled))
+        for name in ("big_hand_min_live", "big_hand_max_opponent_melds",
+                     "big_hand_min_ukeire", "big_hand_max_ukeire_loss",
+                     "big_hand_min_pair_units",
+                     "big_hand_min_luxury_upgrade_live"):
+            object.__setattr__(self, name, int(getattr(self, name)))
 
     @classmethod
     def default(cls, **overrides):
@@ -180,6 +224,9 @@ class LegacyTwoPlyProfile:
             "lazy_child_ukeire": True,
             "workers": 0,
             "shape_guard_enabled": True,
+            "big_hand_enabled": False,
+            "big_hand_same_shanten_enabled": True,
+            "big_hand_plus_one_enabled": False,
         }
         values.update(overrides)
         return cls(**values)
@@ -210,6 +257,9 @@ class LegacyTwoPlyProfile:
             "lazy_child_ukeire": True,
             "workers": 0,
             "shape_guard_enabled": True,
+            "big_hand_enabled": False,
+            "big_hand_same_shanten_enabled": False,
+            "big_hand_plus_one_enabled": False,
         }
         values.update(overrides)
         return cls(**values)
@@ -226,6 +276,7 @@ class LegacyTwoPlyProfile:
             "sort_version": self.sort_version,
             "kernel": self.kernel,
             "enabled": self.enabled,
+            "big_hand": self.big_hand_config(),
         }
         legacy_compatible = (
             self.mode == "exact" and
@@ -255,6 +306,21 @@ class LegacyTwoPlyProfile:
                 "require_complete": self.require_complete,
             })
         return payload
+
+    def big_hand_config(self):
+        """Return the complete, fingerprinted BigHandIntent profile payload."""
+        return {
+            "version": self.big_hand_version,
+            "enabled": self.big_hand_enabled,
+            "same_shanten_enabled": self.big_hand_same_shanten_enabled,
+            "plus_one_enabled": self.big_hand_plus_one_enabled,
+            "min_live": self.big_hand_min_live,
+            "max_opponent_melds": self.big_hand_max_opponent_melds,
+            "min_ukeire": self.big_hand_min_ukeire,
+            "max_ukeire_loss": self.big_hand_max_ukeire_loss,
+            "min_pair_units": self.big_hand_min_pair_units,
+            "min_luxury_upgrade_live": self.big_hand_min_luxury_upgrade_live,
+        }
 
     def as_json(self):
         result = self._payload()
@@ -296,9 +362,24 @@ class LegacyRootCandidate:
     eligible: bool = True
     missing: tuple[str, ...] = ()
     shanten_verified: bool = False
+    speed_eligible: bool = True
+    intent_kinds: tuple[str, ...] = ()
+    intent_strength: str = "NONE"
+    chiitoi_shanten: int | None = None
+    pair_units: int = 0
+    luxury_groups: int = 0
+    luxury_upgrade_tiles: tuple[int, ...] = ()
+    luxury_upgrade_live: int = 0
+    wild_count: int = 0
+    wild_live: int = 0
+    shanten_regression: int = 0
+    admission_hint: str | None = None
+    live_wall: int | None = None
+    max_opponent_melds: int | None = None
+    big_hand_gate_reason: str | None = None
 
     def as_json(self):
-        return {
+        result = {
             "tile": self.tile,
             "shanten": self.shanten,
             "ukeire": self.current_ukeire,
@@ -310,6 +391,27 @@ class LegacyRootCandidate:
             "eligible": self.eligible,
             "missing": list(self.missing),
         }
+        has_intent = bool(self.intent_kinds or
+                          self.intent_strength != "NONE")
+        if (has_intent or self.admission_hint or self.big_hand_gate_reason):
+            result.update({
+                "intent_kinds": list(self.intent_kinds),
+                "intent_strength": self.intent_strength,
+                "chiitoi_shanten": self.chiitoi_shanten,
+                "pair_units": self.pair_units,
+                "luxury_groups": self.luxury_groups,
+                "luxury_upgrade_tiles": list(self.luxury_upgrade_tiles),
+                "luxury_upgrade_live": self.luxury_upgrade_live,
+                "wild_count": self.wild_count,
+                "wild_live": self.wild_live,
+                "admission_hint": self.admission_hint,
+                "live_wall": self.live_wall,
+                "max_opponent_melds": self.max_opponent_melds,
+                "big_hand_gate_reason": self.big_hand_gate_reason,
+            })
+            result["shanten_regression"] = self.shanten_regression
+            result["speed_eligible"] = self.speed_eligible
+        return result
 
 
 @dataclass(frozen=True)
@@ -425,6 +527,14 @@ class LegacyDiscardEvaluation:
     search_phase: str | None = None
     search_attempt_phase: str | None = None
     frontier_guard: Mapping | None = None
+    speed_pool_tiles: tuple[int, ...] = ()
+    speed_winner: int | None = None
+    big_hand_challenger: int | None = None
+    big_hand_override: bool = False
+    big_hand_override_reason: str | None = None
+    big_hand_phase: str = "disabled"
+    frontier_cap_dropped: tuple[int, ...] = ()
+    big_hand_guard: Mapping | None = None
 
     def as_json(self):
         result = {
@@ -461,6 +571,15 @@ class LegacyDiscardEvaluation:
             "search_attempt_phase": self.search_attempt_phase,
             "frontier_guard": (dict(self.frontier_guard)
                                if self.frontier_guard is not None else None),
+            "speed_pool_tiles": list(self.speed_pool_tiles),
+            "speed_winner": self.speed_winner,
+            "big_hand_challenger": self.big_hand_challenger,
+            "big_hand_override": self.big_hand_override,
+            "big_hand_override_reason": self.big_hand_override_reason,
+            "big_hand_phase": self.big_hand_phase,
+            "frontier_cap_dropped": list(self.frontier_cap_dropped),
+            "big_hand_guard": (dict(self.big_hand_guard)
+                               if self.big_hand_guard is not None else None),
         }
         return result
 
@@ -601,19 +720,20 @@ def _root_features(roots, locked, visible):
         if s != root.shanten:
             # The immutable root is a public contract, not a trust boundary;
             # recompute rather than letting a stale caller change ordering.
-            root = LegacyRootCandidate(
-                tile=root.tile, hand=hand, shanten=s,
-                shape_loss=root.shape_loss, feed_risk=root.feed_risk)
+            root = replace(root, hand=hand, shanten=s)
         state = ukeire(hand, locked, visible)
-        enriched.append(LegacyRootCandidate(
-            tile=root.tile, hand=hand, shanten=s,
-            shape_loss=root.shape_loss, feed_risk=root.feed_risk,
+        enriched.append(replace(
+            root, hand=hand, shanten=s,
             current_ukeire=int(state[2]),
             current_ukeire_tiles=tuple(state[1])))
     if not enriched:
         raise _InvalidPublicState("no_root_candidates")
-    min_s = min(root.shanten for root in enriched)
-    frontier = [root for root in enriched if root.shanten == min_s]
+    speed_pool = [root for root in enriched if root.speed_eligible]
+    if not speed_pool:
+        speed_pool = list(enriched)
+    min_s = min(root.shanten for root in speed_pool)
+    speed_pool = [root for root in speed_pool if root.shanten == min_s]
+    frontier = list(speed_pool)
     if any(root.tile != W for root in frontier):
         frontier = [root for root in frontier if root.tile != W]
     max_u = max(int(root.current_ukeire or 0) for root in frontier)
@@ -621,12 +741,32 @@ def _root_features(roots, locked, visible):
     frontier_tiles = {root.tile for root in frontier}
     diagnostics = []
     for root in enriched:
-        if root.tile not in frontier_tiles:
+        if root.shanten != min_s or not root.speed_eligible:
+            missing = ("shanten_regression",)
+            diagnostics.append((root, False, missing))
+        elif root.tile not in frontier_tiles:
             missing = ("current_ukeire_frontier",)
             diagnostics.append((root, False, missing))
         else:
             diagnostics.append((root, True, ()))
     return tuple(enriched), tuple(frontier), tuple(diagnostics)
+
+
+def _legacy_speed_roots(roots):
+    """Return only the frozen min-shanten speed pool for rollback semantics."""
+    roots = tuple(roots)
+    if not roots:
+        return ()
+    speed = tuple(root for root in roots if root.speed_eligible)
+    if not speed:
+        speed = roots
+    best_s = min(root.shanten for root in speed)
+    return tuple(root for root in speed if root.shanten == best_s)
+
+
+def _legacy_speed_best(roots):
+    speed = _legacy_speed_roots(roots)
+    return min(speed, key=_legacy_key).tile if speed else None
 
 
 def _weighted_native_ready(profile):
@@ -688,6 +828,9 @@ def _apply_shape_guard(frontier, diagnostics, profile):
     for root, eligible, missing in diagnostics:
         if eligible or root.tile == primary.tile:
             continue
+        if (not root.speed_eligible or
+                root.shanten != primary.shanten):
+            continue
         if "current_ukeire_frontier" not in missing:
             # 被前沿上限截断的候选不属于"进张接近"的护栏对象。
             continue
@@ -725,6 +868,306 @@ def _apply_shape_guard(frontier, diagnostics, profile):
     guard["admitted_tiles"] = [root.tile for root in merged
                                if root.tile != primary.tile]
     return tuple(merged), tuple(updated), guard, admitted_by
+
+
+def _big_hand_route_reason(root, profile, *, speed_winner=None, locked=0,
+                           plus_one=False):
+    """Return a stable admission rejection reason or ``None`` when eligible."""
+    kinds = set(root.intent_kinds)
+    if root.intent_strength != INTENT_STRONG:
+        return "intent_not_strong"
+    if locked != 0:
+        return "locked_hand"
+    if root.chiitoi_shanten is None or root.chiitoi_shanten > 1:
+        return "chiitoi_distance"
+    luxury_route = LUXURY_CHIITOI in kinds
+    white_route = CHIITOI in kinds and WHITE_RICH in kinds
+    if not plus_one:
+        if luxury_route and (root.luxury_groups > 0 or
+                             root.luxury_upgrade_live > 0):
+            return None
+        if white_route and root.wild_count >= 2 and (
+                root.pair_units >= profile.big_hand_min_pair_units):
+            return None
+        return "no_same_shanten_strong_route"
+
+    if speed_winner is None:
+        return "speed_winner_unknown"
+    if luxury_route:
+        if root.luxury_groups > speed_winner.luxury_groups:
+            return None
+        if (root.luxury_upgrade_live >=
+                profile.big_hand_min_luxury_upgrade_live and
+                root.luxury_upgrade_live > speed_winner.luxury_upgrade_live):
+            return None
+    if white_route and root.wild_count >= 2 and (
+            root.pair_units >= profile.big_hand_min_pair_units):
+        return None
+    return "no_plus_one_strong_route"
+
+
+def _big_hand_candidate_key(root):
+    """Deterministic route-first ordering; never an action value/bonus."""
+    return (
+        -(1 if LUXURY_CHIITOI in root.intent_kinds else 0),
+        -(1 if root.luxury_groups else 0),
+        -int(root.luxury_upgrade_live),
+        int(root.chiitoi_shanten if root.chiitoi_shanten is not None else 99),
+        -int(root.pair_units),
+        -int(root.current_ukeire or 0),
+        float(root.shape_loss), float(root.feed_risk), root.tile,
+    )
+
+
+def _apply_big_hand_guard(enriched, frontier, diagnostics, profile, locked,
+                          admitted_by=None):
+    """Admit at most one intent root while preserving one speed fallback slot.
+
+    Same-shanten admission is preferred and remains inside the existing
+    weighted comparator.  A plus-one root is only nominated when no Phase-A
+    root is available and is returned separately for independent override.
+    """
+    speed_roots = _legacy_speed_roots(enriched)
+    if not speed_roots:
+        return (tuple(frontier), tuple(diagnostics),
+                dict(admitted_by or {}), {}, None,
+                "disabled", (), None)
+    best_s = min(root.shanten for root in speed_roots)
+    speed_winner = min(speed_roots, key=_legacy_key)
+    speed_ukeire = max(int(root.current_ukeire or 0) for root in speed_roots)
+    enabled = bool(profile.big_hand_enabled and
+                   _weighted_native_ready(profile))
+    phase = ("plus-one" if profile.big_hand_plus_one_enabled else
+             "same-shanten" if profile.big_hand_same_shanten_enabled else
+             "disabled") if enabled else "disabled"
+    guard = {
+        "enabled": enabled,
+        "phase": phase,
+        "policy": profile.big_hand_config(),
+        "speed_pool_tiles": [root.tile for root in speed_roots],
+        "speed_winner": speed_winner.tile,
+        "admitted_tiles": [],
+        "dropped_tiles": [],
+        "candidate_gate_reasons": {},
+        "skipped_reason": None,
+    }
+    admitted_by = dict(admitted_by or {
+        root.tile: "primary" for root in frontier
+    })
+    plus_one_candidate = None
+    gate_reasons = {}
+    chosen = None
+    chosen_reason = None
+
+    if not enabled:
+        guard["skipped_reason"] = (
+            "feature_disabled" if not profile.big_hand_enabled else
+            "kernel_unavailable")
+    else:
+        same_candidates = []
+        initial_tiles = {root.tile for root in frontier}
+        if profile.big_hand_same_shanten_enabled:
+            for root in enriched:
+                if root.speed_eligible and root.shanten == best_s:
+                    if root.tile in initial_tiles:
+                        continue
+                    if not root.intent_kinds and root.intent_strength == "NONE":
+                        continue
+                    reason = _big_hand_route_reason(
+                        root, profile, locked=locked)
+                    if reason is None and (
+                            speed_ukeire - int(root.current_ukeire or 0) >
+                            profile.big_hand_max_ukeire_loss):
+                        reason = "same_shanten_ukeire_loss"
+                    gate_reasons[root.tile] = reason or "eligible_same_shanten"
+                    if reason is None:
+                        same_candidates.append(root)
+        if same_candidates:
+            chosen = min(same_candidates, key=_big_hand_candidate_key)
+            chosen_reason = "same_shanten_intent"
+            phase = "same-shanten"
+        elif profile.big_hand_plus_one_enabled:
+            plus_candidates = []
+            for root in enriched:
+                if root.shanten != best_s + 1:
+                    if (root.shanten > best_s + 1 and
+                            (root.intent_kinds or
+                             root.intent_strength != "NONE")):
+                        gate_reasons[root.tile] = "shanten_regression_too_large"
+                    continue
+                if not root.intent_kinds and root.intent_strength == "NONE":
+                    continue
+                reason = _big_hand_route_reason(
+                    root, profile, speed_winner=speed_winner,
+                    locked=locked, plus_one=True)
+                if reason is None and (root.live_wall is None or
+                        root.live_wall < profile.big_hand_min_live):
+                    reason = "live_wall_guard"
+                if reason is None and (root.max_opponent_melds is None or
+                        root.max_opponent_melds >
+                        profile.big_hand_max_opponent_melds):
+                    reason = "opponent_meld_guard"
+                gate_reasons[root.tile] = reason or "eligible_plus_one"
+                if reason is None:
+                    plus_candidates.append(root)
+            if plus_candidates:
+                chosen = min(plus_candidates, key=_big_hand_candidate_key)
+                chosen_reason = "plus_one_intent"
+                plus_one_candidate = chosen
+                phase = "plus-one"
+        else:
+            guard["skipped_reason"] = "no_same_shanten_candidate"
+
+    diagnostics = tuple(
+        (replace(root, big_hand_gate_reason=gate_reasons[root.tile])
+         if root.tile in gate_reasons else root,
+         eligible, missing)
+        for root, eligible, missing in diagnostics
+    )
+    enriched = tuple(
+        replace(root, big_hand_gate_reason=gate_reasons[root.tile])
+        if root.tile in gate_reasons else root for root in enriched
+    )
+    if chosen is None:
+        if enabled and guard["skipped_reason"] is None:
+            guard["skipped_reason"] = "no_candidate_admitted"
+        guard["candidate_gate_reasons"] = {
+            str(tile): reason for tile, reason in sorted(gate_reasons.items())
+        }
+        return (tuple(frontier), diagnostics, admitted_by, guard, None,
+                phase, (), speed_winner.tile)
+
+    limit = int(profile.max_frontier_candidates or 0)
+    dropped = []
+    kept_speed = list(frontier)
+    # A Phase-B challenger is evaluated independently of the frozen speed
+    # winner.  It must not evict a Phase-A root from a full frontier: doing so
+    # would make the candidate profile change the speed comparator even when
+    # the eventual +1 override is rejected.  Preserve the complete Phase-A
+    # frontier and report the challenger as capacity-gated instead.
+    if (plus_one_candidate is not None and limit and
+            len(kept_speed) >= limit):
+        reason = "frontier_cap_no_challenger_slot"
+        gate_reasons[chosen.tile] = reason
+        guard["skipped_reason"] = reason
+        guard["candidate_gate_reasons"] = {
+            str(tile): gate_reason
+            for tile, gate_reason in sorted(gate_reasons.items())
+        }
+        updated_diagnostics = []
+        for root, eligible, missing in diagnostics:
+            if root.tile == chosen.tile:
+                updated_diagnostics.append((
+                    replace(root, big_hand_gate_reason=reason), False,
+                    (reason,),
+                ))
+            else:
+                updated_diagnostics.append((root, eligible, missing))
+        return (tuple(frontier), tuple(updated_diagnostics), admitted_by,
+                guard, None, phase, (), speed_winner.tile)
+    if limit and len(kept_speed) >= limit:
+        if limit <= 1:
+            guard["skipped_reason"] = "frontier_cap_no_reserved_slot"
+            guard["candidate_gate_reasons"] = {
+                str(tile): reason for tile, reason in sorted(gate_reasons.items())
+            }
+            return (tuple(frontier), diagnostics, admitted_by, guard, None,
+                    phase, (), speed_winner.tile)
+        anchor = next((root for root in kept_speed
+                       if root.tile == speed_winner.tile), kept_speed[0])
+        others = [root for root in kept_speed if root.tile != anchor.tile]
+        others.sort(key=lambda root: (
+            0 if admitted_by.get(root.tile) == "shape_guard" else 1,
+            -int(root.current_ukeire or 0), root.shape_loss,
+            root.feed_risk, root.tile,
+        ))
+        speed_slots = limit - 1
+        kept_speed = [anchor, *others[:max(0, speed_slots - 1)]]
+        dropped = [root.tile for root in others[max(0, speed_slots - 1):]]
+    merged = tuple([*kept_speed, chosen])
+    admitted_by[chosen.tile] = "big_hand_guard"
+    guard["admitted_tiles"] = [chosen.tile]
+    guard["dropped_tiles"] = dropped
+    guard["candidate_gate_reasons"] = {
+        str(tile): reason for tile, reason in sorted(gate_reasons.items())
+    }
+    guard["selected_tile"] = chosen.tile
+    guard["selected_reason"] = chosen_reason
+    updated_diagnostics = []
+    for root, eligible, missing in diagnostics:
+        if root.tile == chosen.tile:
+            updated_diagnostics.append((root, True, ()))
+        elif root.tile in dropped:
+            updated_diagnostics.append((root, False, ("frontier_cap",)))
+        else:
+            updated_diagnostics.append((root, eligible, missing))
+    return (merged, tuple(updated_diagnostics), admitted_by, guard,
+            plus_one_candidate.tile if plus_one_candidate is not None else None,
+            phase, tuple(dropped), speed_winner.tile)
+
+
+def _weighted_root_key(root, future_values):
+    future = future_values[root.tile]
+    return (
+        root.tile == W,
+        -(root.current_ukeire or 0),
+        -future.future_improve_weight,
+        -(future.future_ukeire_mean or 0.0),
+        -(future.future_ukeire_types_mean or 0.0),
+        root.shape_loss, root.feed_risk, root.tile,
+    )
+
+
+def _can_big_hand_override(challenger, speed_winner, future, profile, locked):
+    """Independent conservative gate for a completed plus-one challenger."""
+    if locked != 0:
+        return False, "locked_hand"
+    if challenger.intent_strength != INTENT_STRONG:
+        return False, "intent_not_strong"
+    if future is None or not future.complete:
+        return False, "challenger_future_incomplete"
+    if future.future_improve_weight is None or future.future_improve_weight <= 0:
+        return False, "challenger_future_not_promising"
+    if challenger.current_ukeire is None or speed_winner.current_ukeire is None:
+        return False, "ukeire_unknown"
+    if challenger.current_ukeire < profile.big_hand_min_ukeire:
+        return False, "ukeire_absolute_floor"
+    ukeire_loss = max(0, int(speed_winner.current_ukeire) -
+                      int(challenger.current_ukeire))
+    if ukeire_loss > profile.big_hand_max_ukeire_loss:
+        return False, "ukeire_loss_guard"
+    if (challenger.live_wall is None or
+            challenger.live_wall < profile.big_hand_min_live):
+        return False, "live_wall_guard"
+    if (challenger.max_opponent_melds is None or
+            challenger.max_opponent_melds >
+            profile.big_hand_max_opponent_melds):
+        return False, "opponent_meld_guard"
+
+    kinds = set(challenger.intent_kinds)
+    luxury_route = LUXURY_CHIITOI in kinds
+    white_route = CHIITOI in kinds and WHITE_RICH in kinds
+    luxury_advantage = (
+        challenger.luxury_groups > speed_winner.luxury_groups or
+        challenger.luxury_upgrade_live > speed_winner.luxury_upgrade_live
+    )
+    white_advantage = (
+        challenger.wild_count > speed_winner.wild_count or
+        challenger.pair_units > speed_winner.pair_units
+    )
+    if luxury_route and not luxury_advantage and not white_advantage:
+        return False, "override_intent_tie"
+    if white_route and not luxury_route and not white_advantage:
+        return False, "override_intent_tie"
+    if luxury_route and challenger.luxury_groups <= speed_winner.luxury_groups:
+        if (challenger.luxury_upgrade_live <
+                profile.big_hand_min_luxury_upgrade_live):
+            return False, "luxury_upgrade_not_live"
+    if white_route and challenger.wild_count < 2:
+        return False, "white_rich_resource_lost"
+    if not luxury_route and not white_route:
+        return False, "no_override_route"
+    return True, "strong_intent_override"
 
 
 def _limit_weighted_frontier(frontier, diagnostics, limit):
@@ -1326,7 +1769,7 @@ def _weighted_evaluation(
         visible_tuple = _as_tuple(visible, name="visible")
     except (TypeError, ValueError, _InvalidPublicState) as exc:
         roots = locals().get("roots", ())
-        legacy = min(roots, key=_legacy_key).tile if roots else None
+        legacy = _legacy_speed_best(roots)
         evaluation = LegacyDiscardEvaluation(
             version=profile.version, profile=profile.name,
             profile_fingerprint=profile.fingerprint, level="legacy",
@@ -1349,7 +1792,9 @@ def _weighted_evaluation(
 
     frontier, diagnostics = _limit_weighted_frontier(
         frontier, diagnostics, profile.max_frontier_candidates)
-    legacy = min(enriched, key=_legacy_key).tile
+    legacy = _legacy_speed_best(enriched)
+    speed_pool = _legacy_speed_roots(enriched)
+    speed_pool_tiles = tuple(root.tile for root in speed_pool)
     if not profile.enabled:
         evaluation = LegacyDiscardEvaluation(
             version=profile.version, profile=profile.name,
@@ -1365,12 +1810,28 @@ def _weighted_evaluation(
             fallback_reason="profile_disabled", missing=("profile_disabled",),
             requested_kernel=requested_kernel, actual_kernel="legacy",
             kernel_fallback_reason="profile_disabled",
+            speed_pool_tiles=speed_pool_tiles,
+            speed_winner=legacy,
+            big_hand_phase="disabled",
         )
         return legacy, evaluation
 
     # D1/D2/D3: 结构护栏。默认关闭时原样返回,零行为漂移。
     frontier, diagnostics, frontier_guard, admitted_by = _apply_shape_guard(
         frontier, diagnostics, profile)
+    (frontier, diagnostics, admitted_by, big_hand_guard,
+     big_hand_challenger, big_hand_phase, frontier_cap_dropped,
+     speed_winner_hint) = _apply_big_hand_guard(
+         enriched, frontier, diagnostics, profile, int(locked), admitted_by)
+    speed_shanten = min((root.shanten for root in speed_pool), default=None)
+    speed_frontier = tuple(
+        root for root in frontier
+        if root.speed_eligible and root.shanten == speed_shanten
+    )
+    if not speed_frontier:
+        speed_frontier = tuple(root for root in frontier
+                               if root.tile != big_hand_challenger)
+    speed_pool_tiles = tuple(root.tile for root in speed_pool)
 
     if len(frontier) == 1:
         singleton = frontier[0]
@@ -1410,6 +1871,15 @@ def _weighted_evaluation(
             requested_kernel=requested_kernel, actual_kernel="legacy",
             short_circuit_reason="frontier_singleton",
             frontier_guard=frontier_guard,
+            speed_pool_tiles=speed_pool_tiles,
+            speed_winner=singleton.tile,
+            big_hand_challenger=big_hand_challenger,
+            big_hand_override=False,
+            big_hand_override_reason=(
+                "frontier_singleton" if big_hand_challenger is not None else None),
+            big_hand_phase=big_hand_phase,
+            frontier_cap_dropped=frontier_cap_dropped,
+            big_hand_guard=big_hand_guard,
         )
         return singleton.tile, evaluation
 
@@ -1475,7 +1945,13 @@ def _weighted_evaluation(
         for value in future_values.values())
     partial_accepted = False
     partial_winner = None
-    if not fallback_reason and not complete and profile.allow_partial:
+    if (not fallback_reason and not complete and
+            big_hand_challenger is not None):
+        # A cross-shanten challenger can only reach the independent override
+        # gate on complete future rows. Partial comparison is meaningful only
+        # inside the same-shanten speed pool.
+        fallback_reason = "big_hand_challenger_incomplete"
+    elif not fallback_reason and not complete and profile.allow_partial:
         if bool(root_tiles) and committed_tiles == root_tiles:
             bounds = {
                 root.tile: (
@@ -1502,24 +1978,37 @@ def _weighted_evaluation(
         fallback_reason = "incomplete_weighted_frontier"
 
     accepted = not fallback_reason and (complete or partial_accepted)
+    speed_winner_root = None
+    big_hand_override = False
+    big_hand_override_reason = None
     if accepted:
         if partial_accepted:
-            selected = partial_winner.tile
+            speed_winner_root = partial_winner
         else:
-            selected_root = min(
-                frontier,
-                key=lambda root: (
-                    root.tile == W,
-                    -(root.current_ukeire or 0),
-                    -future_values[root.tile].future_improve_weight,
-                    -(future_values[root.tile].future_ukeire_mean or 0.0),
-                    -(future_values[root.tile].future_ukeire_types_mean or 0.0),
-                    root.shape_loss, root.feed_risk, root.tile,
-                ),
+            speed_winner_root = min(
+                speed_frontier,
+                key=lambda root: _weighted_root_key(root, future_values),
             )
-            selected = selected_root.tile
+        selected = speed_winner_root.tile
+        if big_hand_challenger is not None and not partial_accepted:
+            challenger_root = next(
+                (root for root in frontier
+                 if root.tile == big_hand_challenger), None)
+            challenger_future = future_values.get(big_hand_challenger)
+            big_hand_override, big_hand_override_reason = (
+                _can_big_hand_override(
+                    challenger_root, speed_winner_root, challenger_future,
+                    profile, int(locked))
+                if challenger_root is not None else
+                (False, "challenger_unknown"))
+            if big_hand_override:
+                selected = big_hand_challenger
     else:
         selected = legacy
+        speed_winner_root = next(
+            (root for root in speed_pool if root.tile == legacy), None)
+        if big_hand_challenger is not None:
+            big_hand_override_reason = fallback_reason or "weighted_incomplete"
         actual_kernel = "legacy"
 
     stage_a_only = any(
@@ -1598,6 +2087,15 @@ def _weighted_evaluation(
         search_phase=search_phase,
         search_attempt_phase=search_attempt_phase,
         frontier_guard=frontier_guard,
+        speed_pool_tiles=speed_pool_tiles,
+        speed_winner=(speed_winner_root.tile if speed_winner_root is not None
+                      else legacy),
+        big_hand_challenger=big_hand_challenger,
+        big_hand_override=big_hand_override,
+        big_hand_override_reason=big_hand_override_reason,
+        big_hand_phase=big_hand_phase,
+        frontier_cap_dropped=frontier_cap_dropped,
+        big_hand_guard=big_hand_guard,
     )
     return selected, evaluation
 
@@ -1921,6 +2419,8 @@ def evaluate_legacy_two_ply(game, seat, root_candidates, locked, visible,
 
 __all__ = [
     "canonical_evaluator", "DEFAULT_BOT_EVALUATOR", "FUTURE_MODEL",
+    "LEGACY_V2_BASELINE_EVALUATORS", "LEGACY_V2_PHASE_A_EVALUATORS",
+    "LEGACY_V2_PHASE_B_EVALUATORS", "LEGACY_V2_EXPERIMENT_EVALUATORS",
     "LEGACY_V2_EVALUATORS",
     "LEGACY_V2_PROFILE_VERSION", "PROFILE_VERSION", "WEIGHTED_PROFILE_VERSION",
     "LegacyDiscardEvaluation",

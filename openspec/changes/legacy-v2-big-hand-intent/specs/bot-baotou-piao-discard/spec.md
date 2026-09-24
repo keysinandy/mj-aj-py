@@ -1,6 +1,8 @@
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: 多财神大牌意识 SHALL 在未听牌阶段提供廉价候选保护，并在听牌后切换到现有精确爆头逻辑
+
+legacyV2 SHALL 在不替代现有精确爆头/财飘规则的前提下感知早期大牌意图。
 
 当本家持有财神时，legacyV2 对大牌价值的感知不再只从 `best_s==0` 开始。
 
@@ -29,7 +31,7 @@
 
 ### Requirement: BigHandIntent MUST NOT 改变现有财飘收手与墙量契约
 
-本 change 不修改财飘的既有安全条件。
+本 change MUST NOT 修改财飘的既有安全条件。
 
 至少以下行为 MUST 保持：
 
@@ -49,6 +51,8 @@
 - **AND** 大牌 intent MUST NOT 授权财飘
 
 ### Requirement: 多财神早期保护与爆头推进 SHALL 共享 public-only 边界
+
+BigHandIntent SHALL 与爆头推进共享 public-only 信息边界。
 
 无论 cheap intent 还是精确 baotou progression，都不得读取真实墙序或对手暗牌。
 

@@ -32,6 +32,11 @@ from .tiles import W
 from .shanten import shanten, ukeire, BAOTOU_UKEIRE_RUST
 from .legacy_eval import (
     DEFAULT_BOT_EVALUATOR,
+    LEGACY_V2_BASELINE_EVALUATORS,
+    LEGACY_V2_PHASE_A_EVALUATORS,
+    LEGACY_V2_PHASE_B_EVALUATORS,
+    LEGACY_V2_EXPERIMENT_EVALUATORS,
+    LEGACY_V2_PROFILE_VERSION,
     LEGACY_V2_OFFLINE_EVALUATORS,
     LEGACY_V2_EVALUATORS,
     LegacyRootCandidate,
@@ -54,6 +59,7 @@ from .legacy_react import (
     significant_progress as _significant_progress,
     LegacyReactionProfile,
 )
+from .big_hand_intent import evaluate_big_hand_discard_intents
 from . import legacy_kong as _legacy_kong
 from . import legacy_react as _legacy_react
 from .win import is_baotou, is_win, is_baotou_wait
@@ -179,7 +185,7 @@ def choose_discard(g, seat, return_info=False, profile=None):
     frozen = getattr(g, "freeze", 0) > 0 and seat != getattr(g, "freezer", None)
     only = g.drawn[seat] if frozen else None
 
-    cands = []  # (tile, 去除该牌后的手牌, 牌型损失, 喂牌风险)
+    all_cands = []  # (tile, standing, shanten); expensive costs are lazy
     best_s = None
     for t in range(34):
         if hand[t] == 0 or (only is not None and t != only):
@@ -188,9 +194,12 @@ def choose_discard(g, seat, return_info=False, profile=None):
         c[t] -= 1
         s = shanten(c, locked)
         if best_s is None or s < best_s:
-            best_s, cands = s, []
-        if s == best_s:
-            cands.append((t, c, _discard_shape_cost(hand, t), _feed_risk(g, seat, t)))
+            best_s = s
+        all_cands.append((t, c, s))
+    speed_cands = [
+        (t, c, _discard_shape_cost(hand, t), _feed_risk(g, seat, t))
+        for t, c, s in all_cands if s == best_s
+    ]
 
     info = {}
     baotou_scope = False
@@ -206,7 +215,7 @@ def choose_discard(g, seat, return_info=False, profile=None):
             info["push_rounds"] = rounds
             # 落到下方 legacy 键(速度线)
         else:
-            best = _choose_discard_baotou(cands, locked, vis, info)
+            best = _choose_discard_baotou(speed_cands, locked, vis, info)
             if best is not None:
                 info["push_rounds"] = rounds
                 if profile is not None:
@@ -217,20 +226,92 @@ def choose_discard(g, seat, return_info=False, profile=None):
     else:
         _clear_push_rounds(g, seat)
 
-    # The V1 layer is explicitly opt-in.  The baotou branch above remains the
-    # established legacy rule, including its own transactional fallback; it
-    # must not be re-ranked by a future model in this change.
+    # BigHandIntent is only attached to the weighted online legacyV2 route.
+    # V1, offline labels, and the frozen legacyV2 baseline still see only the
+    # pre-change minimum-shanten speed pool.
     if profile is not None and not baotou_scope:
         roots = []
-        for t, c, shape, feed in cands:
-            roots.append(LegacyRootCandidate(
-                tile=t, hand=tuple(c), shanten=best_s,
-                shape_loss=shape, feed_risk=feed,
-                shanten_verified=True))
+        use_big_hand = (
+            profile.mode == "weighted" and
+            profile.name == LEGACY_V2_PROFILE_VERSION and
+            profile.big_hand_enabled
+        )
+        try:
+            live_wall = g.live_wall_left() if use_big_hand else None
+        except (AttributeError, TypeError, ValueError):
+            live_wall = None
+        try:
+            max_opponent_melds = (_max_opp_melds(g, seat)
+                                  if use_big_hand else None)
+        except (AttributeError, IndexError, TypeError, ValueError):
+            max_opponent_melds = None
+        root_inputs = ([(t, c, s, None, None)
+                        for t, c, s in all_cands] if use_big_hand else
+                       [(t, c, best_s, shape, feed)
+                        for t, c, shape, feed in speed_cands])
+        try:
+            root_inputs = [(t, tuple(c), s, shape, feed)
+                           for t, c, s, shape, feed in root_inputs]
+            intents = (evaluate_big_hand_discard_intents(
+                hand, [root[0] for root in root_inputs], locked, vis,
+                live_wall=live_wall,
+                max_opponent_melds=max_opponent_melds)
+                if use_big_hand else (None,) * len(root_inputs))
+            for (t, c, s, shape, feed), intent in zip(root_inputs, intents):
+                speed_eligible = (s == best_s)
+                if shape is None and (speed_eligible or
+                                      (intent is not None and
+                                       intent.strength == "STRONG")):
+                    shape = _discard_shape_cost(hand, t)
+                    feed = _feed_risk(g, seat, t)
+                elif shape is None:
+                    shape, feed = 0.0, 0.0
+                roots.append(LegacyRootCandidate(
+                    tile=t, hand=c, shanten=s,
+                    shape_loss=shape, feed_risk=feed,
+                    shanten_verified=True,
+                    speed_eligible=speed_eligible,
+                    intent_kinds=tuple(intent.kinds) if intent else (),
+                    intent_strength=intent.strength if intent else "NONE",
+                    chiitoi_shanten=(intent.chiitoi_shanten
+                                     if intent else None),
+                    pair_units=intent.pair_units if intent else 0,
+                    luxury_groups=intent.luxury_groups if intent else 0,
+                    luxury_upgrade_tiles=(intent.luxury_upgrade_tiles
+                                          if intent else ()),
+                    luxury_upgrade_live=(intent.luxury_upgrade_live
+                                         if intent else 0),
+                    wild_count=intent.wild_count if intent else 0,
+                    wild_live=intent.wild_live if intent else 0,
+                    shanten_regression=max(0, s - best_s),
+                    admission_hint=("big_hand_candidate" if intent and
+                                    s > best_s and intent.kinds else None),
+                    live_wall=(intent.live_wall if intent else None),
+                    max_opponent_melds=(intent.max_opponent_melds
+                                        if intent else None),
+                ))
+        except (TypeError, ValueError):
+            # Intent is optional: unknown public material must not contaminate
+            # the decision.  Preserve the transactional speed fallback.
+            fallback = _legacy_best(speed_cands, locked, vis)[0]
+            info = _legacy_v1_scope_info(
+                profile, fallback, "big_hand_intent_unknown")
+            info["big_hand_fallback_reason"] = "big_hand_intent_unknown"
+            info["big_hand_profile"] = profile.big_hand_config()
+            return (fallback, info) if return_info else fallback
         selected, evaluation = evaluate_legacy_two_ply(
             g, seat, roots, locked, vis, profile,
             shape_cost=_discard_shape_cost, feed_risk=_feed_risk)
+        if not return_info:
+            return selected
         info = evaluation.as_json()
+        if (profile.mode == "weighted" and
+                profile.name == LEGACY_V2_PROFILE_VERSION):
+            info["big_hand_profile"] = profile.big_hand_config()
+            info["big_hand_phase"] = (
+                "disabled" if not profile.big_hand_enabled else
+                "plus-one" if profile.big_hand_plus_one_enabled else
+                "same-shanten")
         info["reason"] = ("discard_legacy_v1" if evaluation.complete
                            else "discard_legacy")
         if (not evaluation.complete and evaluation.fallback_reason
@@ -238,7 +319,7 @@ def choose_discard(g, seat, return_info=False, profile=None):
             info["fallback_reason"] = evaluation.fallback_reason
         return (selected, info) if return_info else selected
 
-    best, best_key = _legacy_best(cands, locked, vis)
+    best, best_key = _legacy_best(speed_cands, locked, vis)
     info.setdefault("reason", "discard_legacy")
     if profile is not None and baotou_scope:
         scope_info = _legacy_v1_scope_info(profile, best, "baotou_scope")
@@ -917,6 +998,7 @@ def choose_action(g, seat, evaluator=DEFAULT_BOT_EVALUATOR,
                          "shape-v2", "shape_v2", "ev2", "policy-v3",
                          "policy_v3", "legacy-two-ply-v1", "legacy_v1",
                          "legacy-v1", *LEGACY_V2_EVALUATORS,
+                         *LEGACY_V2_EXPERIMENT_EVALUATORS,
                          *LEGACY_V2_OFFLINE_EVALUATORS):
         raise ValueError(f"unknown evaluator profile: {evaluator}")
     if evaluator in ("policy-v3", "policy_v3"):
@@ -932,10 +1014,29 @@ def choose_action(g, seat, evaluator=DEFAULT_BOT_EVALUATOR,
     if evaluator not in (None, "legacy"):
         if evaluator in (("legacy-two-ply-v1", "legacy_v1", "legacy-v1")
                          + LEGACY_V2_EVALUATORS
+                         + LEGACY_V2_EXPERIMENT_EVALUATORS
                          + LEGACY_V2_OFFLINE_EVALUATORS):
             if evaluator in LEGACY_V2_OFFLINE_EVALUATORS:
                 profile = LegacyTwoPlyProfile.weighted_offline()
                 reaction_profile = LegacyReactionProfile.v2_offline()
+            elif evaluator in LEGACY_V2_BASELINE_EVALUATORS:
+                profile = LegacyTwoPlyProfile.weighted_online(
+                    big_hand_enabled=False,
+                    big_hand_same_shanten_enabled=False,
+                    big_hand_plus_one_enabled=False)
+                reaction_profile = LegacyReactionProfile.v2_online()
+            elif evaluator in LEGACY_V2_PHASE_A_EVALUATORS:
+                profile = LegacyTwoPlyProfile.weighted_online(
+                    big_hand_enabled=True,
+                    big_hand_same_shanten_enabled=True,
+                    big_hand_plus_one_enabled=False)
+                reaction_profile = LegacyReactionProfile.v2_online()
+            elif evaluator in LEGACY_V2_PHASE_B_EVALUATORS:
+                profile = LegacyTwoPlyProfile.weighted_online(
+                    big_hand_enabled=True,
+                    big_hand_same_shanten_enabled=True,
+                    big_hand_plus_one_enabled=True)
+                reaction_profile = LegacyReactionProfile.v2_online()
             elif evaluator in LEGACY_V2_EVALUATORS:
                 profile = LegacyTwoPlyProfile.weighted_online()
                 reaction_profile = LegacyReactionProfile.v2_online()

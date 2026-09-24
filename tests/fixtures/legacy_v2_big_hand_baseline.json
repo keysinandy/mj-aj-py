@@ -1,0 +1,85 @@
+{
+  "baseline": {
+    "name": "legacyV2-before-big-hand-intent",
+    "source_commit": "97d337fea6132b05066eb26bf9190bb5f82c9e42",
+    "recorded_at": "2026-09-23",
+    "default_evaluator": "legacyV2",
+    "profile_fingerprint": "d87ad5add4e1c0c7",
+    "profile": {
+      "model": "weighted_unseen_one_draw_lazy_best_discard",
+      "node_budget": 100000,
+      "soft_budget_ms": 40.0,
+      "hard_budget_ms": 50.0,
+      "max_frontier_candidates": 3,
+      "allow_partial": true,
+      "min_partial_coverage": 0.9,
+      "shape_guard_enabled": true,
+      "shape_guard_ukeire_slack": 1,
+      "shape_guard_shape_delta": 8
+    },
+    "weighted_kernel_version": "rust-weighted-two-ply-v3",
+    "baotou_piao_regression_tests": [
+      "tests/test_bot.py::TestBaotouDiscardTier::test_tier0_baotou_wait_candidate_wins",
+      "tests/test_bot.py::TestBaotouDiscardTier::test_tier1_baotou_ukeire_outranks_plain_ukeire",
+      "tests/test_bot.py::TestBaotouDiscardTier::test_budget_fallback_returns_legacy_key",
+      "tests/test_bot.py::TestBaotouDiscardTier::test_freeze_restricts_to_drawn_tile",
+      "tests/test_bot.py::TestBaotouDiscardTier::test_push_abort_rounds_reverts_to_speed",
+      "tests/test_bot.py::TestBaotouDiscardTier::test_push_abort_opp_melds",
+      "tests/test_bot.py::TestBaotouDiscardTier::test_push_abort_live_wall",
+      "tests/test_bot.py::TestBaotouPiaoWallGuard::test_wall_below_guard_hu_directly",
+      "tests/test_bot.py::TestBaotouPiaoWallGuard::test_wall_at_guard_still_piao",
+      "tests/test_bot.py::TestBaotouPiaoWallGuard::test_freeze_piao_requires_drawn_wild",
+      "tests/test_win.py::TestScoring::test_four_whites_held_is_baotou",
+      "tests/test_win.py::TestScoring::test_four_whites_luxury_self_paired",
+      "tests/test_win.py::TestScoring::test_four_whites_luxury_filling_singles",
+      "tests/test_win.py::TestScoring::test_piao_counts_four_whites_mult",
+      "tests/test_win.py::TestScoring::test_luxury_chiitoi_mult"
+    ],
+    "fixtures": [
+      {
+        "id": "ordinary_best_shanten_0",
+        "seed": 4851,
+        "dealer": 0,
+        "best_shanten": 0,
+        "action": 10,
+        "level": "weighted-two-ply-v1",
+        "complete": true,
+        "root_candidates": 2,
+        "frontier_roots": 2
+      },
+      {
+        "id": "ordinary_best_shanten_1",
+        "seed": 241,
+        "dealer": 0,
+        "best_shanten": 1,
+        "action": 19,
+        "level": "weighted-two-ply-v1",
+        "complete": true,
+        "root_candidates": 6,
+        "frontier_roots": 2
+      },
+      {
+        "id": "ordinary_best_shanten_2",
+        "seed": 3,
+        "dealer": 0,
+        "best_shanten": 2,
+        "action": 32,
+        "level": "weighted-two-ply-v1",
+        "complete": true,
+        "root_candidates": 4,
+        "frontier_roots": 2
+      },
+      {
+        "id": "white_rich_best_shanten_1",
+        "seed": 2,
+        "dealer": 0,
+        "best_shanten": 1,
+        "action": 27,
+        "level": "legacy-one-ply",
+        "complete": false,
+        "root_candidates": 4,
+        "frontier_roots": 1
+      }
+    ]
+  }
+}

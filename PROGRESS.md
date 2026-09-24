@@ -26,6 +26,13 @@
 > v34 的门户排行榜字段已记录在下方。只读查询 `match_enabled=true`，账号
 > 当时无在途对局。
 >
+> **2026-09-24 指南自检（v35）**：`GET /portal/api/guide/version` 返回
+> **v35**（2026-09-23，type=breaking），唯一 delta 是 404
+> `TOURNAMENT_GONE` 具名——**契约澄清，wire 零字节变化、规则零变化**，
+> 只要求客户端把「404 ⇒ 房已删」改成按 body 的 `code` 判型。本仓三处
+> 判型缺口已补齐（详见 P4 节 v35 条目）；各 profile 的 `rules_version`
+> 仍为 v34（v35 无规则变化，指纹不随之改写）。
+>
 > **吃/碰/杠机会损失日志 `claim_miss`（2026-09-10 新增）**：验证“窗口
 > 是否真的丢机会”此前只能事后重放合法集推断，现在客户端直接落盘。
 > 写入条件：phase ∈ {response_peng, response_chi}、镜像能算出非 pass
@@ -590,6 +597,79 @@ locked 手牌向听数虚高 bug(见下)。
     alias 仍路由 enabled v2，kernel mismatch 时返回 `u2_incomplete` 并整层
     回退 v1；要在此机验证完整 v2 搜索需重建/部署 v3 扩展。9.5 的真实
     PONG/KONG same-unit 分歧 fixture 仍未找到，不伪造。
+
+14. **legacyV2 BigHandIntent（2026-09-23, openspec change
+    `legacy-v2-big-hand-intent`）基线冻结**：行为基线为实现提交
+    `97d337fea6132b05066eb26bf9190bb5f82c9e42`，默认 evaluator=`legacyV2`，
+    online weighted profile fingerprint=`d87ad5add4e1c0c7`，Rust weighted
+    kernel=`rust-weighted-two-ply-v3`；完整参数和固定种子牌例见
+    `tests/fixtures/legacy_v2_big_hand_baseline.json`。0/1/2 向听例 action
+    分别为 10/19/32，多财神未听牌例 action=27；冻结单张、singleton、
+    shape guard、kernel unavailable 与 budget fallback 已加基线契约测试。
+    爆头/财飘、墙量 6、X/Y/Z、freeze 与四白板计番回归引用既有固定测试。
+    旧版同机 v3 kernel 的 interleaved
+    3×200 性能基线（seed 310000 起）共 20,191 次 ordinary discard：决策
+    p50/p95/p99/max=2.650/39.706/56.408/206.790ms，frontier roots
+    p50/p95/p99/max=1/3/3/3，按有 fallback_reason 计 fallback 18.47%；
+    instrumented 4-bot elapsed/game 中位/p95=478.44/827.19ms。测量包含
+    `return_evaluation=True` diagnostics 开销，候选比较必须使用相同脚本/口径。
+
+    **2026-09-23/24 完成 Phase A/B 对局验收**（同机 Python 3.11.14、
+    `rust-weighted-two-ply-v3`；paired source-seed percentile bootstrap 5,000
+    轮，balanced 16 个 hero-seat/dealer 组合）。Phase A vs frozen
+    `legacy-v2-baseline` 使用 seed 410000 起的 4,096 对局，无 error：基线
+    均分 -0.1943、Phase A -0.2673；candidate-baseline = **-0.0730 分/局**，
+    95% CI **[-0.1606,+0.0146]**，未证明积分改善。胜局 1,018 vs 1,006，
+    两侧各 9 流局。intent game strata（描述性、互相可重叠，不能当作单决策
+    因果收益）：CHIITOI -0.0719 [-0.2727,+0.1159] (n=1,001)，
+    LUXURY_CHIITOI -0.4435 [-0.9289,-0.0377] (n=239)，WHITE_RICH
+    -0.2532 [-0.6623,+0.1104] (n=154)。Phase A 共记录 153 次 big-hand
+    root admission、0 个 `+1` challenger/override；本次报告 profile fingerprints
+    为 disabled baseline `333a41e31e320a6c`、Phase A
+    `39faefce3674f5eb`（baseline fixture 保存的是加字段前行为基线 fingerprint
+    `d87ad5add4e1c0c7`）。积分 JSON：
+    `/tmp/legacy-v2-big-hand-score-phase-a-vs-legacyv2-4096.json`。
+
+    Phase A 同机交错性能基准 3×200 局/每 profile（共 1,200 matches，seed 310000
+    起）：ordinary discard p50/p95/p99/max，baseline
+    4.171/52.262/69.699/181.524ms，Phase A
+    7.114/55.094/71.436/214.567ms；p95 增幅 **+5.42%**，通过 ≤10% 门槛。
+    4-bot elapsed/game p50/p95/p99/max，baseline
+    638.0/1145.7/1425.8/1886.9ms，Phase A
+    719.6/1266.0/1558.0/2153.0ms；p50 退化 **+12.79%**，未通过 ≤10% 门槛。
+    frontier roots max=3，fallback rate 19.36% vs 19.28%。intent 单次 10,000
+    次 microbench p50/p95/p99/max=0.354/0.683/1.070/17.323ms；p95 通过
+    ≤1ms，max 保留记录。指标含 `return_evaluation=True` diagnostics 开销。
+    性能 JSON：`/tmp/legacy-v2-big-hand-perf-final-3x200.json`；microbench：
+    `/tmp/legacy-v2-big-hand-intent-final.json`。
+
+    Phase A 的 100 条真实 intent 触发样本已人工检查：18 个 root 通过同向听
+    admission gate，7 个进入扩围；311 个 root 因 intent 不够强、9 个因同向听
+    ukeire 损失 gate 拒绝。样本中 0 个动作偏离 speed winner；但 90/100 样本
+    live wall≥41、10/100 为 21–40、无 ≤20 样本，因此这份样本不能单独证明
+    晚局安全。样本按首批真实触发点保留在 score JSON。
+
+    Phase B 首轮 4,096 paired A/B（seed 510000 起）delta=-0.0847，95% CI
+    [-0.1616,-0.0151]。审计发现满 3-root frontier 时 Phase B 曾挤掉一个旧
+    speed root，可能让未 override 情况下的 speed comparator 少看候选。已修复为
+    满额拒绝 `+1` admission、原 Phase A frontier 不动，并新增容量 regression。
+    修复后同 seeds 重跑 4,096 对局、无 errors：Phase B vs Phase A delta
+    **-0.0017 分/局**，95% CI **[-0.0886,+0.0847]**；只出现 1 个 challenger
+    event，seed 511038、hero seat 2、dealer 3、wall=34、opponent melds=1，因
+    `big_hand_challenger_incomplete` 拒绝，speed winner/action 均为 13、challenger
+    为 23，0 次 override。event 所在 game 两策略得分差=0；实际 override 样本为
+    0，故 per-override 收益区间不可估计。修复版 score JSON：
+    `/tmp/legacy-v2-big-hand-score-phase-b-vs-phase-a-postfix-4096.json`；修复前
+    结果仅作为发现证据：`/tmp/legacy-v2-big-hand-score-phase-b-vs-phase-a-4096.json`。
+
+    结论：BigHandIntent 保持实验 opt-in；生产 weighted online profile 和
+    `legacy-v2` 兼容别名仍 `big_hand_enabled=false`，Phase B
+    `plus_one_enabled=false`。Phase A 积分没有正向显著性且 elapsed/game gate
+    超标；Phase B 修复版没有可估的 override 收益，修复前负向结果促成的容量
+    保护已固化。目标测试套件最终 138 passed、9 subtests passed；全量测试
+    曾有 997 passed、19 个 loopback bind 在 sandbox 被禁止而失败，提升权限重跑
+    相应 4 个 clientd/minisuphx 模块 22 passed（17.11s）。OpenSpec strict 与
+    `git diff --check` 均通过。
 
 
 ### 性能现状(2026-09-03,shanten 剪枝界重构 + shanten/is_win 记忆化)
@@ -1317,6 +1397,40 @@ extract 含 oracle ~1.6ms/决策点。
   - **门户今日榜垫底行**(v34):`GET /portal/api/leaderboard` 新增 `last`，
     仅今日榜且人数大于 32 时返回 `{rooms,firsts,score,is_me}`，否则为
     `null`；纯门户加法，bot 玩家 API 行为不变。
+  - **404 TOURNAMENT_GONE 具名**(v35 breaking,**仅契约澄清、wire 零字节
+    变化、规则零变化**):服务端用**同一个 404** 承载两种相反语义——
+    `TOURNAMENT_NOT_FOUND`(注册表里没有该 id;含正常关停/终态后移除)
+    = 永久条件,放弃;`TOURNAMENT_GONE`(注册表里**有**该 id,但 2s 预算
+    内没等到房 actor 回执,房忙/库慢,**开赛与结算瞬间最常见**)= 暂时
+    条件,退避后重投同一端点(register/ready 幂等,重复提交安全)。
+    **判型必须用 body 的 `code`**:只看 `status==404` 会把「暂时不可达」
+    读成「房已删」而提前退出(2026-09-23 生产事故:某客户端连挂三次静默
+    退出,房 `t_069a55e84b26` 开赛后该席被服务端按超时自动出牌)。
+    涉及端点:`POST /api/tournaments/{id}/register`、`/ready`、
+    `/api/tournaments/me/ready`、`GET /api/tournaments/{id}`、
+    `/api/tournaments/me/rules`,及门户面 register/token/qualify/detail/
+    ranking 与 `POST /portal/api/test-rooms/{id}/close`。不受影响:
+    `/api/match` 的 409 MATCH_BUSY 与 404 NO_ROOM_AVAILABLE 一字未动;
+    `/api/games/{id}/*` 的 404 是 GAME_NOT_FOUND,与本案无关。
+    - **本仓处置(2026-09-24)**:判型收口到 `BotClient._formal_gone_error`
+      (缺 code / NOT_FOUND 一律按永久条件)。此前已合规:锦标赛轮询与
+      `scripts/tournament.py` 的探活都按 code 判型、有界重试
+      (`FORMAL_TOURNAMENT_GONE_RETRY_MAX=12`,退避累计 ~80s)。本次补齐
+      三处**只看状态码/没看 code** 的缺口:① `_formal_attend` 的
+      register+ready 原先每阶段只发一次(占位预占),瞬时 GONE 会被静默
+      吞掉 ⇒ 开赛瞬间丢席位——现改为按 `FORMAL_ATTEND_GONE_RETRY_MAX=12`
+      释放占位、下一轮轮询(≈1s)重投,上限后记
+      `TOURNAMENT_GONE_ATTEND_EXHAUSTED` 警告;② `_formal_resolve_context`
+      拉 rules 撞 GONE 原先直接 raise ⇒ 预检 PROTOCOL_FATAL 静默退出,
+      现按瞬态退避重试;③ auto 房监督 `_play_room` 的 404 原先一律当
+      「房已关停」弃房 ⇒ 现按 code 区分,GONE 原地重试(3s × 12),超限
+      才交 re-match 幂等兜底。回归见 `tests/test_tournament_runner.py`
+      (`*_gone_404_*`/`*_not_found_*`)与 `tests/test_match_runner.py::
+      test_transient_room_gone_404_keeps_room`。
+    - **`rules_version` 不随 v35 上调**:`hangzhou-platform-guide-v34` 是
+      决策/模型 profile 指纹的一环;v35 未改任何规则,上调会无谓改写证据
+      日志里的 fingerprint 并割裂前后对局样本,故各 profile 保持 v34,
+      仅 `mj/platform/probe.py:SUPPORTED_GUIDE_VERSION` 升到 35。
   - (门户-only,bot 契约零影响:v12/v14 identity 昵称与令牌轮换、
     v17 大厅剔除 auto 房、v19 胡大牌榜、v20 排行榜 20→32 行、
     v22 分组视图/晋级名单、v23 单场得分榜)
@@ -1329,7 +1443,8 @@ extract 含 oracle ~1.6ms/决策点。
     403);scoped 参赛令牌全链不动。全局令牌唯一合法来源 = 门户
     「我的 AI 身份」(OpenID 绑定,首访明文一次、可轮换)
   - **bot 启动自检**:`GET /portal/api/guide/version` 核对指南版本
-    (当前 **v34**),版本变化即触发规则复审——v7-v34 本次已核对；
+    (当前 **v35**,2026-09-23;`mj.platform.probe.SUPPORTED_GUIDE_VERSION`
+    同步),版本变化即触发规则复审——v7-v35 本次已核对；
     响应中的 `type=breaking` 仍需人工确认
   - 观赛快照仅覆盖服务进程内存中的场次;历史轮复盘走
     `GET /portal/api/games/{id}/events`(DB 持久)
