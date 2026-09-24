@@ -59,11 +59,26 @@ if (-not (Test-Path -LiteralPath (Join-Path $Root "client\node_modules"))) {
 # 3) 选可用端口对;目标端口已有旧 clientd 时重启它
 function Get-ClientdListenerPids {
     param([int[]]$Ports)
+    # 这几个端口上没有监听时,Get-NetTCPConnection 会把「找不到任何匹配的
+    # MSFT_NetTCPConnection 对象」当成错误抛出,配合 -ErrorAction Stop 直接
+    # 终止脚本 —— 实测 Win10 + PS 5.1 必现,而"端口空闲"恰恰是首次启动的
+    # 正常状态,等于这条一键链路只在已有 clientd 在跑时才可能成功。
     try {
         $listeners = @(Get-NetTCPConnection -State Listen `
             -LocalPort $Ports -ErrorAction Stop)
     } catch {
-        throw "无法检查 clientd 端口: $($_.Exception.Message)"
+        # 复核一次:不带端口过滤还能查出监听,说明 CIM 是好的,只是这几个端口
+        # 没人监听,按空结果返回;连这都查不出来才是真的查不了,该报错。
+        $anyListener = @()
+        try {
+            $anyListener = @(Get-NetTCPConnection -State Listen -ErrorAction Stop)
+        } catch {
+            throw "无法查询本机监听端口: $($_.Exception.Message)"
+        }
+        if ($anyListener.Count -eq 0) {
+            throw "本机监听端口查询返回空结果,无法判断端口是否被占用。"
+        }
+        return @()
     }
     return @($listeners | Select-Object -ExpandProperty OwningProcess |
         Sort-Object -Unique)
