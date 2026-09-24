@@ -693,6 +693,20 @@ shanten/ukeire 的 Rust 移植(rust/src/lib.rs,算法与 Python 逐分支
 (86→2.1μs)、ukeire 97x(4212→43μs)、自博弈 50~60x(纯 Python
 1.9 → 100+ 局/秒单核)。
 
+**内核版本门禁(2026-09-24 踩坑,勿重演)**:`rust/src/lib.rs` 与
+`mj/shanten.py` 里的 `*_KERNEL_VERSION` / `*_REQUIRED` 是**成对同步的
+常量**——只改其一必挂,改完还**必须立刻重建扩展**
+(`python3 -m pip install -e rust/`)。只改源码不重建时,
+`kernel_runtime_diagnostic()` 报 `weighted_kernel_version_mismatch`
+(`degraded=true`),后果不是崩溃而是**整片 legacyV2 静默降级为 v1 回退**:
+shape guard 短路(`skipped_reason=kernel_unavailable`)、`bc_data` 拒写
+训练标签(`RuntimeError: legacyV2 搜索回退 ...`,守卫是刻意为之)、评估器
+指纹变 `legacy-one-ply`、native↔python 对拍不一致。实测一次红 28 个测试
+(2026-09-21 构建的 v2 扩展配 09-23 的 v3 源码),重建后全绿。排障入口:
+`python3 -c "import mj.shanten as s; print(s.kernel_runtime_diagnostic())"`
+——`degraded=false` 才说明环境健康;重建后跑
+`python3 scripts/rust_parity.py` 验收(shanten/ukeire/baotou 全交叉对拍)。
+
 **接入方式**(mj/shanten.py):纯 Python 实现保留为 `shanten_py`/
 `ukeire_py`(ukeire_py 内部全链走 _py,保证强制回退时纯血);对外
 `shanten`/`ukeire` 是调度器——mj_kernels 可导入即优先 Rust,
