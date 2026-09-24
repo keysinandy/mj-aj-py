@@ -103,8 +103,8 @@ class _WindowConfirm(Exception):
 
     def __init__(self, *, phase, pending, round_no, legal, source_seq=None,
                  source_ts=None, source_watermark=None, chosen=None,
-                 schedule_deadline=None, window_key=None,
-                 source_origin=None,
+                 schedule_deadline=None, schedule_deadline_source="estimated",
+                 window_key=None, source_origin=None,
                  first_seen_via=None,
                  not_before=None,
                  revision=None,
@@ -120,6 +120,7 @@ class _WindowConfirm(Exception):
         self.source_ts = source_ts
         self.chosen = chosen
         self.schedule_deadline = schedule_deadline
+        self.schedule_deadline_source = schedule_deadline_source
         self.source_origin = source_origin
         self.first_seen_via = first_seen_via
         # Unknown identity / missing exact deadline is retryable, but it must
@@ -144,7 +145,7 @@ class _WindowConfirm(Exception):
                 observation_budget_deadline=self.retry_deadline,
                 not_before_source=("chi_ready" if not_before is not None
                                    else "unknown"),
-                scheduler_deadline_source="window_schedule",
+                scheduler_deadline_source=schedule_deadline_source,
                 observation_budget_source="legacy_retry_deadline",
                 exact_deadline_source="authoritative_snapshot"),
             pending=self.pending,
@@ -1261,17 +1262,22 @@ class BotClient:
         if getattr(confirm, "observation_budget_exhausted", False):
             fields["confirmation_observation_budget_exhausted"] = True
         if isinstance(snap, dict):
-            fields["exact_deadline_at"] = self._snapshot_deadline(snap)
+            snapshot_phase = snap.get("phase")
+            same_phase = snapshot_phase == phase
+            exact_deadline = (self._snapshot_deadline(snap)
+                              if same_phase else None)
+            fields["exact_deadline_at"] = exact_deadline
             if lifecycle_confirmation is not None:
                 lifecycle_confirmation.timing.exact_window_deadline = (
-                    fields["exact_deadline_at"])
+                    exact_deadline)
                 lifecycle_confirmation.timing.exact_deadline_source = (
-                    "authoritative_snapshot"
-                    if fields["exact_deadline_at"] is not None else "missing")
-            fields["snapshot_phase"] = snap.get("phase")
+                    "authoritative_snapshot" if exact_deadline is not None
+                    else "phase_mismatched_snapshot" if not same_phase
+                    else "missing")
+            fields["snapshot_phase"] = snapshot_phase
             fields["responding_seats"] = snap.get("responding_seats") or []
             fields["deadline_left_ms"] = self._deadline_left_ms(
-                fields["exact_deadline_at"])
+                exact_deadline)
             if outcome in ("open", "confirmed"):
                 fields["authorization_snapshot_seq"] = seq
                 fields["authoritative_open_at"] = now_epoch
@@ -1570,6 +1576,12 @@ class BotClient:
             source_ts=chi.get("source_ts"),
             source_watermark=chi.get("source_watermark"),
             schedule_deadline=chi.get("deadline_mono"),
+            schedule_deadline_source=(
+                "authoritative_chi_snapshot"
+                if chi.get("deadline_authoritative") else
+                "derived_from_peng_snapshot"
+                if chi.get("deadline_from_peng_snapshot") else
+                "estimated_from_discard"),
             not_before=chi.get("ready_mono"),
             revision=chi.get("demand_revision"),
             window_key=key,
@@ -1579,6 +1591,16 @@ class BotClient:
                             if window_id is not None else None),
             reason="chi_confirmation",
         )
+
+    @staticmethod
+    def _confirm_deadline_rank(source):
+        """Rank deadline evidence so a precise later bound can replace a hint."""
+        return {
+            "authoritative_chi_snapshot": 3,
+            "derived_from_peng_snapshot": 2,
+            "estimated_from_discard": 1,
+            "estimated": 1,
+        }.get(source, 0)
 
     @classmethod
     def _carry_window_confirm_budget(cls, previous, current):
@@ -1598,10 +1620,22 @@ class BotClient:
             getattr(current, "pending_retries", 0))
         old_deadline = getattr(previous, "retry_deadline", None)
         new_deadline = getattr(current, "retry_deadline", None)
+        old_source = getattr(previous, "schedule_deadline_source", "estimated")
+        new_source = getattr(current, "schedule_deadline_source", "estimated")
+        old_rank = cls._confirm_deadline_rank(old_source)
+        new_rank = cls._confirm_deadline_rank(new_source)
         if old_deadline is not None and new_deadline is not None:
-            current.retry_deadline = min(old_deadline, new_deadline)
+            if old_rank > new_rank:
+                current.retry_deadline = old_deadline
+                current.schedule_deadline = old_deadline
+                current.schedule_deadline_source = old_source
+            elif old_rank == new_rank:
+                current.retry_deadline = min(old_deadline, new_deadline)
+                current.schedule_deadline = current.retry_deadline
         elif old_deadline is not None:
             current.retry_deadline = old_deadline
+            current.schedule_deadline = old_deadline
+            current.schedule_deadline_source = old_source
         if getattr(previous, "logical_request_id", None) is not None:
             current.logical_request_id = previous.logical_request_id
         current.attempt_index = getattr(previous, "attempt_index", 0)
@@ -1609,6 +1643,10 @@ class BotClient:
         current_state = getattr(current, "confirmation", None)
         if previous_state is not None and current_state is not None:
             current.confirmation = previous_state.carry_budget(current_state)
+            current.confirmation.timing.scheduler_deadline = (
+                current.schedule_deadline)
+            current.confirmation.timing.scheduler_deadline_source = (
+                current.schedule_deadline_source)
             current.confirmation.timing.observation_budget_deadline = (
                 current.retry_deadline)
         return current
@@ -1655,6 +1693,8 @@ class BotClient:
             source_seq=(window_id.source_discard_seq
                         if window_id is not None else None),
             schedule_deadline=reason.get("deadline"),
+            schedule_deadline_source=reason.get(
+                "deadline_source", "estimated"),
             not_before=reason.get("not_before"),
             revision=reason.get("revision"),
             window_key=key,
@@ -2470,6 +2510,10 @@ class BotClient:
             "deadline_mono": deadline_mono,
             "deadline_epoch": deadline_epoch,
             "anchored": anchored,
+            "deadline_authoritative": (
+                snap_deadline is not None and phase_hint == "response_chi"),
+            "deadline_from_peng_snapshot": (
+                snap_deadline is not None and phase_hint != "response_chi"),
             "confirmed": phase_hint == "response_chi",
             "legal": chi_legal,
             "source_ts": discard_epoch,

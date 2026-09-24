@@ -256,7 +256,9 @@ def test_window_confirmation_distinguishes_unknown_identity_from_mismatch():
 
 def test_chi_confirmation_keeps_old_peng_phase_pending_until_chi_opens():
     clock = FakeClock(monotonic=100.0, epoch=1000.0)
-    bot = BotClient(mock.Mock(), "b", lambda *_: -1, log=lambda _: None)
+    recorder = mock.Mock()
+    bot = BotClient(mock.Mock(), "b", lambda *_: -1, recorder=recorder,
+                    log=lambda _: None)
     peng = _snapshot(phase="response_peng", turn=3, responding=[0],
                      discards=[[], [], [], ["6b"]], last_discard="6b",
                      window_deadline_ms=1001000)
@@ -274,11 +276,23 @@ def test_chi_confirmation_keeps_old_peng_phase_pending_until_chi_opens():
             "g1", mirror, peng, confirm, seq=42) == "phase_pending"
     assert bot._demand_window_status("phase_pending") == PENDING
     assert bot.stats["window_confirm_miss"] == 0
+    pending_record = recorder.window_confirm.call_args.kwargs
+    assert pending_record["snapshot_phase"] == "response_peng"
+    assert "exact_deadline_at" not in pending_record
+    assert "deadline_left_ms" not in pending_record
+    assert confirm.confirmation.timing.exact_window_deadline is None
+    assert confirm.confirmation.timing.exact_deadline_source == \
+        "phase_mismatched_snapshot"
 
     chi = dict(peng, phase="response_chi", window_deadline_ms=1002000)
     with mock.patch.object(module, "time", clock):
         assert bot._resolve_window_confirm(
             "g1", mirror, chi, confirm, seq=42) == "confirmed"
+    open_record = recorder.window_confirm.call_args.kwargs
+    assert open_record["exact_deadline_at"] == 1002.0
+    assert open_record["deadline_left_ms"] == 2000.0
+    assert confirm.confirmation.timing.exact_deadline_source == \
+        "authoritative_snapshot"
 
     peng_confirm = module._WindowConfirm(
         phase="response_peng", pending=mirror.pending, round_no=1,
@@ -287,6 +301,28 @@ def test_chi_confirmation_keeps_old_peng_phase_pending_until_chi_opens():
     with mock.patch.object(module, "time", clock):
         assert bot._resolve_window_confirm(
             "g1", mirror, chi, peng_confirm, seq=42) == "closed"
+
+
+def test_peng_snapshot_deadline_replaces_quantized_chi_estimate():
+    """A precise peng deadline yields a better chi end than integer event ts."""
+    key = WindowAttemptKey(
+        WindowId("g1", 1, 3, 42, tidx("6b")), "response_chi")
+    coarse = module._WindowConfirm(
+        phase="response_chi", pending=(3, tidx("6b")), round_no=1,
+        legal=[CHOW_LOW], source_seq=42, schedule_deadline=101.0,
+        schedule_deadline_source="estimated_from_discard", window_key=key)
+    precise = module._WindowConfirm(
+        phase="response_chi", pending=(3, tidx("6b")), round_no=1,
+        legal=[CHOW_LOW], source_seq=42, schedule_deadline=101.818,
+        schedule_deadline_source="derived_from_peng_snapshot", window_key=key)
+
+    carried = BotClient._carry_window_confirm_budget(coarse, precise)
+
+    assert carried.schedule_deadline == 101.818
+    assert carried.retry_deadline == 101.818
+    assert carried.schedule_deadline_source == "derived_from_peng_snapshot"
+    assert carried.confirmation.timing.scheduler_deadline == 101.818
+    assert carried.confirmation.timing.observation_budget_deadline == 101.818
 
 
 def test_missing_deadline_confirmation_has_bounded_pending_retries():
