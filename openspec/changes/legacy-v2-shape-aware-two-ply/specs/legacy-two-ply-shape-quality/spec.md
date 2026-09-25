@@ -90,20 +90,58 @@ shape evaluator MUST 只依赖 standing tile counts 与显式规则输入，不�
 
 系统 MUST 固化以下专项：
 
-- 暗手 23455m 124s EE W；
+- 暗手 23455m 124s EE w；
 - 副露 789p；
 - 弃 1s 与弃 4s 后均为 0 向听；
-- 两者普通进张均为 11，等待为 5m×2、3s×4、E×2、W×3。
+- 两者普通进张均为 11，等待为 5m×2、3s×4、E×2、w×3。
 
 在这些更高优先级指标相同的条件下：
 
 - 弃 1s 后的 24s standing shape MUST 优于弃 4s 后的 12s；
-- shape-aware legacyV2 MUST 选择弃 1s；
-- draw=5s 的 future branch MUST 能识别打 2s 留 45s 的结构升级。
+- 该完整牌例 MUST 实际进入 `baotou_scope`，shape-aware legacyV2 MUST 在 baotou tier / 财神保护 / baotou_ukeire 打平后用 standing shape 选择弃 1s；
+- 普通 weighted two-ply 的 draw=5s future branch SHALL 使用独立 fixture 验证打 2s 留 45s 的结构升级，不得把两条路径混为一个验收。
 
 #### Scenario: 用户牌例修复
 
-- **WHEN** shape-aware legacyV2 评价该 golden fixture
-- **THEN** selected discard SHALL 为 1s
-- **AND** diagnostics SHALL 显示 24s 的 standing/future shape 优势
+- **WHEN** shape-aware legacyV2 通过真实 `choose_discard()` 评价该 golden fixture
+- **THEN** `decision_scope` SHALL 为 `baotou_scope`
+- **AND** selected discard SHALL 为 1s
+- **AND** diagnostics SHALL 显示 1s/4s 的 baotou tier、baotou_ukeire、standing shape 与旧 discard shape cost
+- **AND** `stage_b_entered` SHALL 为 false
 - **AND** MUST NOT 使用硬编码牌号特判
+
+
+### Requirement: baotou_scope SHALL 在爆头进度打平后使用 standing shape
+
+当 hero 持白板财神且最小向听为 0、并且未触发推进收手或 baotou 预算回退时，系统 SHALL 保留既有 baotou 优先级：
+
+1. baotou tier；
+2. 财神保护（不主动弃白板财神）；
+3. baotou_ukeire；
+4. standing shape quality；
+5. legacy discard shape cost；
+6. feed risk；
+7. stable tile。
+
+standing shape MUST NOT 覆盖前三项。shape-aware 开关关闭时 MUST 恢复旧 key，不得产生行为漂移。
+
+#### Scenario: baotou 进度相同由 standing shape 决胜
+
+- **GIVEN** 两个候选的 baotou tier、财神保护和 baotou_ukeire 完全相同
+- **AND** 候选 A 留下 24s，候选 B 留下 12s
+- **WHEN** shape-aware baotou_scope 排序
+- **THEN** A SHALL 在旧 discard shape cost 之前胜出
+
+#### Scenario: 更高 baotou_ukeire 不被 shape 覆盖
+
+- **GIVEN** 两个候选处于同一 baotou tier
+- **AND** 候选 A 的 baotou_ukeire 严格高于候选 B
+- **AND** 候选 B 的 standing shape 更优
+- **WHEN** baotou_scope 排序
+- **THEN** MUST 选择 A
+
+#### Scenario: baotou fallback 不混入 shape 部分结果
+
+- **WHEN** Rust baotou kernel 不可用、节点预算超限或 X/Y/Z 收手触发
+- **THEN** SHALL 沿用既有整档 fallback
+- **AND** MUST NOT 使用未完整比较的 standing shape 改变 fallback winner
