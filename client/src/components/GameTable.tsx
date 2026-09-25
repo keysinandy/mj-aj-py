@@ -1,4 +1,15 @@
-import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type MouseEvent,
+  type RefObject,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
 import type {
   DiscardHint,
   ReplayFrame,
@@ -64,7 +75,19 @@ function WaitList({
   );
 }
 
-function DiscardHintPopover({ tile, hint }: { tile: number; hint: DiscardHint }) {
+function DiscardHintPopover({
+  tile,
+  hint,
+  popoverRef,
+  style,
+  onMouseLeave,
+}: {
+  tile: number;
+  hint: DiscardHint;
+  popoverRef: RefObject<HTMLDivElement>;
+  style: CSSProperties;
+  onMouseLeave: (event: MouseEvent<HTMLDivElement>) => void;
+}) {
   const blocked = hint.status === "rule_blocked_tenpai";
   const waits = blocked ? hint.structural_waits : hint.legal_waits;
   const total = blocked ? hint.total_structural_unseen : hint.total_legal_unseen;
@@ -72,10 +95,13 @@ function DiscardHintPopover({ tile, hint }: { tile: number; hint: DiscardHint })
   return (
     <div
       className={`discard-hint-popover${blocked ? " discard-hint-blocked" : ""}`}
+      ref={popoverRef}
+      style={style}
       role="dialog"
       aria-label={`弃${tileLabel(tile)}后的听口`}
       data-testid="discard-hint-popover"
       data-status={hint.status}
+      onMouseLeave={onMouseLeave}
     >
       <div className="wait-hint-title">
         弃 {tileLabel(tile)} 后听牌
@@ -100,17 +126,65 @@ function HintTile({
   tile,
   hint,
   size,
+  highlighted = false,
   contextKey,
 }: {
   tile: number;
   hint?: DiscardHint;
   size: "large" | "medium";
+  highlighted?: boolean;
   contextKey: string;
 }) {
   const [open, setOpen] = useState(false);
-  useEffect(() => setOpen(false), [contextKey]);
+  const [popoverPosition, setPopoverPosition] = useState<CSSProperties | null>(null);
+  const anchorRef = useRef<HTMLSpanElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    setOpen(false);
+    setPopoverPosition(null);
+  }, [contextKey]);
 
-  if (!hint) return <TileSvg tile={tile} size={size} />;
+  useLayoutEffect(() => {
+    if (!open) return undefined;
+    const updatePosition = () => {
+      const anchor = anchorRef.current?.getBoundingClientRect();
+      const popover = popoverRef.current?.getBoundingClientRect();
+      if (!anchor || !popover) return;
+
+      const margin = 10;
+      const width = popover.width || Math.min(400, window.innerWidth * 0.72);
+      const height = popover.height || Math.min(448, window.innerHeight * 0.7);
+      const maxLeft = Math.max(margin, window.innerWidth - width - margin);
+      const left = Math.max(
+        margin,
+        Math.min(anchor.left + anchor.width / 2 - width / 2, maxLeft),
+      );
+      const below = anchor.bottom + margin;
+      const top = below + height <= window.innerHeight - margin
+        ? below
+        : Math.max(margin, anchor.top - height - margin);
+      setPopoverPosition({ left, top, visibility: "visible" });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [open, hint, contextKey]);
+
+  function closeIfPointerLeavesRegion(event: MouseEvent<HTMLElement>) {
+    const target = event.relatedTarget;
+    if (target instanceof Node
+      && (anchorRef.current?.contains(target) || popoverRef.current?.contains(target))) {
+      return;
+    }
+    setOpen(false);
+  }
+
+  if (!hint) return <TileSvg tile={tile} size={size} highlighted={highlighted} />;
 
   function onKeyDown(event: KeyboardEvent<HTMLElement>) {
     if (event.key === "Escape") {
@@ -125,19 +199,30 @@ function HintTile({
 
   return (
     <span
+      ref={anchorRef}
       className="discard-hint-anchor"
       onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
+      onMouseLeave={closeIfPointerLeavesRegion}
     >
       <TileSvg
         tile={tile}
         size={size}
+        highlighted={highlighted}
         tabIndex={0}
         onFocus={() => setOpen(true)}
         onBlur={() => setOpen(false)}
         onKeyDown={onKeyDown}
       />
-      {open && <DiscardHintPopover tile={tile} hint={hint} />}
+      {open && createPortal(
+        <DiscardHintPopover
+          tile={tile}
+          hint={hint}
+          popoverRef={popoverRef}
+          style={popoverPosition ?? { left: 0, top: 0, visibility: "hidden" }}
+          onMouseLeave={closeIfPointerLeavesRegion}
+        />,
+        document.body,
+      )}
     </span>
   );
 }
@@ -159,6 +244,8 @@ function HandTiles({
   knownCount,
   size,
   discardHints,
+  drawnTile,
+  drawOrigin,
   contextKey,
 }: {
   counts: number[] | null;
@@ -167,6 +254,8 @@ function HandTiles({
   knownCount?: number | null;
   size: "large" | "medium";
   discardHints?: DiscardHint[];
+  drawnTile?: number | null;
+  drawOrigin?: string | null;
   contextKey: string;
 }) {
   if (hidden || counts === null) {
@@ -192,11 +281,15 @@ function HandTiles({
   const hintByTile = new Map(
     (discardHints ?? []).map((hint) => [hint.discard_tile, hint]),
   );
+  const hasDrawnTile = Number.isInteger(drawnTile)
+    && drawnTile! >= 0 && drawnTile! < counts.length && counts[drawnTile!] > 0;
+  const standingCounts = hasDrawnTile ? [...counts] : counts;
+  if (hasDrawnTile) standingCounts[drawnTile!] -= 1;
   return (
     <div className="hand-hand" data-testid="hand-tiles">
       {label && <span className="hand-label">{label}</span>}
       <span className="hand-tiles-svg">
-        {expandHand(counts).map((tile, index) => (
+        {expandHand(standingCounts).map((tile, index) => (
           <HintTile
             key={`${tile}-${index}`}
             tile={tile}
@@ -206,6 +299,23 @@ function HandTiles({
           />
         ))}
       </span>
+      {hasDrawnTile && (
+        <span
+          className="hand-drawn-tile"
+          data-testid="drawn-tile"
+          data-draw-origin={drawOrigin ?? "unknown"}
+          title={drawOrigin === "kong_replacement" ? "杠后补牌" : "刚摸入"}
+        >
+          <span className="drawn-badge">摸</span>
+          <HintTile
+            tile={drawnTile!}
+            hint={hintByTile.get(drawnTile!)}
+            size={size}
+            highlighted
+            contextKey={contextKey}
+          />
+        </span>
+      )}
     </div>
   );
 }
@@ -324,6 +434,7 @@ function PlayerArea({
   const isObserve = seat === perspectiveSeat;
   const isTurn = seat === frame.current?.seat;
   const isDealer = seat === frame.dealer;
+  const isWinner = frame.winner_seats?.includes(seat) ?? false;
   const localInfo = frame.info_kind === "local" && frame.hands !== null;
   const omniscient = localInfo && visibilityMode === "omniscient";
   const isPerspective = isObserve;
@@ -357,6 +468,7 @@ function PlayerArea({
         {isPerspective && <span className="player-self">{isHero ? "（我）" : "（观察）"}</span>}
         {isObserve && <span className="observe-mark">◈</span>}
         {isTurn && <span className="turn-badge">行动中</span>}
+        {isWinner && <span className="winner-badge" data-testid={`winner-badge-${seat}`}>胡</span>}
         <span className="player-score">{frame.scores[seat] ?? 0}</span>
       </header>
       <div className="player-content">
@@ -367,6 +479,8 @@ function PlayerArea({
           knownCount={knownCount}
           size={position === "bottom" ? "large" : "medium"}
           discardHints={showHints ? frame.discard_hints : undefined}
+          drawnTile={frame.drawn_seat === seat ? frame.drawn_tile : null}
+          drawOrigin={frame.drawn_seat === seat ? frame.draw_origin : null}
           contextKey={hintContextKey}
         />
         <Melds melds={frame.melds[seat]} ownerSeat={seat} highlighted={highlightedMeld} />

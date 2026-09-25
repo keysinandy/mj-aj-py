@@ -158,6 +158,18 @@ ReplayFrame SHALL保存“截至当前步骤已经发生的胡牌玩家集合”
 - **WHEN** 当前已是本场最后一条我方 gameplay action
 - **THEN** “下一我方”不可继续，不自动跳到下一场
 
+### Requirement: 牌桌座位尺寸稳定
+
+牌桌 SHALL 为四个座位分配稳定的网格尺寸。手牌张数、副露/牌河增长和摸牌标记 MUST NOT 改变座位容器尺寸。听牌提示 SHALL 作为视口浮层显示，不参与牌桌/页面布局计算，也 MUST NOT 引发座位重排或尺寸变化。
+
+#### Scenario: 手牌张数变化
+- **WHEN** 回放在摸牌、弃牌或切换场次时改变可见手牌张数
+- **THEN** P0、P1、P2、P3 各自所在位置的座位容器保持原尺寸，牌面内容在座位内部布局
+
+#### Scenario: 显示听牌提示
+- **WHEN** 用户悬停或聚焦一张可查看听牌提示的手牌
+- **THEN** 提示浮层覆盖在牌桌上方，座位和牌桌尺寸保持不变
+
 ### Requirement: 场次、摸牌与赢家状态的重放一致性
 
 新增的 round index、drawn marker、winner marker 与 actor filter SHALL建立在既有 `ReplayStep` 和 Mirror/Game 状态上。它们MUST NOT修改平台事件顺序、合法动作重建、`/state` 挂载、原始 seqNo 或历史步骤状态。

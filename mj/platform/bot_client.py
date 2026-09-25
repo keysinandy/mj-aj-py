@@ -53,6 +53,8 @@ DISCARD_SEC = 3.0
 DEADLINE_MARGIN = 0.12  # 为模型串行决策与动作提交预留的本地安全余量
 SUBMIT_EPS = 0.05  # 窗口守卫余量:仅剩此余量时物理上来不及提交才放弃
 LAZY_POLL_WAIT = 1.2  # 懒轮询:预测无关事件的最长推迟(吃窗 T+2 内须追平)
+ROUND_TRANSITION_POLL_WAIT = 0.75  # 轮间 SSE 缺帧时用共享限速器短轮询
+ROUND_TRANSITION_RECOVERY_SEC = 12.0  # 覆盖实测最长约 9s 的轮间空档
 EAGER_CHI_LEAD = 0.25  # 吃窗快照提前量:临近开窗才抓,避免长时间空占 EDF
 EAGER_CHI_GAP = 0.12   # 同一吃窗两次快照抓取的最小间隔(限速 ~8/s)
 EAGER_CHI_MAX = 8      # 同一吃窗最多抓取次数(无截止/相位不推进时的兜底界)
@@ -3089,6 +3091,36 @@ class BotClient:
         chi_fetches = 0        # 本弃牌窗已抓取次数(每张新弃牌清零)
         decide_fails = 0    # 决策/快照路径自愈预算(超限上抛终止)
         demand_seen = {}
+        # round_ended 后，SSE 可能在较长空档后才再次唤醒。
+        # 在有界窗口内通过同一 StateDemand/StateThrottle 追赶权威快照。
+        round_transition = None  # (ended_round_no, recover_until, first_poll)
+
+        def schedule_round_transition_poll():
+            nonlocal seq, request_kind, state_deadline, round_transition
+            if round_transition is None:
+                return False
+            ended_round, recover_until, first_poll = round_transition
+            remaining = recover_until - time.monotonic()
+            if remaining <= 0:
+                self._log(
+                    f"轮间状态追赶超时(round={ended_round}),恢复常规事件等待")
+                round_transition = None
+                return False
+            if first_poll:
+                round_transition = (ended_round, recover_until, False)
+            else:
+                # SSE 仍只是提前唤醒信号；没有新帧时定时从 /state 重建，
+                # 实际请求仍经原有共享候选与限速器，不另开轮询通道。
+                poll_wait = min(ROUND_TRANSITION_POLL_WAIT, remaining)
+                if sse is not None and sse.get("alive"):
+                    self._wait_wake(wake, sse, max_wait=poll_wait)
+                else:
+                    time.sleep(poll_wait)
+            seq = 0
+            request_kind = "RESYNC"
+            state_deadline = None
+            return True
+
         while True:
             if self._shutdown_requested():
                 demand.close("shutdown")
@@ -3282,6 +3314,7 @@ class BotClient:
                         response=res, response_seq=res.get("seq"),
                         response_mode=plan.mode,
                         snapshot=res.get("snapshot"))
+                schedule_round_transition_poll()
                 continue
             if res.get("gap"):
                 with self._stats_lock:
@@ -3415,6 +3448,32 @@ class BotClient:
                         fetch_coordinator.complete(
                             response=res, response_seq=res.get("seq"),
                             response_mode=plan.mode, snapshot=snap)
+                    if round_transition is not None:
+                        ended_round = round_transition[0]
+                        snapshot_round = snap.get("round_no", mirror.round_no)
+                        round_advanced = (
+                            ended_round is None
+                            or snapshot_round != ended_round)
+                        seat = snap.get("seat", -1)
+                        phase = snap.get("phase")
+                        own_draw_ready = (
+                            phase == "draw"
+                            and snap.get("turn") == seat
+                            and bool(snap.get("drawn_tile")))
+                        responders = snap.get("responding_seats") or []
+                        response_ready = (
+                            phase in ("response_peng", "response_chi")
+                            and seat in responders
+                            and self._snapshot_deadline(snap) is not None)
+                        opening_discard_seen = any(
+                            bool(discard_row)
+                            for discard_row in (snap.get("discards") or []))
+                        if (round_advanced and
+                                (own_draw_ready or response_ready
+                                 or opening_discard_seen)):
+                            round_transition = None
+                        else:
+                            schedule_round_transition_poll()
                 except Exception as ex:
                     if plan is not None and demand.in_flight:
                         fetch_coordinator.complete(
@@ -3532,6 +3591,21 @@ class BotClient:
                     outcome="COMPLETED")
                 self._record_timeout(e, mirror.me)
                 t = e["type"]
+                if t == "round_ended":
+                    round_data = e.get("data") or {}
+                    ended_round = round_data.get(
+                        "round_no", mirror.round_no)
+                    round_transition = (
+                        ended_round,
+                        time.monotonic() + ROUND_TRANSITION_RECOVERY_SEC,
+                        True,
+                    )
+                elif round_transition is not None and (
+                        t in ("game_ended", "tile_discarded")
+                        or (t == "tile_drawn" and e["seat"] == mirror.me)):
+                    # 边界后收到首个公开弃牌或我方摸牌，说明触发流已追上；
+                    # 正常事件分支会处理该动作/响应窗。
+                    round_transition = None
                 next_seat = self._next_seat_step(next_seat, e)
                 if t == "tile_drawn":
                     # A draw closes the previous discard response window;
@@ -3665,6 +3739,7 @@ class BotClient:
                     chi_pending = None
                     window_event = None
                     window_responded = True
+                    next_seat = None
                 elif t in ("pass", "timeout"):
                     # 碰窗响应(pass 或 response 超时;discard 已上面处理)
                     if t == "pass" or e.get("kind") == "response":
@@ -3777,6 +3852,9 @@ class BotClient:
                         window_confirm, next_confirm)
                     chi_pending = None
                     continue
+                elif round_transition is not None:
+                    if schedule_round_transition_poll():
+                        continue
                 elif self.long_poll:
                     # 长轮询:直接再发 /state 由服务端挂起。返回率=事件
                     # 刷新簇率(每回合 ~2-3 簇:弃牌/T+1 碰超时/T+2 吃

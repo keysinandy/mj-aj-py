@@ -126,9 +126,9 @@ def _day_in_range(day, start_ts, end_ts):
     return True
 
 
-def index_online_games(root=None, gid=None, *, start_ts=None, end_ts=None,
-                       offset=0, limit=None):
-    """返回线上日志索引，可按 gid/时间范围分页。
+def index_online_games(root=None, gid=None, *, record_id=None,
+                       start_ts=None, end_ts=None, offset=0, limit=None):
+    """返回线上日志索引，可按 gid、record_id 或时间范围筛选分页。
 
     ``start_ts``/``end_ts`` 是 epoch 秒，时间范围为闭区间；``offset`` 从
     最新日志开始计数，``limit`` 为 ``None`` 时保持旧行为返回全部匹配项。
@@ -159,6 +159,8 @@ def index_online_games(root=None, gid=None, *, start_ts=None, end_ts=None,
                 gid_part = stem
             if gid is not None and gid_part != str(gid):
                 continue
+            if record_id is not None and f"{day}~{stem}" != str(record_id):
+                continue
             first = _first_record(path)
             started_at = _first_record_timestamp(path)
             if start_ts is not None and (
@@ -173,7 +175,8 @@ def index_online_games(root=None, gid=None, *, start_ts=None, end_ts=None,
             if limit is not None and len(out) >= limit:
                 return out
             entry = {"date": day, "gid": gid_part, "path": path,
-                     "name": stem, "started_at": started_at}
+                     "name": stem, "record_id": f"{day}~{stem}",
+                     "started_at": started_at}
             if isinstance(first, dict):
                 for key in ("strategy", "evaluator", "model_name"):
                     if first.get(key) is not None:

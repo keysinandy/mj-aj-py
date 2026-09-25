@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { useReplayStore } from "../replayStore";
+import { sessionFromFrames } from "../session";
 import type { ReplayFrame } from "../frame";
 
 const frames: ReplayFrame[] = Array.from({ length: 5 }).map((_, i) => ({
@@ -91,5 +92,86 @@ describe("replay store 步进语义", () => {
     const rotated = frames.map((frame) => ({ ...frame, my_seat: 2 }));
     useReplayStore.getState().setFrames(rotated);
     expect(useReplayStore.getState().observeSeat).toBe(2);
+  });
+
+  it("round 导航默认选第一场,步进与首尾均限制在当前场", () => {
+    const multiround = frames.map((frame, index) => ({
+      ...frame,
+      round_no: index < 2 ? 1 : index < 4 ? 2 : 3,
+    }));
+    useReplayStore.getState().setSession(sessionFromFrames(multiround, "online"));
+    const store = useReplayStore.getState();
+
+    expect(store.activeRoundId).toBe(store.rounds[0].roundId);
+    expect(store.index).toBe(0);
+    store.nextRound();
+    expect(useReplayStore.getState().index).toBe(2);
+    store.lastStep();
+    expect(useReplayStore.getState().index).toBe(3);
+    store.stepBack();
+    expect(useReplayStore.getState().index).toBe(2);
+    store.stepBack();
+    expect(useReplayStore.getState().index).toBe(2);
+    store.stepForward();
+    store.setSpeed(1);
+    useReplayStore.setState({ playing: true });
+    store.stepForward();
+    expect(useReplayStore.getState().index).toBe(3);
+    expect(useReplayStore.getState().playing).toBe(false);
+    store.nextRound();
+    expect(useReplayStore.getState().index).toBe(4);
+    store.nextRound();
+    expect(useReplayStore.getState().index).toBe(4);
+    store.previousRound();
+    expect(useReplayStore.getState().index).toBe(2);
+  });
+
+  it("seqNo 跨场定位同步切换场次,旧 round 缺失时从 steps 派生", () => {
+    const multiround = frames.map((frame, index) => ({
+      ...frame,
+      round_no: index < 2 ? 1 : index < 4 ? 2 : 3,
+      seq_no: 100 + index,
+    }));
+    const session = sessionFromFrames(multiround, "online");
+    const oldSession = {
+      ...session,
+      metadata: { ...session.metadata, rounds: [] },
+    };
+    useReplayStore.getState().setSession(oldSession);
+    useReplayStore.getState().jumpToSeqNo(104);
+
+    expect(useReplayStore.getState().index).toBe(4);
+    expect(useReplayStore.getState().activeRoundId).toBe(useReplayStore.getState().rounds[2].roundId);
+    expect(useReplayStore.getState().rounds).toHaveLength(3);
+  });
+
+  it("筛选内导航使用全局 index,并且不会跨 round", () => {
+    const actionFrames = frames.map((frame, index) => ({
+      ...frame,
+      round_no: index < 4 ? 1 : 2,
+      event: [
+        { type: "snapshot" },
+        { type: "tile_drawn", seat: 0 },
+        { type: "tile_discarded", seat: 2 },
+        { type: "pass", seat: 0 },
+        { type: "tile_discarded", seat: 0 },
+      ][index],
+    }));
+    useReplayStore.getState().setSession(sessionFromFrames(actionFrames, "online"));
+    const before = useReplayStore.getState().frame();
+    useReplayStore.getState().setActorFilter("mine");
+    expect(useReplayStore.getState().index).toBe(0);
+    expect(useReplayStore.getState().frame()).toBe(before);
+
+    useReplayStore.getState().nextFilteredStep();
+    expect(useReplayStore.getState().index).toBe(1);
+    useReplayStore.getState().nextFilteredStep();
+    expect(useReplayStore.getState().index).toBe(3);
+    useReplayStore.getState().nextFilteredStep();
+    expect(useReplayStore.getState().index).toBe(3);
+    useReplayStore.getState().previousFilteredStep();
+    expect(useReplayStore.getState().index).toBe(1);
+    useReplayStore.getState().previousFilteredStep();
+    expect(useReplayStore.getState().index).toBe(1);
   });
 });

@@ -78,6 +78,13 @@ export interface ReplayFrame {
   wall_remaining: number;
   scores: number[];
   round_no: number;
+  /** 可确认的当前摸牌身份；线上只填充自家摸牌。 */
+  drawn_tile?: number | null;
+  drawn_seat?: number | null;
+  draw_origin?: "normal" | "kong_replacement" | string | null;
+  /** 截至当前步骤已经发生胡牌的座位。 */
+  winner_seats?: number[];
+  round_ended?: boolean;
   /** 庄家座位；线上来自 snapshot，本地来自 Game.dealer。 */
   dealer?: number | null;
   dora_indicators?: number[];

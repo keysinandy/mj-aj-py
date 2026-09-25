@@ -152,6 +152,47 @@ describe("GameTable 线上自家视角", () => {
   });
 });
 
+describe("GameTable 摸牌与赢家标记", () => {
+  it("摸牌从站立牌副本中扣除并只突出显示一次,字段清空后 marker 消失", () => {
+    const frame = localFrame({ drawn_tile: 3, drawn_seat: 0, draw_origin: "normal" });
+    const { container, rerender } = render(<GameTable frame={frame} observeSeat={0} />);
+    const p0 = container.querySelector('[data-seat="0"]')!;
+    const hand = within(p0 as HTMLElement).getByTestId("hand-tiles");
+
+    expect(within(hand).getByTestId("drawn-tile")).toHaveTextContent("摸");
+    expect(hand.querySelectorAll('[data-tile="3"]')).toHaveLength(2);
+    expect(within(within(hand).getByTestId("drawn-tile")).getByRole("img", { name: "4万" }))
+      .toHaveClass("tile-svg-highlighted");
+
+    rerender(<GameTable frame={localFrame()} observeSeat={0} />);
+    expect(screen.queryByTestId("drawn-tile")).toBeNull();
+  });
+
+  it("drawn tile 不在可见 count 中时不虚增牌张", () => {
+    render(<GameTable frame={localFrame({ drawn_tile: 2, drawn_seat: 0 })} observeSeat={0} />);
+    const p0 = document.querySelector('[data-seat="0"]')!;
+    expect(within(p0 as HTMLElement).queryByTestId("drawn-tile")).toBeNull();
+  });
+
+  it("多个赢家均有 badge,并可与庄家和行动中标记共存", () => {
+    const { container, rerender } = render(<GameTable frame={localFrame({
+      dealer: 0,
+      current: { seat: 0, phase: "playing" },
+      winner_seats: [0, 2],
+    })} observeSeat={0} />);
+    const p0 = container.querySelector('[data-seat="0"]')!;
+    expect(within(p0 as HTMLElement).getByTestId("dealer-badge-0")).toBeTruthy();
+    expect(within(p0 as HTMLElement).getByTestId("winner-badge-0")).toHaveTextContent("胡");
+    expect(p0).toHaveClass("seat-turn");
+    expect(within(container.querySelector('[data-seat="2"]') as HTMLElement)
+      .getByTestId("winner-badge-2")).toHaveTextContent("胡");
+
+    rerender(<GameTable frame={localFrame({ winner_seats: [] })} observeSeat={0} />);
+    expect(screen.queryByTestId("winner-badge-0")).toBeNull();
+    expect(screen.queryByTestId("winner-badge-2")).toBeNull();
+  });
+});
+
 function hintFrame(over: Partial<ReplayFrame> = {}): ReplayFrame {
   return localFrame({
     current: { seat: 0, phase: "discard" },

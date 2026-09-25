@@ -156,3 +156,76 @@ def test_frames_serializable():
             _snap(10, seat=2), _events(12, [])]
     frames, _ = online_frames(recs)
     json.dumps(frames, ensure_ascii=False)  # 可序列化给前端
+
+
+def test_draw_identity_is_visible_only_for_confirmed_tile_and_clears_after_discard():
+    recs = [
+        {"type": "meta", "you_cai_bi_kao": False, "base": 1},
+        _snap(10, seat=0),
+        _events(11, [
+            {"type": "tile_drawn", "seq": 11, "seat": 0, "tile": "5w"},
+        ]),
+        _events(12, [
+            {"type": "tile_discarded", "seq": 12, "seat": 0, "tile": "5w"},
+        ]),
+    ]
+    frames, _ = online_frames(recs)
+
+    assert frames[0]["drawn_tile"] is None
+    assert frames[1]["drawn_tile"] == 4
+    assert frames[1]["drawn_seat"] == 0
+    assert frames[1]["draw_origin"] == "normal"
+    assert frames[2]["drawn_tile"] is None
+    assert frames[2]["drawn_seat"] is None
+
+
+def test_unknown_opponent_draw_never_gets_a_guessed_tile():
+    frames, _ = online_frames([
+        {"type": "meta", "you_cai_bi_kao": False, "base": 1},
+        _snap(10, seat=0),
+        _events(11, [
+            {"type": "tile_drawn", "seq": 11, "seat": 1},
+        ]),
+    ])
+
+    assert frames[-1]["drawn_tile"] is None
+    assert frames[-1]["drawn_seat"] is None
+    assert frames[-1]["hands"] is None
+
+
+def test_snapshot_restores_confirmed_draw_identity():
+    snap = _snap(10, seat=0)
+    snap["snap"].update({
+        "phase": "draw", "turn": 0, "my_hand": ["6w"],
+        "drawn_tile": "6w",
+    })
+    frames, _ = online_frames([snap])
+
+    assert frames[0]["drawn_tile"] == 5
+    assert frames[0]["drawn_seat"] == 0
+    assert frames[0]["draw_origin"] == "normal"
+
+
+def test_hu_winners_accumulate_per_step_and_reset_on_round_change():
+    from mj.clientd.replay import online_session
+
+    records = [
+        {"type": "meta", "you_cai_bi_kao": False, "base": 1},
+        _snap(10, round_no=1, seat=0),
+        _events(11, [{"type": "hu", "seq": 11, "seat": 2}]),
+        _events(12, [{"type": "hu", "seq": 12, "seat": 3}]),
+        _events(13, [{"type": "round_ended", "seq": 13, "seat": 2}]),
+        _snap(14, round_no=2, seat=0),
+    ]
+    frames, _ = online_frames(records)
+    session = online_session(records)
+
+    assert frames[0]["winner_seats"] == []
+    assert frames[1]["winner_seats"] == [2]
+    assert frames[2]["winner_seats"] == [2, 3]
+    assert frames[3]["winner_seats"] == [2, 3]
+    assert frames[3]["round_ended"] is True
+    assert frames[4]["winner_seats"] == []
+    assert frames[4]["round_ended"] is False
+    assert session["metadata"]["rounds"][0]["winner_seats"] == [2, 3]
+    assert session["metadata"]["rounds"][0]["ended"] is True

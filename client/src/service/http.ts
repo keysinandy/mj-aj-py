@@ -131,6 +131,7 @@ export interface BatchSummary {
 export interface OnlineGameRef {
   date: string;
   gid: string;
+  record_id?: string;
   path: string;
   name: string;
   started_at?: number | null;
@@ -301,8 +302,8 @@ export const api = {
       body: { batch_id: batchId, game },
     });
   },
-  onlineFrames(gid: string): Promise<FramesResponse> {
-    return fetchJson(`/api/records/online/${encodeURIComponent(gid)}/frames`);
+  onlineFrames(recordId: string): Promise<FramesResponse> {
+    return fetchJson(`/api/records/online/${encodeURIComponent(recordId)}/frames`);
   },
   createSession(kind: string, config: unknown): Promise<SessionInfo> {
     return fetchJson("/api/sessions", { method: "POST", body: { kind, config } });

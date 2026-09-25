@@ -42,13 +42,13 @@ export function ReplayPage() {
     }
   }
 
-  // 线上为自家视角帧(他家暗手不可见);解析走 /api/records/online/:gid/frames。
-  async function openOnline(gid: string, label: string) {
+  // 线上为自家视角帧(他家暗手不可见);recordId 精确标识列表中的日志文件。
+  async function openOnline(recordId: string, label: string) {
     setLoading(true);
     setError(null);
     try {
-      const resp = await api.onlineFrames(gid);
-      setSession(sessionFromResponse(resp, "online", gid, resp.path));
+      const resp = await api.onlineFrames(recordId);
+      setSession(sessionFromResponse(resp, "online", recordId, resp.path));
       setOpened({ label, infoKind: "online" });
     } catch (e) {
       setError(String((e as Error).message));

@@ -13,6 +13,7 @@
 - 为 `ReplayFrame` 增加可选的 `drawn_tile` / `drawn_seat` / `draw_origin`。当刚摸牌身份有可靠证据时，手牌 UI 将该牌从排序手牌中视觉分离并标记“摸”；线上对手摸牌身份不可见时不得猜测。
 - 为 `ReplayFrame` 增加**随时间推进的胡牌状态**，至少包含 `winner_seats`。只有当前 step 已经发生 `hu` 后才显示赢家标记，禁止使用最终结果提前剧透。
 - 在时间线增加 `全部 / 我方动作` 筛选，并支持在筛选结果中上一条/下一条跳转；筛选只改变展示和导航目标，不删除步骤、不修改状态重建。
+- 固定四个座位的牌桌网格尺寸；手牌/牌河/副露变化只影响座位内部内容，听牌提示作为视口浮层显示，不触发布局重排。
 - 我方动作按“事件 actor == `my_seat` 且属于真实麻将动作”判定；`snapshot`、`req`、诊断等系统/旁路记录不因挂在我方 seq 上就算作我方动作。
 - 补齐后端、前端和回归测试，覆盖同房间 10 场、多次 round 切换、摸牌展示、胡牌不剧透、我方动作筛选以及 seqNo 稳定性。
 
@@ -40,6 +41,7 @@
 - **前端 UI**：
   - `client/src/components/ReplayViewer.tsx`
   - `client/src/components/GameTable.tsx`
+  - `client/src/styles.css`
   - `client/src/components/Timeline.tsx`
   - `client/src/components/ReplayControls.tsx`（若筛选导航按钮放在控制区）
 - **测试**：

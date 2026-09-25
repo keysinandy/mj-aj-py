@@ -317,6 +317,13 @@ previousFilteredStep()
 - 旧帧没有 `drawn_tile` / `winner_seats` 时，UI 不显示相应 marker；不得根据后续事件倒推。
 - 旧 session 没有 round metadata 时，前端派生索引，后端新记录则优先使用权威 metadata。
 
+### D13：座位使用固定网格，听牌提示在网格外定位
+
+- `table-seats` 使用确定的高度和固定上下座位轨道；四个 `PlayerArea` 填满其网格区域，手牌、牌河和副露在座位内部排布/滚动。
+- 摸牌数量、牌河增长和副露增长不得参与牌桌轨道的最小尺寸计算。
+- 听牌提示通过 portal 放入 `document.body`，根据来源牌的视口坐标定位；提示最大高度受视口约束，不创建页面滚动溢出，也不改变座位网格。
+- 窄屏使用独立的固定网格行高，保持同一视口尺寸下回放步骤之间的座位尺寸稳定。
+
 ## Data Contract
 
 建议后端 session：

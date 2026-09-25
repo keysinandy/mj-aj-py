@@ -94,6 +94,20 @@ def _local_frame(game, my_seat, actor, label, gap=False, step=0,
     else:
         discard_hints, frame_diagnostics = _discard_hint_payload(
             game, actor, frame_diagnostics, seq_no)
+    drawn_tile = None
+    drawn_seat = None
+    drawn = getattr(game, "drawn", None)
+    if isinstance(drawn, (list, tuple)):
+        for seat, tile in enumerate(drawn):
+            if (type(seat) is int and 0 <= seat < 4
+                    and type(tile) is int and 0 <= tile < 34):
+                drawn_tile, drawn_seat = tile, seat
+                break
+    result = getattr(game, "result", None)
+    winner = result[0] if isinstance(result, (list, tuple)) and result else None
+    winner_seats = (
+        [int(winner)] if type(winner) is int and 0 <= winner < 4 else []
+    )
     return {
         "step": step, "info_kind": "local", "my_seat": my_seat,
         "hands": [[int(v) for v in h] for h in game.hands],
@@ -104,6 +118,15 @@ def _local_frame(game, my_seat, actor, label, gap=False, step=0,
         "wall_remaining": game.live_wall_left(),
         "scores": [int(v) for v in game.scores],
         "round_no": 1,
+        "drawn_tile": drawn_tile,
+        "drawn_seat": drawn_seat,
+        "draw_origin": (
+            "kong_replacement" if drawn_tile is not None
+            and bool(getattr(game, "_kong_draw", False))
+            else "normal" if drawn_tile is not None else None
+        ),
+        "winner_seats": winner_seats,
+        "round_ended": bool(getattr(game, "done", False)),
         "dealer": int(getattr(game, "dealer", 0)),
         "current": {"seat": actor, "phase": ("done" if game.done
                                              else getattr(game, "phase", "playing"))},
@@ -259,7 +282,8 @@ def _online_response_window(mirror):
 
 def _online_frame(mirror, scores, step, label, gap=False, *, seq_no=None,
                   timestamp=None, event=None, local_requests=None,
-                  diagnostics=None, meld_sources=None):
+                  diagnostics=None, meld_sources=None, winner_seats=None,
+                  round_ended=False):
     hand_counts = [None] * 4
     me = int(mirror.me)
     hand_counts[me] = sum(int(v) for v in mirror.my_hand)
@@ -275,6 +299,14 @@ def _online_frame(mirror, scores, step, label, gap=False, *, seq_no=None,
     snapshot_reanchor = (
         isinstance(event, dict) and event.get("type") == "snapshot"
     )
+    drawn = getattr(mirror, "drawn", None)
+    draw_origin = getattr(mirror, "draw_origin", None)
+    if draw_origin == "NORMAL":
+        draw_origin = "normal"
+    elif draw_origin == "KONG_REPLACEMENT":
+        draw_origin = "kong_replacement"
+    elif isinstance(draw_origin, str):
+        draw_origin = draw_origin.strip().lower().replace("-", "_") or None
     if ((not gap or snapshot_reanchor)
             and getattr(mirror, "drawn", None) is not None):
         try:
@@ -294,6 +326,14 @@ def _online_frame(mirror, scores, step, label, gap=False, *, seq_no=None,
         "wall_remaining": _WALL_TOTAL - mirror._pops,
         "scores": list(scores or [0, 0, 0, 0]),
         "round_no": mirror.round_no,
+        "drawn_tile": int(drawn) if type(drawn) is int and 0 <= drawn < 34 else None,
+        "drawn_seat": me if type(drawn) is int and 0 <= drawn < 34 else None,
+        "draw_origin": draw_origin if type(drawn) is int and 0 <= drawn < 34 else None,
+        "winner_seats": sorted({
+            seat for seat in (winner_seats or [])
+            if type(seat) is int and 0 <= seat < 4
+        }),
+        "round_ended": bool(round_ended),
         "dealer": int(getattr(mirror, "dealer", 0)),
         "current": {
             "seat": (me if getattr(mirror, "drawn", None) is not None
@@ -373,6 +413,9 @@ class _OnlineBuilder:
         self.pending_requests = []
         self.pending_diagnostics = []
         self.meld_sources = [[] for _ in range(4)]
+        self.winner_seats = set()
+        self.current_round_no = None
+        self.round_ended = False
 
     def _base(self):
         return bool((self.meta or {}).get("you_cai_bi_kao", False))
@@ -387,10 +430,23 @@ class _OnlineBuilder:
             was_gap = self.gap
             previous_sources = self.meld_sources
             previous_round = self.mirror.round_no if self.mirror is not None else None
+            raw_snapshot_round = snap.get("round_no")
+            snapshot_round = (
+                int(raw_snapshot_round)
+                if type(raw_snapshot_round) is int and raw_snapshot_round >= 0
+                else self.current_round_no if self.current_round_no is not None
+                else 1
+            )
+            if self.current_round_no is None:
+                self.current_round_no = snapshot_round
+            elif snapshot_round != self.current_round_no:
+                self.winner_seats.clear()
+                self.round_ended = False
+                self.current_round_no = snapshot_round
             self.mirror = Mirror(
                 my_seat=snap["seat"], dealer=snap.get("dealer", 0),
                 base=(self.meta or {}).get("base", 1),
-                you_cai_bi_kao=self._base(), round_no=snap.get("round_no", 1))
+                you_cai_bi_kao=self._base(), round_no=snapshot_round)
             self.mirror.apply_snapshot(snap)
             self.meld_sources = _snapshot_meld_sources(
                 snap.get("melds"), self.mirror.melds,
@@ -412,6 +468,12 @@ class _OnlineBuilder:
                     before_meld_counts = [len(row) for row in self.mirror.melds]
                     self.mirror.apply_event(ev)
                     event_type = ev.get("type")
+                    if event_type == EV_HU:
+                        winner = _source_seat(ev.get("seat"))
+                        if winner is not None:
+                            self.winner_seats.add(winner)
+                    elif event_type == EV_ROUND_ENDED:
+                        self.round_ended = True
                     event_data = ev.get("data") if isinstance(ev.get("data"), dict) else {}
                     event_kind = ev.get("kind") or event_data.get("kind")
                     is_open_claim = (
@@ -566,7 +628,9 @@ class _OnlineBuilder:
             timestamp=timestamp, event=event,
             local_requests=self.pending_requests,
             diagnostics=self.pending_diagnostics,
-            meld_sources=self.meld_sources)
+            meld_sources=self.meld_sources,
+            winner_seats=self.winner_seats,
+            round_ended=self.round_ended)
         self.pending_requests = []
         self.pending_diagnostics = []
         self.frames.append(frame)
@@ -613,6 +677,7 @@ def _session_from_frames(frames, *, source, session_id=None, path=None,
         "path": path,
         "step_count": len(steps),
         "capabilities": capabilities,
+        "rounds": _rounds_from_steps(steps),
     }
     for key, value in (("strategy", strategy), ("evaluator", evaluator),
                        ("model_name", model_name)):
@@ -625,6 +690,53 @@ def _session_from_frames(frames, *, source, session_id=None, path=None,
         "initial_state": frames[0] if frames else None,
         "steps": steps,
     }
+
+
+def _rounds_from_steps(steps):
+    """Index contiguous round_no runs without changing step or seq identity."""
+    if not steps:
+        return []
+    segments = []
+    start = 0
+    current_round = None
+    for index, step in enumerate(steps):
+        state = step.get("state") or {}
+        raw_round = state.get("round_no")
+        round_no = (int(raw_round) if type(raw_round) in (int, float)
+                    and raw_round >= 0 else current_round)
+        if round_no is None:
+            round_no = 1
+        if current_round is None:
+            current_round = round_no
+        elif round_no != current_round:
+            segments.append((start, index - 1, current_round))
+            start = index
+            current_round = round_no
+    segments.append((start, len(steps) - 1, current_round))
+
+    rounds = []
+    for ordinal, (start, end, round_no) in enumerate(segments, start=1):
+        segment = steps[start:end + 1]
+        seqs = [step.get("seq_no") for step in segment
+                if step.get("seq_no") is not None]
+        final_state = segment[-1].get("state") or {}
+        winners = final_state.get("winner_seats") or []
+        winners = sorted({seat for seat in winners
+                          if type(seat) is int and 0 <= seat < 4})
+        start_seq = seqs[0] if seqs else None
+        round_id = f"r{ordinal}-n{round_no}-s{start_seq if start_seq is not None else start}"
+        rounds.append({
+            "round_id": round_id,
+            "ordinal": ordinal,
+            "round_no": round_no,
+            "start_step_index": start,
+            "end_step_index": end,
+            "start_seq_no": start_seq,
+            "end_seq_no": seqs[-1] if seqs else None,
+            "winner_seats": winners,
+            "ended": bool(final_state.get("round_ended", False)),
+        })
+    return rounds
 
 
 def local_session(record):

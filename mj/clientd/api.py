@@ -237,20 +237,29 @@ def api_router(arena_root=None, games_root=None, seed_root=None,
         return 200, {"gid": None, "path": path, "frames": frames,
                      "n_frames": len(frames), "session": session}
 
-    @router.get("/api/records/online/:gid/frames")
+    @router.get("/api/records/online/:record_id/frames")
     def _online_frames(request):
-        gid = request.params["gid"]
-        hits = index_online_games(games_root, gid)
+        record_id = request.params["record_id"]
+        # New clients address a specific indexed file. Keep the short-gid
+        # lookup for older clients, where it may legitimately match many rows.
+        hits = index_online_games(games_root, record_id=record_id)
+        if not hits and "~" not in record_id:
+            hits = index_online_games(games_root, record_id)
         if not hits:
-            raise NotFoundError(f"online game not found: {gid}")
+            raise NotFoundError(f"online game not found: {record_id}")
         from .. import logview
         from .replay import online_session
-        path = hits[0]["path"]
+        selected = hits[0]
+        path = selected["path"]
         records = logview.load_records(str(path))
-        session = online_session(records, session_id=gid, path=str(path))
+        session = online_session(
+            records, session_id=selected.get("record_id", record_id),
+            path=str(path))
         frames = [step["state"] for step in session["steps"]]
         verifications = session["metadata"].get("verifications", [])
-        return 200, {"gid": gid, "path": str(path), "frames": frames,
+        return 200, {"gid": selected["gid"],
+                     "record_id": selected.get("record_id"),
+                     "path": str(path), "frames": frames,
                      "n_frames": len(frames),
                      "verifications": verifications, "session": session}
 

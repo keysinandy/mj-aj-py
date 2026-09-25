@@ -315,7 +315,10 @@ export function RecordsBrowser({ onOpenLocal, onOpenOnline }: Props) {
               {expandedOnlineDays[date] && (
                 <div className="online-log-list">
                   {games.map((game) => (
-                    <article key={game.gid} className="online-log-row">
+                    <article
+                      key={game.record_id ?? `${game.date}:${game.name}`}
+                      className="online-log-row"
+                    >
                       <div className="online-log-time">
                         <span className="time-dot" aria-hidden="true" />
                         <time dateTime={game.started_at ? new Date(game.started_at * 1000).toISOString() : undefined}>
@@ -335,7 +338,10 @@ export function RecordsBrowser({ onOpenLocal, onOpenOnline }: Props) {
                         type="button"
                         className="record-open-button record-open-online"
                         aria-label={`打开 ${game.name}`}
-                        onClick={() => onOpenOnline(game.gid, `${game.name} (${game.date})`)}
+                        onClick={() => onOpenOnline(
+                          game.record_id ?? game.gid,
+                          `${game.name} (${game.date})`,
+                        )}
                       >
                         打开日志
                       </button>
