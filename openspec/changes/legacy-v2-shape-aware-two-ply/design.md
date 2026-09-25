@@ -1,24 +1,36 @@
 ## Context
 
-当前普通弃牌路径可概括为：
+当前普通弃牌实际上先分流；本 change 必须覆盖两条可到达路径：
 
 ~~~text
 legal discard roots
     ↓
-root shanten
+root shanten / best_s
     ↓
-current ukeire
-    ↓
-shape_guard / frontier cap
-    ↓
-Rust weighted two-ply
-    ↓
-Stage A: future shanten improvement mass
-    ↓
-Stage B: child shanten + child ukeire + child ukeire types
-    ↓
-root weighted comparator
+hero 持白板财神 && best_s == 0 ?
+    ├─ yes → push X/Y/Z guard
+    │        ↓
+    │      _choose_discard_baotou()
+    │        ↓
+    │      成功则直接 RETURN
+    │      （不进入 weighted two-ply）
+    │
+    └─ no / baotou fallback
+             ↓
+         current ukeire
+             ↓
+      shape_guard / frontier cap
+             ↓
+      Rust weighted two-ply
+             ↓
+      Stage A: future shanten improvement mass
+             ↓
+      Stage B: child shanten + child ukeire + child ukeire types
+             ↓
+      root weighted comparator
 ~~~
+
+因此，用户完整牌例属于 `baotou_scope` golden；普通 weighted two-ply 的 child/future shape 必须用独立 fixture 验证，不能用同一个最终动作测试假装覆盖两条路径。
 
 这里存在两个不同概念，当前代码却部分混在一起：
 
@@ -152,7 +164,7 @@ encoded 只用于跨 FFI / 聚合，必须由 versioned tuple 进行无碰撞或
 
 ~~~text
 concealed before discard:
-23455m 124s EE W
+23455m 124s EE w
 
 open meld:
 789p
@@ -161,8 +173,8 @@ open meld:
 候选：
 
 ~~~text
-discard 1s -> 23455m 24s EE W
-discard 4s -> 23455m 12s EE W
+discard 1s -> 23455m 24s EE w
+discard 4s -> 23455m 12s EE w
 ~~~
 
 已知条件：
@@ -174,7 +186,7 @@ waits:
 5m x2
 3s x4
 E  x2
-W  x3
+w  x3
 ~~~
 
 当其他更高优先级指标相同，且 feed_risk 差异只处于当前低风险 tie-break 层时：
@@ -184,18 +196,57 @@ standing_shape(24s) > standing_shape(12s)
 selected discard = 1s
 ~~~
 
-同时必须提供 draw=5s 的 two-ply branch 断言：
+该完整牌例 MUST 通过真实 `baotou_scope` 路径验收，而不是直接调用 weighted root evaluator 绕开早退。其最终动作修复依赖 baotou tie-break 的 standing shape。
+
+另外必须建立一个**独立的 weighted Stage B fixture**（可直接构造 speed-equivalent roots）覆盖未来结构：
 
 ~~~text
-24s + 5s
+root retains 24s
+simulate draw 5s
     -> best child discard 2s
     -> retains 45s
-    -> child shape superior to penchan-like continuation
+    -> child shape superior to a speed-equivalent penchan continuation
 ~~~
 
-该 fixture 不允许只通过写死 1s/4s 牌号特判。
+两个 fixture 都不允许通过写死 1s/4s 或特定牌号特判。
 
-### D5 Root frontier 使用 post-discard standing shape
+### D5 baotou_scope 必须使用 shape-aware tie-break，且不得假装进入 two-ply
+
+当前 `_choose_discard_baotou()` 的稳定 key 为：
+
+~~~text
+baotou tier
+不主动弃白板财神
+baotou_ukeire descending
+legacy discard shape cost ascending
+feed risk ascending
+stable tile
+~~~
+
+shape-aware profile 开启后改为：
+
+~~~text
+baotou tier
+不主动弃白板财神
+baotou_ukeire descending
+standing shape quality descending    # new
+legacy discard shape cost ascending
+feed risk ascending
+stable tile
+~~~
+
+约束：
+
+- baotou tier、财神保护、baotou_ukeire 的优先级完全不变；
+- standing shape 只在上述指标全部打平后生效；
+- 本阶段不调用 generic weighted two-ply，也不新增 future-shape DFS；
+- feature flag 关闭时 key 与旧实现逐项一致；
+- Rust baotou kernel 不可用、节点预算超限或 X/Y/Z 收手时，继续沿用既有整档 fallback，不允许 shape 部分结果污染 fallback；
+- 用户完整牌例的修复 MUST 来自此路径。
+
+若未来需要在 baotou_scope 内比较“下一摸后的 shape”，必须新增单独的、有显式节点/延迟预算的 baotou future metric；不得复用普通 weighted two-ply 的完成状态或假称 Stage B 已执行。
+
+### D6 Root frontier 使用 post-discard standing shape
 
 当前 _limit_weighted_frontier 在候选超过 max_frontier_candidates 时使用旧 shape_loss。
 
@@ -219,7 +270,7 @@ shape_guard 的 shape delta 也必须迁移到 standing shape 语义。为避免
 
 建议先以离散 admission rule 实现，例如“候选至少提升一个 taatsu class 且 current ukeire 差距在 slack 内”，再做参数扫描。
 
-### D6 Stage B child comparator 增加 child shape
+### D7 Stage B child comparator 增加 child shape
 
 当前 Stage B 在最小 child shanten 候选内比较 ukeire 与 tile types。
 
@@ -237,7 +288,7 @@ shape MUST 只在前三项相同后生效，防止为了好看结构牺牲真实
 
 Rust run_stage_b_units 与 Python reference 必须共用完全相同的排序。
 
-### D7 future shape 必须聚合回 root
+### D8 future shape 必须聚合回 root
 
 只在 child comparator 使用 shape 仍不够：若两个 root 的 future ukeire / types 聚合相同，root 仍会打平。
 
@@ -263,7 +314,7 @@ weight[t] = max(0, 4 - visible[t])
 
 不得读取真实墙序。
 
-### D8 Root comparator 的新顺序
+### D9 Root comparator 的新顺序
 
 新 shape-aware profile 的 speed root key：
 
@@ -287,7 +338,7 @@ stable tile
 - standing shape 回答当前完全打平时谁的起点更好；
 - feed risk 仍保留，但不应在所有牌效指标相同前抢先压过 24s > 12s 的结构差异。
 
-### D9 Stage A shortcut 保持安全
+### D10 Stage A shortcut 保持安全
 
 Stage A 只基于 future shanten improvement mass 证明严格赢家。
 
@@ -297,7 +348,7 @@ Stage A 只基于 future shanten improvement mass 证明严格赢家。
 - 若 future improve 无法严格分胜负，必须进入 Stage B 才能使用 future ukeire / shape；
 - 不允许因为新增 shape 指标而把一个未完成 Stage B 的 missing shape 当 0 排序。
 
-### D10 Rust contract 与 kernel version
+### D11 Rust contract 与 kernel version
 
 Rust output contract 需要扩展：
 
@@ -315,7 +366,7 @@ Rust output contract 需要扩展：
 - 不得把缺失 future shape 视为 0；
 - evaluation 记录 kernel version mismatch。
 
-### D11 Feature flag 与发布路径
+### D12 Feature flag 与发布路径
 
 新增 profile 字段：
 
@@ -343,7 +394,7 @@ Release:
 - 只有 Phase B 通过第 10～12 节验收，才允许 legacyV2 weighted_online 默认开启；
 - rollback 只需关闭 shape_quality_enabled，不改变历史 evaluator 名称。
 
-### D12 Diagnostics
+### D13 Diagnostics
 
 evaluation/replay 至少增加：
 
@@ -356,8 +407,12 @@ future_shape_quality_sum
 future_shape_quality_mean
 future_shape_denominator
 shape_quality_used
-shape_quality_stage
+shape_quality_stage                  # baotou|root|stage_b
 shape_changed_winner
+decision_scope                       # baotou_scope|weighted_two_ply|legacy
+baotou_tier
+baotou_ukeire
+baotou_shape_used
 stage_b_entered
 ~~~
 
@@ -371,7 +426,7 @@ discard 4s:
 standing = 12s class PENCHAN
 ~~~
 
-以及最终是 root shape 还是 future shape 改变了 winner。
+以及最终是 `baotou_scope`、weighted root shape 还是 weighted future shape 改变了 winner。对 baotou_scope 决策不得伪造 `stage_b_entered=true` 或 future shape 字段。
 
 ## Correctness Validation
 
@@ -385,6 +440,9 @@ standing = 12s class PENCHAN
 - 0～4 财神边界；
 - locked / freeze 只影响合法性与 shanten，不允许 shape helper 扩大合法动作；
 - visible 改变只影响 ukeire weight，不改变同一个 standing counts 的纯 shape signature；
+- 用户完整牌例必须证明实际 `decision_scope=baotou_scope`、旧 key 选 4s、shape-aware key 选 1s；
+- baotou tier 与 baotou_ukeire 不打平时，standing shape 不得覆盖它们；
+- 独立 weighted Stage B fixture 覆盖 `24s + 5s -> 打2s留45s`；
 - Python/Rust 至少 10000 个随机合法 standing hands parity；
 - targeted golden fixtures 全部 parity；
 - kernel mismatch、budget fallback、partial_not_acceptable 事务回退。
@@ -427,7 +485,8 @@ Stage 2 confirm:
 报告分桶至少包括：
 
 - shape_changed_winner / unchanged；
-- root-shape-only / future-shape-changed；
+- decision_scope：baotou_scope / weighted_two_ply / legacy-fallback；
+- baotou-shape-changed / root-shape-only / future-shape-changed；
 - shanten 0 / 1 / 2+；
 - open meld count；
 - wall-left quartile；
@@ -446,6 +505,8 @@ complete rate
 partial accepted rate
 fallback rate + reason
 stage_b_entered rate
+baotou_scope count + baotou_elapsed_ms p50/p95/p99/max
+baotou_shape_changed rate
 shape evaluator p50/p95/p99
 4-bot elapsed/game p50/p95
 games/sec
