@@ -24,16 +24,27 @@ def _empty_arrays():
 
 
 def gather_rollout(policy, *, n_decisions: int, seed: int = 0, hero: int = 0,
-                   ycbk: bool = False, max_episodes: int = 500,
+                   ycbk: bool = False, max_episodes: int = 0,
                    shape_k: float = 0.0, strict_learned: bool = True):
     """Collect complete episodes until at least ``n_decisions`` are present.
 
     The final episode is allowed to finish after the target count so every
     shard has a terminal boundary for GAE.  The sampled action and old values
     are recorded from the exact frozen policy used by the actor.
+
+    ``max_episodes`` is a fail-loud ceiling, not a rollout budget.  When it is
+    ``<= 0`` it is scaled from ``n_decisions`` so that large rollouts are not
+    silently truncated by a fixed small cap (a fixed ``500`` capped real runs
+    at ~4.3k discard decisions).
     """
     if int(n_decisions) <= 0:
         raise ValueError("n_decisions must be positive")
+    if int(max_episodes) <= 0:
+        max_episodes = int(n_decisions) * 3 + 300
+    try:
+        device = next(policy.parameters()).device
+    except (StopIteration, AttributeError):
+        device = torch.device("cpu")
     env = MahjongDiscardEnv(
         you_cai_bi_kao=ycbk, seed=seed, hero=hero, shape_k=shape_k,
         strict_learned=strict_learned)
@@ -61,10 +72,11 @@ def gather_rollout(policy, *, n_decisions: int, seed: int = 0, hero: int = 0,
                 if not bool(mask.any()):
                     raise RuntimeError("rollout reached a state with no legal discard")
                 planes_t = torch.as_tensor(
-                    planes, dtype=torch.float32).unsqueeze(0)
+                    planes, dtype=torch.float32, device=device).unsqueeze(0)
                 scalars_t = torch.as_tensor(
-                    scalars, dtype=torch.float32).unsqueeze(0)
-                mask_t = torch.as_tensor(mask, dtype=torch.bool).unsqueeze(0)
+                    scalars, dtype=torch.float32, device=device).unsqueeze(0)
+                mask_t = torch.as_tensor(
+                    mask, dtype=torch.bool, device=device).unsqueeze(0)
                 with torch.no_grad():
                     logits, value = policy(planes_t, scalars_t)
                     masked_logits = logits.masked_fill(~mask_t, float("-inf"))

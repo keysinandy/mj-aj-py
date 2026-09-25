@@ -107,7 +107,7 @@ def execute_rl_rollout(job: dict, *, cache_dir: str, device: str = "cpu",
         policy, n_decisions=int(payload.get("n_decisions", 1024)),
         seed=int(payload.get("seed_start", 0)), hero=int(payload.get("hero", 0)),
         ycbk=bool(payload.get("you_cai_bi_kao", False)),
-        max_episodes=int(payload.get("max_episodes", 500)),
+        max_episodes=int(payload.get("max_episodes", 0)),
         shape_k=shape_k,
         strict_learned=True)
     # 写入 cache/<job_id>/rollout.npz → 由 worker._publish stage+publish

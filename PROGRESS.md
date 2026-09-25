@@ -691,6 +691,26 @@ locked 手牌向听数虚高 bug(见下)。
     `git diff --check` 均通过。
 
 
+15. **Mini-Suphx v2 单机 PPO 三连 bug(2026-09-25 smoke 闭环抓出,已修)**:
+    - **rollout 设备不匹配**:`mj/training/ppo_rollout.py::gather_rollout` 的
+      `planes_t/scalars_t/mask_t` 固定建在 CPU,而 policy 在 cuda → weight 在
+      cuda、输入在 cpu,`--device cuda` 必挂。修复:探测 `policy.parameters()`
+      首参所在 device,输入张量同设备创建。
+    - **max_episodes 硬编码 500 截断 rollout**:实测约 8.6 决策/局,500 局只够
+      ~4.3k 决策,正式 rollout 16384/32768 在此必然报错(永远采不满)。
+      修复:`max_episodes<=0` 时按 `n_decisions×3+300` 缩放(是 fail-loud 兜底,
+      非预算);`distributed_rollout.py` 的默认 `500` 同步改 `0`。
+    - **checkpoint resume 的 RNG 状态设备错乱**:`torch.load(map_location=cuda)`
+      把 RNG 的 uint8 ByteTensor 也搬到 cuda,而 torch 2.x 的
+      `set_rng_state`(CPU 生成器)与 `cuda.set_rng_state_all`(各设备状态实际以
+      **CPU** 字节张量存储)都拒收 cuda 张量 → resume PPO 报
+      `RNG state must be a torch.ByteTensor`。修复:恢复前对 torch 状态
+      `.cpu()`、cuda 各状态逐个 `.cpu()`。
+
+    **验收**(smoke campaign `runs/minisuphx/smoke`):create→legacy BC→BC anchor
+    →DAgger D1→PPO 一期→smoke gate→resume 全闭环跑通;从 policy_v0 checkpoint
+    续训 8192 决策成功并发布 policy_v2。相关单测 49 passed。
+
 ### 性能现状(2026-09-03,shanten 剪枝界重构 + shanten/is_win 记忆化)
 - 自博弈(4 bot,同种子 A/B):662ms → 142ms/局(**4.7 倍**)
 - 评估负载:4 bots 100 局 12s(8.3 局/秒);1 bot vs 3 随机 20 局/秒
@@ -703,6 +723,14 @@ locked 手牌向听数虚高 bug(见下)。
   (数据生成线性扩展,8 核 ≈ 60 局/秒,当前 RL 吞吐预估已够用)
 
 ### Rust 内核(rust/,2026-09-11 落地并接入默认路径)
+
+**无 sudo 机器+C 工具链缺失的构建路径(2026-09-25,勿重演)**:编译 pyo3
+扩展需要 C 链接器,系统没有 gcc/clang 时可 pip 装 `ziglang` 当
+`cc`(zig cc == clang + 内置链接器):配 `rust/.cargo/config.toml`
+`[target.x86_64-unknown-linux-gnu] linker=/path/to/zigcc.sh`(wrapper 一行
+`exec <venv>/ziglang/zig cc "$@"`),然后 `maturin develop --release`。
+本机即此路径,rustc 1.98.1 + ziglang 0.16.0,`scripts/rust_parity.py`
+全过。若 wrapper 在 /tmp 重启后失效,建议固化进仓库用相对路径。
 
 shanten/ukeire 的 Rust 移植(rust/src/lib.rs,算法与 Python 逐分支
 对应,无记忆化)。构建:`python3 -m pip install -e rust/`(maturin);

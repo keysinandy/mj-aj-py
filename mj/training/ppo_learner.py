@@ -498,7 +498,12 @@ class PPOLearner:
         if rng.get("numpy") is not None:
             np.random.set_state(rng["numpy"])
         if rng.get("torch") is not None:
-            torch.set_rng_state(rng["torch"])
+            torch_state = rng["torch"]
+            if hasattr(torch_state, "cpu"):
+                torch_state = torch_state.cpu()
+            torch.set_rng_state(torch_state)
         if rng.get("cuda") is not None and torch.cuda.is_available():
-            torch.cuda.set_rng_state_all(rng["cuda"])
+            cuda_states = [s.cpu() if hasattr(s, "cpu") else s
+                           for s in rng["cuda"]]
+            torch.cuda.set_rng_state_all(cuda_states)
         return manifest
