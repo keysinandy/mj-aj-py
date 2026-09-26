@@ -27,6 +27,20 @@ Draw branches SHALL continue to be visited in descending remaining weight, then 
 - **WHEN** two legal child discards have shanten 1 and 2
 - **THEN** only the shanten-1 child is eligible to win regardless of shape quality
 
+#### Scenario: Worse-shanten child is not expanded
+- **WHEN** two legal child discards have shanten 1 and 2
+- **THEN** only the shanten-1 child is eligible for child ukeire evaluation
+
+#### Scenario: Equal-shanten children retain policy tie-breaks
+- **WHEN** two child discards tie on shanten and weighted ukeire
+- **THEN** the evaluator may use ukeire tile-kind count, shape, feed risk, and stable tile order without changing the public-information metrics
+
+#### Scenario: Lazy expansion preserves exact result
+- **WHEN** all branches finish without a budget boundary
+- **THEN** lazy evaluation returns the same selected child and aggregate weighted metrics as evaluating ukeire for every child
+
+## ADDED Requirements
+
 ### Requirement: Weighted root metrics SHALL include future standing shape
 
 For every completed root, the weighted evaluator SHALL aggregate child standing shape over the same public unseen-tile mass used by future ukeire.

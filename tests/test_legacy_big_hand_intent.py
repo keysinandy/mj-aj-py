@@ -23,7 +23,8 @@ from mj.legacy_eval import (
     evaluate_legacy_two_ply,
 )
 from mj.shanten import shanten, ukeire
-from mj.tiles import W
+from mj.shape_quality import standing_shape_quality
+from mj.tiles import W, counts
 
 try:
     from tests.test_legacy_eval import _seq100_game
@@ -202,12 +203,20 @@ class TestLegacyV2BigHandBaseline(unittest.TestCase):
                          "frontier_cap_no_challenger_slot")
 
     def test_shape_and_big_hand_guards_share_the_three_root_cap(self):
+        primary_shape = standing_shape_quality(counts("12s"))
+        admitted_shape = standing_shape_quality(counts("23s"))
         primary = LegacyRootCandidate(
             tile=3, hand=(0,) * 34, shanten=1, shape_loss=20,
-            current_ukeire=12, shanten_verified=True)
+            current_ukeire=12, shanten_verified=True,
+            standing_shape_quality=primary_shape.encoded,
+            standing_shape_signature=primary_shape.signature,
+            shape_quality_version=primary_shape.version)
         shape_root = LegacyRootCandidate(
             tile=4, hand=(0,) * 34, shanten=1, shape_loss=0,
-            current_ukeire=11, shanten_verified=True)
+            current_ukeire=11, shanten_verified=True,
+            standing_shape_quality=admitted_shape.encoded,
+            standing_shape_signature=admitted_shape.signature,
+            shape_quality_version=admitted_shape.version)
         intent_root = LegacyRootCandidate(
             tile=5, hand=(0,) * 34, shanten=1, shape_loss=1,
             current_ukeire=9, shanten_verified=True,
@@ -215,7 +224,9 @@ class TestLegacyV2BigHandBaseline(unittest.TestCase):
             intent_strength="STRONG", chiitoi_shanten=1,
             luxury_upgrade_live=2, luxury_upgrade_tiles=(5,))
         profile = LegacyTwoPlyProfile.weighted_online(
-            big_hand_enabled=True, max_frontier_candidates=3)
+            big_hand_enabled=True, max_frontier_candidates=3,
+            shape_quality_enabled=True, shape_quality_stage="root",
+            shape_quality_guard_enabled=True)
         shape_diagnostics = (
             (primary, True, ()),
             (shape_root, False, ("current_ukeire_frontier",)),
@@ -246,7 +257,9 @@ class TestLegacyV2BigHandBaseline(unittest.TestCase):
             intent_kinds=(CHIITOI, WHITE_RICH),
             intent_strength="STRONG", chiitoi_shanten=1,
             pair_units=4, wild_count=2)
-        profile = LegacyTwoPlyProfile.weighted_online()
+        profile = LegacyTwoPlyProfile.weighted_online(
+            shape_quality_enabled=False,
+            shape_quality_guard_enabled=False)
         self.assertIsNone(_big_hand_route_reason(
             candidate, profile, speed_winner=speed, locked=0,
             plus_one=True))
@@ -465,7 +478,9 @@ class TestLegacyV2BigHandBaseline(unittest.TestCase):
             shanten_verified=True)
         diagnostics = ((primary, True, ()),
                        (guarded, False, ("current_ukeire_frontier",)))
-        profile = LegacyTwoPlyProfile.weighted_online()
+        profile = LegacyTwoPlyProfile.weighted_online(
+            shape_quality_enabled=False,
+            shape_quality_guard_enabled=False)
         with patch("mj.legacy_eval._weighted_native_ready", return_value=True):
             frontier, _diagnostics, guard, admitted_by = _apply_shape_guard(
                 (primary,), diagnostics, profile)

@@ -1,0 +1,35 @@
+{
+  "name": "124s central-kanchan versus penchan with wildcard",
+  "source": "legacy-v2-shape-aware-two-ply OpenSpec golden",
+  "hero_seat": 0,
+  "concealed_before_discard": "23455m 124s EE w",
+  "wildcard_notation": "lowercase w is white dragon / 财神 (tile 33)",
+  "open_melds": [
+    {"kind": "chow", "tiles": "789p"}
+  ],
+  "public_discards": [[], [], [], []],
+  "candidate_discards": {
+    "1s": {"retained_shape": "24s"},
+    "4s": {"retained_shape": "12s"}
+  },
+  "expected_equal_metrics": {
+    "shanten": 0,
+    "ukeire": 11,
+    "ukeire_tiles": {"5m": 2, "3s": 4, "E": 2, "white": 3}
+  },
+  "baseline": {
+    "decision_scope": "baotou_scope",
+    "baotou_tier": 1,
+    "baotou_ukeire_1s": 0,
+    "baotou_ukeire_4s": 0,
+    "legacy_shape_loss_1s": 5,
+    "legacy_shape_loss_4s": 3,
+    "selected": "4s",
+    "stage_b_entered": false
+  },
+  "future_branch": {
+    "draw": "5s",
+    "discard_after_root_1s": "2s",
+    "retained_after_root_1s": "45s"
+  }
+}

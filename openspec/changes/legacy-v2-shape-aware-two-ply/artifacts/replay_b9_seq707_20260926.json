@@ -1,0 +1,87 @@
+{
+  "schema": "legacy-v2-shape-aware-two-ply/replay-case-v1",
+  "source_record": "local/games/20260923/tournament_t_069a55e84b26_b9_t4.jsonl",
+  "seq": 707,
+  "seat": 0,
+  "public_state_only": true,
+  "recorded_action": 21,
+  "recorded_action_name": "4s",
+  "evaluator_results": {
+    "baseline": {
+      "selected": 21,
+      "decision_scope": "baotou_scope",
+      "shape_changed_winner": false,
+      "stage_b_entered": false,
+      "fallback_reason": null,
+      "candidate_1s": {
+        "shanten": 0,
+        "current_ukeire": 11,
+        "baotou_ukeire": 0,
+        "standing_shape_quality": null,
+        "standing_shape_signature": null,
+        "discard_shape_cost": 5,
+        "feed_risk": 0.0,
+        "baotou_tier": 1
+      },
+      "candidate_4s": {
+        "shanten": 0,
+        "current_ukeire": 11,
+        "baotou_ukeire": 0,
+        "standing_shape_quality": null,
+        "standing_shape_signature": null,
+        "discard_shape_cost": 3,
+        "feed_risk": 0.5,
+        "baotou_tier": 1
+      }
+    },
+    "shape_phase_b": {
+      "selected": 18,
+      "decision_scope": "baotou_scope",
+      "shape_changed_winner": true,
+      "stage_b_entered": false,
+      "fallback_reason": null,
+      "candidate_1s": {
+        "shanten": 0,
+        "current_ukeire": 11,
+        "baotou_ukeire": 0,
+        "standing_shape_quality": 285278254,
+        "standing_shape_signature": [
+          1,
+          1,
+          0,
+          1,
+          0,
+          0,
+          2,
+          0
+        ],
+        "discard_shape_cost": 5,
+        "feed_risk": 0.0,
+        "baotou_tier": 1
+      },
+      "candidate_4s": {
+        "shanten": 0,
+        "current_ukeire": 11,
+        "baotou_ukeire": 0,
+        "standing_shape_quality": 285212974,
+        "standing_shape_signature": [
+          1,
+          1,
+          0,
+          0,
+          0,
+          1,
+          2,
+          0
+        ],
+        "discard_shape_cost": 3,
+        "feed_risk": 0.5,
+        "baotou_tier": 1
+      }
+    }
+  },
+  "action_names": {
+    "baseline": "4s",
+    "shape_phase_b": "1s"
+  }
+}

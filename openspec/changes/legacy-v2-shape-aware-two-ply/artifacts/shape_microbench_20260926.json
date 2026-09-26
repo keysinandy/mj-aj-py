@@ -1,0 +1,37 @@
+{
+  "schema": "legacy-v2-shape-aware-two-ply/shape-microbench-v1",
+  "shape_quality_version": "standing-shape-v1",
+  "iterations_per_kernel": 10000,
+  "fixture_count": 256,
+  "seed": 20260926,
+  "python_reference": {
+    "calls": 10000,
+    "unit": "ms/call",
+    "p50": 0.025085,
+    "p95": 0.027329199999999998,
+    "p99": 0.04867268000000006,
+    "max": 0.141483,
+    "mean": 0.0258016834
+  },
+  "rust_native": {
+    "calls": 10000,
+    "unit": "ms/call",
+    "p50": 0.00675,
+    "p95": 0.0116741,
+    "p99": 0.020648370000000006,
+    "max": 0.093124,
+    "mean": 0.007453995299999999
+  },
+  "kernel_runtime": {
+    "shanten_kernel": "rust",
+    "weighted_kernel": "rust",
+    "weighted_kernel_version": "rust-weighted-two-ply-v4",
+    "weighted_kernel_required": "rust-weighted-two-ply-v4",
+    "weighted_kernel_compatible": true,
+    "legacy_two_ply_kernel_version": "rust-legacy-two-ply-v1",
+    "baotou_kernel": "rust",
+    "degraded": false,
+    "reason": null,
+    "impact": null
+  }
+}

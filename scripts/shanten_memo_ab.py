@@ -64,7 +64,9 @@ def _set_mode(memo: bool) -> None:
 def _measure(memo: bool, workers: int, states: int, seed: int) -> dict:
     _set_mode(memo)
     os.environ[THREADS_ENV] = str(workers)
-    profile = LegacyTwoPlyProfile.weighted_online(kernel="rust", workers=workers)
+    profile = LegacyTwoPlyProfile.weighted_online(
+        kernel="rust", workers=workers,
+        shape_quality_enabled=False, shape_quality_guard_enabled=False)
     load_before = _system_load()
     cpu_before = time.process_time()
     summary = bench_run(states, seed, profile)

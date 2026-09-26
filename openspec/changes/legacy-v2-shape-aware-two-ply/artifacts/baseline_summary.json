@@ -1,0 +1,44 @@
+{
+  "schema": "legacy-v2-shape-aware-two-ply/baseline-summary-v1",
+  "captured_at": "2026-09-26",
+  "source_code_commit": "debc572edc188cd10cf6f14c766985827d5ae3cc",
+  "documentation_head": "9fde4cf4ea4490d9d36e7f65c32b3b01af5257c0",
+  "ordinary_discard": {
+    "samples": [
+      "ordinary_baseline_1.json",
+      "ordinary_baseline_2.json",
+      "ordinary_baseline_3.json"
+    ],
+    "decisions_per_sample": 1000,
+    "p50_ms_median_of_samples": 1.1094649962615222,
+    "p95_ms_median_of_samples": 2.034656994510442,
+    "p99_ms_median_of_samples": 2.6867580018006265,
+    "max_ms_max_across_samples": 67.22907500807196,
+    "rust_raw_p50_ms_median_of_samples": 6.4099890005309135,
+    "rust_raw_p95_ms_median_of_samples": 14.462823994108476,
+    "rust_raw_p99_ms_median_of_samples": 18.317887996090576,
+    "rust_raw_max_ms_max_across_samples": 50.65159499645233,
+    "complete_per_sample": 0,
+    "partial_accepted_per_sample": 0,
+    "fallback_per_sample": 1000,
+    "stage_b_entered_per_sample": 0,
+    "dominant_fallback": "native_weighted_kernel_version_mismatch",
+    "method_note": "Each sample is summarized independently; reported percentiles are the median of the three sample percentiles, and max is the largest single-decision maximum. The samples are not pooled because raw duration vectors are not retained."
+  },
+  "four_bot": {
+    "samples": [
+      "four_bot_baseline_1.json",
+      "four_bot_baseline_2.json",
+      "four_bot_baseline_3.json"
+    ],
+    "games_per_sample": 200,
+    "elapsed_ms_per_game_p50_median_of_samples": 64.33734300662763,
+    "elapsed_ms_per_game_p95_median_of_samples": 109.47725900041405,
+    "elapsed_ms_per_game_p99_median_of_samples": 141.90286700613797,
+    "elapsed_ms_per_game_max_max_across_samples": 212.42407499812543,
+    "decisions_per_game_mean_across_samples": 159.12333333333333,
+    "games_per_second_mean_across_samples": 15.163,
+    "seat_schedule": "game_index % 4 is dealer; all four seats use legacyV2"
+  },
+  "runtime_limit": "The installed wheel exports rust-weighted-two-ply-v2 while this checkout requires rust-weighted-two-ply-v3; online weighted evaluation transactionally fell back for every sampled state. Raw Rust timings measure the installed v2 kernel and are not representative of an integrated v3 candidate."
+}

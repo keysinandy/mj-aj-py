@@ -1,4 +1,4 @@
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: 持财神非爆头听牌态使用爆头进张度量(自适应收手)
 

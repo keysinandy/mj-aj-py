@@ -1,0 +1,615 @@
+{
+  "schema": "legacy-v2-shape-aware-two-ply/historical-replay-scan-v1",
+  "source_root": "local/games",
+  "source_files_available": 1011,
+  "sampling": "sorted paths with evenly spaced deterministic indices",
+  "sampled_paths": [
+    "local/games/20260908/u_9812ba08fe2f_a_21d466fbba61_r1_b0_t0.jsonl",
+    "local/games/20260908/u_9812ba08fe2f_a_36e67452e6f5_r1_b7_t0.jsonl",
+    "local/games/20260908/u_9812ba08fe2f_a_85e92476a6ca_r1_b4_t0.jsonl",
+    "local/games/20260908/u_9812ba08fe2f_a_ac117b4a5876_r1_b1_t0.jsonl",
+    "local/games/20260909/u_9812ba08fe2f_a_02779bbaf026_r1_b8_t0.jsonl",
+    "local/games/20260909/u_9812ba08fe2f_a_19d56a5bc8ac_r1_b6_t0.jsonl",
+    "local/games/20260909/u_9812ba08fe2f_a_1e305ce0e7bd_r1_b3_t0.jsonl",
+    "local/games/20260909/u_9812ba08fe2f_a_513a891456a8_r1_b0_t0.jsonl",
+    "local/games/20260909/u_9812ba08fe2f_a_5ac890c2069d_r1_b7_t0.jsonl",
+    "local/games/20260909/u_9812ba08fe2f_a_74bbd6dfd877_r1_b4_t0.jsonl",
+    "local/games/20260909/u_9812ba08fe2f_a_be213fbb6ef7_r1_b1_t0.jsonl",
+    "local/games/20260909/u_9812ba08fe2f_a_cfb035fec9da_r1_b8_t0.jsonl",
+    "local/games/20260909/u_9812ba08fe2f_a_ec70382aea62_r1_b5_t0.jsonl",
+    "local/games/20260909/u_9812ba08fe2f_a_f1349e3e8500_r1_b3_t0.jsonl",
+    "local/games/20260910/u_9812ba08fe2f_a_59753d3945aa_r1_b0_t0.jsonl",
+    "local/games/20260910/u_9812ba08fe2f_a_6e9d146f7906_r1_b7_t0.jsonl",
+    "local/games/20260910/u_9812ba08fe2f_a_8bbc394d729b_r1_b4_t0.jsonl",
+    "local/games/20260910/u_9812ba08fe2f_a_d8af50e34e15_r1_b1_t0.jsonl",
+    "local/games/20260910/u_9812ba08fe2f_a_e2b47e90ea65_r1_b8_t0.jsonl",
+    "local/games/20260911/u_9812ba08fe2f_a_0ed057e4ffed_r1_b5_t0.jsonl",
+    "local/games/20260911/u_9812ba08fe2f_a_261c9d69f309_r1_b2_t0.jsonl",
+    "local/games/20260911/u_9812ba08fe2f_a_4854d51057d2_r1_b9_t0.jsonl",
+    "local/games/20260911/u_9812ba08fe2f_a_bfea3a076c94_r1_b7_t0.jsonl",
+    "local/games/20260911/u_9812ba08fe2f_a_f2043544d853_r1_b4_t0.jsonl",
+    "local/games/20260912/u_9812ba08fe2f_a_15f54c063c4d_r1_b1_t0.jsonl",
+    "local/games/20260912/u_9812ba08fe2f_a_177bcc01a800_r1_b8_t0.jsonl",
+    "local/games/20260912/u_9812ba08fe2f_a_37c89dbdcac8_r1_b5_t0.jsonl",
+    "local/games/20260912/u_9812ba08fe2f_a_50d12d355d04_r1_b2_t0.jsonl",
+    "local/games/20260912/u_9812ba08fe2f_a_66cfac604788_r1_b9_t0.jsonl",
+    "local/games/20260912/u_9812ba08fe2f_a_a634405df327_r1_b6_t0.jsonl",
+    "local/games/20260912/u_9812ba08fe2f_a_eaf5bdd6d3ce_r1_b4_t0.jsonl",
+    "local/games/20260913/u_9812ba08fe2f_a_845305dc374e_r1_b1_t0.jsonl",
+    "local/games/20260913/u_9812ba08fe2f_a_9f36a2e9d76f_r1_b8_t0.jsonl",
+    "local/games/20260913/u_9812ba08fe2f_a_d723b95f88cb_r1_b5_t0.jsonl",
+    "local/games/20260914/u_9812ba08fe2f_a_0b3ed63c88ae_r1_b2_t0.jsonl",
+    "local/games/20260914/u_9812ba08fe2f_a_30361c544db9_r1_b9_t0.jsonl",
+    "local/games/20260914/u_9812ba08fe2f_a_bc5acdc75e81_r1_b6_t0.jsonl",
+    "local/games/20260917/bot_t_b6a783a7fbb0_r1_b4_t0.jsonl",
+    "local/games/20260917/tournament_t_65d538e905c5_b2_t8.jsonl",
+    "local/games/20260917/u_9812ba08fe2f_a_150836e6911d_r1_b9_t0.jsonl",
+    "local/games/20260917/u_9812ba08fe2f_a_47fda164e28e_r1_b6_t0.jsonl",
+    "local/games/20260917/u_9812ba08fe2f_a_87db856b7050_r1_b3_t0.jsonl",
+    "local/games/20260917/u_9812ba08fe2f_a_b0ab4047643c_r1_b0_t0.jsonl",
+    "local/games/20260917/u_9812ba08fe2f_a_b477ae66dabe_r1_b7_t0.jsonl",
+    "local/games/20260917/朱雀_t_b6a783a7fbb0_r2_b4_t0.jsonl",
+    "local/games/20260917/白虎_t_b6a783a7fbb0_r1_b3_t0.jsonl",
+    "local/games/20260920/u_9812ba08fe2f_a_05c9e01d3c12_r1_b8_t0.jsonl",
+    "local/games/20260920/u_9812ba08fe2f_a_2ce7ce2fc923_r1_b6_t0.jsonl",
+    "local/games/20260920/u_9812ba08fe2f_a_79d59fcfddcb_r1_b3_t0.jsonl",
+    "local/games/20260920/u_9812ba08fe2f_a_b3c93556575b_r1_b0_t0.jsonl",
+    "local/games/20260920/u_9812ba08fe2f_a_c42633b8fd15_r1_b7_t0.jsonl",
+    "local/games/20260920/u_9812ba08fe2f_a_daf982ce330a_r1_b4_t0.jsonl",
+    "local/games/20260921/bot_a_c72ca7eebde9_r1_b5_t0.jsonl",
+    "local/games/20260921/u_9812ba08fe2f_a_a3de8f7235a2_r1_b6_t0.jsonl",
+    "local/games/20260921/u_9812ba08fe2f_a_dba40f5f13ae_r1_b3_t0.jsonl",
+    "local/games/20260922/u_9812ba08fe2f_a_10acdd8bd385_r1_b1_t0.jsonl",
+    "local/games/20260922/u_9812ba08fe2f_a_3e6cebc83e2f_r1_b8_t0.jsonl",
+    "local/games/20260922/u_9812ba08fe2f_a_c865bbeb04a5_r1_b5_t0.jsonl",
+    "local/games/20260924/tournament_t_6266386bfd56_b2_t6.jsonl",
+    "local/games/20260925/u_9812ba08fe2f_a_89775585336b_r1_b9_t0.jsonl"
+  ],
+  "baseline_evaluator": "legacy-v2-baseline",
+  "candidate_evaluator": "legacy-v2-shape-phase-b",
+  "public_state_only": true,
+  "hidden_opponent_hands_used": false,
+  "true_wall_order_used": false,
+  "divergence_definition": "candidate action differs from baseline action at a replayed public discard decision",
+  "result": {
+    "files_sampled": 60,
+    "files_with_public_discard_states": 58,
+    "files_with_replay_warnings": 45,
+    "files_with_illegal_replay": 4,
+    "files_with_scan_exceptions": 0,
+    "discard_decision_states_seen": 3843,
+    "paired_discard_evaluations": 3836,
+    "decision_evaluation_exceptions": {
+      "ValueError": 7
+    },
+    "baseline_candidate_divergences": 60,
+    "shape_changed_winner_decisions": 42,
+    "shape_flag_action_mismatches": 18,
+    "shape_flag_action_mismatch_examples": [
+      {
+        "source_path": "20260909/u_9812ba08fe2f_a_02779bbaf026_r1_b8_t0.jsonl",
+        "seq": 321,
+        "baseline_action": "8b",
+        "candidate_action": "1t",
+        "decision_scope": "weighted_two_ply",
+        "shape_quality_stage": "stage_b",
+        "shape_quality_used": true,
+        "selected": 18,
+        "legacy_best": 18,
+        "speed_winner": 18,
+        "shape_baseline_selected": 18,
+        "stage_b_entered": true,
+        "fallback_reason": null,
+        "frontier_guard": {
+          "enabled": true,
+          "shape_quality_enabled": true,
+          "shape_quality_guard_version": "standing-shape-taatsu-gain-v1",
+          "policy": {
+            "slack_ukeire": 1,
+            "taatsu_class_gain": 1,
+            "max_frontier_candidates": 3
+          },
+          "primary_tiles": [
+            11,
+            18,
+            22
+          ],
+          "admitted_tiles": [],
+          "dropped_tiles": [],
+          "skipped_reason": "primary_not_singleton"
+        }
+      },
+      {
+        "source_path": "20260909/u_9812ba08fe2f_a_74bbd6dfd877_r1_b4_t0.jsonl",
+        "seq": 1679,
+        "baseline_action": "8w",
+        "candidate_action": "8t",
+        "decision_scope": "weighted_two_ply",
+        "shape_quality_stage": "stage_b",
+        "shape_quality_used": true,
+        "selected": 25,
+        "legacy_best": 7,
+        "speed_winner": 25,
+        "shape_baseline_selected": 25,
+        "stage_b_entered": true,
+        "fallback_reason": null,
+        "frontier_guard": {
+          "enabled": true,
+          "shape_quality_enabled": true,
+          "shape_quality_guard_version": "standing-shape-taatsu-gain-v1",
+          "policy": {
+            "slack_ukeire": 1,
+            "taatsu_class_gain": 1,
+            "max_frontier_candidates": 3
+          },
+          "primary_tiles": [
+            7,
+            9,
+            25
+          ],
+          "admitted_tiles": [],
+          "dropped_tiles": [],
+          "skipped_reason": "primary_not_singleton"
+        }
+      },
+      {
+        "source_path": "20260910/u_9812ba08fe2f_a_59753d3945aa_r1_b0_t0.jsonl",
+        "seq": 336,
+        "baseline_action": "8b",
+        "candidate_action": "9w",
+        "decision_scope": "weighted_two_ply",
+        "shape_quality_stage": "stage_b",
+        "shape_quality_used": true,
+        "selected": 8,
+        "legacy_best": 16,
+        "speed_winner": 8,
+        "shape_baseline_selected": 8,
+        "stage_b_entered": true,
+        "fallback_reason": null,
+        "frontier_guard": {
+          "enabled": true,
+          "shape_quality_enabled": true,
+          "shape_quality_guard_version": "standing-shape-taatsu-gain-v1",
+          "policy": {
+            "slack_ukeire": 1,
+            "taatsu_class_gain": 1,
+            "max_frontier_candidates": 3
+          },
+          "primary_tiles": [
+            8,
+            16,
+            19
+          ],
+          "admitted_tiles": [],
+          "dropped_tiles": [],
+          "skipped_reason": "primary_not_singleton"
+        }
+      },
+      {
+        "source_path": "20260910/u_9812ba08fe2f_a_8bbc394d729b_r1_b4_t0.jsonl",
+        "seq": 35,
+        "baseline_action": "1b",
+        "candidate_action": "7b",
+        "decision_scope": "legacy",
+        "shape_quality_stage": "stage_b",
+        "shape_quality_used": false,
+        "selected": 15,
+        "legacy_best": 15,
+        "speed_winner": 15,
+        "shape_baseline_selected": null,
+        "stage_b_entered": true,
+        "fallback_reason": "partial_not_acceptable",
+        "frontier_guard": {
+          "enabled": true,
+          "shape_quality_enabled": true,
+          "shape_quality_guard_version": "standing-shape-taatsu-gain-v1",
+          "policy": {
+            "slack_ukeire": 1,
+            "taatsu_class_gain": 1,
+            "max_frontier_candidates": 3
+          },
+          "primary_tiles": [
+            9,
+            12,
+            15
+          ],
+          "admitted_tiles": [],
+          "dropped_tiles": [],
+          "skipped_reason": "primary_not_singleton"
+        }
+      },
+      {
+        "source_path": "20260910/u_9812ba08fe2f_a_8bbc394d729b_r1_b4_t0.jsonl",
+        "seq": 1550,
+        "baseline_action": "1b",
+        "candidate_action": "南",
+        "decision_scope": "weighted_two_ply",
+        "shape_quality_stage": "stage_b",
+        "shape_quality_used": true,
+        "selected": 28,
+        "legacy_best": 15,
+        "speed_winner": 28,
+        "shape_baseline_selected": 28,
+        "stage_b_entered": true,
+        "fallback_reason": null,
+        "frontier_guard": {
+          "enabled": true,
+          "shape_quality_enabled": true,
+          "shape_quality_guard_version": "standing-shape-taatsu-gain-v1",
+          "policy": {
+            "slack_ukeire": 1,
+            "taatsu_class_gain": 1,
+            "max_frontier_candidates": 3
+          },
+          "primary_tiles": [
+            9,
+            12,
+            28
+          ],
+          "admitted_tiles": [],
+          "dropped_tiles": [],
+          "skipped_reason": "primary_not_singleton"
+        }
+      },
+      {
+        "source_path": "20260911/u_9812ba08fe2f_a_0ed057e4ffed_r1_b5_t0.jsonl",
+        "seq": 358,
+        "baseline_action": "2b",
+        "candidate_action": "8w",
+        "decision_scope": "weighted_two_ply",
+        "shape_quality_stage": "stage_b",
+        "shape_quality_used": true,
+        "selected": 7,
+        "legacy_best": 10,
+        "speed_winner": 7,
+        "shape_baseline_selected": 7,
+        "stage_b_entered": true,
+        "fallback_reason": null,
+        "frontier_guard": {
+          "enabled": true,
+          "shape_quality_enabled": true,
+          "shape_quality_guard_version": "standing-shape-taatsu-gain-v1",
+          "policy": {
+            "slack_ukeire": 1,
+            "taatsu_class_gain": 1,
+            "max_frontier_candidates": 3
+          },
+          "primary_tiles": [
+            7,
+            26,
+            31
+          ],
+          "admitted_tiles": [],
+          "dropped_tiles": [],
+          "skipped_reason": "primary_not_singleton"
+        }
+      },
+      {
+        "source_path": "20260911/u_9812ba08fe2f_a_4854d51057d2_r1_b9_t0.jsonl",
+        "seq": 55,
+        "baseline_action": "1b",
+        "candidate_action": "9b",
+        "decision_scope": "weighted_two_ply",
+        "shape_quality_stage": "stage_b",
+        "shape_quality_used": true,
+        "selected": 17,
+        "legacy_best": 9,
+        "speed_winner": 17,
+        "shape_baseline_selected": 17,
+        "stage_b_entered": true,
+        "fallback_reason": null,
+        "frontier_guard": {
+          "enabled": true,
+          "shape_quality_enabled": true,
+          "shape_quality_guard_version": "standing-shape-taatsu-gain-v1",
+          "policy": {
+            "slack_ukeire": 1,
+            "taatsu_class_gain": 1,
+            "max_frontier_candidates": 3
+          },
+          "primary_tiles": [
+            4,
+            9,
+            17
+          ],
+          "admitted_tiles": [],
+          "dropped_tiles": [],
+          "skipped_reason": "primary_not_singleton"
+        }
+      },
+      {
+        "source_path": "20260912/u_9812ba08fe2f_a_37c89dbdcac8_r1_b5_t0.jsonl",
+        "seq": 418,
+        "baseline_action": "6t",
+        "candidate_action": "9w",
+        "decision_scope": "weighted_two_ply",
+        "shape_quality_stage": "stage_b",
+        "shape_quality_used": true,
+        "selected": 8,
+        "legacy_best": 5,
+        "speed_winner": 8,
+        "shape_baseline_selected": 8,
+        "stage_b_entered": true,
+        "fallback_reason": null,
+        "frontier_guard": {
+          "enabled": true,
+          "shape_quality_enabled": true,
+          "shape_quality_guard_version": "standing-shape-taatsu-gain-v1",
+          "policy": {
+            "slack_ukeire": 1,
+            "taatsu_class_gain": 1,
+            "max_frontier_candidates": 3
+          },
+          "primary_tiles": [
+            5,
+            8,
+            26
+          ],
+          "admitted_tiles": [],
+          "dropped_tiles": [],
+          "skipped_reason": "primary_not_singleton"
+        }
+      },
+      {
+        "source_path": "20260912/u_9812ba08fe2f_a_50d12d355d04_r1_b2_t0.jsonl",
+        "seq": 12,
+        "baseline_action": "4w",
+        "candidate_action": "1w",
+        "decision_scope": "weighted_two_ply",
+        "shape_quality_stage": "stage_b",
+        "shape_quality_used": true,
+        "selected": 0,
+        "legacy_best": 11,
+        "speed_winner": 0,
+        "shape_baseline_selected": 0,
+        "stage_b_entered": true,
+        "fallback_reason": null,
+        "frontier_guard": {
+          "enabled": true,
+          "shape_quality_enabled": true,
+          "shape_quality_guard_version": "standing-shape-taatsu-gain-v1",
+          "policy": {
+            "slack_ukeire": 1,
+            "taatsu_class_gain": 1,
+            "max_frontier_candidates": 3
+          },
+          "primary_tiles": [
+            0,
+            11,
+            15
+          ],
+          "admitted_tiles": [],
+          "dropped_tiles": [],
+          "skipped_reason": "primary_not_singleton"
+        }
+      },
+      {
+        "source_path": "20260912/u_9812ba08fe2f_a_66cfac604788_r1_b9_t0.jsonl",
+        "seq": 1847,
+        "baseline_action": "6w",
+        "candidate_action": "8b",
+        "decision_scope": "weighted_two_ply",
+        "shape_quality_stage": "stage_b",
+        "shape_quality_used": true,
+        "selected": 16,
+        "legacy_best": 11,
+        "speed_winner": 16,
+        "shape_baseline_selected": 16,
+        "stage_b_entered": true,
+        "fallback_reason": null,
+        "frontier_guard": {
+          "enabled": true,
+          "shape_quality_enabled": true,
+          "shape_quality_guard_version": "standing-shape-taatsu-gain-v1",
+          "policy": {
+            "slack_ukeire": 1,
+            "taatsu_class_gain": 1,
+            "max_frontier_candidates": 3
+          },
+          "primary_tiles": [
+            16,
+            17,
+            23
+          ],
+          "admitted_tiles": [],
+          "dropped_tiles": [],
+          "skipped_reason": "primary_not_singleton"
+        }
+      },
+      {
+        "source_path": "20260913/u_9812ba08fe2f_a_d723b95f88cb_r1_b5_t0.jsonl",
+        "seq": 170,
+        "baseline_action": "9w",
+        "candidate_action": "1t",
+        "decision_scope": "weighted_two_ply",
+        "shape_quality_stage": "stage_b",
+        "shape_quality_used": true,
+        "selected": 18,
+        "legacy_best": 7,
+        "speed_winner": 18,
+        "shape_baseline_selected": 18,
+        "stage_b_entered": true,
+        "fallback_reason": null,
+        "frontier_guard": {
+          "enabled": true,
+          "shape_quality_enabled": true,
+          "shape_quality_guard_version": "standing-shape-taatsu-gain-v1",
+          "policy": {
+            "slack_ukeire": 1,
+            "taatsu_class_gain": 1,
+            "max_frontier_candidates": 3
+          },
+          "primary_tiles": [
+            18,
+            21,
+            32
+          ],
+          "admitted_tiles": [],
+          "dropped_tiles": [],
+          "skipped_reason": "primary_not_singleton"
+        }
+      },
+      {
+        "source_path": "20260917/tournament_t_65d538e905c5_b2_t8.jsonl",
+        "seq": 2716,
+        "baseline_action": "4t",
+        "candidate_action": "1t",
+        "decision_scope": "weighted_two_ply",
+        "shape_quality_stage": "stage_b",
+        "shape_quality_used": true,
+        "selected": 18,
+        "legacy_best": 7,
+        "speed_winner": 18,
+        "shape_baseline_selected": 18,
+        "stage_b_entered": true,
+        "fallback_reason": null,
+        "frontier_guard": {
+          "enabled": true,
+          "shape_quality_enabled": true,
+          "shape_quality_guard_version": "standing-shape-taatsu-gain-v1",
+          "policy": {
+            "slack_ukeire": 1,
+            "taatsu_class_gain": 1,
+            "max_frontier_candidates": 3
+          },
+          "primary_tiles": [
+            7,
+            16,
+            18
+          ],
+          "admitted_tiles": [],
+          "dropped_tiles": [],
+          "skipped_reason": "primary_not_singleton"
+        }
+      }
+    ],
+    "scope": {
+      "baotou_scope": 525,
+      "legacy": 117,
+      "weighted_two_ply": 3194
+    },
+    "changed_by_scope": {
+      "baotou_scope": 26,
+      "legacy": 1,
+      "weighted_two_ply": 33
+    },
+    "shape_stage": {
+      "baotou": 232,
+      "full": 1671,
+      "none": 526,
+      "root": 42,
+      "stage_b": 1365
+    },
+    "changed_by_shape_stage": {
+      "baotou": 26,
+      "stage_b": 34
+    },
+    "taatsu_upgrade": {
+      "central_kanchan+1": 4,
+      "no_taatsu_class_gain": 54,
+      "signature_unavailable": 1,
+      "taatsu+1+edge_kanchan+1+penchan+1": 1
+    },
+    "shanten": {
+      "0": 26,
+      "1": 18,
+      "2": 14,
+      "3": 2
+    },
+    "wall_left": {
+      "11-20": 2,
+      "21-40": 20,
+      "41+": 38
+    },
+    "open_meld_count": {
+      "0": 28,
+      "1": 24,
+      "2": 8
+    },
+    "action_pairs": {
+      "1b->1t": 2,
+      "1b->2b": 1,
+      "1b->2t": 1,
+      "1b->7b": 1,
+      "1b->8w": 1,
+      "1b->9b": 1,
+      "1b->9w": 1,
+      "1b->南": 1,
+      "1t->2t": 1,
+      "1t->5b": 1,
+      "2b->8w": 1,
+      "2t->2w": 1,
+      "2t->5t": 1,
+      "3b->8b": 1,
+      "3t->1t": 1,
+      "3w->6w": 1,
+      "3w->9w": 1,
+      "4b->1b": 1,
+      "4b->5b": 2,
+      "4t->1t": 2,
+      "4t->6t": 1,
+      "4w->1b": 1,
+      "4w->1w": 3,
+      "4w->5w": 1,
+      "4w->7w": 1,
+      "5b->6b": 1,
+      "5t->1b": 1,
+      "5t->9w": 1,
+      "6b->9b": 1,
+      "6t->5t": 1,
+      "6t->9t": 4,
+      "6t->9w": 1,
+      "6w->8b": 1,
+      "6w->8w": 1,
+      "6w->9w": 1,
+      "7b->8b": 1,
+      "7t->6t": 1,
+      "8b->1t": 1,
+      "8b->9w": 1,
+      "8t->9t": 1,
+      "8w->8t": 1,
+      "9b->1t": 1,
+      "9t->5t": 1,
+      "9t->6w": 1,
+      "9t->7t": 1,
+      "9t->8b": 1,
+      "9t->8t": 1,
+      "9w->1t": 2,
+      "9w->7w": 1,
+      "9w->8w": 1,
+      "东->北": 1
+    },
+    "fallback_reasons": {
+      "only_legal_action": 27,
+      "partial_not_acceptable": 1,
+      "visible_invalid": 117
+    },
+    "replay_errors": {
+      "illegal": 10,
+      "warning": 202
+    },
+    "shape_changed_action_rate": 0.01564129301355579,
+    "action_pairs_top20": {
+      "6t->9t": 4,
+      "4w->1w": 3,
+      "1b->1t": 2,
+      "4b->5b": 2,
+      "4t->1t": 2,
+      "9w->1t": 2,
+      "1b->2b": 1,
+      "1b->2t": 1,
+      "1b->7b": 1,
+      "1b->8w": 1,
+      "1b->9b": 1,
+      "1b->9w": 1,
+      "1b->南": 1,
+      "1t->2t": 1,
+      "1t->5b": 1,
+      "2b->8w": 1,
+      "2t->2w": 1,
+      "2t->5t": 1,
+      "3b->8b": 1,
+      "3t->1t": 1
+    }
+  }
+}

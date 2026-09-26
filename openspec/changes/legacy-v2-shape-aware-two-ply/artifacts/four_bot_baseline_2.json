@@ -1,0 +1,72 @@
+{
+  "games": 200,
+  "seed_start": 20261926,
+  "evaluator": "legacyV2",
+  "dealer_schedule": "(game_index % 4)",
+  "elapsed_ms_per_game": {
+    "p50": 64.33734300662763,
+    "p95": 109.94838799524587,
+    "p99": 133.78764200024307,
+    "max": 155.52998700877652,
+    "mean": 67.04132437458611
+  },
+  "decisions_per_game_mean": 160.38,
+  "decisions_total": 32076,
+  "wins": 200,
+  "draws": 0,
+  "settlement_score_totals_by_seat": [
+    -111.0,
+    -42.0,
+    37.0,
+    116.0
+  ],
+  "kernel": {
+    "shanten_kernel": "rust",
+    "weighted_kernel": "rust",
+    "weighted_kernel_version": "rust-weighted-two-ply-v2",
+    "weighted_kernel_required": "rust-weighted-two-ply-v3",
+    "weighted_kernel_compatible": false,
+    "legacy_two_ply_kernel_version": "rust-legacy-two-ply-v1",
+    "baotou_kernel": "rust",
+    "degraded": true,
+    "reason": "weighted_kernel_version_mismatch",
+    "impact": "legacyV2 weighted 前瞻不可用,当前决策将事务性回退 v1"
+  },
+  "profile": {
+    "name": "legacyV2",
+    "version": "legacyV2",
+    "model": "weighted_unseen_one_draw_lazy_best_discard",
+    "rules_version": "hangzhou-platform-guide-v34",
+    "node_budget": 100000,
+    "time_budget_ms": 50.0,
+    "cache_capacity": 8192,
+    "sort_version": "weighted-frontier-v1",
+    "kernel": "auto",
+    "enabled": true,
+    "big_hand": {
+      "version": "legacy-big-hand-intent-v1",
+      "enabled": false,
+      "same_shanten_enabled": true,
+      "plus_one_enabled": false,
+      "min_live": 24,
+      "max_opponent_melds": 1,
+      "min_ukeire": 4,
+      "max_ukeire_loss": 4,
+      "min_pair_units": 4,
+      "min_luxury_upgrade_live": 1
+    },
+    "mode": "weighted",
+    "soft_budget_ms": 40.0,
+    "hard_budget_ms": 50.0,
+    "max_frontier_candidates": 3,
+    "allow_partial": true,
+    "min_partial_coverage": 0.9,
+    "lazy_child_ukeire": true,
+    "shape_guard_enabled": true,
+    "shape_guard_ukeire_slack": 1,
+    "shape_guard_shape_delta": 8,
+    "require_complete": false,
+    "workers": 0,
+    "fingerprint": "9fd50acbeb1fb6ed"
+  }
+}

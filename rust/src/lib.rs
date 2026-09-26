@@ -22,8 +22,11 @@ const W: usize = 33;
 type ShantenCacheKey = ([i32; 34], i32);
 type FutureCacheKey = ([i32; 34], [i32; 34], i32);
 type UkeireCacheKey = ([i32; 34], [i32; 34], i32);
+type ShapeSignature = [i32; 8];
+type ShapeCache = HashMap<[i32; 34], i64>;
 const LEGACY_TWO_PLY_KERNEL_VERSION: &str = "rust-legacy-two-ply-v1";
-const WEIGHTED_TWO_PLY_KERNEL_VERSION: &str = "rust-weighted-two-ply-v3";
+const WEIGHTED_TWO_PLY_KERNEL_VERSION: &str = "rust-weighted-two-ply-v4";
+const SHAPE_QUALITY_VERSION: &str = "standing-shape-v1";
 const WORK_BUDGET_EXCEEDED: &str = "work_budget_exceeded";
 const HARD_DEADLINE_EXCEEDED: &str = "hard_deadline";
 const STAGE_B_INTERNAL_ERROR: &str = "stage_b_internal_error";
@@ -1575,13 +1578,13 @@ fn legacy_two_ply_frontier(
     Ok(output)
 }
 
-type WeightedDrawRow = (i32, i64, i32, i64, i32, Vec<i32>);
+type WeightedDrawRow = (i32, i64, i32, i64, i32, i64, Vec<i32>);
 type StageADrawRow = (i32, i64, i32, Vec<i32>);
 type WeightedRootRow = (
     i32,
     bool,
     bool,
-    (i64, i64, i64, i64, i64, i64),
+    (i64, i64, i64, i64, i64, i64, i64),
     Vec<WeightedDrawRow>,
     (i64, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64),
     i64,
@@ -1609,7 +1612,156 @@ struct StageBOutcome {
     child_s: i32,
     best_u: i64,
     best_types: i32,
+    best_shape: i64,
     tied: Vec<i32>,
+}
+
+fn shape_add(left: ShapeSignature, right: ShapeSignature) -> ShapeSignature {
+    let mut out = [0i32; 8];
+    for index in 0..8 {
+        out[index] = left[index] + right[index];
+    }
+    out
+}
+
+fn shape_unit(slot: usize, value: i32) -> ShapeSignature {
+    let mut out = [0i32; 8];
+    out[slot] = value;
+    out
+}
+
+fn best_suit_shape(
+    counts: [u8; 9],
+    memo: &mut HashMap<[u8; 9], ShapeSignature>,
+) -> ShapeSignature {
+    if let Some(value) = memo.get(&counts) {
+        return *value;
+    }
+    let Some(rank) = counts.iter().position(|&count| count > 0) else {
+        return [0; 8];
+    };
+    let mut best: Option<ShapeSignature> = None;
+    let mut consider = |consumed: [u8; 9], unit: ShapeSignature| {
+        let mut rest = counts;
+        for index in 0..9 {
+            rest[index] -= consumed[index];
+        }
+        let candidate = shape_add(unit, best_suit_shape(rest, memo));
+        if best.map(|value| candidate > value).unwrap_or(true) {
+            best = Some(candidate);
+        }
+    };
+
+    if counts[rank] >= 3 {
+        let mut consumed = [0u8; 9];
+        consumed[rank] = 3;
+        consider(consumed, shape_unit(0, 1));
+    }
+    if rank <= 6 && counts[rank + 1] > 0 && counts[rank + 2] > 0 {
+        let mut consumed = [0u8; 9];
+        consumed[rank] = 1;
+        consumed[rank + 1] = 1;
+        consumed[rank + 2] = 1;
+        consider(consumed, shape_unit(0, 1));
+    }
+    if counts[rank] >= 2 {
+        let mut consumed = [0u8; 9];
+        consumed[rank] = 2;
+        consider(consumed, shape_unit(6, 1));
+    }
+    for gap in [1usize, 2usize] {
+        let other = rank + gap;
+        if other >= 9 || counts[other] == 0 {
+            continue;
+        }
+        let mut consumed = [0u8; 9];
+        consumed[rank] = 1;
+        consumed[other] = 1;
+        let class = if gap == 1 {
+            if rank == 0 || rank == 7 { 5 } else { 2 }
+        } else if rank == 0 || rank == 6 {
+            4
+        } else {
+            3
+        };
+        let mut unit = shape_unit(1, 1);
+        unit[class] = 1;
+        consider(consumed, unit);
+    }
+    let mut consumed = [0u8; 9];
+    consumed[rank] = 1;
+    consider(consumed, shape_unit(7, -1));
+
+    let value = best.unwrap_or([0; 8]);
+    memo.insert(counts, value);
+    value
+}
+
+fn best_honor_shape(count: u8, memo: &mut HashMap<u8, ShapeSignature>) -> ShapeSignature {
+    if count == 0 {
+        return [0; 8];
+    }
+    if let Some(value) = memo.get(&count) {
+        return *value;
+    }
+    let mut best: Option<ShapeSignature> = None;
+    if count >= 3 {
+        best = Some(shape_add(shape_unit(0, 1), best_honor_shape(count - 3, memo)));
+    }
+    if count >= 2 {
+        let candidate = shape_add(shape_unit(6, 1), best_honor_shape(count - 2, memo));
+        if best.map(|value| candidate > value).unwrap_or(true) {
+            best = Some(candidate);
+        }
+    }
+    let isolated = shape_add(shape_unit(7, -1), best_honor_shape(count - 1, memo));
+    if best.map(|value| isolated > value).unwrap_or(true) {
+        best = Some(isolated);
+    }
+    let value = best.unwrap_or([0; 8]);
+    memo.insert(count, value);
+    value
+}
+
+fn standing_shape_quality_internal(
+    counts: &[i32; 34],
+    wildcard: usize,
+) -> (ShapeSignature, i64) {
+    let mut signature = [0i32; 8];
+    let mut suit_memo: HashMap<[u8; 9], ShapeSignature> = HashMap::new();
+    for start in [0usize, 9, 18] {
+        let mut suit = [0u8; 9];
+        for rank in 0..9 {
+            if start + rank != wildcard {
+                suit[rank] = counts[start + rank] as u8;
+            }
+        }
+        signature = shape_add(signature, best_suit_shape(suit, &mut suit_memo));
+    }
+    let mut honor_memo: HashMap<u8, ShapeSignature> = HashMap::new();
+    for (tile, &count) in counts.iter().enumerate().skip(27) {
+        if tile != wildcard {
+            signature = shape_add(
+                signature,
+                best_honor_shape(count as u8, &mut honor_memo),
+            );
+        }
+    }
+    let packed = [
+        signature[0],
+        signature[1],
+        signature[2],
+        signature[3],
+        signature[4],
+        signature[5],
+        signature[6],
+        14 + signature[7],
+    ];
+    let mut encoded = 0i64;
+    for value in packed {
+        encoded = (encoded << 4) | i64::from(value);
+    }
+    (signature, encoded)
 }
 
 /// Resolve the Stage B worker count: explicit request, then
@@ -1660,6 +1812,8 @@ fn run_stage_b_units(
     root_arrays: &[[i32; 34]],
     visible: &[i32; 34],
     locked: i32,
+    shape_quality_enabled: bool,
+    shape_cache: &mut ShapeCache,
     cache_capacity: usize,
     work_budget: i64,
     hard_deadline: Instant,
@@ -1688,6 +1842,7 @@ fn run_stage_b_units(
         next_hand[unit.draw] += 1;
         let mut best_u = -1i64;
         let mut best_types = 0i32;
+        let mut best_shape = -1i64;
         let mut tied = Vec::new();
         for &discard in &unit.best_discards {
             if Instant::now() >= hard_deadline {
@@ -1710,15 +1865,29 @@ fn run_stage_b_units(
                 Ok(value) => value,
                 Err(reason) => return Some(reason),
             };
+            let child_shape = if shape_quality_enabled {
+                *shape_cache.entry(after).or_insert_with(|| {
+                    standing_shape_quality_internal(&after, W).1
+                })
+            } else {
+                -1
+            };
             if metrics.ukeire > best_u
                 || (metrics.ukeire == best_u && metrics.tile_types > best_types)
             {
                 best_u = metrics.ukeire;
                 best_types = metrics.tile_types;
+                best_shape = child_shape;
                 tied.clear();
                 tied.push(discard as i32);
             } else if metrics.ukeire == best_u && metrics.tile_types == best_types {
-                tied.push(discard as i32);
+                if shape_quality_enabled && child_shape > best_shape {
+                    best_shape = child_shape;
+                    tied.clear();
+                    tied.push(discard as i32);
+                } else if !shape_quality_enabled || child_shape == best_shape {
+                    tied.push(discard as i32);
+                }
             }
         }
         if tied.is_empty() {
@@ -1732,6 +1901,7 @@ fn run_stage_b_units(
             child_s: unit.child_s,
             best_u,
             best_types,
+            best_shape,
             tied,
         });
     }
@@ -1745,7 +1915,7 @@ fn run_stage_b_units(
 /// ``(root, draw)`` units in parallel workers; the aggregation order is fixed,
 /// so the reported metrics never depend on the worker count.  Callers may
 /// request a Stage-A-only partial once every root reaches the coverage floor.
-#[pyfunction(signature = (roots, root_shantens, visible, legal_masks, locked=0, frozen=false, node_budget=100000, soft_budget_ms=40.0, hard_budget_ms=50.0, cache_capacity=8192, min_partial_coverage=0.90, include_best_discards=true, workers=0, stage_a_only=false))]
+#[pyfunction(signature = (roots, root_shantens, visible, legal_masks, locked=0, frozen=false, node_budget=100000, soft_budget_ms=40.0, hard_budget_ms=50.0, cache_capacity=8192, min_partial_coverage=0.90, include_best_discards=true, workers=0, stage_a_only=false, shape_quality_enabled=false))]
 fn weighted_two_ply_frontier(
     roots: Vec<Vec<i32>>,
     root_shantens: Vec<i32>,
@@ -1761,6 +1931,7 @@ fn weighted_two_ply_frontier(
     include_best_discards: bool,
     workers: i64,
     stage_a_only: bool,
+    shape_quality_enabled: bool,
 ) -> PyResult<Vec<WeightedRootRow>> {
     if roots.is_empty() {
         return Err(PyValueError::new_err("roots must not be empty"));
@@ -2065,12 +2236,15 @@ fn weighted_two_ply_frontier(
         resolved_workers = worker_count as i64;
         let mut outcomes: Vec<StageBOutcome> = Vec::with_capacity(units.len());
         let stage_b_aborted = if worker_count <= 1 {
+            let mut shape_cache = ShapeCache::new();
             run_stage_b_units(
                 &units,
                 None,
                 &root_arrays,
                 &visible,
                 locked,
+                shape_quality_enabled,
+                &mut shape_cache,
                 cache_capacity,
                 work_budget,
                 hard_deadline,
@@ -2095,6 +2269,7 @@ fn weighted_two_ply_frontier(
                                     ShantenMemo::new(shanten_memo_enabled());
                                 let mut worker_ukeire: HashMap<UkeireCacheKey, UkeireMetrics> =
                                     HashMap::new();
+                                let mut worker_shape = ShapeCache::new();
                                 let mut worker_counters = SearchCounters::default();
                                 let mut worker_outcomes = Vec::new();
                                 let aborted = run_stage_b_units(
@@ -2103,6 +2278,8 @@ fn weighted_two_ply_frontier(
                                     root_arrays_ref,
                                     visible_ref,
                                     locked,
+                                    shape_quality_enabled,
+                                    &mut worker_shape,
                                     cache_capacity,
                                     remaining_budget,
                                     hard_deadline,
@@ -2156,6 +2333,7 @@ fn weighted_two_ply_frontier(
                 accumulator.reason = reason.clone();
                 accumulator.future_ukeire = 0;
                 accumulator.future_ukeire_types = 0;
+                accumulator.future_shape_quality = 0;
                 accumulator.draw_rows.clear();
             }
             if reason == HARD_DEADLINE_EXCEEDED {
@@ -2168,12 +2346,17 @@ fn weighted_two_ply_frontier(
                 accumulator.future_ukeire += outcome.weight * outcome.best_u.max(0);
                 accumulator.future_ukeire_types +=
                     outcome.weight * i64::from(outcome.best_types);
+                if shape_quality_enabled {
+                    accumulator.future_shape_quality +=
+                        outcome.weight * outcome.best_shape.max(0);
+                }
                 accumulator.draw_rows.push((
                     outcome.draw as i32,
                     outcome.weight,
                     outcome.child_s,
                     outcome.best_u.max(0),
                     outcome.best_types,
+                    outcome.best_shape,
                     outcome.tied,
                 ));
             }
@@ -2186,6 +2369,7 @@ fn weighted_two_ply_frontier(
             accumulator.reason = "future_ukeire_skipped".to_string();
             accumulator.future_ukeire = 0;
             accumulator.future_ukeire_types = 0;
+            accumulator.future_shape_quality = 0;
             accumulator.draw_rows.clear();
         }
     } else if hard_exhausted || soft_stopped || counters.shanten_cache_misses >= work_budget {
@@ -2219,7 +2403,9 @@ fn weighted_two_ply_frontier(
             accumulator
                 .stage_a_rows
                 .into_iter()
-                .map(|(draw, weight, child_s, tied)| (draw, weight, child_s, -1, -1, tied))
+                .map(|(draw, weight, child_s, tied)| {
+                    (draw, weight, child_s, -1, -1, -1, tied)
+                })
                 .collect()
         } else {
             Vec::new()
@@ -2247,6 +2433,11 @@ fn weighted_two_ply_frontier(
                 maintain,
                 future_ukeire,
                 future_types,
+                if complete && shape_quality_enabled {
+                    accumulator.future_shape_quality
+                } else {
+                    -1
+                },
             ),
             draw_rows,
             (
@@ -2276,6 +2467,7 @@ struct WeightedRootAccumulator {
     maintain_weight: i64,
     future_ukeire: i64,
     future_ukeire_types: i64,
+    future_shape_quality: i64,
     stage_a_rows: Vec<StageADrawRow>,
     draw_rows: Vec<WeightedDrawRow>,
     reason: String,
@@ -2290,6 +2482,7 @@ impl WeightedRootAccumulator {
             maintain_weight: 0,
             future_ukeire: 0,
             future_ukeire_types: 0,
+            future_shape_quality: 0,
             stage_a_rows: Vec::new(),
             draw_rows: Vec::new(),
             reason: String::new(),
@@ -2346,6 +2539,36 @@ fn shanten(counts: Vec<i32>, locked: i32) -> PyResult<i32> {
     shanten_impl(&arr, locked, &mut memo).map_err(PyValueError::new_err)
 }
 
+/// Public, versioned natural-tile standing-shape signature and packed key.
+#[pyfunction(signature = (counts, wildcard=33))]
+fn standing_shape_quality(
+    counts: Vec<i32>,
+    wildcard: i32,
+) -> PyResult<(String, Vec<i32>, i64)> {
+    if !(0..34).contains(&wildcard) {
+        return Err(PyValueError::new_err("wildcard must be in range 0..33"));
+    }
+    let array = validate_count_vector(&counts, "counts")?;
+    let (signature, encoded) =
+        standing_shape_quality_internal(&array, wildcard as usize);
+    let fields = [
+        signature[0], signature[1], signature[2], signature[3],
+        signature[4], signature[5], signature[6], 14 + signature[7],
+    ];
+    if fields.iter().any(|&value| !(0..=15).contains(&value)) {
+        return Err(PyValueError::new_err(
+            "shape signature exceeds the versioned encoding range",
+        ));
+    }
+    let mut public_signature = signature;
+    public_signature[7] = -public_signature[7];
+    Ok((
+        SHAPE_QUALITY_VERSION.to_string(),
+        public_signature.to_vec(),
+        encoded,
+    ))
+}
+
 /// 进张枚举:返回 (向听数, 进张种类列表, 进张总张数)。
 /// visible=None 时按手牌自身折算(与 mj.shanten.ukeire 同口径)。
 #[pyfunction(signature = (counts, locked, visible=None))]
@@ -2386,6 +2609,7 @@ fn baotou_ukeire(
 #[pymodule]
 fn mj_kernels(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(shanten, m)?)?;
+    m.add_function(wrap_pyfunction!(standing_shape_quality, m)?)?;
     m.add_function(wrap_pyfunction!(ukeire, m)?)?;
     m.add_function(wrap_pyfunction!(baotou_ukeire, m)?)?;
     m.add_function(wrap_pyfunction!(best_future_discard, m)?)?;

@@ -57,6 +57,8 @@ class StandingFrontierTests(unittest.TestCase):
             kernel="rust",
             max_frontier_candidates=0,
             shape_guard_enabled=False,
+            shape_quality_enabled=False,
+            shape_quality_guard_enabled=False,
         )
 
     def _evaluate_with(self, values, profile=None, roots=None):

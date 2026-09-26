@@ -1,0 +1,163 @@
+{
+  "schema": "legacy-v2-shape-aware-two-ply/stage2-bucket-analysis-v1",
+  "source_artifact": "score_stage2_20260926.json",
+  "source_games": 30720,
+  "score_delta": "candidate minus baseline settlement score per paired game",
+  "bucket_cohort": "game is included when candidate diagnostics report at least one changed action in that bucket",
+  "interval_method": "unadjusted source-game percentile bootstrap; each paired game/seed is one resampling unit",
+  "bootstrap_rounds": 2000,
+  "alpha": 0.05,
+  "overlap_note": "Bucket cohorts overlap; subgroup intervals are exploratory and are not simultaneous confidence intervals.",
+  "buckets": [
+    {
+      "bucket_type": "decision_scope",
+      "bucket": "baotou_scope",
+      "games_with_changed_decision": 884,
+      "mean_score_delta": -0.18778280542986425,
+      "bootstrap_rounds": 2000,
+      "ci95_low": -1.1833427601809954,
+      "ci95_high": 0.7332861990950212,
+      "significantly_negative_at_95pct": false
+    },
+    {
+      "bucket_type": "decision_scope",
+      "bucket": "weighted_two_ply",
+      "games_with_changed_decision": 1595,
+      "mean_score_delta": 0.5253918495297806,
+      "bootstrap_rounds": 2000,
+      "ci95_low": -0.03891849529780564,
+      "ci95_high": 1.0934326018808778,
+      "significantly_negative_at_95pct": false
+    },
+    {
+      "bucket_type": "open_meld_count",
+      "bucket": "0",
+      "games_with_changed_decision": 1482,
+      "mean_score_delta": 0.3785425101214575,
+      "bootstrap_rounds": 2000,
+      "ci95_low": -0.2840755735492578,
+      "ci95_high": 1.00472334682861,
+      "significantly_negative_at_95pct": false
+    },
+    {
+      "bucket_type": "open_meld_count",
+      "bucket": "1",
+      "games_with_changed_decision": 811,
+      "mean_score_delta": 0.499383477188656,
+      "bootstrap_rounds": 2000,
+      "ci95_low": -0.35413070283600495,
+      "ci95_high": 1.3218865598027123,
+      "significantly_negative_at_95pct": false
+    },
+    {
+      "bucket_type": "open_meld_count",
+      "bucket": "2",
+      "games_with_changed_decision": 175,
+      "mean_score_delta": -1.56,
+      "bootstrap_rounds": 2000,
+      "ci95_low": -3.2742857142857145,
+      "ci95_high": 0.14285714285714285,
+      "significantly_negative_at_95pct": false
+    },
+    {
+      "bucket_type": "open_meld_count",
+      "bucket": "3",
+      "games_with_changed_decision": 8,
+      "mean_score_delta": 1.375,
+      "bootstrap_rounds": 0,
+      "ci95_low": null,
+      "ci95_high": null,
+      "significantly_negative_at_95pct": null
+    },
+    {
+      "bucket_type": "shanten",
+      "bucket": "0",
+      "games_with_changed_decision": 941,
+      "mean_score_delta": -0.06269925611052073,
+      "bootstrap_rounds": 2000,
+      "ci95_low": -1.006376195536663,
+      "ci95_high": 0.867295430393198,
+      "significantly_negative_at_95pct": false
+    },
+    {
+      "bucket_type": "shanten",
+      "bucket": "1",
+      "games_with_changed_decision": 696,
+      "mean_score_delta": 0.8433908045977011,
+      "bootstrap_rounds": 2000,
+      "ci95_low": -0.04173850574712643,
+      "ci95_high": 1.7342313218390804,
+      "significantly_negative_at_95pct": false
+    },
+    {
+      "bucket_type": "shanten",
+      "bucket": "2",
+      "games_with_changed_decision": 724,
+      "mean_score_delta": 0.20994475138121546,
+      "bootstrap_rounds": 2000,
+      "ci95_low": -0.5773825966850828,
+      "ci95_high": 0.9516574585635359,
+      "significantly_negative_at_95pct": false
+    },
+    {
+      "bucket_type": "shanten",
+      "bucket": "3",
+      "games_with_changed_decision": 179,
+      "mean_score_delta": 0.36312849162011174,
+      "bootstrap_rounds": 2000,
+      "ci95_low": -1.0168994413407821,
+      "ci95_high": 1.8491620111731844,
+      "significantly_negative_at_95pct": false
+    },
+    {
+      "bucket_type": "shanten",
+      "bucket": "4",
+      "games_with_changed_decision": 3,
+      "mean_score_delta": 0.0,
+      "bootstrap_rounds": 0,
+      "ci95_low": null,
+      "ci95_high": null,
+      "significantly_negative_at_95pct": null
+    },
+    {
+      "bucket_type": "wall_left_bucket",
+      "bucket": "0-10",
+      "games_with_changed_decision": 1,
+      "mean_score_delta": 0.0,
+      "bootstrap_rounds": 0,
+      "ci95_low": null,
+      "ci95_high": null,
+      "significantly_negative_at_95pct": null
+    },
+    {
+      "bucket_type": "wall_left_bucket",
+      "bucket": "11-20",
+      "games_with_changed_decision": 9,
+      "mean_score_delta": -3.7777777777777777,
+      "bootstrap_rounds": 0,
+      "ci95_low": null,
+      "ci95_high": null,
+      "significantly_negative_at_95pct": null
+    },
+    {
+      "bucket_type": "wall_left_bucket",
+      "bucket": "21-40",
+      "games_with_changed_decision": 362,
+      "mean_score_delta": 0.4585635359116022,
+      "bootstrap_rounds": 2000,
+      "ci95_low": -0.9144337016574586,
+      "ci95_high": 1.7820441988950262,
+      "significantly_negative_at_95pct": false
+    },
+    {
+      "bucket_type": "wall_left_bucket",
+      "bucket": "41+",
+      "games_with_changed_decision": 2109,
+      "mean_score_delta": 0.30915125651967756,
+      "bootstrap_rounds": 2000,
+      "ci95_low": -0.22432432432432434,
+      "ci95_high": 0.8644855381697482,
+      "significantly_negative_at_95pct": false
+    }
+  ]
+}

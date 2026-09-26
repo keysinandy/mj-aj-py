@@ -352,6 +352,11 @@ except (ImportError, AttributeError):
     _rust_weighted_two_ply_kernel_version = None
 
 try:
+    from mj_kernels import standing_shape_quality as _rust_standing_shape_quality
+except (ImportError, AttributeError):
+    _rust_standing_shape_quality = None
+
+try:
     from mj_kernels import baotou_ukeire as _rust_baotou_ukeire
 except (ImportError, AttributeError):
     _rust_baotou_ukeire = None
@@ -368,7 +373,7 @@ DISCARD_FRONTIER_BATCH_KERNEL_VERSION = (
     else None)
 
 _FORCE_PY = os.environ.get("MJ_KERNELS", "").lower() == "python"
-WEIGHTED_TWO_PLY_KERNEL_REQUIRED = "rust-weighted-two-ply-v3"
+WEIGHTED_TWO_PLY_KERNEL_REQUIRED = "rust-weighted-two-ply-v4"
 
 # bot 的爆头档只在 Rust 内核可用时启用(纯 Python 枚举 90~220ms/决策,
 # 不可用);MJ_KERNELS=python 视同不可用。决策行为因此确定性可复现。
@@ -543,7 +548,8 @@ def weighted_two_ply_frontier(
         roots, root_shantens, visible, legal_masks, locked=0, frozen=False,
         node_budget=100000, soft_budget_ms=40.0, hard_budget_ms=50.0,
         cache_capacity=8192, min_partial_coverage=0.90,
-        include_best_discards=True, workers=0, stage_a_only=False):
+        include_best_discards=True, workers=0, stage_a_only=False,
+        shape_quality_enabled=False):
     """Optional weighted/partial native two-ply frontier."""
     if _rust_weighted_two_ply_frontier is None or _FORCE_PY:
         return None
@@ -553,10 +559,12 @@ def weighted_two_ply_frontier(
         cache_capacity, float(min_partial_coverage), include_best_discards,
         int(workers),
     )
+    optional = {}
     if stage_a_only:
-        return _rust_weighted_two_ply_frontier(
-            *args, stage_a_only=True)
-    return _rust_weighted_two_ply_frontier(*args)
+        optional["stage_a_only"] = True
+    if shape_quality_enabled:
+        optional["shape_quality_enabled"] = True
+    return _rust_weighted_two_ply_frontier(*args, **optional)
 
 
 def _left(t, vis):

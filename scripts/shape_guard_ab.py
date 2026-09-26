@@ -38,6 +38,8 @@ def _profile(budget_ms, **overrides):
         "time_budget_ms": float(budget_ms),
         "soft_budget_ms": float(budget_ms) * 0.8,
         "hard_budget_ms": float(budget_ms),
+        "shape_quality_enabled": False,
+        "shape_quality_guard_enabled": False,
     }
     values.update(overrides)
     return LegacyTwoPlyProfile.weighted_online(**values)

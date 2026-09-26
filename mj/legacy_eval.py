@@ -34,6 +34,10 @@ from .big_hand_intent import (
     WHITE_RICH,
 )
 from .tiles import W
+from .shape_quality import (
+    SHAPE_QUALITY_VERSION,
+    standing_shape_quality,
+)
 
 
 PROFILE_VERSION = "legacy-two-ply-v1"
@@ -67,11 +71,16 @@ LEGACY_V2_EVALUATORS = (
 LEGACY_V2_BASELINE_EVALUATORS = ("legacy-v2-baseline",)
 LEGACY_V2_PHASE_A_EVALUATORS = ("legacy-v2-phase-a",)
 LEGACY_V2_PHASE_B_EVALUATORS = ("legacy-v2-phase-b",)
+LEGACY_V2_SHAPE_PHASE_A_EVALUATORS = ("legacy-v2-shape-phase-a",)
+LEGACY_V2_SHAPE_PHASE_B_EVALUATORS = ("legacy-v2-shape-phase-b",)
 LEGACY_V2_EXPERIMENT_EVALUATORS = (
     *LEGACY_V2_BASELINE_EVALUATORS,
     *LEGACY_V2_PHASE_A_EVALUATORS,
     *LEGACY_V2_PHASE_B_EVALUATORS,
+    *LEGACY_V2_SHAPE_PHASE_A_EVALUATORS,
+    *LEGACY_V2_SHAPE_PHASE_B_EVALUATORS,
 )
+SHAPE_QUALITY_GUARD_VERSION = "standing-shape-taatsu-gain-v1"
 # Product default evaluator. ``legacy`` is kept as a compatibility alias for
 # this v2 route; callers that need the frozen rollback oracle must explicitly
 # request ``legacy-v1``.
@@ -114,6 +123,11 @@ class LegacyTwoPlyProfile:
     shape_guard_enabled: bool = False
     shape_guard_ukeire_slack: int = 1
     shape_guard_shape_delta: int = 8
+    shape_quality_enabled: bool = False
+    shape_quality_version: str = SHAPE_QUALITY_VERSION
+    shape_quality_stage: str = "diagnostic"
+    shape_quality_guard_enabled: bool = False
+    shape_quality_guard_version: str = SHAPE_QUALITY_GUARD_VERSION
     # Standing reaction callers may request a no-Stage-A-shortcut contract;
     # discard evaluators keep the historical default False.
     require_complete: bool = False
@@ -156,6 +170,13 @@ class LegacyTwoPlyProfile:
             raise ValueError("shape_guard_ukeire_slack must be non-negative")
         if int(self.shape_guard_shape_delta) < 0:
             raise ValueError("shape_guard_shape_delta must be non-negative")
+        if self.shape_quality_stage not in {"diagnostic", "root", "full"}:
+            raise ValueError(
+                "shape_quality_stage must be diagnostic, root, or full")
+        if not self.shape_quality_version:
+            raise ValueError("shape_quality_version is required")
+        if not self.shape_quality_guard_version:
+            raise ValueError("shape_quality_guard_version is required")
         if not self.big_hand_version:
             raise ValueError("big_hand_version is required")
         for name in ("big_hand_min_live", "big_hand_max_opponent_melds",
@@ -181,6 +202,10 @@ class LegacyTwoPlyProfile:
                            int(self.shape_guard_ukeire_slack))
         object.__setattr__(self, "shape_guard_shape_delta",
                            int(self.shape_guard_shape_delta))
+        object.__setattr__(self, "shape_quality_enabled",
+                           bool(self.shape_quality_enabled))
+        object.__setattr__(self, "shape_quality_guard_enabled",
+                           bool(self.shape_quality_guard_enabled))
         object.__setattr__(self, "allow_partial", bool(self.allow_partial))
         object.__setattr__(self, "min_partial_coverage", coverage)
         object.__setattr__(self, "lazy_child_ukeire",
@@ -224,6 +249,9 @@ class LegacyTwoPlyProfile:
             "lazy_child_ukeire": True,
             "workers": 0,
             "shape_guard_enabled": True,
+            "shape_quality_enabled": True,
+            "shape_quality_stage": "full",
+            "shape_quality_guard_enabled": True,
             "big_hand_enabled": False,
             "big_hand_same_shanten_enabled": True,
             "big_hand_plus_one_enabled": False,
@@ -235,9 +263,10 @@ class LegacyTwoPlyProfile:
     def weighted_offline(cls, **overrides):
         """训练/离线标签生成用的 legacyV2 profile。
 
-        与 ``weighted_online`` 的排序、前沿上限、部分接受规则完全一致,
-        只把时间与节点预算放大到不会触发 deadline / work budget / 不安全
-        partial 回退,因此搜索标签不会悄悄退化成 legacy 启发式。
+        保留既有 shape-off 标签口径；前沿上限、部分接受规则与在线相同。
+        时间与节点预算放大到不会触发 deadline / work budget / 不安全
+        partial 回退,因此搜索标签不会悄悄退化成 legacy 启发式。需要生成
+        与线上 shape-aware 默认一致的标签时，调用方需显式开启对应 shape 参数。
         """
         values = {
             "name": WEIGHTED_OFFLINE_PROFILE_VERSION,
@@ -305,6 +334,16 @@ class LegacyTwoPlyProfile:
                 "shape_guard_shape_delta": self.shape_guard_shape_delta,
                 "require_complete": self.require_complete,
             })
+        if self.shape_quality_enabled or self.shape_quality_guard_enabled:
+            payload.update({
+                "shape_quality_enabled": self.shape_quality_enabled,
+                "shape_quality_version": self.shape_quality_version,
+                "shape_quality_stage": self.shape_quality_stage,
+                "shape_quality_guard_enabled": (
+                    self.shape_quality_guard_enabled),
+                "shape_quality_guard_version": (
+                    self.shape_quality_guard_version),
+            })
         return payload
 
     def big_hand_config(self):
@@ -336,6 +375,11 @@ class LegacyTwoPlyProfile:
             "shape_guard_enabled": self.shape_guard_enabled,
             "shape_guard_ukeire_slack": self.shape_guard_ukeire_slack,
             "shape_guard_shape_delta": self.shape_guard_shape_delta,
+            "shape_quality_enabled": self.shape_quality_enabled,
+            "shape_quality_version": self.shape_quality_version,
+            "shape_quality_stage": self.shape_quality_stage,
+            "shape_quality_guard_enabled": self.shape_quality_guard_enabled,
+            "shape_quality_guard_version": self.shape_quality_guard_version,
             "require_complete": self.require_complete,
         })
         result["fingerprint"] = self.fingerprint
@@ -357,6 +401,9 @@ class LegacyRootCandidate:
     shanten: int
     shape_loss: float = 0.0
     feed_risk: float = 0.0
+    standing_shape_quality: int | None = None
+    standing_shape_signature: tuple[int, ...] = ()
+    shape_quality_version: str | None = None
     current_ukeire: int | None = None
     current_ukeire_tiles: tuple[int, ...] = ()
     eligible: bool = True
@@ -387,10 +434,18 @@ class LegacyRootCandidate:
             "ukeire_types": (len(self.current_ukeire_tiles)
                              if self.current_ukeire is not None else None),
             "shape_loss": self.shape_loss,
+            "discard_shape_cost": self.shape_loss,
             "feed_risk": self.feed_risk,
             "eligible": self.eligible,
             "missing": list(self.missing),
         }
+        if self.standing_shape_quality is not None:
+            result.update({
+                "standing_shape_quality": self.standing_shape_quality,
+                "standing_shape_signature": list(
+                    self.standing_shape_signature),
+                "shape_quality_version": self.shape_quality_version,
+            })
         has_intent = bool(self.intent_kinds or
                           self.intent_strength != "NONE")
         if (has_intent or self.admission_hint or self.big_hand_gate_reason):
@@ -428,6 +483,11 @@ class FutureEvaluation:
     future_ukeire_mean_denominator: int | None = None
     future_ukeire_types: int | None = None
     future_ukeire_types_mean: float | None = None
+    future_shape_quality_sum: int | None = None
+    future_shape_quality_mean: float | None = None
+    future_shape_denominator: int | None = None
+    child_shape_quality_by_draw: tuple[tuple[int, int], ...] = ()
+    best_discard_by_draw: tuple[tuple[int, int], ...] = ()
     future_ukeire_skipped: bool = False
     best_discards: tuple[tuple[int, int], ...] = ()
     nodes: int = 0
@@ -453,6 +513,17 @@ class FutureEvaluation:
             "future_ukeire_mean_denominator": self.future_ukeire_mean_denominator,
             "future_ukeire_types": self.future_ukeire_types,
             "future_ukeire_types_mean": self.future_ukeire_types_mean,
+            "future_shape_quality_sum": self.future_shape_quality_sum,
+            "future_shape_quality_mean": self.future_shape_quality_mean,
+            "future_shape_denominator": self.future_shape_denominator,
+            "child_shape_quality_by_draw": {
+                str(tile): quality
+                for tile, quality in self.child_shape_quality_by_draw
+            } if self.child_shape_quality_by_draw else None,
+            "child_best_discards_by_draw": {
+                str(tile): discard
+                for tile, discard in self.best_discard_by_draw
+            } if self.best_discard_by_draw else None,
             "future_ukeire_skipped": self.future_ukeire_skipped,
             "future_best_discards": {
                 str(tile): weight for tile, weight in self.best_discards
@@ -535,6 +606,13 @@ class LegacyDiscardEvaluation:
     big_hand_phase: str = "disabled"
     frontier_cap_dropped: tuple[int, ...] = ()
     big_hand_guard: Mapping | None = None
+    shape_quality_version: str | None = None
+    shape_quality_used: bool = False
+    shape_quality_stage: str | None = None
+    shape_changed_winner: bool = False
+    shape_baseline_selected: int | None = None
+    decision_scope: str = "weighted_two_ply"
+    stage_b_entered: bool = False
 
     def as_json(self):
         result = {
@@ -580,6 +658,13 @@ class LegacyDiscardEvaluation:
             "frontier_cap_dropped": list(self.frontier_cap_dropped),
             "big_hand_guard": (dict(self.big_hand_guard)
                                if self.big_hand_guard is not None else None),
+            "shape_quality_version": self.shape_quality_version,
+            "shape_quality_used": self.shape_quality_used,
+            "shape_quality_stage": self.shape_quality_stage,
+            "shape_changed_winner": self.shape_changed_winner,
+            "shape_baseline_selected": self.shape_baseline_selected,
+            "decision_scope": self.decision_scope,
+            "stage_b_entered": self.stage_b_entered,
         }
         return result
 
@@ -706,7 +791,7 @@ def _normalise_roots(root_candidates: Iterable[LegacyRootCandidate | Sequence],
     return tuple(roots)
 
 
-def _root_features(roots, locked, visible):
+def _root_features(roots, locked, visible, *, shape_quality_enabled=False):
     visible = _as_tuple(visible, name="visible")
     enriched = []
     for root in roots:
@@ -717,10 +802,23 @@ def _root_features(roots, locked, visible):
             raise _InvalidPublicState("visible_missing_hand")
         s = (root.shanten if root.shanten_verified
              else shanten(hand, locked))
+        shape = (standing_shape_quality(hand, locked=locked)
+                 if shape_quality_enabled else None)
         if s != root.shanten:
             # The immutable root is a public contract, not a trust boundary;
             # recompute rather than letting a stale caller change ordering.
             root = replace(root, hand=hand, shanten=s)
+        if shape is not None:
+            root = replace(
+                root,
+                standing_shape_quality=shape.encoded,
+                standing_shape_signature=shape.signature,
+                shape_quality_version=shape.version,
+            )
+        else:
+            root = replace(
+                root, standing_shape_quality=None,
+                standing_shape_signature=None, shape_quality_version=None)
         state = ukeire(hand, locked, visible)
         enriched.append(replace(
             root, hand=hand, shanten=s,
@@ -796,18 +894,31 @@ def _apply_shape_guard(frontier, diagnostics, profile):
     """
     guard = {
         "enabled": bool(profile.shape_guard_enabled),
-        "policy": {
+        "shape_quality_enabled": bool(profile.shape_quality_guard_enabled),
+        "shape_quality_guard_version": profile.shape_quality_guard_version,
+        "policy": ({
             "slack_ukeire": int(profile.shape_guard_ukeire_slack),
-            "shape_delta": int(profile.shape_guard_shape_delta),
+            "taatsu_class_gain": 1,
             "max_frontier_candidates": int(profile.max_frontier_candidates),
-        },
+        } if profile.shape_quality_enabled and
+             profile.shape_quality_guard_enabled else {
+                 "slack_ukeire": int(profile.shape_guard_ukeire_slack),
+                 "legacy_shape_delta": int(profile.shape_guard_shape_delta),
+                 "max_frontier_candidates": int(
+                     profile.max_frontier_candidates),
+             }),
         "primary_tiles": [root.tile for root in frontier],
         "admitted_tiles": [],
         "dropped_tiles": [],
         "skipped_reason": None,
     }
     admitted_by = {root.tile: "primary" for root in frontier}
+    quality_guard = bool(profile.shape_quality_enabled and
+                         profile.shape_quality_guard_enabled)
     if not profile.shape_guard_enabled:
+        return frontier, diagnostics, guard, admitted_by
+    if profile.shape_quality_enabled and not quality_guard:
+        guard["skipped_reason"] = "shape_quality_guard_disabled"
         return frontier, diagnostics, guard, admitted_by
     if not _weighted_native_ready(profile):
         guard["skipped_reason"] = "kernel_unavailable"
@@ -820,7 +931,6 @@ def _apply_shape_guard(frontier, diagnostics, profile):
     if slack <= 0:
         guard["skipped_reason"] = "slack_zero"
         return frontier, diagnostics, guard, admitted_by
-    delta = int(profile.shape_guard_shape_delta)
     primary = frontier[0]
     primary_ukeire = int(primary.current_ukeire or 0)
     primary_shape = float(primary.shape_loss)
@@ -836,7 +946,13 @@ def _apply_shape_guard(frontier, diagnostics, profile):
             continue
         if primary_ukeire - int(root.current_ukeire or 0) > slack:
             continue
-        if primary_shape - float(root.shape_loss) < delta:
+        if quality_guard:
+            if (primary.standing_shape_quality is None or
+                    root.standing_shape_quality is None or
+                    not _taatsu_class_improved(root, primary)):
+                continue
+        elif primary_shape - float(root.shape_loss) < int(
+                profile.shape_guard_shape_delta):
             continue
         admitted.append(root)
     if not admitted:
@@ -847,9 +963,10 @@ def _apply_shape_guard(frontier, diagnostics, profile):
     if limit and len(merged) > limit:
         ranked = sorted(merged, key=lambda root: (
             -int(root.current_ukeire or 0),
-            float(root.shape_loss),
-            float(root.feed_risk),
-            root.tile,
+            (-int(root.standing_shape_quality or 0)
+             if quality_guard else float(root.shape_loss)),
+            float(root.shape_loss) if quality_guard else 0.0,
+            float(root.feed_risk), root.tile,
         ))
         kept = [root for root in ranked[:limit]]
         guard["dropped_tiles"] = [root.tile for root in ranked[limit:]]
@@ -868,6 +985,13 @@ def _apply_shape_guard(frontier, diagnostics, profile):
     guard["admitted_tiles"] = [root.tile for root in merged
                                if root.tile != primary.tile]
     return tuple(merged), tuple(updated), guard, admitted_by
+
+
+def _taatsu_class_improved(candidate, primary):
+    """Require a strict improvement in the declared taatsu class vector."""
+    left = tuple(candidate.standing_shape_signature[2:6])
+    right = tuple(primary.standing_shape_signature[2:6])
+    return left > right
 
 
 def _big_hand_route_reason(root, profile, *, speed_winner=None, locked=0,
@@ -1106,16 +1230,25 @@ def _apply_big_hand_guard(enriched, frontier, diagnostics, profile, locked,
             phase, tuple(dropped), speed_winner.tile)
 
 
-def _weighted_root_key(root, future_values):
+def _weighted_root_key(root, future_values, *, shape_quality_enabled=False,
+                       future_shape_enabled=False):
     future = future_values[root.tile]
-    return (
+    key = (
         root.tile == W,
         -(root.current_ukeire or 0),
         -future.future_improve_weight,
         -(future.future_ukeire_mean or 0.0),
         -(future.future_ukeire_types_mean or 0.0),
-        root.shape_loss, root.feed_risk, root.tile,
     )
+    if future_shape_enabled:
+        if future.future_shape_quality_mean is None:
+            raise ValueError("future shape quality is missing for a complete key")
+        key += (-future.future_shape_quality_mean,)
+    if shape_quality_enabled:
+        if root.standing_shape_quality is None:
+            raise ValueError("standing shape quality is missing for root")
+        key += (-root.standing_shape_quality,)
+    return key + (root.shape_loss, root.feed_risk, root.tile)
 
 
 def _can_big_hand_override(challenger, speed_winner, future, profile, locked):
@@ -1170,19 +1303,27 @@ def _can_big_hand_override(challenger, speed_winner, future, profile, locked):
     return True, "strong_intent_override"
 
 
-def _limit_weighted_frontier(frontier, diagnostics, limit):
+def _limit_weighted_frontier(frontier, diagnostics, limit, *,
+                             shape_quality_enabled=False):
     """Apply the online cap only after minimum-shanten/current-ukeire filtering."""
     if not limit or len(frontier) <= limit:
         return tuple(frontier), tuple(diagnostics)
-    ranked = sorted(
-        frontier,
-        key=lambda root: (
-            root.shape_loss,
-            root.feed_risk,
-            -len(root.current_ukeire_tiles),
-            root.tile,
-        ),
-    )
+    if shape_quality_enabled:
+        ranked = sorted(frontier, key=lambda root: (
+            -int(root.current_ukeire or 0),
+            -int(root.standing_shape_quality or 0),
+            root.shape_loss, root.feed_risk, root.tile,
+        ))
+    else:
+        ranked = sorted(
+            frontier,
+            key=lambda root: (
+                root.shape_loss,
+                root.feed_risk,
+                -len(root.current_ukeire_tiles),
+                root.tile,
+            ),
+        )
     kept = {root.tile for root in ranked[:limit]}
     updated = []
     for root, eligible, missing in diagnostics:
@@ -1245,6 +1386,7 @@ def _future_for_root(game, seat, root, locked, visible, profile, budget,
     improve = 0
     weighted_ukeire = 0
     best_counts = {}
+    draw_best_discards = {}
     for drawn, weight in enumerate(remaining):
         if weight <= 0:
             continue
@@ -1288,6 +1430,7 @@ def _future_for_root(game, seat, root, locked, visible, profile, budget,
             if best is None or key < best[0]:
                 best = (key, discard, child_s, child_u)
         _key, discard, child_s, child_u = best
+        draw_best_discards[drawn] = discard
         best_counts[discard] = best_counts.get(discard, 0) + weight
         if child_s < root.shanten:
             improve += weight
@@ -1305,6 +1448,7 @@ def _future_for_root(game, seat, root, locked, visible, profile, budget,
         future_ukeire_mean=mean,
         future_ukeire_mean_denominator=total_weight,
         best_discards=tuple(sorted(best_counts.items())),
+        best_discard_by_draw=tuple(sorted(draw_best_discards.items())),
         nodes=budget.nodes,
         cache_hits=memo.hits,
         elapsed_ms=budget.elapsed_ms,
@@ -1328,9 +1472,14 @@ def _weighted_future_for_root(game, seat, root, locked, visible, profile,
     maintain = 0
     weighted_ukeire = 0
     weighted_types = 0
+    shape_enabled = (profile.shape_quality_enabled and
+                     profile.shape_quality_stage == "full")
+    weighted_shape = 0
+    draw_shapes = {}
     best_counts = {}
     child_nodes = 0
     ukeire_calls = 0
+    draw_best_discards = {}
     for drawn in draw_order:
         if ((time.monotonic() - started) * 1000.0 >=
                 profile.hard_budget_ms):
@@ -1363,17 +1512,27 @@ def _weighted_future_for_root(game, seat, root, locked, visible, profile,
             child_state = ukeire(after, locked, visible_after)
             child_u = int(child_state[2])
             child_types = len(child_state[1])
+            child_standing_shape = (
+                standing_shape_quality(after, locked=locked).encoded
+                if shape_enabled else None)
             child_shape = (float(shape_cost(next_hand, discard))
                            if shape_cost is not None else 0.0)
             child_feed = (float(feed_risk(game, seat, discard))
                           if feed_risk is not None else 0.0)
-            key = (child_s, -child_u, -child_types, discard == W,
-                   child_shape, child_feed, discard)
+            if shape_enabled:
+                key = (child_s, -child_u, -child_types,
+                       -int(child_standing_shape), discard == W,
+                       child_shape, child_feed, discard)
+            else:
+                key = (child_s, -child_u, -child_types, discard == W,
+                       child_shape, child_feed, discard)
             if best is None or key < best[0]:
-                best = (key, discard, child_u, child_types)
+                best = (key, discard, child_u, child_types,
+                        child_standing_shape)
         if best is None:
             raise _InvalidPublicState("future_legal_discards_unknown")
-        _key, discard, child_u, child_types = best
+        _key, discard, child_u, child_types, child_standing_shape = best
+        draw_best_discards[drawn] = discard
         best_counts[discard] = best_counts.get(discard, 0) + weight
         if best_s < root.shanten:
             improve += weight
@@ -1381,6 +1540,9 @@ def _weighted_future_for_root(game, seat, root, locked, visible, profile,
             maintain += weight
         weighted_ukeire += weight * child_u
         weighted_types += weight * child_types
+        if shape_enabled:
+            draw_shapes[drawn] = int(child_standing_shape)
+            weighted_shape += weight * int(child_standing_shape)
     elapsed_ms = (time.monotonic() - started) * 1000.0
     return FutureEvaluation(
         complete=True,
@@ -1395,6 +1557,14 @@ def _weighted_future_for_root(game, seat, root, locked, visible, profile,
         future_ukeire_types=weighted_types,
         future_ukeire_types_mean=(float(weighted_types) / float(total_weight)
                                   if total_weight else None),
+        future_shape_quality_sum=(weighted_shape if shape_enabled else None),
+        future_shape_quality_mean=(
+            float(weighted_shape) / float(total_weight)
+            if shape_enabled and total_weight else None),
+        future_shape_denominator=(total_weight if shape_enabled else None),
+        child_shape_quality_by_draw=(
+            tuple(sorted(draw_shapes.items())) if shape_enabled else ()),
+        best_discard_by_draw=tuple(sorted(draw_best_discards.items())),
         best_discards=tuple(sorted(best_counts.items())),
         nodes=child_nodes,
         cache_hits=0,
@@ -1574,6 +1744,8 @@ def _weighted_native_future_for_frontier(
         profile.node_budget, profile.soft_budget_ms, profile.hard_budget_ms,
         profile.cache_capacity, profile.min_partial_coverage, True,
         profile.workers, stage_a_only=stage_a_only,
+        shape_quality_enabled=(profile.shape_quality_enabled and
+                               profile.shape_quality_stage == "full"),
     )
     elapsed_ms = (time.monotonic() - started) * 1000.0
     if rows is None:
@@ -1593,11 +1765,12 @@ def _weighted_native_future_for_frontier(
          elapsed_us, reason) = raw
         if int(index) != expected_index:
             raise _NativeKernelInvalid("weighted_native_root_order_invalid")
-        if (not isinstance(metrics, (list, tuple)) or len(metrics) != 6 or
+        if (not isinstance(metrics, (list, tuple)) or len(metrics) != 7 or
                 not isinstance(counters, (list, tuple)) or len(counters) != 11):
             raise _NativeKernelInvalid("weighted_native_metrics_shape_invalid")
         (covered, total, native_improve, native_maintain,
-         native_ukeire, native_types) = (int(value) for value in metrics)
+         native_ukeire, native_types, native_shape_sum) = (
+             int(value) for value in metrics)
         counter_names = (
             "root_candidates", "draw_nodes", "child_nodes", "shanten_calls",
             "ukeire_calls", "shanten_cache_hits", "shanten_cache_misses",
@@ -1626,11 +1799,15 @@ def _weighted_native_future_for_frontier(
         # skipped on purpose.  ``stage_a_shaped`` only says the draw rows carry
         # the sentinel columns, which is also what an aborted Stage B returns.
         stage_a_only = str(reason or "") == "future_ukeire_skipped"
+        shape_enabled = (profile.shape_quality_enabled and
+                         profile.shape_quality_stage == "full")
         sentinel_flags = []
         for raw_draw in draw_rows:
-            if not isinstance(raw_draw, (list, tuple)) or len(raw_draw) != 6:
+            if not isinstance(raw_draw, (list, tuple)) or len(raw_draw) != 7:
                 raise _NativeKernelInvalid("weighted_native_draw_row_shape_invalid")
-            sentinel_flags.append(int(raw_draw[3]) == -1 and int(raw_draw[4]) == -1)
+            sentinel_flags.append(
+                int(raw_draw[3]) == -1 and int(raw_draw[4]) == -1 and
+                int(raw_draw[5]) == -1)
         if sentinel_flags and any(flag != sentinel_flags[0] for flag in sentinel_flags):
             raise _NativeKernelInvalid("weighted_native_draw_stage_mixed")
         stage_a_shaped = bool(sentinel_flags) and all(sentinel_flags)
@@ -1649,18 +1826,28 @@ def _weighted_native_future_for_frontier(
         maintain = 0
         weighted_ukeire = 0
         weighted_types = 0
+        weighted_shape = 0
         best_counts = {}
+        draw_shapes = {}
+        draw_best_discards = {}
         for raw_draw in draw_rows:
-            drawn, weight, child_s, child_u, child_types, tied = raw_draw
+            (drawn, weight, child_s, child_u, child_types,
+             child_shape, tied) = raw_draw
             drawn = int(drawn)
             weight = int(weight)
             child_s = int(child_s)
             child_u = int(child_u)
             child_types = int(child_types)
+            child_shape_quality = int(child_shape)
             if (drawn not in expected_draws or drawn in seen_draws or
                     weight != remaining[drawn] or
-                    (stage_a_shaped and (child_u != -1 or child_types != -1)) or
+                    (stage_a_shaped and (child_u != -1 or child_types != -1 or
+                                         child_shape != -1)) or
                     (not stage_a_shaped and (child_u < 0 or child_types < 0)) or
+                    (not stage_a_shaped and shape_enabled and
+                     child_shape_quality < 0) or
+                    (not stage_a_shaped and not shape_enabled and
+                     child_shape_quality != -1) or
                     not isinstance(tied, (list, tuple)) or not tied):
                 raise _NativeKernelInvalid("weighted_native_draw_row_invalid")
             seen_draws.add(drawn)
@@ -1678,16 +1865,22 @@ def _weighted_native_future_for_frontier(
                 if not 0 <= discard < 34 or next_hand[discard] <= 0:
                     raise _NativeKernelInvalid(
                         "weighted_native_child_discard_invalid")
-                child_shape = (float(shape_cost(next_hand, discard))
-                               if shape_cost is not None else 0.0)
+                discard_shape_cost = (
+                    float(shape_cost(next_hand, discard))
+                    if shape_cost is not None else 0.0)
                 child_feed = (float(feed_risk(game, seat, discard))
                               if feed_risk is not None else 0.0)
+                if (shape_enabled and
+                        not 0 <= child_shape_quality < (1 << 32)):
+                    raise _NativeKernelInvalid(
+                        "weighted_native_child_shape_invalid")
                 candidates.append((
                     (child_s, -child_u, -child_types, discard == W,
-                     child_shape, child_feed, discard),
+                     discard_shape_cost, child_feed, discard),
                     discard,
                 ))
             _key, selected = min(candidates, key=lambda item: item[0])
+            draw_best_discards[drawn] = selected
             best_counts[selected] = best_counts.get(selected, 0) + weight
             if child_s < root.shanten:
                 improve += weight
@@ -1695,6 +1888,9 @@ def _weighted_native_future_for_frontier(
                 maintain += weight
             weighted_ukeire += weight * child_u
             weighted_types += weight * child_types
+            if shape_enabled:
+                weighted_shape += weight * child_shape_quality
+                draw_shapes[drawn] = child_shape_quality
 
         complete_value = bool(complete) and not stage_a_shaped
         if complete_value:
@@ -1705,7 +1901,11 @@ def _weighted_native_future_for_frontier(
         if (improve != native_improve or maintain != native_maintain or
                 (not stage_a_shaped and weighted_ukeire != native_ukeire) or
                 (not stage_a_shaped and weighted_types != native_types) or
-                (stage_a_shaped and (native_ukeire != 0 or native_types != 0))):
+                (stage_a_shaped and (native_ukeire != 0 or native_types != 0)) or
+                (shape_enabled and not stage_a_shaped and
+                 native_shape_sum != weighted_shape) or
+                ((not shape_enabled or stage_a_shaped) and
+                 native_shape_sum != -1)):
             raise _NativeKernelInvalid("weighted_native_metric_mismatch")
         total_weight = total
         mean_denominator = total if complete_value else covered
@@ -1727,6 +1927,18 @@ def _weighted_native_future_for_frontier(
                 None if stage_a_shaped else
                 (float(weighted_types) / float(mean_denominator)
                  if mean_denominator else None)),
+            future_shape_quality_sum=(
+                weighted_shape if shape_enabled and not stage_a_shaped else None),
+            future_shape_quality_mean=(
+                float(weighted_shape) / float(total_weight)
+                if shape_enabled and not stage_a_shaped and total_weight else None),
+            future_shape_denominator=(
+                total_weight if shape_enabled and not stage_a_shaped else None),
+            child_shape_quality_by_draw=(
+                tuple(sorted(draw_shapes.items())) if draw_shapes else ()),
+            best_discard_by_draw=(
+                tuple(sorted(draw_best_discards.items()))
+                if draw_best_discards else ()),
             future_ukeire_skipped=stage_a_only,
             best_discards=(
                 () if stage_a_shaped else tuple(sorted(best_counts.items()))),
@@ -1765,7 +1977,9 @@ def _weighted_evaluation(
     try:
         roots = _normalise_roots(root_candidates, locked)
         _validate_root_legality(game, seat, roots)
-        enriched, frontier, diagnostics = _root_features(roots, locked, visible)
+        enriched, frontier, diagnostics = _root_features(
+            roots, locked, visible,
+            shape_quality_enabled=profile.shape_quality_enabled)
         visible_tuple = _as_tuple(visible, name="visible")
     except (TypeError, ValueError, _InvalidPublicState) as exc:
         roots = locals().get("roots", ())
@@ -1791,7 +2005,8 @@ def _weighted_evaluation(
         return legacy, evaluation
 
     frontier, diagnostics = _limit_weighted_frontier(
-        frontier, diagnostics, profile.max_frontier_candidates)
+        frontier, diagnostics, profile.max_frontier_candidates,
+        shape_quality_enabled=profile.shape_quality_enabled)
     legacy = _legacy_speed_best(enriched)
     speed_pool = _legacy_speed_roots(enriched)
     speed_pool_tiles = tuple(root.tile for root in speed_pool)
@@ -1880,6 +2095,17 @@ def _weighted_evaluation(
             big_hand_phase=big_hand_phase,
             frontier_cap_dropped=frontier_cap_dropped,
             big_hand_guard=big_hand_guard,
+            shape_quality_version=profile.shape_quality_version,
+            shape_quality_used=profile.shape_quality_enabled,
+            shape_quality_stage=(profile.shape_quality_stage
+                                 if profile.shape_quality_enabled else None),
+            shape_changed_winner=(profile.shape_quality_enabled and
+                                  singleton.tile != legacy),
+            shape_baseline_selected=(
+                legacy if profile.shape_quality_enabled else None),
+            decision_scope=("weighted_two_ply"
+                            if profile.shape_quality_enabled else "legacy"),
+            stage_b_entered=False,
         )
         return singleton.tile, evaluation
 
@@ -1908,6 +2134,8 @@ def _weighted_evaluation(
                 "shanten_cache_misses": sum(value.nodes for value in future_values.values()),
                 "ukeire_cache_hits": 0,
                 "ukeire_cache_misses": None,
+                "stage_b_entered": int(
+                    profile.shape_quality_stage == "full"),
             }
             elapsed_ms = sum(value.elapsed_ms or 0 for value in future_values.values())
         except (_BudgetExceeded, _InvalidPublicState) as exc:
@@ -1987,7 +2215,15 @@ def _weighted_evaluation(
         else:
             speed_winner_root = min(
                 speed_frontier,
-                key=lambda root: _weighted_root_key(root, future_values),
+                key=lambda root: _weighted_root_key(
+                    root, future_values,
+                    shape_quality_enabled=profile.shape_quality_enabled,
+                    future_shape_enabled=(
+                        profile.shape_quality_enabled and
+                        profile.shape_quality_stage == "full" and
+                        all(value.future_shape_quality_mean is not None
+                            for value in future_values.values())),
+                ),
             )
         selected = speed_winner_root.tile
         if big_hand_challenger is not None and not partial_accepted:
@@ -2013,6 +2249,24 @@ def _weighted_evaluation(
 
     stage_a_only = any(
         value.future_ukeire_skipped for value in future_values.values())
+    shape_changed_winner = False
+    shape_baseline_selected = None
+    if (profile.shape_quality_enabled and accepted and not partial_accepted
+            and future_values):
+        future_shape_enabled = (
+            profile.shape_quality_stage == "full" and
+            all(value.future_shape_quality_mean is not None
+                for value in future_values.values()))
+        old_shape_winner = min(
+            speed_frontier,
+            key=lambda root: _weighted_root_key(
+                root, future_values, shape_quality_enabled=False,
+                future_shape_enabled=False),
+        )
+        shape_baseline_selected = old_shape_winner.tile
+        shape_changed_winner = (
+            speed_winner_root is not None and
+            old_shape_winner.tile != speed_winner_root.tile)
     search_used = bool(accepted)
     search_attempt_phase = search_metrics.get("search_phase")
     search_phase = (
@@ -2096,6 +2350,17 @@ def _weighted_evaluation(
         big_hand_phase=big_hand_phase,
         frontier_cap_dropped=frontier_cap_dropped,
         big_hand_guard=big_hand_guard,
+        shape_quality_version=profile.shape_quality_version,
+        shape_quality_used=bool(profile.shape_quality_enabled and accepted),
+        shape_quality_stage=(
+            "stage_b" if profile.shape_quality_enabled and
+            profile.shape_quality_stage == "full" and
+            search_metrics.get("stage_b_entered") else
+            "root" if profile.shape_quality_enabled and accepted else None),
+        shape_changed_winner=bool(shape_changed_winner),
+        shape_baseline_selected=shape_baseline_selected,
+        decision_scope=("weighted_two_ply" if accepted else "legacy"),
+        stage_b_entered=bool(search_metrics.get("stage_b_entered", 0)),
     )
     return selected, evaluation
 
@@ -2292,7 +2557,9 @@ def evaluate_legacy_two_ply(game, seat, root_candidates, locked, visible,
         if root_error:
             raise _InvalidPublicState(root_error)
         _validate_root_legality(game, seat, roots)
-        enriched, frontier, diagnostics = _root_features(roots, locked, visible)
+        enriched, frontier, diagnostics = _root_features(
+            roots, locked, visible,
+            shape_quality_enabled=profile.shape_quality_enabled)
         visible_tuple = _as_tuple(visible, name="visible")
     except _InvalidPublicState as exc:
         legacy = min(roots, key=_legacy_key).tile if roots else None

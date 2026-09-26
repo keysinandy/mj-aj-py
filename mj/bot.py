@@ -36,6 +36,8 @@ from .legacy_eval import (
     LEGACY_V2_PHASE_A_EVALUATORS,
     LEGACY_V2_PHASE_B_EVALUATORS,
     LEGACY_V2_EXPERIMENT_EVALUATORS,
+    LEGACY_V2_SHAPE_PHASE_A_EVALUATORS,
+    LEGACY_V2_SHAPE_PHASE_B_EVALUATORS,
     LEGACY_V2_PROFILE_VERSION,
     LEGACY_V2_OFFLINE_EVALUATORS,
     LEGACY_V2_EVALUATORS,
@@ -60,6 +62,7 @@ from .legacy_react import (
     LegacyReactionProfile,
 )
 from .big_hand_intent import evaluate_big_hand_discard_intents
+from .shape_quality import standing_shape_quality
 from . import legacy_kong as _legacy_kong
 from . import legacy_react as _legacy_react
 from .win import is_baotou, is_win, is_baotou_wait
@@ -215,12 +218,18 @@ def choose_discard(g, seat, return_info=False, profile=None):
             info["push_rounds"] = rounds
             # 落到下方 legacy 键(速度线)
         else:
-            best = _choose_discard_baotou(speed_cands, locked, vis, info)
+            best = _choose_discard_baotou(
+                speed_cands, locked, vis, info,
+                shape_aware=bool(profile and profile.shape_quality_enabled),
+                diagnostics_enabled=profile is not None,
+            )
             if best is not None:
                 info["push_rounds"] = rounds
                 if profile is not None:
-                    info.update(_legacy_v1_scope_info(
-                        profile, best, "baotou_scope"))
+                    scoped = _legacy_v1_scope_info(
+                        profile, best, "baotou_scope")
+                    scoped.update(info)
+                    info = scoped
                 return (best, info) if return_info else best
             # 预算回退:整局走下方 legacy 键,info 已带 fallback_reason
     else:
@@ -341,6 +350,9 @@ def _legacy_best(cands, locked, vis):
 
 def _legacy_v1_scope_info(profile, action, reason):
     """Explain a V1 request that stayed in an established legacy branch."""
+    is_scope = reason in {"baotou_scope", "hu_kong_scope"}
+    decision_scope = ("baotou_scope" if reason == "baotou_scope"
+                      else "legacy")
     return {
         "version": profile.version,
         "profile": profile.name,
@@ -353,8 +365,19 @@ def _legacy_v1_scope_info(profile, action, reason):
         "future_model": profile.model,
         "candidates": [],
         "missing": [reason],
-        "fallback_reason": reason,
+        "fallback_reason": None if is_scope else reason,
         "partial_accepted": False,
+        "decision_scope": decision_scope,
+        "stage_b_entered": False,
+        "future_shape_quality_sum": None,
+        "future_shape_quality_mean": None,
+        "future_shape_denominator": None,
+        "shape_quality_version": profile.shape_quality_version,
+        "shape_quality_used": False,
+        "shape_quality_stage": None,
+        "shape_changed_winner": False,
+        "shape_baseline_selected": action,
+        "baotou_shape_used": False,
     }
 
 
@@ -365,7 +388,8 @@ def _legacy_v1_scope_info(profile, action, reason):
 BAOTOU_UKE_BUDGET_NODES = 64
 
 
-def _choose_discard_baotou(cands, locked, vis, info):
+def _choose_discard_baotou(cands, locked, vis, info, *,
+                           shape_aware=False, diagnostics_enabled=False):
     """持财神听牌态的爆头档排序;预算超限返回 None(整局回退 legacy 键)。
 
     tier 0:弃后站立手为爆头听(听任意牌)——整体优先,档内沿用财神
@@ -383,7 +407,7 @@ def _choose_discard_baotou(cands, locked, vis, info):
     ranked = []
     for t, c, shape, feed in cands:
         if is_baotou_wait(c, locked):
-            ranked.append((0, t, 0, shape, feed))
+            ranked.append((0, t, 0, shape, feed, c))
             continue
         if nodes >= BAOTOU_UKE_BUDGET_NODES:
             # 整局回退,不混用部分爆头结果(可归因)
@@ -392,16 +416,76 @@ def _choose_discard_baotou(cands, locked, vis, info):
             return None
         _acc, u1 = baotou_ukeire(c, locked, vis)
         nodes += 1
-        ranked.append((1, t, u1, shape, feed))
+        ranked.append((1, t, u1, shape, feed, c))
+    # Only compute shape after the whole baotou pass has succeeded.  Budget
+    # fallback therefore never combines partial baotou and partial shape data.
+    measured = []
+    if shape_aware:
+        try:
+            measured = [
+                (tier, t, u1, shape, feed, c,
+                 standing_shape_quality(c, locked=locked))
+                for tier, t, u1, shape, feed, c in ranked
+            ]
+        except (TypeError, ValueError):
+            info["fallback_reason"] = "baotou_shape_invalid"
+            return None
+    else:
+        measured = [(*item, None) for item in ranked]
     best, best_key, best_tier = None, None, None
-    for tier, t, u1, shape, feed in ranked:
-        key = (tier, t == W, -u1, shape, feed, t)
+    legacy_best, legacy_key = None, None
+    candidate_rows = []
+    for tier, t, u1, shape, feed, _hand, standing in measured:
+        key = (tier, t == W, -u1,
+               -(standing.encoded if shape_aware and standing else 0),
+               shape, feed, t)
+        old_key = (tier, t == W, -u1, shape, feed, t)
         if best_key is None or key < best_key:
             best, best_key, best_tier = t, key, tier
+        if legacy_key is None or old_key < legacy_key:
+            legacy_best, legacy_key = t, old_key
+        if diagnostics_enabled:
+            state = ukeire(c, locked, vis)
+            row = {
+                "tile": t,
+                "shanten": shanten(c, locked),
+                "current_ukeire": int(state[2]),
+                "ukeire_tiles": list(state[1]),
+                "baotou_tier": tier,
+                "baotou_ukeire": u1,
+                "discard_shape_cost": shape,
+                "shape_loss": shape,
+                "feed_risk": feed,
+            }
+            if shape_aware:
+                row.update({
+                    "standing_shape_quality": (
+                        standing.encoded if standing is not None else None),
+                    "standing_shape_signature": (
+                        list(standing.signature)
+                        if standing is not None else None),
+                    "shape_quality_version": (
+                        standing.version if standing is not None else None),
+                })
+            candidate_rows.append(row)
     info["reason"] = "discard_baotou"
     info["baotou_tier"] = best_tier
     info["baotou_nodes"] = nodes
     info["baotou_elapsed_ms"] = round((time.monotonic() - started) * 1000.0, 3)
+    info["decision_scope"] = "baotou_scope"
+    info["stage_b_entered"] = False
+    info["future_shape_quality_sum"] = None
+    info["future_shape_quality_mean"] = None
+    info["future_shape_denominator"] = None
+    info["baotou_shape_used"] = bool(shape_aware)
+    info["shape_quality_used"] = bool(shape_aware)
+    info["shape_quality_stage"] = "baotou" if shape_aware else None
+    info["shape_quality_version"] = (
+        "standing-shape-v1" if shape_aware else None)
+    info["shape_changed_winner"] = bool(shape_aware and best != legacy_best)
+    info["legacy_selected"] = legacy_best
+    if diagnostics_enabled:
+        info["candidates"] = candidate_rows
     return best
 
 
@@ -1023,19 +1107,45 @@ def choose_action(g, seat, evaluator=DEFAULT_BOT_EVALUATOR,
                 profile = LegacyTwoPlyProfile.weighted_online(
                     big_hand_enabled=False,
                     big_hand_same_shanten_enabled=False,
-                    big_hand_plus_one_enabled=False)
+                    big_hand_plus_one_enabled=False,
+                    shape_quality_enabled=False,
+                    shape_quality_guard_enabled=False)
                 reaction_profile = LegacyReactionProfile.v2_online()
             elif evaluator in LEGACY_V2_PHASE_A_EVALUATORS:
                 profile = LegacyTwoPlyProfile.weighted_online(
                     big_hand_enabled=True,
                     big_hand_same_shanten_enabled=True,
-                    big_hand_plus_one_enabled=False)
+                    big_hand_plus_one_enabled=False,
+                    shape_quality_enabled=False,
+                    shape_quality_guard_enabled=False)
                 reaction_profile = LegacyReactionProfile.v2_online()
             elif evaluator in LEGACY_V2_PHASE_B_EVALUATORS:
                 profile = LegacyTwoPlyProfile.weighted_online(
                     big_hand_enabled=True,
                     big_hand_same_shanten_enabled=True,
-                    big_hand_plus_one_enabled=True)
+                    big_hand_plus_one_enabled=True,
+                    shape_quality_enabled=False,
+                    shape_quality_guard_enabled=False)
+                reaction_profile = LegacyReactionProfile.v2_online()
+            elif evaluator in LEGACY_V2_SHAPE_PHASE_A_EVALUATORS:
+                profile = LegacyTwoPlyProfile.weighted_online(
+                    big_hand_enabled=False,
+                    big_hand_same_shanten_enabled=False,
+                    big_hand_plus_one_enabled=False,
+                    shape_quality_enabled=True,
+                    shape_quality_stage="root",
+                    shape_quality_guard_enabled=True,
+                )
+                reaction_profile = LegacyReactionProfile.v2_online()
+            elif evaluator in LEGACY_V2_SHAPE_PHASE_B_EVALUATORS:
+                profile = LegacyTwoPlyProfile.weighted_online(
+                    big_hand_enabled=False,
+                    big_hand_same_shanten_enabled=False,
+                    big_hand_plus_one_enabled=False,
+                    shape_quality_enabled=True,
+                    shape_quality_stage="full",
+                    shape_quality_guard_enabled=True,
+                )
                 reaction_profile = LegacyReactionProfile.v2_online()
             elif evaluator in LEGACY_V2_EVALUATORS:
                 profile = LegacyTwoPlyProfile.weighted_online()

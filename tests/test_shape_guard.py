@@ -21,7 +21,12 @@ PRIMARY_TILE = 3
 )
 class TestShapeGuard(unittest.TestCase):
     def _profile(self, **overrides):
-        values = {"kernel": "rust", "shape_guard_enabled": False}
+        values = {
+            "kernel": "rust",
+            "shape_guard_enabled": False,
+            "shape_quality_enabled": False,
+            "shape_quality_guard_enabled": False,
+        }
         values.update(overrides)
         return LegacyTwoPlyProfile.weighted_online(**values)
 

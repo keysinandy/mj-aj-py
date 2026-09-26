@@ -1,0 +1,54 @@
+{
+  "date": "2026-09-25",
+  "branch": "main",
+  "main_commit": "9fde4cf4ea4490d9d36e7f65c32b3b01af5257c0",
+  "baseline_engine_commit": "debc572edc188cd10cf6f14c766985827d5ae3cc",
+  "profile": {
+    "name": "legacyV2",
+    "fingerprint": "9fd50acbeb1fb6ed",
+    "weighted_kernel_version": "rust-weighted-two-ply-v2",
+    "weighted_kernel_required": "rust-weighted-two-ply-v3",
+    "weighted_kernel_compatible": false,
+    "soft_budget_ms": 40.0,
+    "hard_budget_ms": 50.0,
+    "max_frontier_candidates": 3
+  },
+  "fixture": {
+    "path": "tests/fixtures/legacy_v2_shape_aware_case.json",
+    "concealed_before_discard": "23455m 124s EE w",
+    "open_meld": "789p",
+    "discard_1s": {
+      "tile_id": 18,
+      "shanten": 0,
+      "ukeire": 11,
+      "ukeire_tiles": {"5m": 2, "3s": 4, "E": 2, "white": 3},
+      "baotou_ukeire": 0,
+      "discard_shape_cost": 5,
+      "feed_risk": 0.0
+    },
+    "discard_4s": {
+      "tile_id": 21,
+      "shanten": 0,
+      "ukeire": 11,
+      "ukeire_tiles": {"5m": 2, "3s": 4, "E": 2, "white": 3},
+      "baotou_ukeire": 0,
+      "discard_shape_cost": 3,
+      "feed_risk": 0.0
+    },
+    "baseline_selected": "4s",
+    "baseline_route": {
+      "branch": "baotou_scope",
+      "baotou_tier": 1,
+      "baotou_nodes": 2,
+      "stage_b_entered": false,
+      "future_metrics": null,
+      "fallback_reason": "baotou_scope"
+    }
+  },
+  "limits": {
+    "weighted_future_metrics": "not present on the actual baotou early-return path",
+    "weighted_native_on_normal_route": "falls back transactionally on v2/v3 mismatch",
+    "ordinary_performance_baseline": "artifacts/baseline_summary.json",
+    "paired_score_protocol": "artifacts/score_protocol.json"
+  }
+}

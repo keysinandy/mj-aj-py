@@ -690,7 +690,6 @@ locked 手牌向听数虚高 bug(见下)。
     相应 4 个 clientd/minisuphx 模块 22 passed（17.11s）。OpenSpec strict 与
     `git diff --check` 均通过。
 
-
 15. **Mini-Suphx v2 单机 PPO 三连 bug(2026-09-25 smoke 闭环抓出,已修)**:
     - **rollout 设备不匹配**:`mj/training/ppo_rollout.py::gather_rollout` 的
       `planes_t/scalars_t/mask_t` 固定建在 CPU,而 policy 在 cuda → weight 在
@@ -710,6 +709,58 @@ locked 手牌向听数虚高 bug(见下)。
     **验收**(smoke campaign `runs/minisuphx/smoke`):create→legacy BC→BC anchor
     →DAgger D1→PPO 一期→smoke gate→resume 全闭环跑通;从 policy_v0 checkpoint
     续训 8192 决策成功并发布 policy_v2。相关单测 49 passed。
+
+16. **legacyV2 ShapeQuality（2026-09-26，OpenSpec change
+    `legacy-v2-shape-aware-two-ply`）**：新增版本化 `StandingShapeQuality`，用
+    非重叠 rank decomposition 区分 ryanmen、中央/边坎张与边张；最小顺序固定为
+    `23>24>13>12`、`78>68>79>89`。Rust/Python 对拍覆盖 10,000 手牌；weighted
+    Stage B 同步比较 child shape；爆头快路径只在 tier、财神保护和爆头进张并列时
+    使用 standing shape，保留原 `discard_shape_cost` 与 feed-risk tie-break。
+    按用户要求，在线 `legacyV2` 默认现为 Phase B shape-aware：
+    `shape_quality_enabled=true`、`shape_quality_stage=full`、
+    `shape_quality_guard_enabled=true`；显式关闭 `shape_quality_enabled` 可回滚。
+    weighted hard budget 50ms、frontier 上限 3 不变，内核版本为
+    `rust-weighted-two-ply-v4`。baseline/Phase A/B 对照 evaluator 显式保持
+    shape-off，避免默认切换污染 A/B。
+
+    用户牌例已按公开信息复现：`local/games/20260923/`
+    `tournament_t_069a55e84b26_b9_t4.jsonl` 的真实弃牌帧为 seq=707；旧 key 选
+    4s，shape-aware `baotou_scope` 选 1s，stage B 未进入。回放证据在
+    `openspec/changes/legacy-v2-shape-aware-two-ply/artifacts/`
+    `replay_b9_seq707_20260926.json`。另从本地 1,011 份记录中按路径均匀抽样 60 份，
+    以 Mirror 公开态重放取得 3,836 个可配对弃牌状态；candidate 与 baseline 有
+    60 次动作不同（1.56%），其中 baotou 26、Stage B 34、root-only 0。样本中
+    evaluator `shape_changed_winner` 标志为 42 次，与直接动作差异的计数口径不同；
+    两次扫描结果为 59/60 次，故该抽样率只作描述性估计。4 份日志有 replay
+    illegal 记录（10 条），45 份有 warning；决策 hook 只在合法集对齐后运行。
+    详情及 mismatch 示例见 `historical_replay_scan_20260926.json`。
+
+    积分验收使用独立冻结种子及换座配对：Stage 1 为 4,096 局，均值
+    **+0.0598**、中位数 0、95% CI **[-0.0642,+0.1855]**；Stage 2 为 30,720 局，
+    均值 **+0.0447**、中位数 0、95% CI **[-0.0204,+0.1087]**，形式门槛通过，
+    但区间跨 0，不构成确定正收益。Stage 2 evaluator 的
+    `shape_changed_winner` comparator flag 为 2,652 次（1.288%，影响 2,440 局）；
+    changed-game 均值 +0.2873、95% CI
+    [-0.1836,+0.7824]。15 个按 scope/shanten/副露/剩余牌墙分桶的 bootstrap
+    cohort 没有样本充足且显著为负的桶；墙剩 20 以下、3 副露及 4 向听样本太少，
+    不作推断。Stage1 另外按 scope/shanten/副露/wall-left 做 13 个收益 cohort；
+    root profile 下 flagged divergence 为 baotou 138、weighted/root-only 71、
+    future-shape 0；没有样本充足且显著为负的桶。详见
+    `score_summary_20260926.json`、`score_stage1_buckets_20260926.json`、
+    `score_stage2_buckets_20260926.json`。历史 replay 样本的直接动作差异为 60/3836
+    （1.56%），`shape_changed_winner` flag 42 次；两者口径有 18 次不一致，故
+    Stage2 正式 action-rate 口径仍待补齐，不能把 comparator flag 当成真实动作差异。
+
+    性能门通过：交错 4-bot 共 1,800 局（每 evaluator 600 局），Phase A p50
+    退化 **+0.44%**，Phase B **+6.75%**，上限 10%；shape microbench 和
+    ordinary-discard 3×1000 结果分别保存在 `shape_microbench_20260926.json`、
+    `ordinary_interleaved_20260926.json`。目标回归 **157 tests + 4 subtests**
+    通过，`cargo check`、OpenSpec strict、`git diff --check` 通过。可运行全套为
+    1,029 passed、45 failed、5 skipped、20 subtests；失败由缺少训练依赖、sandbox
+    loopback 限制和 setup 宿主环境条件引起；授权 sandbox 外重跑 clientd/match-runner
+    相关 34 tests 全过，因此全项目测试仍不记为全绿。Stage 2 满足预设非退化积分门，
+    但 CI 跨 0，不构成确定正收益；性能门通过。应用户明确要求，默认已切到 Phase B。
+    OpenSpec 14.1 全量测试仍未全绿；生产发布后的 100 个改动决策人工抽查待发布后完成。
 
 ### 性能现状(2026-09-03,shanten 剪枝界重构 + shanten/is_win 记忆化)
 - 自博弈(4 bot,同种子 A/B):662ms → 142ms/局(**4.7 倍**)

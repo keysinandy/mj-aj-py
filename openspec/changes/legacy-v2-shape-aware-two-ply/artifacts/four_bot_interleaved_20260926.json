@@ -1,0 +1,79 @@
+{
+  "schema": "legacy-v2-shape-aware-two-ply/interleaved-four-bot-v1",
+  "mode": "interleaved_four_bot",
+  "games_per_evaluator_per_repeat": 200,
+  "repeats": 3,
+  "seed_start": 560000,
+  "dealer_schedule": "(repeat * games + game_index) % 4",
+  "all_four_seats_same_evaluator": true,
+  "interleaved": true,
+  "alternating_order_counts": {
+    "baseline_first": 900,
+    "candidate_first": 900
+  },
+  "evaluators": {
+    "legacy-v2-baseline": {
+      "games": 600,
+      "elapsed_ms_per_game": {
+        "p50": 627.3191419895738,
+        "p95": 1078.4317310026381,
+        "p99": 1327.3711210058536,
+        "max": 1852.34749900701,
+        "mean": 642.1060238948849
+      },
+      "decisions_per_game_mean": 154.99,
+      "wins": 600,
+      "draws": 0
+    },
+    "legacy-v2-shape-phase-a": {
+      "games": 600,
+      "elapsed_ms_per_game": {
+        "p50": 630.0733389944071,
+        "p95": 1142.3434790049214,
+        "p99": 1370.901361995493,
+        "max": 1729.5275869983016,
+        "mean": 661.2793775850636
+      },
+      "decisions_per_game_mean": 157.015,
+      "wins": 600,
+      "draws": 0
+    },
+    "legacy-v2-shape-phase-b": {
+      "games": 600,
+      "elapsed_ms_per_game": {
+        "p50": 669.693894989905,
+        "p95": 1140.8490680041723,
+        "p99": 1471.370087005198,
+        "max": 2933.732226010761,
+        "mean": 688.1552099919403
+      },
+      "decisions_per_game_mean": 155.25666666666666,
+      "wins": 600,
+      "draws": 0
+    }
+  },
+  "comparison": {
+    "legacy-v2-shape-phase-a": {
+      "p50_regression_pct": 0.4390423981162517,
+      "elapsed_game_gate_pass": true
+    },
+    "legacy-v2-shape-phase-b": {
+      "p50_regression_pct": 6.754895580890041,
+      "elapsed_game_gate_pass": true
+    }
+  },
+  "kernel": {
+    "shanten_kernel": "rust",
+    "weighted_kernel": "rust",
+    "weighted_kernel_version": "rust-weighted-two-ply-v4",
+    "weighted_kernel_required": "rust-weighted-two-ply-v4",
+    "weighted_kernel_compatible": true,
+    "legacy_two_ply_kernel_version": "rust-legacy-two-ply-v1",
+    "baotou_kernel": "rust",
+    "degraded": false,
+    "reason": null,
+    "impact": null
+  },
+  "runtime_s": 1197.4222996889876,
+  "total_matches": 1800
+}

@@ -16,6 +16,16 @@ The native shape helper MUST use the same versioned decomposition semantics as t
 - **WHEN** the same roots, visible counts, locked count, legal masks, profile and budget are evaluated by Python and Rust
 - **THEN** selected action, future improvement, future ukeire, future types, future shape and best-child discard SHALL match exactly
 
+#### Scenario: Native and Python reference agree
+- **WHEN** the same roots, visible counts, locked count, legal sets, profile, and node budget are evaluated by Python and Rust
+- **THEN** each root's completion state, future improvement weight, future ukeire, best-child discard mass, and final selected action are equal
+
+#### Scenario: Hidden state cannot reach the kernel
+- **WHEN** two games differ only in opponent concealed hands or real wall order
+- **THEN** the native request payload and returned metrics are identical
+
+## ADDED Requirements
+
 ### Requirement: Native response contract and version SHALL expose shape metrics safely
 
 Enabling native future shape requires a kernel contract/version bump.

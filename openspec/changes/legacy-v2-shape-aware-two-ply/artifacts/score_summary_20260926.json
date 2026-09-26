@@ -1,0 +1,210 @@
+{
+  "schema": "legacy-v2-shape-aware-two-ply/score-summary-v1",
+  "generated_from": [
+    "score_stage1_20260926.json",
+    "score_stage2_20260926.json",
+    "historical_replay_scan_20260926.json",
+    "score_stage1_buckets_20260926.json"
+  ],
+  "metric": "settlement score delta per paired game; candidate minus baseline",
+  "stages": {
+    "1": {
+      "games_completed": 4096,
+      "games_requested": 4096,
+      "seed_start": 520000,
+      "frozen_schedule_match": true,
+      "jobs": 4,
+      "elapsed_s": 1269.7943738309987,
+      "score_delta_candidate_minus_baseline": {
+        "n": 4096,
+        "mean": 0.059814453125,
+        "low": -0.064208984375,
+        "high": 0.185546875,
+        "alpha": 0.05,
+        "rounds": 2000,
+        "seed": 20260926,
+        "method": "source-group-bootstrap"
+      },
+      "median_score_delta": 0.0,
+      "outcomes": {
+        "baseline": {
+          "wins": 1042,
+          "win_rate": 0.25439453125,
+          "draws": 15,
+          "draw_rate": 0.003662109375
+        },
+        "candidate": {
+          "wins": 1051,
+          "win_rate": 0.256591796875,
+          "draws": 10,
+          "draw_rate": 0.00244140625,
+          "winning_multiplier_mean": 1.1836346336822074
+        }
+      },
+      "shape_changes": {
+        "shape_evaluated_decisions": 28292,
+        "games_changed": 199,
+        "decision_scope": {
+          "baotou_scope": 5574,
+          "legacy": 1596,
+          "weighted_two_ply": 27296
+        },
+        "changed_by_scope": {
+          "baotou_scope": 138,
+          "weighted_two_ply": 71
+        },
+        "taatsu_upgrade_distribution": {
+          "central_kanchan+1": 48,
+          "edge_kanchan+1": 5,
+          "no_taatsu_class_gain": 142,
+          "ryanmen+1": 2,
+          "taatsu+1+central_kanchan+1": 3,
+          "taatsu+1+central_kanchan+1+edge_kanchan+1": 2,
+          "taatsu+1+central_kanchan+2": 2,
+          "taatsu+1+edge_kanchan+1": 1,
+          "taatsu+1+edge_kanchan+2": 1,
+          "taatsu+1+penchan+1": 1,
+          "taatsu+1+ryanmen+1": 2
+        },
+        "changed_by_shanten": {
+          "0": 150,
+          "1": 26,
+          "2": 18,
+          "3": 14,
+          "4": 1
+        },
+        "changed_by_open_meld_count": {
+          "0": 111,
+          "1": 67,
+          "2": 31
+        },
+        "changed_by_wall_left_bucket": {
+          "11-20": 3,
+          "21-40": 41,
+          "41+": 165
+        },
+        "shape_changed_winner_flag_decisions": 209,
+        "shape_changed_winner_flag_rate": 0.007387247278382581,
+        "shape_changed_winner_flags_per_game": 0.051025390625,
+        "flag_semantics": "evaluator comparator-change flag; not the direct baseline/candidate action divergence rate"
+      },
+      "gate": {
+        "passed": true,
+        "rule": "4096 frozen pairs; mean >= -0.10 and 95% CI upper >= 0; at least one shape-changed decision",
+        "default_remains_disabled": true
+      },
+      "errors": 0
+    },
+    "2": {
+      "games_completed": 30720,
+      "games_requested": 30720,
+      "seed_start": 820000,
+      "frozen_schedule_match": true,
+      "jobs": 4,
+      "elapsed_s": 13311.924826549002,
+      "score_delta_candidate_minus_baseline": {
+        "n": 30720,
+        "mean": 0.0447265625,
+        "low": -0.02041015625,
+        "high": 0.10869140625,
+        "alpha": 0.05,
+        "rounds": 2000,
+        "seed": 20260926,
+        "method": "source-group-bootstrap"
+      },
+      "median_score_delta": 0.0,
+      "outcomes": {
+        "baseline": {
+          "wins": 7498,
+          "win_rate": 0.24407552083333334,
+          "draws": 69,
+          "draw_rate": 0.00224609375
+        },
+        "candidate": {
+          "wins": 7542,
+          "win_rate": 0.2455078125,
+          "draws": 58,
+          "draw_rate": 0.0018880208333333333,
+          "winning_multiplier_mean": 1.1669318483160964
+        }
+      },
+      "shape_changes": {
+        "shape_evaluated_decisions": 205957,
+        "games_changed": 2440,
+        "decision_scope": {
+          "baotou_scope": 40679,
+          "legacy": 19481,
+          "weighted_two_ply": 198888
+        },
+        "changed_by_scope": {
+          "baotou_scope": 884,
+          "weighted_two_ply": 1768
+        },
+        "taatsu_upgrade_distribution": {
+          "central_kanchan+1": 371,
+          "central_kanchan+2": 1,
+          "edge_kanchan+1": 36,
+          "no_taatsu_class_gain": 2135,
+          "penchan+1": 6,
+          "ryanmen+1": 18,
+          "taatsu+1+central_kanchan+1": 17,
+          "taatsu+1+central_kanchan+1+edge_kanchan+1": 15,
+          "taatsu+1+central_kanchan+1+penchan+1": 4,
+          "taatsu+1+central_kanchan+2": 13,
+          "taatsu+1+edge_kanchan+1": 11,
+          "taatsu+1+edge_kanchan+2": 2,
+          "taatsu+1+penchan+1": 9,
+          "taatsu+1+ryanmen+1": 9,
+          "taatsu+2+central_kanchan+2": 2,
+          "taatsu+2+edge_kanchan+2": 1,
+          "taatsu+2+penchan+2": 1,
+          "taatsu+2+ryanmen+2": 1
+        },
+        "changed_by_shanten": {
+          "0": 950,
+          "1": 752,
+          "2": 764,
+          "3": 183,
+          "4": 3
+        },
+        "changed_by_open_meld_count": {
+          "0": 1646,
+          "1": 822,
+          "2": 176,
+          "3": 8
+        },
+        "changed_by_wall_left_bucket": {
+          "0-10": 1,
+          "11-20": 9,
+          "21-40": 371,
+          "41+": 2271
+        },
+        "shape_changed_winner_flag_decisions": 2652,
+        "shape_changed_winner_flag_rate": 0.012876474215491584,
+        "shape_changed_winner_flags_per_game": 0.086328125,
+        "flag_semantics": "evaluator comparator-change flag; not the direct baseline/candidate action divergence rate"
+      },
+      "gate": {
+        "passed": true,
+        "rule": "30720 independent frozen pairs; mean >= 0 and 95% CI lower >= -0.10",
+        "default_remains_disabled": true
+      },
+      "errors": 0
+    }
+  },
+  "historical_replay_divergence_sample": {
+    "source_artifact": "historical_replay_scan_20260926.json",
+    "available_log_files": 1011,
+    "sampled_log_files": 60,
+    "paired_public_discard_states": 3836,
+    "baseline_candidate_action_divergences": 60,
+    "direct_action_divergence_rate": 0.01564129301355579,
+    "shape_changed_winner_flags": 42,
+    "action_divergences_without_flag": 18,
+    "repeat_runs_observed_divergences": [
+      59,
+      60
+    ],
+    "note": "Descriptive public-state replay sample; the sample rate is separate from Stage 1/2 paired-score trials and varied by one action between two runs."
+  }
+}

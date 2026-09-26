@@ -58,6 +58,8 @@ shape evaluator SHALL 避免对同一 tile copy 重复计算多个搭子关系�
 
 ### Requirement: shape quality SHALL 不改变 shanten 与 ukeire 的主导地位
 
+系统 MUST 保持 shanten、ukeire 与 ukeire types 对 shape quality 的优先级。
+
 shape quality 只可在更高优先级的 shanten、ukeire 和 ukeire types 无法区分候选时参与排序。
 
 #### Scenario: 更好形状不能覆盖更低向听
@@ -109,7 +111,6 @@ shape evaluator MUST 只依赖 standing tile counts 与显式规则输入，不�
 - **AND** diagnostics SHALL 显示 1s/4s 的 baotou tier、baotou_ukeire、standing shape 与旧 discard shape cost
 - **AND** `stage_b_entered` SHALL 为 false
 - **AND** MUST NOT 使用硬编码牌号特判
-
 
 ### Requirement: baotou_scope SHALL 在爆头进度打平后使用 standing shape
 

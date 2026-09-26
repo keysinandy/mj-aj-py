@@ -1,0 +1,44 @@
+{
+  "schema": "legacy-v2-shape-aware-two-ply/paired-score-protocol-v1",
+  "primary_metric": "per-game hero settlement score points",
+  "higher_is_better": true,
+  "baseline_evaluator": "legacy-v2-baseline",
+  "candidate_evaluators": {
+    "stage_1": "legacy-v2-shape-phase-a",
+    "stage_2": "legacy-v2-shape-phase-b"
+  },
+  "opponents": "the other three seats use legacy-v2-baseline in both arms",
+  "seed_schedules": {
+    "stage_1": {
+      "seed_start": 520000,
+      "pairs": 4096,
+      "seed_for_index": "seed_start + index"
+    },
+    "stage_2": {
+      "seed_start": 820000,
+      "pairs": 30720,
+      "seed_for_index": "seed_start + index"
+    }
+  },
+  "seat_rotation": {
+    "hero_seat": "index % 4",
+    "dealer": "(index // 4) % 4",
+    "coverage": "balanced over all 16 hero-seat/dealer combinations",
+    "pairing": "baseline and candidate rebuild the same seed, hero seat, dealer, rules, and opponents"
+  },
+  "execution_order": "alternate baseline-first and candidate-first by pair index parity",
+  "score": "game.scores[hero_seat] after game completion; record candidate minus baseline per paired source seed",
+  "secondary_metrics": [
+    "win rate",
+    "draw rate",
+    "winning multiplier",
+    "shape_changed_winner count and return by changed/unchanged bucket",
+    "decision_scope, shanten, open meld count, wall-left, and taatsu-upgrade buckets"
+  ],
+  "invariants": [
+    "shape_quality_enabled=false for baseline",
+    "same seed and public rules for each paired arm",
+    "no opponent concealed hand or true wall order read by the evaluator",
+    "score gate is computed only from settlement-score delta"
+  ]
+}

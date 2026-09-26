@@ -1,0 +1,73 @@
+{
+  "profile": {
+    "name": "legacyV2",
+    "version": "legacyV2",
+    "model": "weighted_unseen_one_draw_lazy_best_discard",
+    "rules_version": "hangzhou-platform-guide-v34",
+    "node_budget": 100000,
+    "time_budget_ms": 50.0,
+    "cache_capacity": 8192,
+    "sort_version": "weighted-frontier-v1",
+    "kernel": "rust",
+    "enabled": true,
+    "big_hand": {
+      "version": "legacy-big-hand-intent-v1",
+      "enabled": false,
+      "same_shanten_enabled": true,
+      "plus_one_enabled": false,
+      "min_live": 24,
+      "max_opponent_melds": 1,
+      "min_ukeire": 4,
+      "max_ukeire_loss": 4,
+      "min_pair_units": 4,
+      "min_luxury_upgrade_live": 1
+    },
+    "mode": "weighted",
+    "soft_budget_ms": 40.0,
+    "hard_budget_ms": 50.0,
+    "max_frontier_candidates": 3,
+    "allow_partial": true,
+    "min_partial_coverage": 0.9,
+    "lazy_child_ukeire": true,
+    "shape_guard_enabled": true,
+    "shape_guard_ukeire_slack": 1,
+    "shape_guard_shape_delta": 8,
+    "require_complete": false,
+    "workers": 0,
+    "fingerprint": "015589af993c2c2e"
+  },
+  "end_to_end": {
+    "states": 1000,
+    "complete": 0,
+    "partial_accepted": 0,
+    "fallback": 1000,
+    "search_used": 0,
+    "search_used_rate": 0.0,
+    "search_phase_counts": {
+      "none": 1000
+    },
+    "workers": 0,
+    "p50_ms": 1.1094649962615222,
+    "p90_ms": 1.7615200049476698,
+    "p95_ms": 2.034656994510442,
+    "p99_ms": 2.6183040026808158,
+    "max_ms": 3.7166969996178523,
+    "coverage_p50": null,
+    "frontier_p50": 0.0,
+    "shanten_calls_total": 0,
+    "ukeire_calls_total": 0,
+    "child_nodes_total": 0,
+    "shanten_cache_hit_rate": 0.0,
+    "fallback_reasons": {
+      "native_weighted_kernel_version_mismatch": 835,
+      "baotou_scope": 6
+    }
+  },
+  "raw_native": {
+    "states": 1000,
+    "p50_ms": 6.4099890005309135,
+    "p95_ms": 14.462823994108476,
+    "p99_ms": 18.317887996090576,
+    "max_ms": 29.30514900072012
+  }
+}

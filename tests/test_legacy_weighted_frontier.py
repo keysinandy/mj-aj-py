@@ -59,6 +59,8 @@ class TestWeightedTwoPlyFrontier(unittest.TestCase):
             "node_budget": 100000,
             "max_frontier_candidates": 0,
             "allow_partial": False,
+            "shape_quality_enabled": False,
+            "shape_quality_guard_enabled": False,
         }
         values.update(overrides)
         return LegacyTwoPlyProfile.weighted_online(**values)
@@ -108,6 +110,21 @@ class TestWeightedTwoPlyFrontier(unittest.TestCase):
         self.assertIsNone(row.get("future_improve_weight"))
         self.assertEqual(row["future_short_circuit_reason"],
                          "frontier_singleton")
+
+    def test_shape_stage_preserves_frozen_grab_discard_legality(self):
+        game = _seq100_game()
+        game.freeze = 2
+        game.freezer = 2
+        game.drawn[0] = 7
+        profile = self._exact_weighted(
+            shape_quality_enabled=True, shape_quality_stage="full",
+            shape_quality_guard_enabled=True)
+        action, info = choose_discard(
+            game, 0, return_info=True, profile=profile)
+        self.assertEqual(action, 7)
+        self.assertIn(action, game.legal_actions())
+        self.assertFalse(info["stage_b_entered"])
+        self.assertEqual(info["short_circuit_reason"], "frontier_singleton")
 
     def test_stage_a_only_returns_safe_coverage_without_stage_b(self):
         game = _seq100_game()
