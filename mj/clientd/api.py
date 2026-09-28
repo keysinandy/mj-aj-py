@@ -3,6 +3,7 @@
 挂载于服务 Router,供前端/CLI 消费:
 - GET  /api/records/local    本地批次两级浏览(batch → game)
 - GET  /api/records/online   线上日志(日期 → gid,支持时间范围分页)
+- POST /api/strategy/snapshot 当前策略选择的服务端配置预览
 - POST /api/records/local/frames  按 batch_id+game 取统一 ReplaySession/帧
 - GET  /api/seeds            种子库列表
 - POST /api/seeds            命名保存种子
@@ -121,6 +122,37 @@ def api_router(arena_root=None, games_root=None, seed_root=None,
     @router.get("/api/settings")
     def _settings_get(request):
         return 200, settings.get()
+
+    @router.post("/api/strategy/snapshot")
+    def _strategy_snapshot_preview(request):
+        config = request.body or {}
+        if not isinstance(config, dict):
+            raise ValidationError("strategy config must be an object")
+        strategy = config.get("strategy")
+        if strategy not in ("bot", "policy", "policy-v3", "random"):
+            raise ValidationError(f"unknown strategy {strategy!r}")
+        model_required = strategy in ("policy", "policy-v3")
+        selected_model = None
+        if model_required and not (config.get("ckpt") or config.get("model")):
+            try:
+                selected_model = models.resolve_selected()
+            except ValidationError:
+                selected_model = None
+        model_name = (config.get("model_name") or
+                      (selected_model.get("name") if selected_model else None))
+        preview_config = dict(config)
+        if model_name:
+            preview_config["model_name"] = model_name
+        from ..strategy_runtime import snapshot_for_config
+        snapshot = snapshot_for_config(preview_config)
+        return 200, {
+            "status": "configured",
+            "snapshot": snapshot.as_json(),
+            "model_required": model_required,
+            "model_available": (bool(selected_model or config.get("ckpt") or
+                                      config.get("model"))
+                                if model_required else True),
+        }
 
     @router.put("/api/settings")
     def _settings_put(request):

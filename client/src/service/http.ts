@@ -4,6 +4,7 @@
  */
 
 import type { BackendSession } from "../replay/session";
+import type { StrategySnapshot } from "../strategy/types";
 
 let base = "http://127.0.0.1:17320";
 
@@ -111,6 +112,13 @@ export interface ManagedModel {
     actions?: number;
   };
   selected: boolean;
+}
+
+export interface StrategySnapshotPreview {
+  status: "configured";
+  snapshot: StrategySnapshot;
+  model_required: boolean;
+  model_available: boolean;
 }
 
 export interface BatchSummary {
@@ -228,6 +236,8 @@ export interface SessionInfo {
     strategy_name?: string;
     evaluator?: string;
     model_name?: string | null;
+    strategy_snapshot?: StrategySnapshot | null;
+    strategy_snapshots?: Array<{ seat: number; snapshot: StrategySnapshot }>;
     server_connected?: boolean | null;
     server_status?: string;
     server_message?: string;
@@ -267,6 +277,9 @@ export const api = {
   },
   listModels(): Promise<{ models: ManagedModel[] }> {
     return fetchJson("/api/models");
+  },
+  strategySnapshot(config: Record<string, unknown>): Promise<StrategySnapshotPreview> {
+    return fetchJson("/api/strategy/snapshot", { method: "POST", body: config });
   },
   importModel(name: string, contentBase64: string): Promise<ManagedModel> {
     return fetchJson("/api/models/import", {

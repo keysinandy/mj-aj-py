@@ -216,7 +216,8 @@ class Recorder:
     def meta(self, gid, name, tid=None, you_cai_bi_kao=False, base=1,
              mode=None, strategy=None, model_name=None, evaluator=None,
              evaluator_profile=None,
-             evaluator_fingerprint=None, evaluator_kernel=None, rules=None):
+             evaluator_fingerprint=None, evaluator_kernel=None, rules=None,
+             strategy_snapshot=None):
         """写入来源与我方策略元数据。
 
         ``mode`` 标记对局来源(match=自由对战;测试房/正式赛缺省不写,
@@ -237,6 +238,8 @@ class Recorder:
                 rec[key] = value
         if rules is not None:
             rec["rules"] = rules
+        if strategy_snapshot is not None:
+            rec["strategy_snapshot"] = strategy_snapshot
         self.log_for(gid, name).write(rec)
 
     def sse_frame(self, gid, seq=None, closed=False, payload=None,
@@ -426,6 +429,7 @@ class Recorder:
                  deadline_left_at_start_ms=None,
                  deadline_left_at_finish_ms=None,
                  decision_result=None, evaluation=None,
+                 decision_audit=None,
                  history_hash=None, belief_profile_fingerprint=None,
                  belief_fingerprint=None, search_profile_fingerprint=None,
                  search_fingerprint=None, model_fingerprint=None,
@@ -475,8 +479,18 @@ class Recorder:
                         "counterfactual_suggestion", "belief_ess",
                         "belief_entropy", "belief_marginals",
                         "search_regret", "root_regret", "regret"):
-                    if eval_data.get(key) is not None:
-                        rec[key] = eval_data[key]
+                        if eval_data.get(key) is not None:
+                            rec[key] = eval_data[key]
+        if decision_audit is not None:
+            try:
+                from ..decision.report import sanitize_public
+                safe_audit = sanitize_public(decision_audit)
+            except Exception:
+                safe_audit = decision_audit
+            if isinstance(safe_audit, dict):
+                safe_audit = dict(safe_audit)
+                safe_audit["decision_id"] = did
+                rec["decision_audit"] = safe_audit
         for key, value in (("window_id", window_id),
                            ("window_attempt_key", window_attempt_key),
                            ("identity_status", identity_status),

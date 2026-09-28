@@ -7,6 +7,8 @@ import {
   type SessionInfo,
   type SessionLogEntry,
 } from "../service/http";
+import { StrategyRuntimePanel } from "../components/StrategyRuntimePanel";
+import { StrategySelectionPreview } from "../components/StrategySelectionPreview";
 
 const STRATEGIES = [
   {
@@ -247,6 +249,11 @@ export function TournamentPage() {
     statusSession && (statusSession.status === "running" || statusSession.status === "created"),
   );
   const selectedStrategy = STRATEGIES.find((item) => item.value === strategy);
+  const selectedStrategyConfig = useMemo(() => {
+    if (!strategy) return null;
+    const [strategyName, evaluator] = strategy.split(":");
+    return { strategy: strategyName, ...(evaluator ? { evaluator } : {}) };
+  }, [strategy]);
   const statusProgress = statusSession?.progress;
   const strategyStatus = statusProgress?.strategy_status;
   const strategyLoaded = statusProgress?.strategy_loaded;
@@ -555,6 +562,12 @@ export function TournamentPage() {
               ? selectedStrategy.description
               : "选项日期按仓库首次提交记录标注，不代表实际投入工时。"}
           </p>
+          {selectedStrategyConfig && (
+            <StrategySelectionPreview
+              title="锦标赛 · 参赛策略"
+              config={selectedStrategyConfig}
+            />
+          )}
           {(strategy === "policy" || strategy === "policy-v3") && (
             <p className="muted tournament-model">
               当前模型：{settings?.selected_model ?? "未选择"} · 可在<Link to="/settings">设置</Link>中管理 ONNX 模型
@@ -623,6 +636,11 @@ export function TournamentPage() {
               )}
             </div>
           </div>
+          <StrategyRuntimePanel
+            snapshot={statusProgress?.strategy_snapshot}
+            status={strategyStatus}
+            message={statusProgress?.message ?? strategyStateMessage}
+          />
           <ol className="tournament-steps">
             <li>报名与准备阶段：自动报名、准备并等待开赛。</li>
             <li>赛事进行阶段：持续查询本人活跃且属于本赛事的对局。</li>

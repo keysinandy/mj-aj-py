@@ -41,13 +41,18 @@ def result_from_game(game):
 
 
 def write_game_record(batch_dir, index, *, seed, dealer, base,
-                      you_cai_bi_kao, seats, roles, actions, result):
+                      you_cai_bi_kao, seats, roles, actions, result,
+                      decision_audits=None, strategy_snapshots=None):
     rec = {
         "seed": int(seed), "dealer": int(dealer),
         "you_cai_bi_kao": bool(you_cai_bi_kao), "base": int(base),
         "seats": seats, "roles": list(roles),
         "actions": [int(a) for a in actions], "result": result,
     }
+    if decision_audits:
+        rec["decision_audits"] = decision_audits
+    if strategy_snapshots:
+        rec["strategy_snapshots"] = strategy_snapshots
     path = game_path(batch_dir, index)
     os.makedirs(batch_dir, exist_ok=True)
     tmp = path + ".tmp"

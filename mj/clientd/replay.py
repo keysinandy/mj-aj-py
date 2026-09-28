@@ -188,6 +188,7 @@ def _build_local_frames(rec):
     my_seat = _local_viewer_seat(rec)
     requests = rec.get("local_requests", rec.get("requests", []))
     diagnostics = rec.get("diagnostics", [])
+    decision_audits = rec.get("decision_audits", [])
     # Game.melds intentionally keeps the compact engine tuple shape.  Keep a
     # parallel source-seat list here so the replay frame can place the claimed
     # tile at the correct visual side of each open meld.
@@ -210,6 +211,20 @@ def _build_local_frames(rec):
         if getattr(g, "phase", None) == "react" and getattr(g, "pending", None):
             claim_source = g.pending[0]
         g.step(action)
+        step_requests = _annotation_bucket(requests, k, k)
+        for audit_entry in _annotation_bucket(decision_audits, k, k):
+            if isinstance(audit_entry, dict):
+                audit = audit_entry.get("decision_audit", audit_entry)
+                step_requests.append({
+                    "kind": "decision",
+                    "type": "DECISION",
+                    "id": (audit.get("decision_id")
+                           if isinstance(audit, dict) else None),
+                    "phase": (audit.get("phase")
+                              if isinstance(audit, dict) else None),
+                    "action": action,
+                    "decision_audit": audit,
+                })
         for seat, melds in enumerate(g.melds):
             while len(meld_sources[seat]) < len(melds):
                 meld_sources[seat].append(
@@ -219,7 +234,7 @@ def _build_local_frames(rec):
             seq_no=k, seq_source="local_action",
             event={"type": "action", "action": action, "actor": actor,
                    "label": _action_label(action)},
-            local_requests=_annotation_bucket(requests, k, k),
+            local_requests=step_requests,
             diagnostics=_annotation_bucket(diagnostics, k, k),
             meld_sources=meld_sources))
     return frames
@@ -546,6 +561,7 @@ class _OnlineBuilder:
                     "action": rec.get("action"),
                     "latency_ms": rec.get("latency_ms"),
                     "fallback_reason": rec.get("fallback_reason"),
+                    "decision_audit": rec.get("decision_audit"),
                 },
                 rec.get("seq"))
             if self.verifications[-1]["ok"] is False:
@@ -646,7 +662,8 @@ def online_frames(records):
 
 def _session_from_frames(frames, *, source, session_id=None, path=None,
                          verifications=None, strategy=None, evaluator=None,
-                         model_name=None):
+                         model_name=None, strategy_snapshot=None,
+                         strategy_snapshots=None):
     """把帧状态包装为统一步骤模型。
 
     ``state`` 保留在每个步骤中是有意的:前端可直接从任一步建立
@@ -683,6 +700,10 @@ def _session_from_frames(frames, *, source, session_id=None, path=None,
                        ("model_name", model_name)):
         if value is not None:
             metadata[key] = value
+    if strategy_snapshot is not None:
+        metadata["strategy_snapshot"] = strategy_snapshot
+    if strategy_snapshots is not None:
+        metadata["strategy_snapshots"] = strategy_snapshots
     if verifications is not None:
         metadata["verifications"] = verifications
     return {
@@ -745,7 +766,7 @@ def local_session(record):
     rec = (load_game_record(record) if isinstance(record, str) else record)
     frames = _build_local_frames(rec)
     path = record if isinstance(record, str) else None
-    strategy = evaluator = model_name = None
+    strategy = evaluator = model_name = strategy_snapshot = None
     viewer = _local_viewer_seat(rec)
     seats = rec.get("seats")
     roles = rec.get("roles")
@@ -760,9 +781,16 @@ def local_session(record):
             strategy = role.get("strategy")
             evaluator = role.get("evaluator")
             model_name = role.get("model_name")
+    snapshots = rec.get("strategy_snapshots") or []
+    if isinstance(snapshots, list):
+        strategy_snapshot = next((
+            entry.get("snapshot") for entry in snapshots
+            if isinstance(entry, dict) and entry.get("seat") == viewer), None)
     return _session_from_frames(
         frames, source="local", path=path, strategy=strategy,
-        evaluator=evaluator, model_name=model_name)
+        evaluator=evaluator, model_name=model_name,
+        strategy_snapshot=strategy_snapshot,
+        strategy_snapshots=snapshots if isinstance(snapshots, list) else None)
 
 
 def online_session(records, *, session_id=None, path=None):
@@ -776,4 +804,5 @@ def online_session(records, *, session_id=None, path=None):
         builder.frames, source="online", session_id=session_id, path=path,
         verifications=builder.verifications,
         strategy=meta.get("strategy"), evaluator=meta.get("evaluator"),
-        model_name=meta.get("model_name"))
+        model_name=meta.get("model_name"),
+        strategy_snapshot=meta.get("strategy_snapshot"))

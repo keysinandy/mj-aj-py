@@ -106,7 +106,7 @@ class TournamentWorker:
                  bot_factory=None, recorder_factory=None,
                  sleep=_sleep_stop, decide=None,
                  wait_for_binding=False, log_sink=None,
-                 server_status_sink=None):
+                 server_status_sink=None, explain="off"):
         self.label = label
         self.server = server
         self.token = token
@@ -133,6 +133,8 @@ class TournamentWorker:
         self.wait_for_binding = bool(wait_for_binding)
         self.log_sink = log_sink
         self.server_status_sink = server_status_sink
+        self.explain = explain if explain in ("off", "summary", "verbose") \
+            else "off"
         self.server_connected = None
         self.server_status = "checking"
         self.server_message = "正在连接目标服务器"
@@ -350,9 +352,22 @@ class TournamentWorker:
         try:
             decide = self.decide or make_decide(
                 self.strategy, self.ckpt, evaluator=self.evaluator)
+            if self.explain != "off":
+                from ..strategy_runtime import format_snapshot, snapshot_for_config
+                snapshot = getattr(decide, "strategy_snapshot", None)
+                if snapshot is None:
+                    snapshot = snapshot_for_config({
+                        "strategy": self.strategy,
+                        "evaluator": self.evaluator,
+                    })
+                self._log(format_snapshot(snapshot))
             self.bot = _make_bot(
                 self.bot_factory, self.api, self.label, decide,
                 self._recorder, self._log)
+            try:
+                self.bot.explain_mode = self.explain
+            except (AttributeError, TypeError):
+                pass
             configure = getattr(self.bot, "configure_tournament", None)
             if configure is not None:
                 configure(self.context)
@@ -449,6 +464,9 @@ def build_parser():
                         help="trace 侧车目录")
     parser.add_argument("--max-games-debug", type=int, default=None,
                         help="仅调试；正式锦标赛不要使用，会导致提前离赛")
+    parser.add_argument("--explain", choices=("off", "summary", "verbose"),
+                        default="off",
+                        help="打印策略配置与决策路径摘要；verbose 含最多五个候选")
     return parser
 
 
@@ -470,7 +488,8 @@ def main(argv=None):
             evaluator=args.bot_evaluator, state_rate=args.state_rate,
             dump=args.dump, no_recorder=args.no_recorder,
             replay_trace=args.replay_trace, trace_root=args.trace_root,
-            max_games_debug=args.max_games_debug, stop=stop)
+            max_games_debug=args.max_games_debug, stop=stop,
+            explain=args.explain)
     except KeyboardInterrupt:
         stop.set()
         results = {label: TournamentResult(

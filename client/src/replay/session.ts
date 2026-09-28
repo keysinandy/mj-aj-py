@@ -6,6 +6,7 @@ import type {
   ReplayLocalRequest,
   ReplaySeqSource,
 } from "./frame";
+import type { StrategySnapshot } from "../strategy/types";
 
 export interface ReplayStep {
   stepIndex: number;
@@ -41,6 +42,8 @@ export interface ReplaySessionMetadata {
   strategy?: string | null;
   evaluator?: string | null;
   modelName?: string | null;
+  strategySnapshot?: StrategySnapshot | null;
+  strategySnapshots?: Array<{ seat: number; snapshot: StrategySnapshot }>;
   stepCount: number;
   rounds: ReplayRound[];
   capabilities: {
@@ -89,6 +92,8 @@ export interface BackendSession {
     strategy?: string | null;
     evaluator?: string | null;
     model_name?: string | null;
+    strategy_snapshot?: StrategySnapshot | null;
+    strategy_snapshots?: Array<{ seat: number; snapshot: StrategySnapshot }>;
     step_count?: number;
     rounds?: BackendReplayRound[];
     capabilities?: {
@@ -291,6 +296,8 @@ export function sessionFromResponse(
       strategy: rawMeta?.strategy,
       evaluator: rawMeta?.evaluator,
       modelName: rawMeta?.model_name,
+      strategySnapshot: rawMeta?.strategy_snapshot,
+      strategySnapshots: rawMeta?.strategy_snapshots,
       stepCount: rawMeta?.step_count ?? steps.length,
       rounds: roundsFromBackend(rawMeta?.rounds, steps),
       capabilities: {

@@ -1,22 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type SessionInfo } from "../service/http";
+import { StrategyRuntimePanel } from "../components/StrategyRuntimePanel";
+import { StrategySelectionPreview } from "../components/StrategySelectionPreview";
 
-const MAIN_STRATEGIES: Array<{ key: string; label: string; config: object }> = [
+const MAIN_STRATEGIES: Array<{ key: string; label: string; config: Record<string, unknown> }> = [
   { key: "legacy-v2", label: "legacy-v2 启发式", config: { strategy: "bot", evaluator: "legacy-v2" } },
   { key: "legacy", label: "legacy 启发式", config: { strategy: "bot", evaluator: "legacy" } },
   { key: "shape-v2", label: "shape-v2 启发式", config: { strategy: "bot", evaluator: "shape-v2", fallback_ms: 10 } },
   { key: "random", label: "随机", config: { strategy: "random" } },
 ];
 
-const OPPONENT_STRATEGIES: Array<{ key: string; label: string; config: object }> = [
+const OPPONENT_STRATEGIES: Array<{ key: string; label: string; config: Record<string, unknown> }> = [
   { key: "random", label: "随机", config: { strategy: "random" } },
   { key: "legacy-v2", label: "legacy-v2 启发式", config: { strategy: "bot", evaluator: "legacy-v2" } },
   { key: "legacy", label: "legacy 启发式", config: { strategy: "bot", evaluator: "legacy" } },
   { key: "shape-v2", label: "shape-v2 启发式", config: { strategy: "bot", evaluator: "shape-v2", fallback_ms: 10 } },
 ];
 
-const MATCH_STRATEGIES: Array<{ key: string; label: string; config: object }> = [
+const MATCH_STRATEGIES: Array<{ key: string; label: string; config: Record<string, unknown> }> = [
   { key: "legacy-v2", label: "legacy-v2 启发式", config: { strategy: "bot", evaluator: "legacy-v2" } },
   { key: "legacy", label: "legacy 启发式", config: { strategy: "bot", evaluator: "legacy" } },
   { key: "shape-v2", label: "shape-v2 启发式", config: { strategy: "bot", evaluator: "shape-v2" } },
@@ -39,6 +41,11 @@ function seatConfig(strategy: string) {
     MAIN_STRATEGIES.find((s) => s.key === strategy) ??
     MAIN_STRATEGIES[0];
   return hit.config;
+}
+
+function opponentConfig(strategy: string) {
+  return OPPONENT_STRATEGIES.find((item) => item.key === strategy)?.config ??
+    OPPONENT_STRATEGIES[0].config;
 }
 
 function errorMessage(reason: unknown, fallback: string): string {
@@ -74,6 +81,9 @@ export function ConsolePage() {
   }, []);
 
   const hasRunningSession = sessions.some((session) => session.status === "running");
+  const selectedMatchStrategy = MATCH_STRATEGIES.find(
+    (item) => item.key === matchStrategy,
+  ) ?? MATCH_STRATEGIES[0];
 
   useEffect(() => {
     mountedRef.current = true;
@@ -205,6 +215,16 @@ export function ConsolePage() {
                 </select>
               </label>
             </div>
+            <div className="strategy-selection-preview-grid">
+              <StrategySelectionPreview
+                title="本地竞技场 · 我的策略（主位）"
+                config={seatConfig(mainStrategy)}
+              />
+              <StrategySelectionPreview
+                title="本地竞技场 · 对手策略"
+                config={opponentConfig(oppStrategy)}
+              />
+            </div>
             <button className="primary" onClick={startBattle} disabled={starting}>
               {starting ? "启动中…" : "开始本地对战"}
             </button>
@@ -235,6 +255,10 @@ export function ConsolePage() {
                 <small>每秒状态请求上限</small>
               </label>
             </div>
+            <StrategySelectionPreview
+              title="线上匹配 · 我的策略"
+              config={selectedMatchStrategy.config}
+            />
             <div className="match-form-footer">
               <p className="match-hint">
                 匹配令牌由本机设置读取，不会发送到浏览器。未配置令牌？<Link to="/settings">前往设置</Link>
@@ -281,6 +305,13 @@ export function ConsolePage() {
                 {sessionDescription(s)}
                 {running && progress && s.kind !== "match" ? ` · ${progress.done}/${progress.total}` : ""}
               </span>
+              <StrategyRuntimePanel
+                snapshot={progress?.strategy_snapshot}
+                snapshots={progress?.strategy_snapshots}
+                status={progress?.strategy_status}
+                message={progress?.message}
+                compact
+              />
               {s.error && <span className="error">{s.error}</span>}
               {s.status === "finished" && s.result?.batch_id && (
                 <Link className="open-replay" to="/replay">

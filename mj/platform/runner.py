@@ -30,6 +30,8 @@ from ..legacy_eval import (
 
 def make_decide(strategy, ckpt=None, evaluator=DEFAULT_BOT_EVALUATOR, model=None,
                 policy_profile=None):
+    from ..strategy_runtime import snapshot_for_config
+
     if strategy == "policy-v3" or (
             strategy == "bot" and evaluator in ("policy-v3", "policy_v3")):
         from mj.decision.policy_v3 import PolicyV3Runtime, load_policy_value_model
@@ -50,13 +52,26 @@ def make_decide(strategy, ckpt=None, evaluator=DEFAULT_BOT_EVALUATOR, model=None
         def play(g, seat):
             return runtime.choose(g, seat, return_evaluation=True)
         play.bot_evaluator = "policy-v3"
+        play.bot_strategy = "policy-v3"
         play.policy_v3_runtime = runtime
+        from ..strategy_runtime import strategy_snapshot
+        model_path = ckpt or (model if isinstance(model, str) else None)
+        play.strategy_snapshot = strategy_snapshot(
+            "policy-v3", "policy-v3", profile=runtime.profile,
+            model_name=os.path.basename(model_path) if model_path else None)
         return play
     if strategy == "policy":
         from mj.evaluate import policy_player
         if not ckpt or not os.path.exists(ckpt):
             raise SystemExit(f"--ckpt 不存在: {ckpt}")
-        return policy_player(ckpt)
+        play = policy_player(ckpt)
+        play.bot_strategy = "policy"
+        play.bot_evaluator = "policy"
+        play.strategy_snapshot = snapshot_for_config({
+            "strategy": "policy", "evaluator": "policy",
+            "model_name": os.path.basename(ckpt),
+        })
+        return play
     if strategy == "bot":
         from mj.bot import choose_action
         profile = canonical_evaluator(evaluator or DEFAULT_BOT_EVALUATOR)
@@ -84,10 +99,21 @@ def make_decide(strategy, ckpt=None, evaluator=DEFAULT_BOT_EVALUATOR, model=None
                             "reason": "legacy_evaluator", "candidates": []}
         # BotClient uses this immutable marker only for recorder metadata.
         play.bot_evaluator = profile
+        play.bot_strategy = "bot"
+        play.strategy_snapshot = snapshot_for_config({
+            "strategy": "bot", "evaluator": profile,
+        })
         return play
     if strategy == "random":
         rng = random.Random()
-        return lambda g, seat: rng.choice(g.legal_actions())
+        def play(g, seat):
+            return rng.choice(g.legal_actions())
+        play.bot_strategy = "random"
+        play.bot_evaluator = "random"
+        play.strategy_snapshot = snapshot_for_config({
+            "strategy": "random", "evaluator": "random",
+        })
+        return play
     raise SystemExit(f"未知策略 {strategy}")
 
 

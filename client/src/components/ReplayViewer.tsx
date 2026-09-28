@@ -189,7 +189,12 @@ export function ReplayViewer() {
           </div>
           <Timeline entries={entries} currentIndex={index} onSelect={(i) => jumpTo(i)} />
         </div>
-        <StepInspector step={currentStep} previous={previousStep} />
+        <StepInspector
+          step={currentStep}
+          previous={previousStep}
+          strategySnapshot={session?.metadata.strategySnapshot}
+          strategySnapshots={session?.metadata.strategySnapshots}
+        />
       </div>
     </div>
   );

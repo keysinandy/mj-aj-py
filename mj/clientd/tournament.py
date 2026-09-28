@@ -184,6 +184,11 @@ def make_tournament_runner(config, settings_path=None,
         session.update_progress({
             "strategy_loaded": True,
             "strategy_status": "loaded",
+            "strategy_snapshot": (
+                decide.strategy_snapshot.as_json()
+                if hasattr(getattr(decide, "strategy_snapshot", None),
+                           "as_json") else
+                getattr(decide, "strategy_snapshot", None)),
             "message": "策略已加载，正在连接目标服务器",
         })
         strategy_label = cfg["strategy"]

@@ -246,6 +246,8 @@ def build_runner_command(args):
         cmd += ["--trace-root", args.trace_root]
     if args.max_games_debug is not None:
         cmd += ["--max-games-debug", str(args.max_games_debug)]
+    if args.explain != "off":
+        cmd += ["--explain", args.explain]
     return cmd
 
 
@@ -268,6 +270,9 @@ def build_parser():
     ap.add_argument("--replay-trace", action="store_true")
     ap.add_argument("--trace-root", default=None)
     ap.add_argument("--max-games-debug", type=int, default=None)
+    ap.add_argument("--explain", choices=("off", "summary", "verbose"),
+                    default="off",
+                    help="打印策略配置与决策路径摘要；verbose 含最多五个候选")
     ap.add_argument("--max-restarts", type=int, default=5,
                     help="守护模式重启上限(意外退出且房间仍存活时)")
     ap.add_argument("--restart-delay", type=float, default=10.0,

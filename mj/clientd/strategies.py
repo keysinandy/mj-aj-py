@@ -89,8 +89,15 @@ class Player:
         self.profile = profile
 
     def __call__(self, game, seat):
+        action, _evaluation = self.decide_with_evaluation(game, seat)
+        return action
+
+    def decide_with_evaluation(self, game, seat):
         result = self._play(game, seat)
-        return result[0] if isinstance(result, tuple) else result
+        if (isinstance(result, tuple) and len(result) == 2 and
+                isinstance(result[0], int)):
+            return result
+        return result, None
 
     @property
     def meta(self):

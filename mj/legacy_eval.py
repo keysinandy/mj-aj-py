@@ -613,6 +613,7 @@ class LegacyDiscardEvaluation:
     shape_baseline_selected: int | None = None
     decision_scope: str = "weighted_two_ply"
     stage_b_entered: bool = False
+    weighted_two_ply_entered: bool = False
 
     def as_json(self):
         result = {
@@ -665,6 +666,7 @@ class LegacyDiscardEvaluation:
             "shape_baseline_selected": self.shape_baseline_selected,
             "decision_scope": self.decision_scope,
             "stage_b_entered": self.stage_b_entered,
+            "weighted_two_ply_entered": self.weighted_two_ply_entered,
         }
         return result
 
@@ -2106,6 +2108,7 @@ def _weighted_evaluation(
             decision_scope=("weighted_two_ply"
                             if profile.shape_quality_enabled else "legacy"),
             stage_b_entered=False,
+            weighted_two_ply_entered=False,
         )
         return singleton.tile, evaluation
 
@@ -2361,6 +2364,7 @@ def _weighted_evaluation(
         shape_baseline_selected=shape_baseline_selected,
         decision_scope=("weighted_two_ply" if accepted else "legacy"),
         stage_b_entered=bool(search_metrics.get("stage_b_entered", 0)),
+        weighted_two_ply_entered=True,
     )
     return selected, evaluation
 

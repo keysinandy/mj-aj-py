@@ -7,6 +7,7 @@ Web 控制台只提交对局参数，服务器地址与匹配令牌始终从 cli
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 
@@ -162,6 +163,17 @@ def _build_decide(config):
         setattr(decide, "bot_evaluator", evaluator)
         if config.get("model_name") is not None:
             setattr(decide, "bot_model_name", config["model_name"])
+        from ..strategy_runtime import (
+            snapshot_for_config, snapshot_with_model_name,
+        )
+        snapshot = getattr(decide, "strategy_snapshot", None)
+        if snapshot is None:
+            snapshot = snapshot_for_config(config)
+        model_name = config.get("model_name")
+        if model_name is None and strategy in ("policy", "policy-v3"):
+            model_name = os.path.basename(model_path) if model_path else None
+        snapshot = snapshot_with_model_name(snapshot, model_name)
+        setattr(decide, "strategy_snapshot", snapshot)
         return decide
     except SystemExit as exc:
         # make_decide 的 CLI 兼容错误是 SystemExit；Web 会话必须转成
@@ -173,7 +185,6 @@ def make_match_runner(config, settings_path=None):
     """返回 ``SessionManager`` runner 协议的线上匹配函数。"""
     cfg = normalize_match_config(config)
     server, token = _settings_credentials(settings_path)
-    decide = _build_decide(cfg)
 
     # 这些导入放在创建匹配会话时，clientd 启动与本地 arena 不受平台
     # runner 的可选依赖影响，也便于离线测试替换 Api/BotClient。
@@ -182,6 +193,37 @@ def make_match_runner(config, settings_path=None):
     from ..platform.recorder import Recorder
 
     def runner(stop, session):
+        session.update_progress({
+            "phase": "loading_strategy",
+            "strategy_loaded": None,
+            "strategy_status": "loading",
+            "strategy_name": cfg["strategy"],
+            "evaluator": cfg["evaluator"],
+            "model_name": cfg.get("model_name"),
+            "message": "正在加载匹配策略",
+        })
+        try:
+            decide = _build_decide(cfg)
+        except Exception as exc:
+            session.update_progress({
+                "strategy_loaded": False,
+                "strategy_status": "error",
+                "message": f"策略加载失败：{type(exc).__name__}",
+            })
+            raise
+        snapshot = getattr(decide, "strategy_snapshot", None)
+        snapshot_json = (snapshot.as_json()
+                         if hasattr(snapshot, "as_json") else snapshot)
+        session.update_progress({
+            "phase": "running",
+            "strategy_loaded": True,
+            "strategy_status": "loaded",
+            "strategy_name": cfg["strategy"],
+            "evaluator": getattr(decide, "bot_evaluator", cfg["evaluator"]),
+            "model_name": cfg.get("model_name"),
+            "strategy_snapshot": snapshot_json,
+            "message": "策略已加载，正在连接匹配服务器",
+        })
         # 网络身份预检放在会话线程中，POST /api/sessions 不会因平台暂时
         # 不可达而阻塞 clientd 控制面；真正的 /api/match 仍由 BotClient
         # 按既有瞬态/鉴权语义处理。
@@ -220,13 +262,13 @@ def make_match_runner(config, settings_path=None):
                 games = int(bot.stats.get("games", 0))
                 rooms = int(bot.stats.get("rooms", 0))
             elapsed = max(time.monotonic() - started, 1e-9)
-            session.progress = {
+            session.update_progress({
                 "done": games,
                 "total": total,
                 "rate": round(games / elapsed, 2),
                 "last_index": games - 1,
                 "rooms": rooms,
-            }
+            })
 
         def monitor():
             while not monitor_done.wait(0.5):

@@ -6,6 +6,7 @@
 
 export type InfoKind = "local" | "online";
 export type ReplayVisibilityMode = "player" | "omniscient";
+import type { DecisionAudit } from "../strategy/types";
 
 export type ReplaySeqSource =
   | "server_event"
@@ -26,6 +27,7 @@ export interface ReplayLocalRequest {
   status?: number | null;
   latency_ms?: number | null;
   attempts?: number | null;
+  decision_audit?: DecisionAudit | null;
   [key: string]: unknown;
 }
 

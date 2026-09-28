@@ -238,6 +238,21 @@ class BotClient:
         self.api = api
         self.name = name
         self.decide = decide
+        self.strategy_snapshot = getattr(decide, "strategy_snapshot", None)
+        if self.strategy_snapshot is None:
+            try:
+                from ..strategy_runtime import snapshot_for_config
+                strategy = (getattr(decide, "bot_strategy", None) or
+                            getattr(decide, "strategy", None) or "unknown")
+                evaluator = (getattr(decide, "bot_evaluator", None) or
+                             getattr(decide, "evaluator", None))
+                self.strategy_snapshot = snapshot_for_config({
+                    "strategy": strategy, "evaluator": evaluator,
+                    "model_name": getattr(decide, "bot_model_name", None),
+                })
+            except Exception:
+                self.strategy_snapshot = None
+        self.explain_mode = "off"
         self._log = log or (lambda msg: None)
         self.window_wait = window_wait
         self.idle_sleep = idle_sleep
@@ -2862,6 +2877,11 @@ class BotClient:
             model_name = getattr(self.decide, "bot_model_name", None)
             if model_name is not None:
                 meta_kwargs["model_name"] = model_name
+            if self.strategy_snapshot is not None:
+                meta_kwargs["strategy_snapshot"] = (
+                    self.strategy_snapshot.as_json()
+                    if hasattr(self.strategy_snapshot, "as_json") else
+                    self.strategy_snapshot)
             if self.mode == "tournament" and self.tournament_rules is not None:
                 meta_kwargs["rules"] = self.tournament_rules.as_dict()
             evaluator = getattr(self.decide, "bot_evaluator", None)
@@ -4022,6 +4042,20 @@ class BotClient:
             act, evaluation = result
         else:
             act = result
+        elapsed_ms = _ms(t0)
+        try:
+            from ..strategy_runtime import (
+                decision_audit, format_decision_audit,
+            )
+            audit = decision_audit(
+                evaluation, act, elapsed_ms, phase=phase,
+                snapshot=self.strategy_snapshot)
+            if self.explain_mode in ("summary", "verbose"):
+                self._log(format_decision_audit(
+                    audit, evaluation=evaluation,
+                    verbose=self.explain_mode == "verbose"))
+        except Exception:
+            audit = None
         finished_epoch = time.time()
         decision_result = ("PASS" if act == -1 else "NON_PASS_ACTION")
         if isinstance(key, WindowAttemptKey):
@@ -4077,6 +4111,8 @@ class BotClient:
                 })
             if evaluation is not None:
                 kwargs["evaluation"] = _compact_evaluation(evaluation)
+            if audit is not None:
+                kwargs["decision_audit"] = audit
             try:
                 params = inspect.signature(self.recorder.decision).parameters
             except (TypeError, ValueError):
@@ -4088,7 +4124,7 @@ class BotClient:
                 kwargs = {key: value for key, value in kwargs.items()
                           if key in params}
             decision_id = self.recorder.decision(
-                gid, phase, legal, act, _ms(t0), **kwargs)
+                gid, phase, legal, act, elapsed_ms, **kwargs)
             if isinstance(key, WindowAttemptKey):
                 mirror._window_decision_ids = getattr(
                     mirror, "_window_decision_ids", {})

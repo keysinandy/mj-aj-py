@@ -85,8 +85,18 @@ def build_player(config, seed, seat):
         raise TypeError(f"seat config must be dict, got {config!r}")
     strategy = config.get("strategy")
     if strategy == "random":
-        return make_random_claim_bot(seed, seat)
-    return make_player(config)
+        player = make_random_claim_bot(seed, seat)
+    else:
+        player = make_player(config)
+    from ..strategy_runtime import snapshot_for_config
+    snapshot = snapshot_for_config(config)
+    try:
+        player.strategy_snapshot = snapshot
+        player.bot_strategy = strategy
+        player.bot_evaluator = config.get("evaluator") or strategy
+    except (AttributeError, TypeError):
+        pass
+    return player
 
 
 def _init_worker(stop_event):
@@ -107,21 +117,55 @@ def _play_task(task):
                for seat, cfg in enumerate(player_configs)]
     game = Game(seed=seed, dealer=dealer, base=base, you_cai_bi_kao=ycbk)
     actions = []
+    decision_audits = []
+    strategy_snapshots = []
+    for physical_seat, player in enumerate(players):
+        snapshot = getattr(player, "strategy_snapshot", None)
+        if snapshot is not None:
+            strategy_snapshots.append({
+                "seat": physical_seat,
+                "snapshot": (snapshot.as_json()
+                             if hasattr(snapshot, "as_json") else snapshot),
+            })
     guard = 0
     while not game.done and guard < MAX_STEPS_PER_GAME:
         seat = game.current_seat()
-        act = players[seat](game, seat)
+        player = players[seat]
+        started = time.perf_counter()
+        if hasattr(player, "decide_with_evaluation"):
+            act, evaluation = player.decide_with_evaluation(game, seat)
+        else:
+            act, evaluation = player(game, seat), None
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
         alegal = list(game.legal_actions())
         if act not in alegal:
             # 防御:策略异常时静默取合法首项,保证批不中断(记录仍完整)
             act = alegal[0] if alegal else None
         if act is None:
             break
+        try:
+            from ..strategy_runtime import decision_audit
+            snapshot = getattr(player, "strategy_snapshot", None)
+            decision_audits.append({
+                "step": len(actions) + 1,
+                "decision_audit": decision_audit(
+                    evaluation, act, elapsed_ms,
+                    phase=("draw" if game.phase == "discard"
+                           else "response_react"),
+                    snapshot=snapshot,
+                    decision_id=len(actions) + 1),
+            })
+        except Exception:
+            # Diagnostics are additive; a serialization issue cannot alter
+            # the action or stop an arena game that was already decided.
+            pass
         actions.append(int(act))
         game.step(act)
         guard += 1
     return {"index": index, "skip": not game.done,
-            "actions": actions, "result": result_from_game(game)}
+            "actions": actions, "result": result_from_game(game),
+            "decision_audits": decision_audits,
+            "strategy_snapshots": strategy_snapshots}
 
 
 def _task_list(cfg):
@@ -181,7 +225,9 @@ def run_arena(config, out_dir=None, is_stop=lambda: False,
                     dealer=(res["index"] // 4) % 4, base=cfg.base,
                     you_cai_bi_kao=cfg.you_cai_bi_kao,
                     seats=cfg.seats, roles=roles,
-                    actions=res["actions"], result=res["result"])
+                    actions=res["actions"], result=res["result"],
+                    decision_audits=res.get("decision_audits"),
+                    strategy_snapshots=res.get("strategy_snapshots"))
                 completed.append({"index": res["index"], "path": path,
                                   "seed": seed0 + res["index"]})
             if progress is not None:
@@ -273,13 +319,28 @@ def make_arena_session_manager(arena_root=None, max_concurrent=8,
             raise ValidationError(
                 f"clientd web 会话仅支持 arena 或 match;got {kind!r}")
         cfg = _normalize_seats(config)
+        from ..strategy_runtime import snapshot_for_config
+        strategy_snapshots = [
+            {"seat": index,
+             "snapshot": snapshot_for_config(seat_config).as_json()}
+            for index, seat_config in enumerate(cfg["seats"])
+        ]
 
         def runner(stop, session):
+            session.update_progress({
+                "strategy_status": "configured",
+                "strategy_loaded": None,
+                "strategy_name": "arena",
+                "strategy_snapshots": strategy_snapshots,
+                "strategy_snapshot": (strategy_snapshots[0]["snapshot"]
+                                      if strategy_snapshots else None),
+                "message": "座位策略配置已解析；本地 worker 将按局初始化策略",
+            })
             def progress(done, total, rate, index):
-                session.progress = {
+                session.update_progress({
                     "done": done, "total": total,
                     "rate": round(rate, 2), "last_index": index,
-                }
+                })
             return run_arena(cfg, out_dir=root, is_stop=stop,
                              progress=progress)
         return runner
