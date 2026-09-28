@@ -118,39 +118,59 @@ def _profile_from_config(strategy, evaluator, config):
 
     evaluator = canonical_evaluator(evaluator or DEFAULT_BOT_EVALUATOR)
     if evaluator in LEGACY_V2_EVALUATORS:
-        return (LegacyTwoPlyProfile.weighted_online(),
+        marginal_enabled = config.get(
+            "marginal_structure_guard_enabled", True)
+        if isinstance(marginal_enabled, str):
+            marginal_enabled = marginal_enabled.strip().lower() in {
+                "1", "true", "yes", "on", "enabled",
+            }
+        profile_kwargs = {
+            "marginal_structure_guard_enabled": bool(marginal_enabled),
+        }
+        if "marginal_structure_role_version" in config:
+            profile_kwargs["marginal_structure_role_version"] = str(
+                config["marginal_structure_role_version"])
+        if "marginal_structure_slack_by_shanten" in config:
+            profile_kwargs["marginal_structure_slack_by_shanten"] = config[
+                "marginal_structure_slack_by_shanten"]
+        return (LegacyTwoPlyProfile.weighted_online(**profile_kwargs),
                 LegacyReactionProfile.v2_online())
     if evaluator in LEGACY_V2_BASELINE_EVALUATORS:
         return (LegacyTwoPlyProfile.weighted_online(
             big_hand_enabled=False, big_hand_same_shanten_enabled=False,
             big_hand_plus_one_enabled=False, shape_quality_enabled=False,
-            shape_quality_guard_enabled=False),
+            shape_quality_guard_enabled=False,
+            marginal_structure_guard_enabled=False),
                 LegacyReactionProfile.v2_online())
     if evaluator in LEGACY_V2_PHASE_A_EVALUATORS:
         return (LegacyTwoPlyProfile.weighted_online(
             big_hand_enabled=True, big_hand_same_shanten_enabled=True,
             big_hand_plus_one_enabled=False, shape_quality_enabled=False,
-            shape_quality_guard_enabled=False),
+            shape_quality_guard_enabled=False,
+            marginal_structure_guard_enabled=False),
                 LegacyReactionProfile.v2_online())
     if evaluator in LEGACY_V2_PHASE_B_EVALUATORS:
         return (LegacyTwoPlyProfile.weighted_online(
             big_hand_enabled=True, big_hand_same_shanten_enabled=True,
             big_hand_plus_one_enabled=True, shape_quality_enabled=False,
-            shape_quality_guard_enabled=False),
+            shape_quality_guard_enabled=False,
+            marginal_structure_guard_enabled=False),
                 LegacyReactionProfile.v2_online())
     if evaluator in LEGACY_V2_SHAPE_PHASE_A_EVALUATORS:
         return (LegacyTwoPlyProfile.weighted_online(
             big_hand_enabled=False, big_hand_same_shanten_enabled=False,
             big_hand_plus_one_enabled=False, shape_quality_enabled=True,
             shape_quality_stage="root",
-            shape_quality_guard_enabled=True),
+            shape_quality_guard_enabled=True,
+            marginal_structure_guard_enabled=False),
                 LegacyReactionProfile.v2_online())
     if evaluator in LEGACY_V2_SHAPE_PHASE_B_EVALUATORS:
         return (LegacyTwoPlyProfile.weighted_online(
             big_hand_enabled=False, big_hand_same_shanten_enabled=False,
             big_hand_plus_one_enabled=False, shape_quality_enabled=True,
             shape_quality_stage="full",
-            shape_quality_guard_enabled=True),
+            shape_quality_guard_enabled=True,
+            marginal_structure_guard_enabled=False),
                 LegacyReactionProfile.v2_online())
     if evaluator in LEGACY_V2_OFFLINE_EVALUATORS:
         return (LegacyTwoPlyProfile.weighted_offline(),
@@ -222,6 +242,12 @@ def strategy_snapshot(strategy, evaluator=None, *, profile=None,
             "stage_b": _feature("enabled" if weighted else "disabled"),
             "shape_guard": _feature(
                 "enabled" if legacy_profile.shape_guard_enabled else "disabled"),
+            "marginal_structure_guard": _feature(
+                "enabled" if legacy_profile.marginal_structure_guard_enabled
+                else "disabled",
+                role_version=legacy_profile.marginal_structure_role_version,
+                slack_by_shanten=list(
+                    legacy_profile.marginal_structure_slack_by_shanten)),
             "shape_quality": _feature(
                 "enabled" if legacy_profile.shape_quality_enabled else "disabled",
                 stage=legacy_profile.shape_quality_stage),
@@ -244,6 +270,7 @@ def strategy_snapshot(strategy, evaluator=None, *, profile=None,
             "weighted_two_ply": _feature("not_applicable"),
             "stage_b": _feature("not_applicable"),
             "shape_guard": _feature("not_applicable"),
+            "marginal_structure_guard": _feature("not_applicable"),
             "big_hand_intent": _feature("not_applicable"),
             "reaction_v2": _feature("not_applicable"),
             "kong_continuation": _feature("not_applicable"),
@@ -253,6 +280,7 @@ def strategy_snapshot(strategy, evaluator=None, *, profile=None,
             "weighted_two_ply": _feature("not_applicable"),
             "stage_b": _feature("not_applicable"),
             "shape_guard": _feature("not_applicable"),
+            "marginal_structure_guard": _feature("not_applicable"),
             "big_hand_intent": _feature("not_applicable"),
             "reaction_v2": _feature("unknown"),
             "kong_continuation": _feature("unknown"),
@@ -275,6 +303,7 @@ def strategy_snapshot(strategy, evaluator=None, *, profile=None,
             "weighted_two_ply": _feature("not_applicable"),
             "stage_b": _feature("not_applicable"),
             "shape_guard": _feature("not_applicable"),
+            "marginal_structure_guard": _feature("not_applicable"),
             "big_hand_intent": _feature("not_applicable"),
             "plus_one": _feature("not_applicable"),
             "baotou_scope": _feature("not_applicable"),
@@ -522,6 +551,35 @@ def decision_audit(evaluation, action, elapsed_ms, *, phase=None,
         shape_guard_configured is True and shape_guard_data and
         shape_guard_reason not in pre_entry_guard_skips)
 
+    marginal_guard_data = data.get("marginal_structure_guard")
+    if not isinstance(marginal_guard_data, dict):
+        marginal_guard_data = {}
+    marginal_configured = configured_state("marginal_structure_guard")
+    marginal_reason = marginal_guard_data.get("skipped_reason")
+    marginal_blocked = bool(data.get("frontier_singleton_blocked") or
+                            marginal_guard_data.get(
+                                "frontier_singleton_blocked"))
+    marginal_proven = bool(data.get("frontier_singleton_proven") or
+                           marginal_guard_data.get(
+                               "frontier_singleton_proven"))
+    marginal_eligible = bool(
+        marginal_configured is True and
+        phase in (None, "draw", "discard") and
+        selected_scope != "baotou_scope" and not hu_kong_scope)
+    if marginal_configured is False:
+        marginal_reason = "FEATURE_DISABLED"
+    elif selected_scope == "baotou_scope":
+        marginal_reason = "BAOTOU_SCOPE_EARLY_RETURN"
+    elif hu_kong_scope:
+        marginal_reason = "HU_KONG_SCOPE_EARLY_RETURN"
+    elif marginal_configured is None:
+        marginal_reason = config_unknown_reason("marginal_structure_guard")
+    elif marginal_reason is None and not marginal_blocked and not marginal_proven:
+        marginal_reason = "NOT_ENTERED"
+    marginal_entered = bool(
+        marginal_configured is True and marginal_guard_data and
+        marginal_eligible)
+
     intents = []
     candidates = data.get("candidates")
     if isinstance(candidates, list):
@@ -597,6 +655,19 @@ def decision_audit(evaluation, action, elapsed_ms, *, phase=None,
             else None,
             "entered": shape_guard_entered,
             "skip_reason": shape_guard_reason,
+        },
+        "marginal_structure_guard": {
+            "configured": marginal_configured,
+            "eligible": marginal_eligible if marginal_configured is not None
+            else None,
+            "entered": marginal_entered,
+            "blocked": marginal_blocked,
+            "proven": marginal_proven,
+            "slack": data.get("role_guard_slack"),
+            "challengers": data.get("role_guard_challengers") or
+            marginal_guard_data.get("role_guard_challengers") or
+            marginal_guard_data.get("challengers") or [],
+            "skip_reason": marginal_reason,
         },
         "weighted_two_ply": {
             "configured": weighted_configured,

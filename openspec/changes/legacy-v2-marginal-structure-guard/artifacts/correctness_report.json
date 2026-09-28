@@ -1,0 +1,62 @@
+{
+  "change": "legacy-v2-marginal-structure-guard",
+  "targeted_validation": [
+    {
+      "command": ".venv/bin/python -m pytest tests/test_legacy_marginal_structure.py tests/test_legacy_eval.py tests/test_legacy_weighted_frontier.py tests/test_legacy_shape_quality.py tests/test_clientd_strategy.py tests/test_legacy_reaction_audit.py -q",
+      "result": "76 passed"
+    },
+    {
+      "command": ".venv/bin/python -m pytest tests/test_legacy_marginal_structure.py -q",
+      "result": "11 passed"
+    },
+    {
+      "command": ".venv/bin/python -m pytest tests/test_legacy_eval.py tests/test_legacy_weighted_frontier.py tests/test_legacy_shape_quality.py -q",
+      "result": "48 passed"
+    },
+    {
+      "command": ".venv/bin/python -m pytest tests/test_clientd_strategy.py tests/test_legacy_reaction_audit.py -q",
+      "result": "17 passed"
+    }
+  ],
+  "baseline_check": {
+    "command": ".venv/bin/python -m pytest tests/test_shape_guard.py -q at clean HEAD",
+    "result": "9 passed, 1 pre-existing failure",
+    "failure": "test_default_profile_guards_the_singleton_state",
+    "note": "The same failure reproduces from the frozen HEAD archive; it is outside this change's shape-guard diff."
+  },
+  "full_collection": {
+    "command": ".venv/bin/python -m pytest tests/ -q",
+    "result": "collection blocked",
+    "missing_optional_dependencies": ["torch", "gymnasium"],
+    "blocked_modules": [
+      "tests/test_campaign.py",
+      "tests/test_minisuphx_cluster.py",
+      "tests/test_minisuphx_rl.py",
+      "tests/test_onnx_player.py",
+      "tests/test_rl_env.py",
+      "tests/test_streaming_bc.py"
+    ]
+  },
+  "golden_899s": {
+    "validation_profile": {
+      "kernel": "python",
+      "hard_budget_ms": 5000.0,
+      "allow_partial": false
+    },
+    "guard_enabled": true,
+    "frontier_singleton_blocked": true,
+    "role_guard_slack": 6,
+    "admitted_ukeire_min": 77,
+    "weighted_two_ply_entered": true,
+    "search_used": true,
+    "future_nodes": 871,
+    "complete": true,
+    "selected": "3m"
+  },
+  "feature_off": {
+    "action": "9s",
+    "level": "legacy-one-ply",
+    "search_used": false,
+    "profile_fingerprint_unchanged": true
+  }
+}

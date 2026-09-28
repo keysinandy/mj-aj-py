@@ -39,6 +39,27 @@ The frontier MUST remain bounded by max_frontier_candidates <= 3.
 - **THEN** stable ordering SHALL be used
 - **AND** input iteration order SHALL NOT change retained roots
 
+#### Scenario: 拆面子候选进入比较
+
+- **WHEN** the unique maximum-current-ukeire candidate breaks a completed
+  meld and another candidate is one tile worse with materially lower
+  structural loss
+- **THEN** both candidates SHALL enter the same weighted comparison and the
+  decision SHALL retain admission diagnostics
+
+#### Scenario: 进张差距超出护栏
+
+- **WHEN** a challenger exceeds the configured role-aware slack
+- **THEN** it SHALL remain outside the marginal frontier and the action SHALL
+  match the guard-disabled singleton result
+
+#### Scenario: 护栏截断可复现
+
+- **WHEN** more role-preserving challengers qualify than the frontier has free
+  slots
+- **THEN** stable ordering SHALL retain the same roots regardless of input
+  iteration order
+
 ### Requirement: 护栏审计字段
 
 Diagnostics SHALL distinguish singleton proven safe from singleton blocked by marginal structure.
@@ -46,3 +67,10 @@ Diagnostics SHALL distinguish singleton proven safe from singleton blocked by ma
 #### Scenario: Singleton is blocked
 
 - **THEN** diagnostics SHALL include slack, ukeire gap, marginal loss tier, challenger list, and admitted_by=marginal_structure_guard
+
+#### Scenario: 决策可离线复核
+
+- **WHEN** a decision changes its comparison set because of the marginal
+  guard
+- **THEN** the explanation SHALL include admission/truncation details and the
+  completed weighted metrics needed to reproduce the selection

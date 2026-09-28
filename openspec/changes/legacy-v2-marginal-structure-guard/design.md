@@ -98,6 +98,12 @@ run_weighted_two_ply(frontier)
 
 marginal role 只决定是否值得比较，不直接成为最终 root 大分。
 
+当 marginal guard 阻断 singleton 且 weighted 结果完整时，最终排序仍只使用
+已有 weighted future metrics（future ukeire mean/type 与 improvement）以及
+current ukeire、牌型和喂牌稳定 tie-break；marginal role 本身不加分。关闭
+marginal guard 时沿用原有 current-ukeire-first key，保证 feature-off action
+parity。
+
 ### D6 Shanten-aware slack
 
 初版：
@@ -201,6 +207,12 @@ marginal_structure_slack_by_shanten
 ~~~
 
 关闭时 candidate set、singleton 行为与最终动作必须和当前 main 一致。
+
+实现阶段初始默认保持关闭；2026-09-28 用户明确要求将在线
+`legacyV2` 默认切换为 `marginal_structure_guard_enabled=true`。
+`legacyV2-offline`、baseline/对照 evaluator 继续显式关闭，线上仍可传入
+`false` 回滚。性能、Stage 1 与 Stage 2 证据门尚未完成，继续作为发布后的
+监控与回滚依据，不把本次用户授权当作这些门禁已通过。
 
 ## Validation
 

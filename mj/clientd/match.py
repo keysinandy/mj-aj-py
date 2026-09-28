@@ -28,6 +28,7 @@ DEFAULT_MATCH_CONFIG = {
     "room_close_wait": 65.0,
     "record": True,
     "replay_trace": False,
+    "marginal_structure_guard_enabled": True,
 }
 MATCH_STRATEGIES = {"policy", "policy-v3", "bot", "random"}
 MATCH_EVALUATORS = {
@@ -115,6 +116,15 @@ def normalize_match_config(config):
     for key in ("record", "replay_trace"):
         if not isinstance(result[key], bool):
             raise ValidationError(f"{key} must be a boolean")
+    marginal = result.get("marginal_structure_guard_enabled", True)
+    if isinstance(marginal, str):
+        marginal = marginal.strip().lower() in {
+            "1", "true", "yes", "on", "enabled",
+        }
+    elif not isinstance(marginal, bool):
+        raise ValidationError(
+            "marginal_structure_guard_enabled must be a boolean")
+    result["marginal_structure_guard_enabled"] = marginal
     return result
 
 
@@ -152,6 +162,8 @@ def _build_decide(config):
                 evaluator=config.get("evaluator", DEFAULT_BOT_EVALUATOR),
                 model=config.get("model"),
                 policy_profile=config.get("policy_profile"),
+                marginal_structure_guard_enabled=config.get(
+                    "marginal_structure_guard_enabled", True),
             )
         # Recorder/BotClient 会把这两个稳定标记写进每场 meta，回放页可
         # 在不暴露令牌的前提下说明本场究竟使用 bot 还是 policy。

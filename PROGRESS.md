@@ -15,6 +15,21 @@
 > (P1.5 收口);下一步攒平台真实牌谱 + 正式锦标赛实测。
 > **有财必拷响**(YouCaiBiKao)引擎开关已实现。
 
+## 2026-09-28 legacyV2 marginal structure guard
+
+- 已实现 versioned `MarginalStructureRole`、公开可见 live connectivity、
+  shanten-aware slack `(0,2,4,6)` 与 bounded singleton admission；按用户
+  要求，在线 `legacyV2` 默认开启 `marginal_structure_guard_enabled=true`，
+  `legacyV2-offline` 与 baseline/对照 evaluator 仍显式关闭。
+- 899s golden 已通过真实 `choose_discard` 路径进入 two-ply；完整搜索
+  选择 3m，保留 9s 的 82 vs 77 诊断、admission、future nodes 与 fallback
+  证据。7899s redundancy、隐藏暗牌隔离和 feature-off parity 已覆盖。
+- 当前验证：新增 11 项、legacy weighted/profile 48 项、策略审计 17 项通过；
+  `openspec validate legacy-v2-marginal-structure-guard --strict` 通过。
+  当前仍缺 end-to-end p95/p99、4-bot A/B 与 Stage 1/2 积分门；本次默认切换
+  是用户明确的线上发布决定，保留显式 `false` 回滚开关，未将缺失门禁误报为
+  已通过。证据见该 change 的 `artifacts/`。
+
 > **2026-09-10 窗口可靠性复审（正在修复与验收）**：下文 2026-09-09
 > 的“客户端物理边界”“剩余 409 均为外因”是历史实验判断，不能作为当前
 > 代码正确性的结论。独立复现发现同批碰超时会丢吃窗、等待后越过截止仍

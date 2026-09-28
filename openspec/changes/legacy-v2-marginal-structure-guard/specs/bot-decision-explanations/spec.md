@@ -1,4 +1,4 @@
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: 护栏状态可见
 
@@ -44,3 +44,9 @@ Candidate diagnostics SHALL preserve at least:
 - singleton connectivity
 - singleton live connectivity
 - critical compound break
+
+#### Scenario: 候选边际结构字段可复核
+
+- **WHEN** marginal-role diagnostics are enabled for a LegacyV2 discard
+- **THEN** every evaluated root SHALL expose the version, loss tier, route
+  counts, public unseen count, connectivity, and critical-break flag

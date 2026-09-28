@@ -1,0 +1,54 @@
+{
+  "change": "legacy-v2-marginal-structure-guard",
+  "baseline": {
+    "main_commit": "a98f0cc212ae3972636dc299ca4a5bf137bd785f",
+    "profile": "legacyV2",
+    "profile_fingerprint": "01b48c7ab369456c",
+    "kernel": {
+      "weighted": "rust",
+      "version": "rust-weighted-two-ply-v4",
+      "required_version": "rust-weighted-two-ply-v4",
+      "compatible": true
+    },
+    "budget_ms": {
+      "soft": 40.0,
+      "hard": 50.0
+    },
+    "frontier_cap": 3
+  },
+  "golden_899s": {
+    "public_fixture": {
+      "meld": "PON 1m",
+      "concealed_after_draw": "3m 7m 2p 3p 4p 4p 7p 4s 8s 9s 9s"
+    },
+    "candidates": {
+      "9s": {"shanten": 3, "current_ukeire": 82, "shape_loss": 9},
+      "8s": {"shanten": 3, "current_ukeire": 80, "shape_loss": 5},
+      "4p": {"shanten": 3, "current_ukeire": 78, "shape_loss": 10},
+      "3m": {"shanten": 3, "current_ukeire": 77, "shape_loss": 2},
+      "7p": {"shanten": 3, "current_ukeire": 77, "shape_loss": 2},
+      "7m": {"shanten": 3, "current_ukeire": 73, "shape_loss": 2},
+      "4s": {"shanten": 3, "current_ukeire": 72, "shape_loss": 2}
+    },
+    "historical_path": {
+      "level": "legacy-one-ply",
+      "search_used": false,
+      "future_nodes": 0,
+      "short_circuit": "frontier_singleton",
+      "weighted_two_ply_entered": false,
+      "stage_b_entered": false
+    }
+  },
+  "anti_overfit": {
+    "fragments": ["7899s", "5w", "1w", "9w"],
+    "requirements": [
+      "7899s discard 9s exposes completed_meld_redundancy=true",
+      "lost_pair_option alone does not imply critical_compound_break",
+      "live central connectivity reflects public neighbor availability"
+    ]
+  },
+  "provenance": {
+    "source": "public replay diagnostics plus frozen OpenSpec fixture",
+    "hidden_state_used": false
+  }
+}

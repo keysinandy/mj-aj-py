@@ -1,0 +1,17 @@
+{
+  "change": "legacy-v2-marginal-structure-guard",
+  "scope": "MarginalStructureRole helper only; not an end-to-end release gate",
+  "iterations": 2000,
+  "fixture": "899s",
+  "p50_ms": 0.068574,
+  "p95_ms": 0.224429,
+  "p99_ms": 0.336724,
+  "mean_ms": 0.0999052745,
+  "release_gates": {
+    "ordinary_decision_p95": "not_run",
+    "ordinary_decision_p99": "not_run",
+    "four_bot_games": "not_run",
+    "paired_score_stage_1": "not_run",
+    "paired_score_stage_2": "not_run"
+  }
+}

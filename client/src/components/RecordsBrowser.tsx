@@ -242,7 +242,7 @@ export function RecordsBrowser({ onOpenLocal, onOpenOnline }: Props) {
           <div>
             <p className="section-kicker">ONLINE LOGS</p>
             <h3>线上日志 <span className="section-count">{online.length} 条</span></h3>
-            <p className="section-description">按日期倒序展示，默认只加载最近 {ONLINE_PAGE_SIZE} 条；每天的日志默认折叠。</p>
+            <p className="section-description">按开始时间倒序展示，默认只加载最近 {ONLINE_PAGE_SIZE} 条；每天的日志默认折叠。</p>
           </div>
           <button
             type="button"

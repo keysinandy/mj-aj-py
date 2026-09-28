@@ -358,6 +358,7 @@ class BotClient:
             "window_confirm_stale": 0,
             "window_confirm_unconfirmed": 0,
             "window_confirm_miss": 0,
+            "window_snapshot_preempted": 0,
             "confirmation_observation_budget_exhausted": 0,
             # /state 传输诊断在收到响应后立即累计，避免后续动作覆盖
             # Api TLS 上下文。
@@ -1184,7 +1185,7 @@ class BotClient:
 
     def _record_window_confirm(self, gid, confirm, outcome, *, reason=None,
                                snap=None, seq=None, legal=None,
-                               window_key=None):
+                               window_key=None, snapshot_claim=None):
         """写碰窗确认诊断；Recorder 尚未升级时保持 fake 兼容。
 
         ``window_confirm`` 的字段契约：
@@ -1300,6 +1301,17 @@ class BotClient:
                 fields["authoritative_open_at"] = now_epoch
             if lifecycle_confirmation is not None:
                 fields["timing"] = lifecycle_confirmation.timing.as_json()
+        if isinstance(snapshot_claim, dict):
+            # This is public snapshot evidence, not a guessed identity: the
+            # source discard disappeared from its owner's river and a new
+            # opponent meld containing that tile appeared in the same
+            # authoritative rebuild.
+            for key, field in (
+                    ("claimant_seat", "snapshot_claimant_seat"),
+                    ("claim_kind", "snapshot_claim_kind"),
+                    ("claimed_tile", "snapshot_claimed_tile")):
+                if snapshot_claim.get(key) is not None:
+                    fields[field] = snapshot_claim[key]
         # JSONL 记录不需要 null 字段，且旧 fake Recorder 可能只接收
         # 非空字段；保留 pending/round 等稳定字段，丢弃未提供项。
         fields = {key: value for key, value in fields.items()
@@ -1351,9 +1363,11 @@ class BotClient:
                 outcome="AUTHORIZED", **lifecycle_fields)
         elif outcome in ("closed", "stale", "expired", "not_responding",
                          "deadline_missing", "no_legal", "miss"):
+            preempted = reason == "opponent_claim_snapshot"
             self._record_window_terminal(
                 gid, lifecycle_key, reason or outcome, phase=phase, seq=seq,
-                outcome="TERMINAL")
+                state="PREEMPTED" if preempted else None,
+                outcome="RULE_PREEMPTED" if preempted else "TERMINAL")
 
     @staticmethod
     def _window_lifecycle_token(window_key):
@@ -1491,11 +1505,11 @@ class BotClient:
         return contexts.get(window_key, {}) if window_key is not None else {}
 
     def _record_window_terminal(self, gid, window_key, reason, *, phase=None,
-                                seq=None, outcome=None):
+                                seq=None, outcome=None, state=None):
         if not isinstance(window_key, WindowAttemptKey):
             return
         self._record_window_lifecycle(
-            gid, window_key, "terminal", state="TERMINAL",
+            gid, window_key, "terminal", state=state or "TERMINAL",
             outcome=outcome or "TERMINAL", terminal_reason=reason,
             terminal_observed_at=time.time(), terminal_seq=seq)
         writer = (getattr(self.recorder, "window_terminal", None)
@@ -1740,6 +1754,89 @@ class BotClient:
         except (KeyError, TypeError, ValueError):
             return False
 
+    @staticmethod
+    def _snapshot_window_preemption(mirror, snap, confirm):
+        """Detect a public opponent claim hidden by a FULL snapshot.
+
+        A server may settle ``response_peng`` and advance directly to ``draw``
+        when another seat claims the discard.  In that path no ``chi`` phase
+        is observable.  The transition is still provable from public state:
+        the source tile was the previous owner's last river tile, that tile
+        disappeared in the snapshot, and an opponent gained a new meld that
+        contains it.  Do not infer a claim from phase alone; return evidence
+        only when all three facts are present.
+        """
+        if not isinstance(mirror, Mirror) or not isinstance(snap, dict):
+            return None
+        if not isinstance(confirm, _WindowConfirm):
+            return None
+        if confirm.phase not in ("response_peng", "response_chi"):
+            return None
+        pending = confirm.pending
+        if pending is None or mirror.pending is None:
+            return None
+        try:
+            owner, tile = int(pending[0]), int(pending[1])
+        except (TypeError, ValueError, IndexError):
+            return None
+        if tuple(mirror.pending) != (owner, tile):
+            return None
+        if mirror.round_no != snap.get("round_no", mirror.round_no):
+            return None
+        if not (0 <= owner < 4) or not (0 <= mirror.me < 4):
+            return None
+
+        old_rivers = getattr(mirror, "discards", None)
+        raw_rivers = snap.get("discards")
+        old_melds = getattr(mirror, "melds", None)
+        raw_melds = snap.get("melds")
+        if (not isinstance(old_rivers, list)
+                or not isinstance(raw_rivers, list)
+                or len(old_rivers) != 4 or len(raw_rivers) != 4
+                or not isinstance(old_melds, list)
+                or not isinstance(raw_melds, list)
+                or len(old_melds) != 4 or len(raw_melds) != 4):
+            return None
+
+        try:
+            old_river = list(old_rivers[owner])
+            new_river = [tidx(value) for value in raw_rivers[owner]]
+        except (TypeError, ValueError, IndexError):
+            return None
+        # The source event has already been applied to the old mirror.  A
+        # claim removes exactly that last discard; a later ordinary draw or a
+        # phase-only snapshot does not satisfy this prefix check.
+        if (not old_river or old_river[-1] != tile
+                or len(new_river) != len(old_river) - 1
+                or new_river != old_river[:-1]):
+            return None
+
+        for seat in range(4):
+            if seat == owner or seat == mirror.me:
+                continue
+            try:
+                previous_count = len(old_melds[seat])
+                current_raw = raw_melds[seat] or []
+            except (TypeError, IndexError):
+                continue
+            if len(current_raw) <= previous_count:
+                continue
+            for meld in current_raw[previous_count:]:
+                if not isinstance(meld, dict):
+                    continue
+                try:
+                    meld_tiles = [tidx(value)
+                                  for value in (meld.get("tiles") or [])]
+                except (TypeError, ValueError):
+                    continue
+                if tile in meld_tiles:
+                    return {
+                        "claimant_seat": seat,
+                        "claim_kind": meld.get("kind") or "unknown",
+                        "claimed_tile": tile,
+                    }
+        return None
+
     @classmethod
     def _window_confirm_matches(cls, mirror, confirm, snap=None, seq=None):
         """比较确认快照身份，返回 ``MATCH``/``MISMATCH``/``UNKNOWN``。
@@ -1946,7 +2043,8 @@ class BotClient:
             return None
         return key, legal
 
-    def _resolve_window_confirm(self, gid, mirror, snap, confirm, seq=None):
+    def _resolve_window_confirm(self, gid, mirror, snap, confirm, seq=None,
+                                snapshot_preemption=None):
         """统一解析 peng/chi 窗口确认，返回 ``confirmed`` 或最终结果。
 
         ``confirmed`` 只说明快照允许重新计算动作；动作仍由对应 phase
@@ -1959,6 +2057,21 @@ class BotClient:
                 gid, confirm, "confirmed", reason="action_already_completed",
                 snap=snap, seq=seq)
             return "confirmed"
+
+        # A FULL snapshot can skip the intermediate response_chi phase when
+        # another seat has already claimed the source discard.  Resolve this
+        # from public river/meld evidence before comparing phase identities;
+        # otherwise the normal mismatch branch would mislabel a rule
+        # preemption as an identity change or a client confirmation loss.
+        if snapshot_preemption is not None:
+            with self._stats_lock:
+                self.stats["window_snapshot_preempted"] += 1
+            self._record_window_confirm(
+                gid, confirm, "closed",
+                reason="opponent_claim_snapshot", snap=snap, seq=seq,
+                legal=getattr(confirm, "legal", None),
+                snapshot_claim=snapshot_preemption)
+            return "closed"
 
         identity = (self._window_confirm_matches(
             mirror, confirm, snap=snap, seq=seq)
@@ -3349,6 +3462,17 @@ class BotClient:
                 if rec is not None:
                     rec.snapshot(gid, seq, snap)
                 try:
+                    # Resolve the confirmation object before replacing the
+                    # mirror.  The old mirror contains the source river and
+                    # meld counts needed to prove an opponent preemption
+                    # when the server skipped the chi phase in the snapshot.
+                    pending_confirm = window_confirm
+                    if pending_confirm is None and plan is not None \
+                            and plan.kind == WINDOW_CONFIRM:
+                        pending_confirm = self._window_confirm_from_reason(
+                            plan.reasons.get(WINDOW_CONFIRM))
+                    snapshot_preemption = self._snapshot_window_preemption(
+                        mirror, snap, pending_confirm)
                     if plan is not None and plan.mode == "FULL":
                         legacy_epoch += 1
                     mirror = self._mirror_from_snapshot(snap, gid=gid)
@@ -3397,16 +3521,12 @@ class BotClient:
                     mirror._legacy_epoch = legacy_epoch
                     next_seat = None  # 快照后动作者未知,懒门转急直至事件重建
                     confirm_outcome = None
-                    pending_confirm = window_confirm
-                    if pending_confirm is None and plan is not None \
-                            and plan.kind == WINDOW_CONFIRM:
-                        pending_confirm = self._window_confirm_from_reason(
-                            plan.reasons.get(WINDOW_CONFIRM))
                     if pending_confirm is not None:
                         window_confirm = None
                         confirm_outcome = self._resolve_window_confirm(
                             gid, mirror, snap, pending_confirm,
-                            seq=res.get("seq", seq))
+                            seq=res.get("seq", seq),
+                            snapshot_preemption=snapshot_preemption)
                         confirm_status = self._demand_window_status(
                             confirm_outcome)
                         demand.finish_window_confirm(confirm_status)

@@ -1159,7 +1159,8 @@ def choose_shape_v2_action(g, seat, profile=None):
 
 
 def choose_action(g, seat, evaluator=DEFAULT_BOT_EVALUATOR,
-                  return_evaluation=False):
+                  return_evaluation=False,
+                  marginal_structure_guard_enabled=None):
     """统一入口:返回该 seat 的动作。
 
     The two-argument production path uses the weighted two-ply frontier.
@@ -1203,7 +1204,8 @@ def choose_action(g, seat, evaluator=DEFAULT_BOT_EVALUATOR,
                     big_hand_same_shanten_enabled=False,
                     big_hand_plus_one_enabled=False,
                     shape_quality_enabled=False,
-                    shape_quality_guard_enabled=False)
+                    shape_quality_guard_enabled=False,
+                    marginal_structure_guard_enabled=False)
                 reaction_profile = LegacyReactionProfile.v2_online()
             elif evaluator in LEGACY_V2_PHASE_A_EVALUATORS:
                 profile = LegacyTwoPlyProfile.weighted_online(
@@ -1211,7 +1213,8 @@ def choose_action(g, seat, evaluator=DEFAULT_BOT_EVALUATOR,
                     big_hand_same_shanten_enabled=True,
                     big_hand_plus_one_enabled=False,
                     shape_quality_enabled=False,
-                    shape_quality_guard_enabled=False)
+                    shape_quality_guard_enabled=False,
+                    marginal_structure_guard_enabled=False)
                 reaction_profile = LegacyReactionProfile.v2_online()
             elif evaluator in LEGACY_V2_PHASE_B_EVALUATORS:
                 profile = LegacyTwoPlyProfile.weighted_online(
@@ -1219,7 +1222,8 @@ def choose_action(g, seat, evaluator=DEFAULT_BOT_EVALUATOR,
                     big_hand_same_shanten_enabled=True,
                     big_hand_plus_one_enabled=True,
                     shape_quality_enabled=False,
-                    shape_quality_guard_enabled=False)
+                    shape_quality_guard_enabled=False,
+                    marginal_structure_guard_enabled=False)
                 reaction_profile = LegacyReactionProfile.v2_online()
             elif evaluator in LEGACY_V2_SHAPE_PHASE_A_EVALUATORS:
                 profile = LegacyTwoPlyProfile.weighted_online(
@@ -1229,6 +1233,7 @@ def choose_action(g, seat, evaluator=DEFAULT_BOT_EVALUATOR,
                     shape_quality_enabled=True,
                     shape_quality_stage="root",
                     shape_quality_guard_enabled=True,
+                    marginal_structure_guard_enabled=False,
                 )
                 reaction_profile = LegacyReactionProfile.v2_online()
             elif evaluator in LEGACY_V2_SHAPE_PHASE_B_EVALUATORS:
@@ -1239,10 +1244,14 @@ def choose_action(g, seat, evaluator=DEFAULT_BOT_EVALUATOR,
                     shape_quality_enabled=True,
                     shape_quality_stage="full",
                     shape_quality_guard_enabled=True,
+                    marginal_structure_guard_enabled=False,
                 )
                 reaction_profile = LegacyReactionProfile.v2_online()
             elif evaluator in LEGACY_V2_EVALUATORS:
-                profile = LegacyTwoPlyProfile.weighted_online()
+                profile = LegacyTwoPlyProfile.weighted_online(
+                    marginal_structure_guard_enabled=(
+                        True if marginal_structure_guard_enabled is None else
+                        bool(marginal_structure_guard_enabled)))
                 reaction_profile = LegacyReactionProfile.v2_online()
             else:
                 profile = LegacyTwoPlyProfile.default()

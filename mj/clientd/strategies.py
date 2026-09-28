@@ -79,6 +79,15 @@ def _validate_confidence(value):
     return c
 
 
+def _marginal_guard_enabled(config):
+    value = config.get("marginal_structure_guard_enabled", True)
+    if isinstance(value, str):
+        return value.strip().lower() in {
+            "1", "true", "yes", "on", "enabled",
+        }
+    return bool(value)
+
+
 class Player:
     """统一玩家封装;__call__ 返回动作 int,元组结果自动解包。"""
 
@@ -124,14 +133,18 @@ def make_bot_player(config):
             return choose_shape_v2_action(game, seat, profile=_p)
     else:
         _ev = evaluator
+        marginal_enabled = _marginal_guard_enabled(config)
         if _ev in (("legacy-two-ply-v1", "legacy_v1", "legacy-v1")
                    + LEGACY_V2_EVALUATORS):
-            profile = (LegacyTwoPlyProfile.weighted_online()
+            profile = (LegacyTwoPlyProfile.weighted_online(
+                           marginal_structure_guard_enabled=marginal_enabled)
                        if _ev in LEGACY_V2_EVALUATORS else
                        LegacyTwoPlyProfile.default())
 
         def _play(game, seat, _e=_ev):
             return choose_action(game, seat, evaluator=_e,
+                                 marginal_structure_guard_enabled=(
+                                     marginal_enabled),
                                  return_evaluation=True)
     return Player(_play, strategy="bot", evaluator=evaluator,
                   profile=profile)

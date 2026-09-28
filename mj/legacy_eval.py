@@ -38,6 +38,11 @@ from .shape_quality import (
     SHAPE_QUALITY_VERSION,
     standing_shape_quality,
 )
+from .structure_role import (
+    MARGINAL_STRUCTURE_ROLE_VERSION,
+    MarginalStructureRole,
+    marginal_structure_role,
+)
 
 
 PROFILE_VERSION = "legacy-two-ply-v1"
@@ -81,6 +86,7 @@ LEGACY_V2_EXPERIMENT_EVALUATORS = (
     *LEGACY_V2_SHAPE_PHASE_B_EVALUATORS,
 )
 SHAPE_QUALITY_GUARD_VERSION = "standing-shape-taatsu-gain-v1"
+MARGINAL_STRUCTURE_SLACK_BY_SHANTEN = (0, 2, 4, 6)
 # Product default evaluator. ``legacy`` is kept as a compatibility alias for
 # this v2 route; callers that need the frozen rollback oracle must explicitly
 # request ``legacy-v1``.
@@ -142,6 +148,11 @@ class LegacyTwoPlyProfile:
     big_hand_max_ukeire_loss: int = 4
     big_hand_min_pair_units: int = 4
     big_hand_min_luxury_upgrade_live: int = 1
+    marginal_structure_guard_enabled: bool = False
+    marginal_structure_role_version: str = MARGINAL_STRUCTURE_ROLE_VERSION
+    marginal_structure_slack_by_shanten: tuple[int, ...] = (
+        *MARGINAL_STRUCTURE_SLACK_BY_SHANTEN,
+    )
 
     def __post_init__(self):
         if not self.name or not self.version or not self.model:
@@ -179,6 +190,20 @@ class LegacyTwoPlyProfile:
             raise ValueError("shape_quality_guard_version is required")
         if not self.big_hand_version:
             raise ValueError("big_hand_version is required")
+        if not self.marginal_structure_role_version:
+            raise ValueError("marginal_structure_role_version is required")
+        try:
+            marginal_slack = tuple(int(value)
+                                   for value in self.marginal_structure_slack_by_shanten)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "marginal_structure_slack_by_shanten must be four integers"
+            ) from exc
+        if (len(marginal_slack) != 4 or
+                any(value < 0 for value in marginal_slack)):
+            raise ValueError(
+                "marginal_structure_slack_by_shanten must contain four non-negative values"
+            )
         for name in ("big_hand_min_live", "big_hand_max_opponent_melds",
                      "big_hand_min_ukeire", "big_hand_max_ukeire_loss",
                      "big_hand_min_pair_units",
@@ -224,6 +249,10 @@ class LegacyTwoPlyProfile:
                      "big_hand_min_pair_units",
                      "big_hand_min_luxury_upgrade_live"):
             object.__setattr__(self, name, int(getattr(self, name)))
+        object.__setattr__(self, "marginal_structure_guard_enabled",
+                           bool(self.marginal_structure_guard_enabled))
+        object.__setattr__(self, "marginal_structure_slack_by_shanten",
+                           marginal_slack)
 
     @classmethod
     def default(cls, **overrides):
@@ -255,6 +284,9 @@ class LegacyTwoPlyProfile:
             "big_hand_enabled": False,
             "big_hand_same_shanten_enabled": True,
             "big_hand_plus_one_enabled": False,
+            # User-requested online rollout.  Offline labels and comparison
+            # profiles opt out explicitly.
+            "marginal_structure_guard_enabled": True,
         }
         values.update(overrides)
         return cls(**values)
@@ -289,6 +321,8 @@ class LegacyTwoPlyProfile:
             "big_hand_enabled": False,
             "big_hand_same_shanten_enabled": False,
             "big_hand_plus_one_enabled": False,
+            # Keep the frozen legacyV2-offline teacher unchanged.
+            "marginal_structure_guard_enabled": False,
         }
         values.update(overrides)
         return cls(**values)
@@ -344,6 +378,22 @@ class LegacyTwoPlyProfile:
                 "shape_quality_guard_version": (
                     self.shape_quality_guard_version),
             })
+        marginal_defaults = (
+            not self.marginal_structure_guard_enabled and
+            self.marginal_structure_role_version ==
+            MARGINAL_STRUCTURE_ROLE_VERSION and
+            self.marginal_structure_slack_by_shanten ==
+            MARGINAL_STRUCTURE_SLACK_BY_SHANTEN
+        )
+        if not marginal_defaults:
+            payload.update({
+                "marginal_structure_guard_enabled": (
+                    self.marginal_structure_guard_enabled),
+                "marginal_structure_role_version": (
+                    self.marginal_structure_role_version),
+                "marginal_structure_slack_by_shanten": list(
+                    self.marginal_structure_slack_by_shanten),
+            })
         return payload
 
     def big_hand_config(self):
@@ -381,6 +431,12 @@ class LegacyTwoPlyProfile:
             "shape_quality_guard_enabled": self.shape_quality_guard_enabled,
             "shape_quality_guard_version": self.shape_quality_guard_version,
             "require_complete": self.require_complete,
+            "marginal_structure_guard_enabled": (
+                self.marginal_structure_guard_enabled),
+            "marginal_structure_role_version": (
+                self.marginal_structure_role_version),
+            "marginal_structure_slack_by_shanten": list(
+                self.marginal_structure_slack_by_shanten),
         })
         result["fingerprint"] = self.fingerprint
         return result
@@ -424,6 +480,7 @@ class LegacyRootCandidate:
     live_wall: int | None = None
     max_opponent_melds: int | None = None
     big_hand_gate_reason: str | None = None
+    marginal_role: MarginalStructureRole | None = None
 
     def as_json(self):
         result = {
@@ -446,6 +503,8 @@ class LegacyRootCandidate:
                     self.standing_shape_signature),
                 "shape_quality_version": self.shape_quality_version,
             })
+        if self.marginal_role is not None:
+            result.update(self.marginal_role.as_json())
         has_intent = bool(self.intent_kinds or
                           self.intent_strength != "NONE")
         if (has_intent or self.admission_hint or self.big_hand_gate_reason):
@@ -614,6 +673,12 @@ class LegacyDiscardEvaluation:
     decision_scope: str = "weighted_two_ply"
     stage_b_entered: bool = False
     weighted_two_ply_entered: bool = False
+    marginal_structure_guard: Mapping | None = None
+    frontier_singleton_proven: bool = False
+    frontier_singleton_blocked: bool = False
+    singleton_block_reason: str | None = None
+    role_guard_slack: int | None = None
+    role_guard_challengers: tuple[int, ...] = ()
 
     def as_json(self):
         result = {
@@ -667,6 +732,14 @@ class LegacyDiscardEvaluation:
             "decision_scope": self.decision_scope,
             "stage_b_entered": self.stage_b_entered,
             "weighted_two_ply_entered": self.weighted_two_ply_entered,
+            "marginal_structure_guard": (
+                dict(self.marginal_structure_guard)
+                if self.marginal_structure_guard is not None else None),
+            "frontier_singleton_proven": self.frontier_singleton_proven,
+            "frontier_singleton_blocked": self.frontier_singleton_blocked,
+            "singleton_block_reason": self.singleton_block_reason,
+            "role_guard_slack": self.role_guard_slack,
+            "role_guard_challengers": list(self.role_guard_challengers),
         }
         return result
 
@@ -793,7 +866,8 @@ def _normalise_roots(root_candidates: Iterable[LegacyRootCandidate | Sequence],
     return tuple(roots)
 
 
-def _root_features(roots, locked, visible, *, shape_quality_enabled=False):
+def _root_features(roots, locked, visible, *, shape_quality_enabled=False,
+                   marginal_role_enabled=False):
     visible = _as_tuple(visible, name="visible")
     enriched = []
     for root in roots:
@@ -822,10 +896,17 @@ def _root_features(roots, locked, visible, *, shape_quality_enabled=False):
                 root, standing_shape_quality=None,
                 standing_shape_signature=None, shape_quality_version=None)
         state = ukeire(hand, locked, visible)
+        role = None
+        if marginal_role_enabled:
+            standing = list(hand)
+            standing[root.tile] += 1
+            role = marginal_structure_role(
+                standing, root.tile, visible, locked=locked)
         enriched.append(replace(
             root, hand=hand, shanten=s,
             current_ukeire=int(state[2]),
-            current_ukeire_tiles=tuple(state[1])))
+            current_ukeire_tiles=tuple(state[1]),
+            marginal_role=role))
     if not enriched:
         raise _InvalidPublicState("no_root_candidates")
     speed_pool = [root for root in enriched if root.speed_eligible]
@@ -986,6 +1067,142 @@ def _apply_shape_guard(frontier, diagnostics, profile):
             updated.append((root, eligible, missing))
     guard["admitted_tiles"] = [root.tile for root in merged
                                if root.tile != primary.tile]
+    return tuple(merged), tuple(updated), guard, admitted_by
+
+
+def _marginal_slack(profile, shanten_value):
+    """Return the configured role-preserving ukeire slack for a root."""
+    index = min(max(int(shanten_value), 0), 3)
+    return int(profile.marginal_structure_slack_by_shanten[index])
+
+
+def _marginal_role_rank(role):
+    """Stable low-is-better ordering for role-preserving challengers."""
+    tiers = {
+        "isolated_singleton": 0,
+        "connected_singleton": 1,
+        "redundant_completed_meld": 2,
+        "completed_meld": 3,
+        "taatsu": 4,
+        "pair": 5,
+        "pair_and_taatsu": 6,
+        "critical_compound": 7,
+    }
+    return tiers.get(role.loss_tier if role is not None else "", 99)
+
+
+def _apply_marginal_structure_guard(frontier, diagnostics, profile):
+    """Conditionally block the current-ukeire singleton short-circuit.
+
+    This guard only admits roots for a bounded future comparison.  It never
+    contributes a score or evicts the baseline speed winner.
+    """
+    guard = {
+        "enabled": bool(profile.marginal_structure_guard_enabled),
+        "role_version": profile.marginal_structure_role_version,
+        "slack_by_shanten": list(profile.marginal_structure_slack_by_shanten),
+        "primary_tiles": [root.tile for root in frontier],
+        "admitted_tiles": [],
+        "dropped_tiles": [],
+        "challengers": [],
+        "challenger_details": {},
+        "skipped_reason": None,
+        "frontier_singleton_proven": False,
+        "frontier_singleton_blocked": False,
+    }
+    admitted_by = {root.tile: "primary" for root in frontier}
+    if not profile.marginal_structure_guard_enabled:
+        guard["skipped_reason"] = "feature_disabled"
+        return frontier, diagnostics, guard, admitted_by
+    if profile.marginal_structure_role_version != MARGINAL_STRUCTURE_ROLE_VERSION:
+        guard["skipped_reason"] = "role_version_mismatch"
+        return frontier, diagnostics, guard, admitted_by
+    if len(frontier) != 1:
+        guard["skipped_reason"] = "primary_not_singleton"
+        return frontier, diagnostics, guard, admitted_by
+    limit = int(profile.max_frontier_candidates)
+    if limit <= 1:
+        guard["skipped_reason"] = "frontier_cap_no_challenger_slot"
+        guard["frontier_singleton_proven"] = True
+        return frontier, diagnostics, guard, admitted_by
+
+    primary = frontier[0]
+    primary_role = primary.marginal_role
+    slack = _marginal_slack(profile, primary.shanten)
+    guard["role_guard_slack"] = slack
+    guard["primary_role"] = (primary_role.as_json()
+                              if primary_role is not None else None)
+    if primary_role is None:
+        guard["skipped_reason"] = "role_unavailable"
+        guard["frontier_singleton_proven"] = True
+        return frontier, diagnostics, guard, admitted_by
+    if not primary_role.critical_compound_break:
+        guard["skipped_reason"] = "primary_role_not_critical"
+        guard["frontier_singleton_proven"] = True
+        return frontier, diagnostics, guard, admitted_by
+
+    primary_ukeire = int(primary.current_ukeire or 0)
+    challengers = []
+    for root, eligible, missing in diagnostics:
+        if eligible or root.tile == primary.tile:
+            continue
+        if (not root.speed_eligible or root.shanten != primary.shanten or
+                "current_ukeire_frontier" not in missing):
+            continue
+        role = root.marginal_role
+        gap = primary_ukeire - int(root.current_ukeire or 0)
+        if gap < 0 or gap > slack or role is None:
+            continue
+        if role.critical_compound_break:
+            continue
+        detail = {
+            "tile": root.tile,
+            "ukeire": int(root.current_ukeire or 0),
+            "ukeire_gap": gap,
+            "loss_tier": role.loss_tier,
+            "critical_compound_break": role.critical_compound_break,
+        }
+        challengers.append((root, detail))
+
+    challengers.sort(key=lambda item: (
+        _marginal_role_rank(item[0].marginal_role),
+        -int(item[0].current_ukeire or 0),
+        -int(item[0].standing_shape_quality or 0),
+        float(item[0].shape_loss),
+        float(item[0].feed_risk),
+        item[0].tile,
+    ))
+    guard["challengers"] = [root.tile for root, _detail in challengers]
+    guard["challenger_details"] = {
+        str(root.tile): detail for root, detail in challengers
+    }
+    if not challengers:
+        guard["skipped_reason"] = "no_role_preserving_challenger"
+        guard["frontier_singleton_proven"] = True
+        return frontier, diagnostics, guard, admitted_by
+
+    # Keep the baseline speed winner and fill only the available bounded slots.
+    selected_challengers = challengers[:max(0, limit - 1)]
+    dropped = [root.tile for root, _detail in challengers[len(selected_challengers):]]
+    merged = (primary, *(root for root, _detail in selected_challengers))
+    merged_tiles = {root.tile for root in merged}
+    updated = []
+    for root, eligible, missing in diagnostics:
+        if root.tile in merged_tiles:
+            updated.append((root, True, ()))
+            admitted_by[root.tile] = (
+                "primary" if root.tile == primary.tile
+                else "marginal_structure_guard")
+        else:
+            updated.append((root, eligible, missing))
+    guard["admitted_tiles"] = [root.tile for root in merged
+                                if root.tile != primary.tile]
+    guard["dropped_tiles"] = dropped
+    guard["frontier_singleton_blocked"] = True
+    guard["skipped_reason"] = None
+    guard["frontier_singleton_proven"] = False
+    guard["role_guard_challengers"] = [root.tile for root, _detail in
+                                        selected_challengers]
     return tuple(merged), tuple(updated), guard, admitted_by
 
 
@@ -1233,15 +1450,28 @@ def _apply_big_hand_guard(enriched, frontier, diagnostics, profile, locked,
 
 
 def _weighted_root_key(root, future_values, *, shape_quality_enabled=False,
-                       future_shape_enabled=False):
+                       future_shape_enabled=False, future_priority=False):
     future = future_values[root.tile]
-    key = (
-        root.tile == W,
-        -(root.current_ukeire or 0),
-        -future.future_improve_weight,
-        -(future.future_ukeire_mean or 0.0),
-        -(future.future_ukeire_types_mean or 0.0),
-    )
+    if future_priority:
+        # Once marginal admission has proven that a singleton is unsafe, the
+        # completed weighted result must compare the evaluated future before
+        # returning to the standing speed tie-break.  This is still the
+        # existing weighted metric; marginal role supplies no score bonus.
+        key = (
+            root.tile == W,
+            -(future.future_ukeire_mean or 0.0),
+            -(future.future_ukeire_types_mean or 0.0),
+            -future.future_improve_weight,
+            -(root.current_ukeire or 0),
+        )
+    else:
+        key = (
+            root.tile == W,
+            -(root.current_ukeire or 0),
+            -future.future_improve_weight,
+            -(future.future_ukeire_mean or 0.0),
+            -(future.future_ukeire_types_mean or 0.0),
+        )
     if future_shape_enabled:
         if future.future_shape_quality_mean is None:
             raise ValueError("future shape quality is missing for a complete key")
@@ -1981,7 +2211,8 @@ def _weighted_evaluation(
         _validate_root_legality(game, seat, roots)
         enriched, frontier, diagnostics = _root_features(
             roots, locked, visible,
-            shape_quality_enabled=profile.shape_quality_enabled)
+            shape_quality_enabled=profile.shape_quality_enabled,
+            marginal_role_enabled=profile.marginal_structure_guard_enabled)
         visible_tuple = _as_tuple(visible, name="visible")
     except (TypeError, ValueError, _InvalidPublicState) as exc:
         roots = locals().get("roots", ())
@@ -2036,6 +2267,14 @@ def _weighted_evaluation(
     # D1/D2/D3: 结构护栏。默认关闭时原样返回,零行为漂移。
     frontier, diagnostics, frontier_guard, admitted_by = _apply_shape_guard(
         frontier, diagnostics, profile)
+    (frontier, diagnostics, marginal_structure_guard,
+     marginal_admitted_by) = _apply_marginal_structure_guard(
+         frontier, diagnostics, profile)
+    for tile, admission in marginal_admitted_by.items():
+        # Preserve an earlier shape-guard label for roots already admitted
+        # before the marginal guard was consulted.
+        if admission != "primary" or tile not in admitted_by:
+            admitted_by[tile] = admission
     (frontier, diagnostics, admitted_by, big_hand_guard,
      big_hand_challenger, big_hand_phase, frontier_cap_dropped,
      speed_winner_hint) = _apply_big_hand_guard(
@@ -2109,6 +2348,18 @@ def _weighted_evaluation(
                             if profile.shape_quality_enabled else "legacy"),
             stage_b_entered=False,
             weighted_two_ply_entered=False,
+            marginal_structure_guard=marginal_structure_guard,
+            frontier_singleton_proven=bool(
+                marginal_structure_guard.get("frontier_singleton_proven")),
+            frontier_singleton_blocked=bool(
+                marginal_structure_guard.get("frontier_singleton_blocked")),
+            singleton_block_reason=(
+                marginal_structure_guard.get("skipped_reason")
+                if marginal_structure_guard.get("frontier_singleton_proven")
+                else None),
+            role_guard_slack=marginal_structure_guard.get("role_guard_slack"),
+            role_guard_challengers=tuple(
+                marginal_structure_guard.get("role_guard_challengers", ())),
         )
         return singleton.tile, evaluation
 
@@ -2221,6 +2472,7 @@ def _weighted_evaluation(
                 key=lambda root: _weighted_root_key(
                     root, future_values,
                     shape_quality_enabled=profile.shape_quality_enabled,
+                    future_priority=profile.marginal_structure_guard_enabled,
                     future_shape_enabled=(
                         profile.shape_quality_enabled and
                         profile.shape_quality_stage == "full" and
@@ -2264,6 +2516,7 @@ def _weighted_evaluation(
             speed_frontier,
             key=lambda root: _weighted_root_key(
                 root, future_values, shape_quality_enabled=False,
+                future_priority=profile.marginal_structure_guard_enabled,
                 future_shape_enabled=False),
         )
         shape_baseline_selected = old_shape_winner.tile
@@ -2365,6 +2618,18 @@ def _weighted_evaluation(
         decision_scope=("weighted_two_ply" if accepted else "legacy"),
         stage_b_entered=bool(search_metrics.get("stage_b_entered", 0)),
         weighted_two_ply_entered=True,
+        marginal_structure_guard=marginal_structure_guard,
+        frontier_singleton_proven=bool(
+            marginal_structure_guard.get("frontier_singleton_proven")),
+        frontier_singleton_blocked=bool(
+            marginal_structure_guard.get("frontier_singleton_blocked")),
+        singleton_block_reason=(
+            "marginal_structure_guard"
+            if marginal_structure_guard.get("frontier_singleton_blocked")
+            else marginal_structure_guard.get("skipped_reason")),
+        role_guard_slack=marginal_structure_guard.get("role_guard_slack"),
+        role_guard_challengers=tuple(
+            marginal_structure_guard.get("role_guard_challengers", ())),
     )
     return selected, evaluation
 
@@ -2563,7 +2828,8 @@ def evaluate_legacy_two_ply(game, seat, root_candidates, locked, visible,
         _validate_root_legality(game, seat, roots)
         enriched, frontier, diagnostics = _root_features(
             roots, locked, visible,
-            shape_quality_enabled=profile.shape_quality_enabled)
+            shape_quality_enabled=profile.shape_quality_enabled,
+            marginal_role_enabled=profile.marginal_structure_guard_enabled)
         visible_tuple = _as_tuple(visible, name="visible")
     except _InvalidPublicState as exc:
         legacy = min(roots, key=_legacy_key).tile if roots else None
@@ -2694,6 +2960,7 @@ __all__ = [
     "LEGACY_V2_PHASE_B_EVALUATORS", "LEGACY_V2_EXPERIMENT_EVALUATORS",
     "LEGACY_V2_EVALUATORS",
     "LEGACY_V2_PROFILE_VERSION", "PROFILE_VERSION", "WEIGHTED_PROFILE_VERSION",
+    "MARGINAL_STRUCTURE_ROLE_VERSION", "MARGINAL_STRUCTURE_SLACK_BY_SHANTEN",
     "LegacyDiscardEvaluation",
     "LegacyRootCandidate", "LegacyTwoPlyProfile", "FutureEvaluation",
     "StandingRoot", "evaluate_legacy_two_ply", "evaluate_standing_frontier",

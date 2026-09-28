@@ -130,20 +130,20 @@ def index_online_games(root=None, gid=None, *, record_id=None,
                        start_ts=None, end_ts=None, offset=0, limit=None):
     """返回线上日志索引，可按 gid、record_id 或时间范围筛选分页。
 
-    ``start_ts``/``end_ts`` 是 epoch 秒，时间范围为闭区间；``offset`` 从
-    最新日志开始计数，``limit`` 为 ``None`` 时保持旧行为返回全部匹配项。
+    ``start_ts``/``end_ts`` 是 epoch 秒，时间范围为闭区间；结果先按
+    ``started_at`` 倒序，再应用 ``offset``/``limit``，这样跨日期和跨文件
+    分页仍然稳定。``limit`` 为 ``None`` 时返回全部匹配项。
     索引阶段最多读取每个文件的第一条 JSON，不会把整份 JSONL 加载进内存。
     """
     root = root or DEFAULT_GAMES_ROOT
     if not os.path.isdir(root):
         return []
-    out = []
     offset = max(0, int(offset or 0))
     if limit is not None:
         limit = max(0, int(limit))
         if limit == 0:
             return []
-    matched = 0
+    matches = []
     for day in sorted(os.listdir(root), reverse=True):
         day_dir = os.path.join(root, day)
         if not os.path.isdir(day_dir) or not _day_in_range(
@@ -169,11 +169,6 @@ def index_online_games(root=None, gid=None, *, record_id=None,
             if end_ts is not None and (
                     started_at is None or started_at > end_ts):
                 continue
-            if matched < offset:
-                matched += 1
-                continue
-            if limit is not None and len(out) >= limit:
-                return out
             entry = {"date": day, "gid": gid_part, "path": path,
                      "name": stem, "record_id": f"{day}~{stem}",
                      "started_at": started_at}
@@ -181,6 +176,18 @@ def index_online_games(root=None, gid=None, *, record_id=None,
                 for key in ("strategy", "evaluator", "model_name"):
                     if first.get(key) is not None:
                         entry[key] = first[key]
-            out.append(entry)
-            matched += 1
-    return out
+            matches.append(entry)
+
+    # Directory and filename order is not a reliable proxy for when a game
+    # started.  Collect only the lightweight metadata above, sort the complete
+    # filtered index, and paginate afterwards so page boundaries do not change
+    # when files from different dates have interleaved timestamps.
+    matches.sort(key=lambda entry: (
+        entry["started_at"] is not None,
+        entry["started_at"] if entry["started_at"] is not None
+        else float("-inf"),
+        entry["record_id"],
+    ), reverse=True)
+    if limit is None:
+        return matches[offset:]
+    return matches[offset:offset + limit]

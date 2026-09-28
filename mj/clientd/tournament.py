@@ -53,10 +53,21 @@ def normalize_tournament_config(config):
         "state_rate": state_rate,
         "record": config.get("record", True),
         "replay_trace": config.get("replay_trace", False),
+        "marginal_structure_guard_enabled": config.get(
+            "marginal_structure_guard_enabled", True),
     }
     for key in ("record", "replay_trace"):
         if not isinstance(result[key], bool):
             raise ValidationError(f"{key} must be a boolean")
+    marginal = result["marginal_structure_guard_enabled"]
+    if isinstance(marginal, str):
+        marginal = marginal.strip().lower() in {
+            "1", "true", "yes", "on", "enabled",
+        }
+    elif not isinstance(marginal, bool):
+        raise ValidationError(
+            "marginal_structure_guard_enabled must be a boolean")
+    result["marginal_structure_guard_enabled"] = marginal
     for key in ("ckpt", "model", "model_name"):
         value = config.get(key)
         if value is not None:

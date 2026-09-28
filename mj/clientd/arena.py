@@ -36,7 +36,8 @@ MAX_STEPS_PER_GAME = 20000
 
 # Web 控制台默认座位:主位 legacy bot,对手 random。
 DEFAULT_SEATS = [
-    {"strategy": "bot", "evaluator": DEFAULT_BOT_EVALUATOR},
+    {"strategy": "bot", "evaluator": DEFAULT_BOT_EVALUATOR,
+     "marginal_structure_guard_enabled": True},
     {"strategy": "random"},
     {"strategy": "random"},
     {"strategy": "random"},
