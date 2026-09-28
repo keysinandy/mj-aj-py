@@ -54,16 +54,31 @@ baotou_scope MUST NOT 被记录为 weighted search 已使用；若该分支直�
 - baotou tier；
 - 是否为财神弃牌；
 - baotou_ukeire；
+- candidate-local `current_ukeire` / `ukeire_tiles` 与 `current_selfdraw_hu_ukeire` /
+  `current_selfdraw_hu_tiles`；
+- `baotou_progress_formula_version`、`baotou_progress_formula`、组合分
+  `baotou_progress_score`；
 - standing shape signature/quality；
 - legacy discard shape cost；
 - feed risk；
 - stable tile；
 - `baotou_shape_used` / 是否由 standing shape 改变 winner。
 
+候选行的 shanten、当前进张、听口及组合分 MUST 从该行对应的弃后站立手计算；MUST NOT
+复用前一候选或循环结束时的手牌。
+
+#### Scenario: 每个候选展示自己的听口和组合评分
+
+- **WHEN** profile 记录持财神听牌态的多个弃牌候选
+- **THEN** 每一行的 `shanten`、`current_ukeire`、`ukeire_tiles` 和合法自摸胡牌字段
+  SHALL 与该候选的弃后手牌一致
+- **AND** `baotou_progress_score` SHALL 等于
+  `1.5 * baotou_ukeire + current_selfdraw_hu_ukeire`
+
 #### Scenario: 124s 财神牌例可复核
 
 - **GIVEN** 牌串 `23455m 124s EE w`、副露 `789p`
-- **WHEN** 1s 与 4s 的 baotou tier / baotou_ukeire 打平
+- **WHEN** 1s 与 4s 的 baotou tier、财神保护与组合进度分打平
 - **THEN** explanation SHALL 显示旧局部弃牌损失 5/3 与新的 standing shape 比较
 - **AND** 可明确归因 shape-aware 模式为何由旧选 4s 改为选 1s
 

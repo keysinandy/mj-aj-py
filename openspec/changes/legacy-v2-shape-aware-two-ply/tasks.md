@@ -28,12 +28,12 @@
 
 ## 4. baotou_scope shape tie-break 接入
 
-- [x] 4.1 冻结当前 `_choose_discard_baotou()` key：tier → 财神保护 → -baotou_ukeire → legacy shape_loss → feed → tile
+- [x] 4.1 冻结变更前 `_choose_discard_baotou()` key：tier → 财神保护 → -baotou_ukeire → legacy shape_loss → feed → tile
 - [x] 4.2 为每个 baotou speed candidate 在 post-discard standing hand 上计算 standing_shape_quality
-- [x] 4.3 shape-aware key 改为：tier → 财神保护 → -baotou_ukeire → -standing_shape → legacy shape_loss → feed → tile
-- [x] 4.4 tier 或 baotou_ukeire 不相等时，standing shape MUST NOT 覆盖更高优先级结果
+- [x] 4.3 shape-aware key 改为：tier → 财神保护 → -(1.5*baotou_ukeire+current_selfdraw_hu_ukeire) → -standing_shape → legacy shape_loss → feed → tile
+- [x] 4.4 tier、财神保护顺序或组合进度分不相等时，standing shape MUST NOT 覆盖更高优先级结果
 - [x] 4.5 第一版 baotou_scope 不调用 generic weighted two-ply / Stage B，不新增 future-shape DFS
-- [x] 4.6 feature flag off 时 baotou_scope action/evaluation 与 baseline 逐 fixture 100% parity
+- [x] 4.6 shape-aware off 时省略 standing-shape tie-break；同档仍使用组合进度公式
 - [x] 4.7 golden 完整牌例必须走真实 baotou_scope：旧 key 选 4s，shape-aware key 选 1s
 - [x] 4.8 Rust baotou kernel unavailable / BAOTOU_UKE_BUDGET_NODES 超限 / X-Y-Z 收手时保持既有整档 fallback，shape 不得污染 fallback
 - [x] 4.9 diagnostics 记录 decision_scope=baotou_scope、每候选 tier/u1/standing shape/legacy shape/feed 与 baotou_shape_used
@@ -140,6 +140,14 @@
 - [ ] 14.6 发布后 replay 抽样至少 100 个 shape-changed decisions 做人工复核
 - [x] 14.7 若线上 fallback/latency/异常结构逆序回归，关闭 shape_quality_enabled 即恢复 baseline
 - [x] 14.8 更新 PROGRESS.md，记录 evaluator/profile/kernel version 与 A/B 结论
+
+## 15. Legacy 爆头组合进度与候选诊断修正
+
+- [x] 15.1 同 baotou tier、财神保护顺序之后，以
+  `1.5 * baotou_ukeire + current_selfdraw_hu_ukeire` 排序；爆头听候选按所有合法
+  下一摸计算两类进张；YCBK 开启时当前自摸胡牌进张遵循规则门禁
+- [x] 15.2 候选诊断逐行使用各自弃后站立手，记录普通结构进张、合法自摸胡牌进张、
+  爆头进张和版本化组合评分；同步规格与进度说明
 
 ## 未关闭项说明
 

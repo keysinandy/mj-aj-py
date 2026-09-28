@@ -191,17 +191,17 @@ class TestSelfKongDecision(unittest.TestCase):
         self.assertEqual(action, KONG_CLOSED_BASE)
         self.assertEqual(evaluation["reason"], "kong_expected_value")
 
-    def test_self_add_kong_keeps_existing_locked_meld_count(self):
-        """v33:补杠替换碰,不能把 locked 错算成新增两个副露。"""
+    def test_next_draw_baotou_override_precedes_self_add_kong(self):
+        """已有全牌爆头听弃牌时，优先于补杠期望比较。"""
         g = _draw_game("1m456m789m123pw", 0,
                        melds=[("pong", 0)])
         acts = g.legal_actions()
         self.assertIn(KONG_ADD_BASE, acts)
 
         action, detail = bot_mod._choose_draw_action(g, 0, acts)
-        self.assertEqual(action, KONG_ADD_BASE)
-        self.assertEqual(detail["reason"], "kong_expected_value")
-        self.assertEqual(detail["selected_kind"], "add")
+        self.assertEqual(action, 0)
+        self.assertEqual(detail["reason"], "hu_baotou_next_draw_override")
+        self.assertTrue(detail["baotou_wait"])
 
     def test_immediate_hu_beats_lower_value_self_kong(self):
         """杠后期望不足时仍保留确定 HU,避免写成 if-kong-return-kong。"""
@@ -321,13 +321,15 @@ class TestBaotouDiscardTier(unittest.TestCase):
         pick, info = choose_discard(g, 0, return_info=True)
         self.assertEqual(info.get("push_abort"), "live_wall")
 
-    def test_piao_suppressed_on_opp_melds(self):
-        # 软收手(对手副露 ≥ Y)时弃胡打白飘同样落袋为安
+    def test_baotou_override_ignores_opp_meld_stop_before_piao(self):
+        # 已有合法非白弃牌形成爆头听时，对手副露软收手不得拦截。
         g = _draw_game("123m456m789m5pwwww", W)
         g.wall = [0] * (20 + 40)
         g.melds[1] = [("pong", 0)] * 3
-        action, _ = bot_mod._choose_draw_action(g, 0, g.legal_actions())
-        self.assertEqual(action, HU)
+        action, detail = bot_mod._choose_draw_action(g, 0, g.legal_actions())
+        self.assertEqual(action, 13)  # 弃 5p，保留白板进入全牌爆头听
+        self.assertEqual(detail["reason"], "hu_baotou_next_draw_override")
+        self.assertIn("opp_melds", detail["ignored_push_gates"])
 
     def test_no_wild_hand_unchanged(self):
         # 不持财神:排序与旧冻结基线一致(既有固定牌例回归)。
@@ -361,25 +363,34 @@ class TestBaotouPiaoWallGuard(unittest.TestCase):
 
     def test_wall_at_guard_still_piao(self):
         g = self._piao_game(6)
+        # 冻结只允许弃刚摸的白板，没有合法非白爆头弃牌，回到原财飘分支。
+        g.freeze = 2
+        g.freezer = 2
         self.assertTrue(bot_mod._should_piao(g, 0))
         action, detail = bot_mod._choose_draw_action(g, 0, g.legal_actions())
         self.assertEqual(action, W)
         self.assertEqual(detail["reason"], "hu_or_piao_legacy")
 
     def test_freeze_piao_requires_drawn_wild(self):
-        # 抓打圈冻结态只能弃刚摸牌:弃胡打白飘仅在刚摸财神时合法,
-        # 否则必须直接胡或弃刚摸牌(旧 _should_piao 冻结盲)。
+        # 冻结时引擎动作集仍约束弃牌。摸到非白的合法弃牌若能进入全牌爆头听，
+        # 仍由强推进分支处理；不能虚构其它弃牌。
         g = _draw_game("123m456m789m5pwwww", 13)  # 摸 5p 成胡,非财神
         g.wall = [0] * (20 + 40)
         g.freeze = 2
         g.freezer = 2
-        action, detail = bot_mod._choose_draw_action(g, 0, g.legal_actions())
-        self.assertEqual(action, HU)  # 冻结 + 摸的不是白 → 不飘
-        # 未冻结 + 刚摸财神 → 弃白飘仍被选择
+        acts = g.legal_actions()
+        self.assertEqual([a for a in acts if 0 <= a < 34], [13])
+        action, detail = bot_mod._choose_draw_action(g, 0, acts)
+        self.assertEqual(action, 13)  # 只打合法的刚摸5p，保留白板
+        self.assertEqual(detail["reason"], "hu_baotou_next_draw_override")
+        # 冻结且刚摸白时仅白板可弃；非白爆头候选不合法，保留财飘路径。
         g2 = _draw_game("123m456m789m5pwwww", W)
         g2.wall = [0] * (20 + 40)
-        action2, _ = bot_mod._choose_draw_action(g2, 0, g2.legal_actions())
+        g2.freeze = 2
+        g2.freezer = 2
+        action2, detail2 = bot_mod._choose_draw_action(g2, 0, g2.legal_actions())
         self.assertEqual(action2, W)
+        self.assertEqual(detail2["reason"], "hu_or_piao_legacy")
 
     def test_guard_beats_kong_comparison(self):
         # HU 与暗杠同时合法、墙 < 6:守卫短路直接胡,杠期望比较不参与。
@@ -389,6 +400,71 @@ class TestBaotouPiaoWallGuard(unittest.TestCase):
         self.assertIn(HU, acts)
         self.assertIn(KONG_CLOSED_BASE, acts)
         self.assertEqual(bot_mod.choose_action(g, 0), HU)
+
+
+class TestHuBaotouNextDrawOverride(unittest.TestCase):
+    """当前自摸胡可弃非财神进入全牌爆头听时，越过 X/Y/Z 软收手。"""
+
+    def _round4_seq482_game(self, live=48):
+        # 回放 u_9812..._5be1... round4 seq482：
+        # 暗手 44m56mSSSw，副露 123筒/西西西，摸白；4万(tile 3) 是
+        # 唯一能保留白板并形成听任意牌爆头的合法弃牌。
+        g = _draw_game(
+            "4456mSSSw", W,
+            melds=[("chow", 9), ("pong", 29)],
+        )
+        g.wall = [0] * (20 + live)
+        return g
+
+    def test_round4_seq482_passes_hu_for_4m_even_with_xy_stops(self):
+        g = self._round4_seq482_game(live=48)
+        # 回放中下家已有两副露;模拟 X 轮数也已达到收手阈值。
+        g.melds[1] = [("pong", 0), ("pong", 15)]
+        acts = g.legal_actions()
+        self.assertIn(HU, acts)
+        self.assertIn(3, acts)  # 4万
+        for tile in (3, 4, 5, 28):
+            standing = list(g.hands[0])
+            standing[tile] -= 1
+            self.assertEqual(is_baotou_wait(standing, 2), tile == 3)
+
+        bot_mod._push_rounds[g] = {
+            0: bot_mod.BAOTOU_PUSH_MAX_ROUNDS,
+        }
+        try:
+            action, detail = bot_mod._choose_draw_action(g, 0, acts)
+        finally:
+            bot_mod._push_rounds.pop(g, None)
+
+        self.assertEqual(action, 3)  # 4万，保留白板
+        self.assertEqual(detail["reason"], "hu_baotou_next_draw_override")
+        self.assertEqual(detail["ignored_push_gates"], ["rounds", "opp_melds"])
+
+    def test_z_stop_is_bypassed_at_hard_wall_guard(self):
+        # Z=16 已触发，但 6 张活墙仍足以轮回到本家下一摸。
+        g = self._round4_seq482_game(live=6)
+        action, detail = bot_mod._choose_draw_action(g, 0, g.legal_actions())
+        self.assertEqual(action, 3)
+        self.assertEqual(detail["reason"], "hu_baotou_next_draw_override")
+        self.assertEqual(detail["ignored_push_gates"], ["live_wall"])
+
+    def test_wall_below_guard_keeps_current_hu(self):
+        g = self._round4_seq482_game(live=5)
+        action, detail = bot_mod._choose_draw_action(g, 0, g.legal_actions())
+        self.assertEqual(action, HU)
+        self.assertEqual(detail["reason"], "hu_wall_guard_legacy")
+
+    def test_freeze_cannot_select_non_legal_baotou_discard(self):
+        g = self._round4_seq482_game(live=48)
+        g.freeze = 2
+        g.freezer = 2
+        acts = g.legal_actions()
+        legal_discards = [a for a in acts if 0 <= a < 34]
+        self.assertEqual(legal_discards, [W])
+        self.assertNotIn(3, acts)
+
+        action, _detail = bot_mod._choose_draw_action(g, 0, acts)
+        self.assertEqual(action, HU)
 
 
 def _react_game(spec, owner, tile, mode="claim", melds=None, river=None, seat=1):

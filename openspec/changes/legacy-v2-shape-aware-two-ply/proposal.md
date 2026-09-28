@@ -12,7 +12,7 @@
 该完整牌例的直接根因不是 weighted two-ply leaf comparator，而是 `baotou_scope` 在 weighted 路径之前提前返回；同时普通 weighted two-ply 也存在同类 shape 缺口。两部分必须分别定义、分别验收：
 
 1. `choose_discard()` 在 `hand[tiles.W] > 0 && best_s == 0` 时进入 `baotou_scope`；只要 Rust `baotou_ukeire` 可用且未触发收手/预算回退，`_choose_discard_baotou()` 会直接返回，后续 weighted roots、shape_guard 与 Stage B 都不会执行。
-2. 当前 baotou 排序键为 `tier → 不弃财神 → baotou_ukeire → 旧 shape_loss → feed_risk → tile`。本例 1s/4s 的财神档位与爆头进张打平后，旧局部弃牌损失 `5 vs 3` 使 4s 胜出。
+2. 变更前 baotou 排序键为 `tier → 不弃财神 → baotou_ukeire → 旧 shape_loss → feed_risk → tile`。本例 1s/4s 的财神档位与爆头进张打平后，旧局部弃牌损失 `5 vs 3` 使 4s 胜出。
 3. `mj.bot._discard_shape_cost()` 衡量的是“打掉当前这张牌有多伤”，不是“弃牌后整手牌形态有多好”，因此不能作为 24s 与 12s 的 standing shape 真值。
 4. 对非 baotou_scope 的普通路径，Rust weighted Stage B 当前主要比较 child shanten、child ukeire、ukeire tile types；当这些指标相同，45s 与 12s 仍可能被视为等价。
 5. weighted root 聚合目前没有 future shape 指标；frontier cap 与 shape_guard 也仍依赖旧 shape_loss。
@@ -38,7 +38,10 @@
   - shape_guard；
   - final weighted root tie-break；
   - `baotou_scope` 的财神档位/爆头进张之后、旧 shape_loss 之前。
-- `baotou_scope` 不强制绕回 weighted two-ply。shape-aware 模式保留既有 `tier → 财神保护 → baotou_ukeire` 优先级，只在这些指标打平后加入 standing shape，再落到旧 discard cost/feed/tile；关闭开关时必须逐决策恢复旧 key。
+- `baotou_scope` 不强制绕回 weighted two-ply。legacy 同档排序先按
+  `1.5 * baotou_ukeire + current_selfdraw_hu_ukeire` 比较组合进度，再用 standing shape、
+  旧 discard cost/feed/tile 依次裁决；爆头进张不再作为普通自摸胡牌进张之前的独立级别。
+  shape-aware 关闭时只省略 standing-shape tie-break。
 - 第一版不在 baotou_scope 内额外运行 generic future-shape two-ply；若 standing shape 仍不足，后续必须以独立、有预算的 baotou future metric 另立 change，不能暗中扩大当前热路径搜索。
 - 扩展普通 weighted two-ply Stage B：
   - child shanten 最优；
@@ -84,7 +87,7 @@
 - legacy-two-ply-weighted-frontier：child/root comparator 接入 shape quality，frontier cap 使用 standing shape。
 - legacy-two-ply-frontier-shape-guard：shape_guard 的“结构明显更优”改为 post-discard standing hand 语义。
 - legacy-two-ply-rust-kernel：原生 Stage B 增加 child shape 比较与 future shape 聚合，并升级 kernel contract/version。
-- bot-baotou-piao-discard：在既有爆头 tier / 财神保护 / baotou_ukeire 完全打平后使用 standing shape，保持旧预算与 fallback 语义。
+- bot-baotou-piao-discard：按既有爆头 tier / 财神保护 / 组合进度分排序，在组合分打平后使用 standing shape，保持旧预算与 fallback 语义。
 - bot-decision-explanations：明确输出实际 `decision_scope=baotou_scope|weighted_two_ply|legacy` 及 baotou 候选级 tie-break 证据。
 
 ## Impact

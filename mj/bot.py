@@ -1,15 +1,17 @@
 """启发式出牌 bot。
 
 决策原则(按优先级):
-0. 摸牌/杠补牌成胡默认提交 HU;爆头态打白板仍听任意牌(财飘)时,
+0. 摸牌/杠补牌成胡默认提交 HU;若合法弃非财神牌、保留财神后已听任意牌，
+   且活墙达到 PIAO_WALL_GUARD，则主动过 HU 进入下摸爆头胡；此机会忽略
+   X/Y/Z 软收手。爆头态打白板仍听任意牌(财飘)时,
    活墙可摸张数 ≥ PIAO_WALL_GUARD(6)则弃胡打白飘(×4 起,下次摸牌
    必胡);活墙 < 6 落袋为安直接胡——跳过飘与杠的期望比较。
    v33 起杠后补牌仍是普通 draw 决策窗口;暗杠/补杠与 HU/弃牌按
    公开信息下一张摸牌的积分期望比较。
 1. 摸牌阶段弃牌:最小化向听数 → 保护财神 → [持财神 + 听牌态
    叠加爆头档(openspec baotou-piao-aware-discard):弃后站立手为
-   爆头听(听任意)的候选整体优先;其余候选进度信号用爆头进张
-   (摸 t 后可弃成爆头听的未见加权数)替代普通胡牌张。受自适应
+   爆头听(听任意)的候选整体优先;同档进度信号比较
+   1.5×爆头进张 + 当前规则允许的自摸胡牌进张。受自适应
    收手调节:X 轮未转化 / 对手副露 ≥ Y / 活墙 < Z 任一触发即回
    速度线(验收口径 YCBK 关,开启场景不考虑)。爆头进张走 Rust
    内核(mj_kernels,节点预算,超限整局回退本条普通口径)] →
@@ -162,9 +164,9 @@ def choose_discard(g, seat, return_info=False, profile=None):
     进张数 → 牌型结构损失 → 喂牌风险 → tile 编号(仅作稳定排序)。
 
     持财神 + 听牌态叠加爆头档(openspec baotou-piao-aware-discard):
-    弃后站立手为爆头听(听任意)的候选整体优先;其余候选的进度信号
-    用爆头进张(摸 t 后可弃成爆头听的未见加权数)替代普通胡牌张进张
-    ——爆头路径倍率更高(×2 起),但速度较慢,故受 X/Y/Z 自适应收手
+    弃后站立手为爆头听(听任意)的候选整体优先;同一爆头档内以
+    1.5*爆头进张 + 当前规则允许的自摸胡牌进张比较进度,再比较牌形。
+    爆头推进受 X/Y/Z 自适应收手
     调节,任一触发即回本函数的 legacy 键(速度线,info 带 push_abort)。
     爆头进张计算超预算时整局回退 legacy 键(info 带 fallback_reason),
     不混用部分结果。不持财神时排序与既有基线逐候选一致。
@@ -222,6 +224,7 @@ def choose_discard(g, seat, return_info=False, profile=None):
                 speed_cands, locked, vis, info,
                 shape_aware=bool(profile and profile.shape_quality_enabled),
                 diagnostics_enabled=profile is not None,
+                you_cai_bi_kao=bool(getattr(g, "you_cai_bi_kao", False)),
             )
             if best is not None:
                 info["push_rounds"] = rounds
@@ -389,13 +392,14 @@ BAOTOU_UKE_BUDGET_NODES = 64
 
 
 def _choose_discard_baotou(cands, locked, vis, info, *,
-                           shape_aware=False, diagnostics_enabled=False):
+                           shape_aware=False, diagnostics_enabled=False,
+                           you_cai_bi_kao=False):
     """持财神听牌态的爆头档排序;预算超限返回 None(整局回退 legacy 键)。
 
     tier 0:弃后站立手为爆头听(听任意牌)——整体优先,档内沿用财神
     保护次序(不主动弃白;爆头态弃白飘由 _should_piao 在 HU 决策点
-    统一裁决)。tier 1:普通听牌,进度信号用爆头进张替代普通胡牌张
-    (有财必拷响下不可兑现);普通进张不再单独参与该状态排序。
+    统一裁决)。同 tier 候选以 1.5*爆头进张 + 当前规则允许的自摸
+    胡牌进张排序;YCBK 门禁只从当前自摸胡牌进张中剔除不可兑现听口。
     仅在 Rust 内核(mj_kernels.baotou_ukeire)可用时启用。
     """
     from .shanten import baotou_ukeire, BAOTOU_UKEIRE_RUST
@@ -407,7 +411,10 @@ def _choose_discard_baotou(cands, locked, vis, info, *,
     ranked = []
     for t, c, shape, feed in cands:
         if is_baotou_wait(c, locked):
-            ranked.append((0, t, 0, shape, feed, c))
+            visible = c if vis is None else vis
+            baotou_uke = sum(
+                max(0, 4 - int(visible[tile])) for tile in range(34))
+            ranked.append((0, t, baotou_uke, shape, feed, c))
             continue
         if nodes >= BAOTOU_UKE_BUDGET_NODES:
             # 整局回退,不混用部分爆头结果(可归因)
@@ -436,23 +443,51 @@ def _choose_discard_baotou(cands, locked, vis, info, *,
     legacy_best, legacy_key = None, None
     candidate_rows = []
     for tier, t, u1, shape, feed, _hand, standing in measured:
-        key = (tier, t == W, -u1,
+        state = ukeire(_hand, locked, vis)
+        structural_waits = [
+            tile for tile in state[1] if _hand[tile] < 4
+        ]
+        # A baotou-ready standing hand wins on any next draw, including tile
+        # types outside its ordinary structural waits.
+        legal_waits = (
+            [tile for tile in range(34) if _hand[tile] < 4]
+            if tier == 0 else structural_waits
+        )
+        if you_cai_bi_kao and tier != 0:
+            # The next turn is a normal self-draw after this discard. Under
+            # YCBK, a wait containing/introducing White is not a legal HU
+            # unless the pre-draw standing hand is already baotou-ready.
+            legal_waits = [
+                tile for tile in structural_waits
+                if _hand[W] == 0 and tile != W
+            ]
+        visible = _hand if vis is None else vis
+        structural_ukeire = sum(
+            max(0, 4 - int(visible[tile])) for tile in structural_waits)
+        current_selfdraw_hu_ukeire = sum(
+            max(0, 4 - int(visible[tile])) for tile in legal_waits)
+        progress_score_x2 = 3 * u1 + 2 * current_selfdraw_hu_ukeire
+        key = (tier, t == W, -progress_score_x2,
                -(standing.encoded if shape_aware and standing else 0),
                shape, feed, t)
-        old_key = (tier, t == W, -u1, shape, feed, t)
+        old_key = (tier, t == W, -progress_score_x2, shape, feed, t)
         if best_key is None or key < best_key:
             best, best_key, best_tier = t, key, tier
         if legacy_key is None or old_key < legacy_key:
             legacy_best, legacy_key = t, old_key
         if diagnostics_enabled:
-            state = ukeire(c, locked, vis)
             row = {
                 "tile": t,
-                "shanten": shanten(c, locked),
-                "current_ukeire": int(state[2]),
-                "ukeire_tiles": list(state[1]),
+                "shanten": shanten(_hand, locked),
+                "current_ukeire": structural_ukeire,
+                "structural_ukeire": structural_ukeire,
+                "ukeire_tiles": structural_waits,
+                "current_selfdraw_hu_ukeire": current_selfdraw_hu_ukeire,
+                "current_selfdraw_hu_tiles": legal_waits,
                 "baotou_tier": tier,
                 "baotou_ukeire": u1,
+                "baotou_progress_score": progress_score_x2 / 2.0,
+                "baotou_progress_score_x2": progress_score_x2,
                 "discard_shape_cost": shape,
                 "shape_loss": shape,
                 "feed_risk": feed,
@@ -473,6 +508,9 @@ def _choose_discard_baotou(cands, locked, vis, info, *,
     info["baotou_nodes"] = nodes
     info["baotou_elapsed_ms"] = round((time.monotonic() - started) * 1000.0, 3)
     info["decision_scope"] = "baotou_scope"
+    info["baotou_progress_formula_version"] = "baotou-weighted-ukeire-v1"
+    info["baotou_progress_formula"] = (
+        "1.5*baotou_ukeire+current_selfdraw_hu_ukeire")
     info["stage_b_entered"] = False
     info["future_shape_quality_sum"] = None
     info["future_shape_quality_mean"] = None
@@ -723,6 +761,34 @@ def _evaluate_kong_next_draw(g, seat, action, remaining,
     )
 
 
+def _next_draw_baotou_discard(g, seat, actions):
+    """Return a legal non-W discard that leaves an all-tile baotou wait.
+
+    The HU-window override is checked only after the shared wall guard. It
+    bypasses X/Y/Z push stops, while the engine-provided action list continues
+    to enforce discard legality, including freeze restrictions.
+    """
+    hand = g.hands[seat]
+    if hand[W] <= 0:
+        return None
+    locked = len(g.melds[seat])
+    candidates = []
+    for tile in actions:
+        if tile < 0 or tile >= 34 or tile == W or hand[tile] <= 0:
+            continue
+        standing = list(hand)
+        standing[tile] -= 1
+        if is_baotou_wait(standing, locked):
+            # Every candidate waits on all tile types with the same visible
+            # pool, so legacy ukeire ties; preserve its shape/feed/tile order.
+            candidates.append((
+                _discard_shape_cost(hand, tile),
+                _feed_risk(g, seat, tile),
+                tile,
+            ))
+    return min(candidates)[2] if candidates else None
+
+
 def _choose_draw_action(g, seat, actions=None, discard_profile=None,
                         reaction_profile=None):
     """Choose HU/piao, self-kong, or discard at a draw decision point.
@@ -733,11 +799,39 @@ def _choose_draw_action(g, seat, actions=None, discard_profile=None,
     window useful without reducing the policy to ``if kong: return kong``.
     """
     actions = tuple(g.legal_actions() if actions is None else actions)
-    if HU in actions and g.live_wall_left() < PIAO_WALL_GUARD:
+    wall_left = g.live_wall_left() if HU in actions else None
+    if HU in actions and wall_left < PIAO_WALL_GUARD:
         # 墙量守卫(openspec baotou-piao-aware-discard):活墙可摸不足
         # 6 张(死墙已扣)时落袋为安,直接胡——不弃胡博爆头/财飘、
         # 也不让杠的期望比较覆盖确定的 HU。与 _should_piao 同常量。
-        return HU, {"reason": "hu_wall_guard_legacy"}
+        return HU, {
+            "reason": "hu_wall_guard_legacy",
+            "wall_left": wall_left,
+            "wall_guard": PIAO_WALL_GUARD,
+        }
+    if HU in actions:
+        next_baotou_discard = _next_draw_baotou_discard(
+            g, seat, actions)
+        if next_baotou_discard is not None:
+            # 这是一手已形成的听任意牌，不是普通爆头推进机会。软收手
+            # (X/Y/Z) 不得盖过“下次摸牌全牌可胡”；只要求墙能轮回到自家。
+            ignored_gates = []
+            rounds = _push_rounds.get(g, {}).get(seat, 0)
+            if rounds >= BAOTOU_PUSH_MAX_ROUNDS:
+                ignored_gates.append("rounds")
+            if _max_opp_melds(g, seat) >= BAOTOU_PUSH_OPP_MELDS:
+                ignored_gates.append("opp_melds")
+            if wall_left < BAOTOU_PUSH_MIN_LIVE:
+                ignored_gates.append("live_wall")
+            return next_baotou_discard, {
+                "reason": "hu_baotou_next_draw_override",
+                "immediate_hu_available": True,
+                "selected_discard": next_baotou_discard,
+                "baotou_wait": True,
+                "wall_left": wall_left,
+                "wall_guard": PIAO_WALL_GUARD,
+                "ignored_push_gates": ignored_gates,
+            }
     kongs = _kong_actions(actions)
     if not kongs:
         if HU in actions:

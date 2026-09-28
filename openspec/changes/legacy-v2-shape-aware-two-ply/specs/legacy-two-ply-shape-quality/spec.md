@@ -100,7 +100,7 @@ shape evaluator MUST 只依赖 standing tile counts 与显式规则输入，不�
 在这些更高优先级指标相同的条件下：
 
 - 弃 1s 后的 24s standing shape MUST 优于弃 4s 后的 12s；
-- 该完整牌例 MUST 实际进入 `baotou_scope`，shape-aware legacyV2 MUST 在 baotou tier / 财神保护 / baotou_ukeire 打平后用 standing shape 选择弃 1s；
+- 该完整牌例 MUST 实际进入 `baotou_scope`，shape-aware legacyV2 MUST 在 baotou tier / 财神保护 / 组合进度分打平后用 standing shape 选择弃 1s；
 - 普通 weighted two-ply 的 draw=5s future branch SHALL 使用独立 fixture 验证打 2s 留 45s 的结构升级，不得把两条路径混为一个验收。
 
 #### Scenario: 用户牌例修复
@@ -114,29 +114,30 @@ shape evaluator MUST 只依赖 standing tile counts 与显式规则输入，不�
 
 ### Requirement: baotou_scope SHALL 在爆头进度打平后使用 standing shape
 
-当 hero 持白板财神且最小向听为 0、并且未触发推进收手或 baotou 预算回退时，系统 SHALL 保留既有 baotou 优先级：
+当 hero 持白板财神且最小向听为 0、并且未触发推进收手或 baotou 预算回退时，系统 SHALL 按以下优先级排序：
 
 1. baotou tier；
 2. 财神保护（不主动弃白板财神）；
-3. baotou_ukeire；
+3. `1.5 * baotou_ukeire + current_selfdraw_hu_ukeire`；
 4. standing shape quality；
 5. legacy discard shape cost；
 6. feed risk；
 7. stable tile。
 
-standing shape MUST NOT 覆盖前三项。shape-aware 开关关闭时 MUST 恢复旧 key，不得产生行为漂移。
+爆头进张与当前合法自摸胡牌进张 MUST 合并比较，不作为两个先后级别。standing shape
+MUST NOT 覆盖前三项。shape-aware 开关关闭时省略 standing shape，但仍使用组合进度分。
 
 #### Scenario: baotou 进度相同由 standing shape 决胜
 
-- **GIVEN** 两个候选的 baotou tier、财神保护和 baotou_ukeire 完全相同
+- **GIVEN** 两个候选的 baotou tier、财神保护和组合进度分完全相同
 - **AND** 候选 A 留下 24s，候选 B 留下 12s
 - **WHEN** shape-aware baotou_scope 排序
 - **THEN** A SHALL 在旧 discard shape cost 之前胜出
 
-#### Scenario: 更高 baotou_ukeire 不被 shape 覆盖
+#### Scenario: 更高组合进度不被 shape 覆盖
 
 - **GIVEN** 两个候选处于同一 baotou tier
-- **AND** 候选 A 的 baotou_ukeire 严格高于候选 B
+- **AND** 候选 A 的 `1.5 * baotou_ukeire + current_selfdraw_hu_ukeire` 严格高于候选 B
 - **AND** 候选 B 的 standing shape 更优
 - **WHEN** baotou_scope 排序
 - **THEN** MUST 选择 A

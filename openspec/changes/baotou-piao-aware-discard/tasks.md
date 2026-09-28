@@ -13,8 +13,8 @@
 ## 2. 弃牌排序接入
 
 - [x] 2.1 `choose_discard` 实现 D2 排序键（触发态 `hand[W]>0` 且 s==0；tier0
-  爆头听优先档、tier1 用 `-baotou_uke`；不持财神键不变）（验证：新排序单测——
-  tier0 胜出 / tier1 爆头进张优先 / 不持财神与旧基线逐候选一致）
+  爆头听优先档，同档比较 `-(1.5*baotou_uke+current_selfdraw_hu_ukeire)`；不持财神键不变）（验证：新排序单测——
+  tier0 胜出 / tier1 组合进度排序 / 不持财神与旧基线逐候选一致）
 - [x] 2.2 预算与回退：爆头进张计算加节点/单调时钟预算，超限回退既有 legacy 键
   并记 `fallback_reason`（验证：注入超小预算的用例断言回退且结果可归因）
 - [x] 2.3 既有 legacy 排序断言显式限定到不持财神状态，持财神场景改用新档断言
@@ -26,6 +26,10 @@
   `live_wall_left() >= PIAO_WALL_GUARD`；`choose_action` 在 `HU ∈ acts` 且
   `live_wall_left() < PIAO_WALL_GUARD` 时短路直接返回 HU（跳过飘与杠比较）
   （验证：单测——墙 5 爆头态摸白直接 HU、墙 ≥6 仍弃胡打白飘、墙 <6 时杠不覆盖 HU）
+- [x] 3.2 HU 合法且活墙通过硬门时，检测合法非财神弃牌能否使保留财神后的站立手成为
+  全牌爆头听；若能，先于 X/Y/Z、财飘与杠比较返回该弃牌，并输出专用决策原因
+- [x] 3.3 增加下一摸爆头覆盖回归：X/Y 软收手已触发仍推进、Z=16 但墙 ≥6 仍推进、
+  墙 <6 直接 HU、冻结态仅使用引擎给出的合法弃牌集；回放 round4 seq482 确认选择弃4万
 
 ## 4. 一致性与验收
 
@@ -40,8 +44,8 @@
   （`python3 scripts/rust_parity.py`，如扩展已装）
 - [x] 4.3 新旧 bot 对弈评估：`fair_match(n=192)` 新 bot vs 旧 bot（或 vs 3 启发式
   对照）确认无胜率/均分回退（验证：评估报告落 change artifacts/）
-- [ ] 4.4 线上冒烟：match_runner 走 `Mirror.build_game` 路径跑 ≥10 局，确认墙守卫
-  与新排序在线上无异常（验证：对局日志 `logview --windows` 抽查无新归因异常）
+- [ ] 4.4 线上冒烟：match_runner 走 `Mirror.build_game` 路径跑 ≥10 局，确认墙守卫、
+  新排序和“下一摸必胡爆头听”覆盖在线上无异常（日志检查专用 reason 与弃牌合法性）
 - [x] 4.5 同步文档：PROGRESS.md bot 决策原则节（新增爆头听优先档、爆头进张、
   墙守卫常量）与必要结论（验证：PROGRESS.md diff 审阅）
 

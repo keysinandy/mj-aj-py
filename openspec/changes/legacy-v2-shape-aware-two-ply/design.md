@@ -217,7 +217,7 @@ simulate draw 5s
 ~~~text
 baotou tier
 不主动弃白板财神
-baotou_ukeire descending
+1.5 * baotou_ukeire + current legal self-draw HU ukeire descending
 legacy discard shape cost ascending
 feed risk ascending
 stable tile
@@ -228,7 +228,7 @@ shape-aware profile 开启后改为：
 ~~~text
 baotou tier
 不主动弃白板财神
-baotou_ukeire descending
+1.5 * baotou_ukeire + current legal self-draw HU ukeire descending
 standing shape quality descending    # new
 legacy discard shape cost ascending
 feed risk ascending
@@ -237,10 +237,11 @@ stable tile
 
 约束：
 
-- baotou tier、财神保护、baotou_ukeire 的优先级完全不变；
-- standing shape 只在上述指标全部打平后生效；
+- baotou tier 与财神保护仍先于加权进度；爆头进张与当前合法自摸胡牌进张不再分先后级，
+  统一比较 `1.5 * baotou_ukeire + current_selfdraw_hu_ukeire`；
+- standing shape 只在加权进度分打平后生效；
 - 本阶段不调用 generic weighted two-ply，也不新增 future-shape DFS；
-- feature flag 关闭时 key 与旧实现逐项一致；
+- shape-aware 关闭时仍使用相同加权进度分，只省略 standing-shape tie-break；
 - Rust baotou kernel 不可用、节点预算超限或 X/Y/Z 收手时，继续沿用既有整档 fallback，不允许 shape 部分结果污染 fallback；
 - 用户完整牌例的修复 MUST 来自此路径。
 
@@ -440,8 +441,8 @@ standing = 12s class PENCHAN
 - 0～4 财神边界；
 - locked / freeze 只影响合法性与 shanten，不允许 shape helper 扩大合法动作；
 - visible 改变只影响 ukeire weight，不改变同一个 standing counts 的纯 shape signature；
-- 用户完整牌例必须证明实际 `decision_scope=baotou_scope`、旧 key 选 4s、shape-aware key 选 1s；
-- baotou tier 与 baotou_ukeire 不打平时，standing shape 不得覆盖它们；
+- 用户完整牌例必须证明实际 `decision_scope=baotou_scope`、候选诊断来自各自弃后手牌；
+- baotou tier / 财神保护顺序更优或加权进度分更高时，standing shape 不得覆盖；
 - 独立 weighted Stage B fixture 覆盖 `24s + 5s -> 打2s留45s`；
 - Python/Rust 至少 10000 个随机合法 standing hands parity；
 - targeted golden fixtures 全部 parity；

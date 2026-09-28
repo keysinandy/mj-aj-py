@@ -21,16 +21,20 @@ legacy 启发式 bot 的舍牌 tie-break 用 `ukeire` 度量进度，而 ukeire 
 - **墙量守卫**：`Game.live_wall_left()`（已扣除死墙、即"接下来可摸的牌"口径）**< 6 时
   落袋为安直接胡**，不博爆头/财飘；`_should_piao` 的墙门从 `>= 5` 收紧到 `>= 6`，
   两处守卫同一常量。
+- **下一摸爆头覆盖收手门槛**：HU 合法时，若弃一张合法非财神牌、保留财神后已是
+  听任意牌的爆头形状，且活墙达到上述 6 张轮回门槛，则主动过当前 HU 进入爆头听；
+  此强制推进分支忽略 X/Y/Z 自适应收手门槛。
 - **无条件生效**：新排序与守卫不依赖 `you_cai_bi_kao` 标志。YCBK 只继续影响 HU 合法性门禁
   （`legal_actions`，本变更不改）；策略偏好（优先爆头/财飘）对任何对局生效。
-- 仅改 legacy 路径；shape-v1 评价器、`ukeire` 纯函数契约
+- 爆头听/进张排序仅改 legacy 路径；HU 窗口的“下一摸必胡爆头听”覆盖放在共享动作
+  分支，所有 evaluator 一致生效。shape-v1 评价器排序、`ukeire` 纯函数契约
   （`(counts, locked, visible)`）、Rust 内核与对拍口径均不动。
 
 ## Capabilities
 
 ### New Capabilities
 - `bot-baotou-piao-discard`: legacy 弃牌与胡牌抉择的爆头/财飘感知策略——爆头听优先档、
-  持财神非爆头态的爆头进张度量、墙量守卫（< 6 直接胡）与 `_should_piao` 门限统一。
+  持财神听牌态的组合进度分、墙量守卫（< 6 直接胡）与 `_should_piao` 门限统一。
 
 ### Modified Capabilities
 - `bot-react-decision`: 既有 requirement 规定「legacy 的 `choose_discard()` 排序 MUST 保持；
