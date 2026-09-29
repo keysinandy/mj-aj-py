@@ -26,10 +26,18 @@
   `live_wall_left() >= PIAO_WALL_GUARD`；`choose_action` 在 `HU ∈ acts` 且
   `live_wall_left() < PIAO_WALL_GUARD` 时短路直接返回 HU（跳过飘与杠比较）
   （验证：单测——墙 5 爆头态摸白直接 HU、墙 ≥6 仍弃胡打白飘、墙 <6 时杠不覆盖 HU）
-- [x] 3.2 HU 合法且活墙通过硬门时，检测合法非财神弃牌能否使保留财神后的站立手成为
-  全牌爆头听；若能，先于 X/Y/Z、财飘与杠比较返回该弃牌，并输出专用决策原因
-- [x] 3.3 增加下一摸爆头覆盖回归：X/Y 软收手已触发仍推进、Z=16 但墙 ≥6 仍推进、
-  墙 <6 直接 HU、冻结态仅使用引擎给出的合法弃牌集；回放 round4 seq482 确认选择弃4万
+- [x] 3.2 （旧实现，**由 3.4 替代**）HU 合法且活墙通过硬门时，检测合法非财神弃牌能否
+  形成全牌爆头听并提前返回；该行为已被 2026-09-29 回放证明会绕过财飘/two-ply，保留仅作历史记录
+- [x] 3.3 （旧回归，**需按 3.5 重写**）覆盖 X/Y/Z 与冻结合法性；原断言
+  `hu_baotou_next_draw_override` 为最终动作的用例不再代表目标行为
+- [ ] 3.4 将 `_choose_draw_action` 改为 HU-window action-root 仲裁：硬墙门后一次性建立
+  immediate HU / piao_discard / baotou_next_draw / self_kong；删除“发现非白爆头即 return”语义
+- [ ] 3.5 重写旧 override 单测：保留冻结合法性与墙 <6 直接 HU，但墙 ≥6 时断言候选集完整、
+  不再断言非白爆头无条件胜出；X/Y/Z 不得非对称删除财飘候选
+- [ ] 3.6 接通 action-root continuation/two-ply：legacyV2 在应进入 Stage B 时不得被爆头分支绕过，
+  immediate HU 作为基线，财飘/下一摸爆头/自杠按统一动作价值比较
+- [ ] 3.7 修正解释字段：`decision_scope=hu_window_arbitration`，准确记录 baotou/piao candidate scan、
+  `stage_b_entered`、candidate type/value、selected/reason
 
 ## 4. 一致性与验收
 
@@ -45,9 +53,12 @@
 - [x] 4.3 新旧 bot 对弈评估：`fair_match(n=192)` 新 bot vs 旧 bot（或 vs 3 启发式
   对照）确认无胜率/均分回退（验证：评估报告落 change artifacts/）
 - [ ] 4.4 线上冒烟：match_runner 走 `Mirror.build_game` 路径跑 ≥10 局，确认墙守卫、
-  新排序和“下一摸必胡爆头听”覆盖在线上无异常（日志检查专用 reason 与弃牌合法性）
+  新排序和 HU-window 统一仲裁在线上无异常（日志检查候选完整性、Stage B/continuation、reason 与弃牌合法性）
 - [x] 4.5 同步文档：PROGRESS.md bot 决策原则节（新增爆头听优先档、爆头进张、
   墙守卫常量）与必要结论（验证：PROGRESS.md diff 审阅）
+- [ ] 4.7 2026-09-29 round4 回放回归：seq856 断言弃白不构成财飘；seq880 断言开始生成财飘候选；
+  seq904/943/967/991/1015/1039/1063 均断言财飘候选持续存在，且 14/10/6 张活墙时不再
+  由 `hu_baotou_next_draw_override` 提前返回；seq1070 对手胡牌作为“延迟胡存在抢胡风险”的证据记录
 
 ## 5. 归档
 

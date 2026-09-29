@@ -3,7 +3,8 @@
 ## Purpose
 
 legacy 启发式 bot 弃牌与胡牌抉择的爆头/财飘感知策略：持财神状态下按爆头听/爆头进张
-排序进度，墙量不足时落袋为安直接胡，使弃牌层与既有财飘决策通贯。
+排序进度，墙量不足时落袋为安直接胡；墙量允许延迟时统一仲裁当前 HU、财飘、下一摸爆头与
+自杠，确保 two-ply/continuation 与诊断链不被特殊分支绕过。
 
 ## ADDED Requirements
 
@@ -69,31 +70,102 @@ MUST 与既有 legacy 基线逐候选一致。
 - **WHEN** 爆头态摸到财神、HU 合法、活墙可摸张数为 5
 - **THEN** 提交 HU，不弃胡打白飘
 
-#### Scenario: 墙量充足仍可飘
-- **WHEN** 爆头态摸到财神、HU 合法、活墙可摸张数 ≥ 6 且弃财神后站立手仍听任意牌
-- **THEN** 弃胡打白飘博倍率
+#### Scenario: 墙量充足允许财飘进入比较
+- **WHEN** HU 合法、活墙可摸张数 ≥ 6 且合法弃财神后站立手仍听任意牌
+- **THEN** 财飘 MUST 作为 HU-window action-root 候选进入统一价值比较；墙量达到门槛本身
+  MUST NOT 等价为“必弃胡”，也不得被非财神爆头候选提前截断
 
-### Requirement: 下一摸必胡的爆头听覆盖收手门槛
+### Requirement: HU 合法窗口统一仲裁立即胡、财飘、下一摸爆头与自杠
 
-当当前摸牌窗口 HU 合法时，若存在一个当前合法的非财神弃牌，使弃牌后的站立手保留
-财神且 `is_baotou_wait(standing, locked)` 为真，且活墙可摸张数达到
-`PIAO_WALL_GUARD`，BOT SHALL 选择该弃牌而放弃当前 HU。此路径 MUST 忽略爆头推进的
-X/Y/Z 收手门槛（推进轮数、对手副露数、`BAOTOU_PUSH_MIN_LIVE`）；墙量轮回门槛与动作
-合法性仍有效。多个合格弃牌之间沿用稳定的 legacy 局部弃牌次序。该规则仅作用于
-HU 已合法的当前摸牌窗口，不改变 `legal_actions()` 或 YCBK 胡牌门禁。
+当前摸牌窗口 `HU` 合法时，BOT MUST 先完整建立合法 action-root 候选，再做选择。
+除 `live_wall_left() < PIAO_WALL_GUARD` 的直接 HU 硬守卫外，任何爆头/财飘 helper
+MUST NOT 在候选集建立完成前提前返回。
 
-#### Scenario: 下一摸全牌可胡时越过软收手
-- **WHEN** HU 合法、活墙可摸张数 ≥ 6，且弃合法非财神牌之一后保留财神并听任意牌；
-  即使推进轮数或对手副露已触发收手
-- **THEN** 放弃当前 HU，打出该非财神牌进入爆头听，并记录专用决策原因
+候选 MUST 至少包含：
 
-#### Scenario: 墙量不足时当前 HU 优先
+- `immediate_hu`：当前合法 HU；
+- `piao_discard`：`W` 在当前 `legal_actions()` 中，且弃 `W` 后
+  `is_baotou_wait(standing, locked)` 为真；
+- `baotou_next_draw`：合法非 `W` 弃牌，弃后保留财神且
+  `is_baotou_wait(standing, locked)` 为真；
+- `self_kong`：当前合法的暗杠/补杠候选。
+
+财神与非财神弃牌 MUST 都从引擎动作集出发。实现 MAY 保留
+`_next_draw_baotou_discard()` 作为非财神候选发现器，但该 helper MUST NOT 拥有
+“发现即覆盖 HU”的最终决策权；其 `tile == W` 过滤 MUST NOT 阻止独立的
+`piao_discard` 候选生成。
+
+#### Scenario: seq856 尚未形成财飘
+
+- **WHEN** 13 张为
+  `1w×2 4w×2 1b×2 2t 3t×2 6t 白×3`，摸到中形成 HU 合法窗口
+- **THEN** 弃中可作为 `baotou_next_draw` 候选；由于弃白后不能保持全牌爆头听，
+  MUST NOT 生成 `piao_discard`
+
+#### Scenario: seq880 是财飘成立的分界点
+
+- **WHEN** seq880 摸 2t 后可形成稳定 13 张
+  `1w×2 4w×2 1b×2 2t×2 3t×2 白×3`，当前 HU 合法且弃白为合法动作
+- **THEN** 弃白后形成
+  `1w×2 4w×2 1b×2 2t×2 3t×2 + 当前进张×1 + 白×2` 的全牌爆头听，
+  `piao_discard` MUST 存在，并与约 4 番 immediate HU、非白下一摸爆头候选在同一层比较；
+  MUST NOT 先返回 `hu_baotou_next_draw_override`
+
+#### Scenario: 后续稳定结构持续产生财飘候选
+
+- **WHEN** 回放来到 seq904/943/967/991/1015/1039/1063，手牌仍满足 seq880 后的稳定结构，
+  且弃白合法并保持 `is_baotou_wait`
+- **THEN** 每次都 MUST 生成 `piao_discard`；活墙 14、10、6 只要未低于硬守卫，
+  均 MUST 进入统一仲裁，而不是由非白爆头分支提前返回
+
+#### Scenario: 墙量不足时当前 HU 直接胜出
+
 - **WHEN** HU 合法且活墙可摸张数 < `PIAO_WALL_GUARD`
-- **THEN** 直接 HU，不为下一摸爆头听放弃当前胡牌
+- **THEN** 直接 HU，不构造或执行任何延迟胡 two-ply/continuation
 
-#### Scenario: 没有合法的非财神爆头弃牌时当前 HU 优先
-- **WHEN** HU 合法但没有任何合法非财神弃牌能形成听任意牌的爆头站立手
-- **THEN** 保持既有 HU/财飘分支，不构造非法弃牌
+### Requirement: HU 窗口延迟胡候选必须执行统一价值比较
+
+当活墙达到硬门且存在 `piao_discard` 或 `baotou_next_draw` 时，当前 evaluator 的
+continuation / two-ply 评价 MUST 真正执行，不得以“弃后已全牌爆头听”为理由跳过。
+`immediate_hu` SHALL 作为确定性基线；财飘/下一摸爆头的倍率收益、下一次轮到本家的概率、
+剩余墙量与被他家先胡的风险 SHALL 保留在延迟动作价值中。
+
+`wall >= PIAO_WALL_GUARD` 只表示延迟胡候选可参与比较，MUST NOT 被解释为“必须过胡”。
+X/Y/Z 自适应收手也 MUST NOT 形成非对称早退：不能删除财飘候选的同时让非白爆头候选
+忽略同一软门直接覆盖 HU。若 X/Y/Z 继续参与 HU-window，MUST 以所有延迟胡候选共享的
+评价输入/惩罚形式使用。
+
+#### Scenario: 4 番立即胡与 8 番财飘进入同一价值层
+
+- **WHEN** 当前 immediate HU 为七对+爆头约 4 番，弃白后下一次自摸路线为
+  七对+财飘+爆头约 8 番，且硬墙门通过
+- **THEN** 两条路线 MUST 同时出现在 action-root 评价中；选择由完整动作价值决定，
+  不得由候选枚举顺序决定
+
+#### Scenario: two-ply 不得被爆头 override 绕过
+
+- **WHEN** legacyV2/支持 Stage B 的 evaluator 在 HU 窗口同时存在 immediate HU 与延迟胡候选
+- **THEN** 若该 profile 按正常规则应进入 Stage B/continuation，则 MUST 实际进入并记录；
+  `hu_baotou_next_draw_override` MUST NOT 作为提前返回原因
+
+### Requirement: HU 窗口审计字段必须反映真实决策路径
+
+进入统一仲裁时，解释数据 MUST 能区分 action-root 与普通 legacy 弃牌路径。
+`decision_scope` SHALL 为 `hu_window_arbitration`（或等价稳定枚举值）；
+爆头/财飘候选扫描实际执行时 MUST 记录 `baotou_scope.entered=true` 或等价显式字段；
+`stage_b_entered` / continuation 状态 MUST 与真实执行一致。候选解释 MUST 至少能区分
+`immediate_hu`、`piao_discard`、`baotou_next_draw`、`self_kong`，并记录 selected/reason。
+
+#### Scenario: 不再误标为 legacy 未进入爆头作用域
+
+- **WHEN** HU 窗口执行了爆头/财飘候选扫描并完成统一仲裁
+- **THEN** 不得输出 `decision_scope=legacy` 且 `baotou_scope.entered=false` 的组合
+
+#### Scenario: seq880 审计可解释
+
+- **WHEN** 回放 seq880 进入 HU-window 仲裁
+- **THEN** 解释中能同时观察 immediate HU 与财飘候选、墙量、是否执行 Stage B/continuation、
+  最终动作及其 reason
 
 ### Requirement: 爆头进张的可见牌口径
 

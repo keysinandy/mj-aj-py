@@ -21,20 +21,27 @@ legacy 启发式 bot 的舍牌 tie-break 用 `ukeire` 度量进度，而 ukeire 
 - **墙量守卫**：`Game.live_wall_left()`（已扣除死墙、即"接下来可摸的牌"口径）**< 6 时
   落袋为安直接胡**，不博爆头/财飘；`_should_piao` 的墙门从 `>= 5` 收紧到 `>= 6`，
   两处守卫同一常量。
-- **下一摸爆头覆盖收手门槛**：HU 合法时，若弃一张合法非财神牌、保留财神后已是
-  听任意牌的爆头形状，且活墙达到上述 6 张轮回门槛，则主动过当前 HU 进入爆头听；
-  此强制推进分支忽略 X/Y/Z 自适应收手门槛。
+- **HU 窗口统一仲裁**：HU 合法且活墙达到 6 张轮回门槛时，不再让“合法非财神弃牌可形成
+  爆头听”直接覆盖当前 HU。策略 MUST 先完整构造 immediate HU、弃白财飘、弃非白进入下一摸
+  爆头听、自杠等合法 action-root，再用当前策略的 continuation / two-ply 价值统一比较；只有
+  活墙 < 6 仍保留直接 HU 的硬短路。
+- **财飘候选不得被非白爆头提前截断**：HU 窗口枚举弃牌时财神（白板）与非财神均从
+  `legal_actions()` 出发；只要弃白后仍为全牌爆头听，白板 MUST 作为财飘候选进入同一比较，
+  `_next_draw_baotou_discard()` 一类 helper 不得在候选集建立完成前提前返回。
 - **无条件生效**：新排序与守卫不依赖 `you_cai_bi_kao` 标志。YCBK 只继续影响 HU 合法性门禁
   （`legal_actions`，本变更不改）；策略偏好（优先爆头/财飘）对任何对局生效。
-- 爆头听/进张排序仅改 legacy 路径；HU 窗口的“下一摸必胡爆头听”覆盖放在共享动作
-  分支，所有 evaluator 一致生效。shape-v1 评价器排序、`ukeire` 纯函数契约
-  （`(counts, locked, visible)`）、Rust 内核与对拍口径均不动。
+- 爆头听/进张排序仅改 legacy 路径；HU 窗口统一仲裁放在共享动作分支，所有 evaluator
+  一致生效。shape-v1 评价器排序、`ukeire` 纯函数契约（`(counts, locked, visible)`）、
+  Rust 内核与对拍口径均不动。
+- **审计语义修正**：进入 HU 窗口统一仲裁时必须准确记录 `decision_scope`、爆头候选扫描、
+  Stage B/continuation 是否实际执行以及各 action-root 候选；不得再把真实爆头覆盖路径标成
+  `decision_scope=legacy`、`baotou_scope.entered=false`。
 
 ## Capabilities
 
 ### New Capabilities
 - `bot-baotou-piao-discard`: legacy 弃牌与胡牌抉择的爆头/财飘感知策略——爆头听优先档、
-  持财神听牌态的组合进度分、墙量守卫（< 6 直接胡）与 `_should_piao` 门限统一。
+  持财神听牌态的组合进度分、墙量守卫（< 6 直接胡）、HU action-root 统一仲裁与可审计解释。
 
 ### Modified Capabilities
 - `bot-react-decision`: 既有 requirement 规定「legacy 的 `choose_discard()` 排序 MUST 保持；

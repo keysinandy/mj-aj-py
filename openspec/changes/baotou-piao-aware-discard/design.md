@@ -15,8 +15,9 @@ Mirror 提供 `live_wall_left()`（mirror.py:572，`64 − _pops` 口径）。
 **Goals:**
 - 持财神状态下，legacy 弃牌排序反映真实进度：爆头听优先档 + 爆头与当前合法自摸胡牌的加权进度。
 - 墙量守卫统一为一个常量（活墙可摸 < 6 → 直接 HU），弃牌层与飘决策通贯。
-- HU 合法时如能合法弃非财神牌进入听任意牌的爆头形状，在活墙足够轮回时主动过 HU；
-  该特定强推进机会越过 X/Y/Z 软收手。
+- HU 合法且活墙允许延迟时，完整比较 immediate HU、弃白财飘、弃非白进入下一摸爆头听、
+  自杠等 action-root；任何爆头 helper 都不得在财飘/当前 HU/two-ply 进入比较前提前返回。
+- seq856 明确保持“弃白不成立”，seq880 起明确识别“弃白可保持爆头并形成财飘”的状态迁移。
 - 新计算有界、可回退、可归因，不破坏既有延迟约束。
 
 **Non-Goals:**
@@ -26,7 +27,8 @@ Mirror 提供 `live_wall_left()`（mirror.py:572，`64 − _pops` 口径）。
   （+0.97/局 CI[+0.51,+1.45]）仅作参考数据存档，不作为验收依据。
 - 不改 `ukeire` 既有语义与 Rust 对拍口径；新度量为并列纯函数。
 - 不改 shape-v1 评价器排序。
-- 不做弃牌级逐候选完整期望模型（`_expected_next_draw_reward` 只继续服务杠/飘基线）。
+- 不引入无限深搜索；HU 窗口复用既有 one-draw / weighted two-ply / continuation 能力，
+  只把比较层级提升到 action-root，避免特殊分支绕过现有评价器。
 - 不回刷既有 `data/bc/` 分片。
 
 ## Decisions
@@ -113,20 +115,65 @@ X=99/Y=99/Z=0（=无条件推进）。
   与既有 `_should_piao` 的 5 同尺度；「不包含不能摸的牌」即死墙已扣。线上 Mirror
   同口径。若后续要按「自家可摸 ≈ live_wall/4」改口径，只动常量换算处，spec 不变。
 
-### D4a. HU 窗口的下一摸必胡爆头覆盖
+### D4a. HU 窗口 action-root 统一仲裁
 
-`_choose_draw_action` 在 `HU` 合法时先执行 `< PIAO_WALL_GUARD` 的硬墙门；墙门通过后，
-枚举 `actions` 中的合法弃牌，只考虑非财神牌。若弃后手牌仍含财神且
-`is_baotou_wait(standing, locked)` 成立，则选该弃牌进入爆头听，优先于当前 HU、白飘及
-自摸杠期望比较。这个路径不调用 X/Y/Z 收手判定：活墙轮回门槛是唯一收手过滤条件，
-对手副露和推进轮数只作常规推进策略的门槛，不压制此已形成的全牌听牌。多个候选用
-同一 legacy 弃牌局部次序稳定裁决。`actions` 是合法弃牌的唯一来源，因此冻结限制仍由
-引擎合法动作集落实；不改变 `legal_actions()` 或 YCBK 门禁。
+`_choose_draw_action` 在 `HU` 合法时先执行唯一硬短路：`live_wall_left() <
+PIAO_WALL_GUARD` 直接 HU。墙门通过只表示“允许评估延迟胡”，**不表示必须过胡**。
+
+随后一次性建立 action-root 候选集，候选来源必须全部受 `legal_actions()` 约束：
+
+1. **immediate_hu**：当前 HU，价值由现有即时结算/番型口径给出；
+2. **piao_discard**：合法弃 `W` 且弃后 `is_baotou_wait(standing, locked)` 为真；
+3. **baotou_next_draw**：合法弃非 `W` 且弃后保留财神并
+   `is_baotou_wait(standing, locked)` 为真；
+4. **self_kong**：当前合法暗杠/补杠，沿用既有杠 hard gate 与 continuation。
+
+候选集建立完成前不得 return。现有 `_next_draw_baotou_discard()` 可继续作为“非白候选发现器”
+或被拆成通用枚举 helper，但它不得拥有覆盖 HU 的最终决策权，也不得因为过滤 `tile == W`
+而阻止财飘候选进入 action-root 比较。
+
+HU 窗口内，X/Y/Z 自适应收手不得作为**非对称早退门**：不能出现“财飘因软收手被删掉，
+但非白爆头却忽略软收手直接覆盖 HU”。这些信号若继续使用，只能作为所有延迟胡候选共享的
+评价输入/惩罚；硬合法性与 `PIAO_WALL_GUARD` 仍然有效。
+
+### D4b. action-root two-ply / continuation 价值
+
+legacyV2 在 HU 窗口发现任一延迟胡候选时，必须让当前配置的评价链真正参与：
+immediate HU 作为确定性基线；`piao_discard` 与 `baotou_next_draw` 进入与当前策略一致的
+下一摸/continuation 价值计算；自杠沿用既有替换摸牌 continuation。不得因为某个候选
+`is_baotou_wait` 为真就跳过 weighted two-ply / Stage B。
+
+这里比较的是**动作价值**而不是“8 番数字天然大于 4 番所以无条件弃胡”。番型倍率必须进入
+候选价值，但延迟一轮的被抢胡风险、剩余墙量、可摸概率也必须保留。换言之，`wall >= 6`
+只开放财飘/爆头候选，不等价于选择它们。
+
+### D4c. 回放边界与审计
+
+2026-09-29 round4 回放作为强制回归：
+
+- **seq856**：13 张
+  `1w×2 4w×2 1b×2 2t 3t×2 6t 白×3` 摸中。HU 合法；弃中可恢复全牌爆头听；
+  弃白后不能保持爆头，因此 **不得生成 piao_discard**。
+- **seq880**：摸 2t 后实际弃 6t，形成
+  `1w×2 4w×2 1b×2 2t×2 3t×2 白×3`。从此状态起，后续自己的摸牌窗口只要动作合法，
+  弃白后仍为全牌爆头听，因此 **必须生成 piao_discard**。
+- **seq904/943/967/991/1015/1039/1063**：同一稳定结构下的后续进张继续验证上述性质；
+  即使活墙为 14、10、6，只要未低于硬墙门，都应进入统一仲裁，而不是
+  `hu_baotou_next_draw_override` 提前返回。
+
+解释字段必须与真实路径一致：进入该比较时 `decision_scope=hu_window_arbitration`；
+爆头/财飘候选扫描实际执行时 `baotou_scope.entered=true`（或等价显式字段）；
+`stage_b_entered` / continuation 字段必须反映是否真正执行；候选解释至少区分
+`immediate_hu`、`piao_discard`、`baotou_next_draw`、`self_kong`，并记录最终
+selected/reason。不得再把真实爆头候选路径包装成 `decision_scope=legacy` 且
+`baotou_scope.entered=false`.
 
 ### D5. 测试与验收
 
 - 单测：新排序用例（tier0 胜出 / tier1 组合进度排序 / 不持财神回归 / 墙 5 直接胡 /
-  墙 ≥6 可飘 / YCBK 开关不影响弃牌选择）；旧 legacy 排序断言显式限定到不持财神状态。
+  墙 ≥6 进入 HU-window 仲裁 / YCBK 开关不影响弃牌选择）；旧 legacy 排序断言显式限定到不持财神状态。
+- 回放回归：seq856 断言无财飘候选；seq880 与 904/943/967/991/1015/1039/1063 断言财飘候选存在、
+  不再由 `hu_baotou_next_draw_override` 提前返回，并检查 Stage B/continuation 与审计字段。
 - 随机差分：`baotou_ukeire` 剪枝前后等值（随机手牌 × locked 档）。
 - 评估：新旧 bot `fair_match` 对弈（192 局口径）确认无胜率/均分回退；
   线上先 match_runner 冒烟（必须走 `Mirror.build_game`），再进锦标赛。
