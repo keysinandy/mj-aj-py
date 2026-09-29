@@ -1,0 +1,15 @@
+{
+  "schema": "piao-search-fast-feature-benchmark-v1",
+  "samples": 200,
+  "p95_ms": 0.430456,
+  "p99_ms": 0.599659,
+  "mean_ms": 0.197166,
+  "max_ms": 0.735806,
+  "eligible_samples": 200,
+  "nodes_max": 34,
+  "performance_gate": {
+    "p95_ms": 1.0,
+    "p99_ms": 2.0,
+    "passed": true
+  }
+}

@@ -228,6 +228,25 @@
 > 注明。线上待办:match_runner 冒烟(tasks 4.4)+ 平台层打通 X 轮数
 > 记账(镜像每决策重建 Game,X 目前线上不累积)。
 
+> **Piao Search 与 Guaranteed Next-Draw HU(2026-09-29,同一 OpenSpec 变更)**：
+> HU 窗口延迟候选改为 candidate-specific policy。弃后为全牌爆头听、且公开未见牌
+> `winning_mass == total_unseen` 的 `piao_discard/baotou_next_draw` 候选标记
+> `guaranteed_next_draw_hu=true`，即使观察到 X/Y/Z(`rounds/opp_melds/live_wall`)
+> 也保留完整 raw value；`PIAO_WALL_GUARD=6` 仍是唯一硬墙门。审计同时记录
+> `observed_delay_reasons`、`ignored_delay_reasons`、`raw_value/effective_value`，
+> 不再把被忽略的 `opp_melds` 显示成实际归零原因。对 seq351(立即七对 20 分)的
+> 三个必爆头候选，本地构造保留约 40 分的真实 next-draw EV，并由
+> `hand_multiplier + settle` 自然计入豪华七对，未添加人工 bonus。
+> 白板≥2的爆头站立手新增固定弃白 `piao_draw_mask`、`piao_live/piao_ratio` 与
+> `floor(live_wall/4)` horizon 快门；首版只检查现有最佳爆头候选，在线
+> `max_search_passes` 暂不启用（Mirror 重建尚无会话持久化）。Rust 批量
+> `piao_draw_mask/is_baotou_wait` 与 Python 参考实现随机对拍通过；200 样本冷路径
+> benchmark 为 p95 0.43ms、p99 0.60ms，低于 p95≤1/p99≤2ms 门。参数网格的本地
+> 2 局/配置 smoke 记录了 pass/opportunity/cashout/search-lost/piao-lost、直接胡次数、
+> 平均倍率与结算分；由于会话层尚未持久化 `max_search_passes`，34 个配置动作相同，
+> 结果仅作校准与不晋级证据。另有 2 局 counterfactual A/B 显示 Guaranteed policy
+> 的样本分差为 -12/局，样本量不足且不作线上晋级依据。
+
 ## 一、规则定稿(与需求方逐条确认)
 
 ### 平台固有规则(指南 v34,2026-09-15 在线拉取;服务端 `updated_at=2026-09-14`;本节同时保留 v26-v34 变更记录)

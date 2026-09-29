@@ -246,7 +246,12 @@ def strategy_snapshot(strategy, evaluator=None, *, profile=None,
         except ImportError:
             pass
     if legacy_profile is not None and legacy_profile.mode == "weighted":
-        from .bot import PIAO_WALL_GUARD
+        from .bot import (
+            PIAO_WALL_GUARD,
+            PIAO_SEARCH_MAX_PASSES,
+            PIAO_SEARCH_MIN_RATIO,
+            PIAO_SEARCH_MIN_SELF_DRAWS,
+        )
         from .shanten import kernel_runtime_diagnostic
         runtime = kernel_runtime_diagnostic()
         enabled = bool(legacy_profile.enabled)
@@ -284,6 +289,15 @@ def strategy_snapshot(strategy, evaluator=None, *, profile=None,
             "baotou_scope": _feature("enabled"),
             "piao_wall_guard": _feature(
                 "enabled", min_live=PIAO_WALL_GUARD),
+            "piao_search": _feature(
+                "enabled",
+                min_ratio=PIAO_SEARCH_MIN_RATIO,
+                min_self_draws=PIAO_SEARCH_MIN_SELF_DRAWS,
+                max_search_passes=PIAO_SEARCH_MAX_PASSES,
+                pass_cap_persisted=False,
+                kernel=runtime.get("piao_draw_mask_kernel", "unknown")),
+            "guaranteed_next_draw_hu": _feature(
+                "enabled", hard_wall=PIAO_WALL_GUARD),
             "reaction_v2": _feature(
                 "enabled" if reaction_profile is not None else "unknown"),
             "kong_continuation": _feature(
@@ -300,6 +314,8 @@ def strategy_snapshot(strategy, evaluator=None, *, profile=None,
             "big_hand_intent": _feature("not_applicable"),
             "reaction_v2": _feature("not_applicable"),
             "kong_continuation": _feature("not_applicable"),
+            "piao_search": _feature("not_applicable"),
+            "guaranteed_next_draw_hu": _feature("not_applicable"),
         }
     else:
         features = {
@@ -338,6 +354,8 @@ def strategy_snapshot(strategy, evaluator=None, *, profile=None,
             "plus_one": _feature("not_applicable"),
             "baotou_scope": _feature("not_applicable"),
             "piao_wall_guard": _feature("not_applicable"),
+            "piao_search": _feature("not_applicable"),
+            "guaranteed_next_draw_hu": _feature("not_applicable"),
         })
 
     public_model_name = _public_model_name(model_name)
@@ -685,6 +703,17 @@ def decision_audit(evaluation, action, elapsed_ms, *, phase=None,
     timeout = bool(data.get("timeout") or
                    any(marker in str(fallback_reason or "").lower()
                        for marker in ("deadline", "timeout", "budget_exceeded")))
+    piao_search_data = data.get("piao_search")
+    if not isinstance(piao_search_data, dict):
+        piao_search_data = {}
+    piao_configured = configured_state("piao_search")
+    guaranteed_configured = configured_state("guaranteed_next_draw_hu")
+    hu_candidates = [candidate for candidate in
+                     (data.get("hu_window_candidates") or
+                      data.get("candidates") or [])
+                     if isinstance(candidate, dict)]
+    guaranteed_candidates = [candidate for candidate in hu_candidates
+                             if candidate.get("guaranteed_next_draw_hu")]
     audit_features = {
         "shape_guard": {
             "configured": shape_guard_configured,
@@ -769,6 +798,52 @@ def decision_audit(evaluation, action, elapsed_ms, *, phase=None,
             "selected_type": data.get("selected_type"),
             "selected": data.get("selected", action),
             "reason": data.get("reason"),
+            "observed_delay_reasons": data.get(
+                "observed_delay_reasons") or [],
+            "ignored_delay_reasons": data.get(
+                "ignored_delay_reasons") or [],
+            "applied_delay_reasons": data.get(
+                "applied_delay_reasons") or [],
+            "guaranteed_candidate_count": len(guaranteed_candidates),
+            "selected_guaranteed_next_draw_hu": bool(
+                next((candidate for candidate in guaranteed_candidates
+                      if candidate.get("action") == data.get(
+                          "selected", action)), None)),
+        },
+        "piao_search": {
+            "configured": piao_configured,
+            "eligible": (piao_search_data.get("piao_search_eligible")
+                         if piao_search_data else False),
+            "entered": bool(piao_search_data),
+            "piao_ready_now": piao_search_data.get("piao_ready_now"),
+            "piao_live": piao_search_data.get("piao_live"),
+            "draw_live": piao_search_data.get("draw_live"),
+            "piao_types": piao_search_data.get("piao_types"),
+            "piao_ratio": piao_search_data.get("piao_ratio"),
+            "full_piao_search": piao_search_data.get("full_piao_search"),
+            "self_draw_horizon": piao_search_data.get(
+                "self_draw_horizon"),
+            "search_allowed": piao_search_data.get("search_allowed"),
+            "search_skip_reason": piao_search_data.get(
+                "search_skip_reason"),
+            "nodes": piao_search_data.get("nodes"),
+            "max_search_passes": piao_search_data.get(
+                "max_search_passes"),
+            "search_passes_cap_enabled": piao_search_data.get(
+                "search_passes_cap_enabled", False),
+        },
+        "guaranteed_next_draw_hu": {
+            "configured": guaranteed_configured,
+            "eligible": bool(guaranteed_candidates),
+            "entered": bool(guaranteed_candidates),
+            "candidate_count": len(guaranteed_candidates),
+            "selected": next((candidate.get("action")
+                               for candidate in guaranteed_candidates
+                               if candidate.get("action") == data.get(
+                                   "selected", action)), None),
+            "ignored_delay_reasons": sorted({
+                reason for candidate in guaranteed_candidates
+                for reason in candidate.get("ignored_delay_reasons", ())}),
         },
         "reaction_v2": {
             "configured": reaction_configured,
@@ -862,6 +937,12 @@ def format_snapshot(snapshot):
         lines.append(f"weighted_kernel      {state} "
                      f"{runtime.get('weighted_kernel') or 'unknown'}"
                      f"({runtime.get('weighted_kernel_version') or 'n/a'})")
+        if runtime.get("piao_draw_mask_kernel"):
+            lines.append(f"piao_mask_kernel     "
+                         f"{runtime['piao_draw_mask_kernel']}")
+        if runtime.get("baotou_wait_kernel"):
+            lines.append(f"baotou_wait_kernel   "
+                         f"{runtime['baotou_wait_kernel']}")
         if runtime.get("reason"):
             lines.append(f"kernel_reason        {runtime['reason']}")
     lines.append("============================================")
@@ -905,6 +986,20 @@ def format_decision_audit(audit, *, evaluation=None, verbose=False):
         types = ",".join(hu_window.get("candidate_types") or []) or "none"
         parts.append(f"hu_roots={types}")
         parts.append(f"hu_selected={hu_window.get('selected_type') or 'unknown'}")
+        if hu_window.get("ignored_delay_reasons"):
+            parts.append("ignored=" + ",".join(
+                hu_window["ignored_delay_reasons"]))
+    piao_search = (audit.get("features") or {}).get("piao_search") or {}
+    if piao_search.get("entered"):
+        parts.append("piao_search=" + (
+            "OPEN" if piao_search.get("search_allowed") else
+            f"SKIP({piao_search.get('search_skip_reason') or 'UNKNOWN'})"))
+        if piao_search.get("piao_ratio") is not None:
+            parts.append(f"piao_ratio={piao_search['piao_ratio']}")
+    guaranteed = (audit.get("features") or {}).get(
+        "guaranteed_next_draw_hu") or {}
+    if guaranteed.get("entered"):
+        parts.append(f"guaranteed={guaranteed.get('candidate_count', 0)}")
     intent = (audit.get("features") or {}).get("big_hand_intent") or {}
     parts.append(f"intent={intent.get('intent') or 'NONE'}")
     parts.append(f"fallback={str(bool(runtime.get('fallback'))).lower()}")

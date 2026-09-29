@@ -2651,12 +2651,48 @@ fn baotou_ukeire(
     Ok((acc.into_iter().map(|t| t as i32).collect(), total))
 }
 
+/// Piao Search 的固定弃白结构掩码。只检查 34 种“摸牌后减一张财神”
+/// 状态，不读取 visible，也不枚举其它弃牌；Python 层负责剩余张权重。
+#[pyfunction(signature = (counts, locked=0))]
+fn piao_draw_mask(counts: Vec<i32>, locked: i32) -> PyResult<Vec<bool>> {
+    let arr = to_arr(counts)?;
+    if arr[W] < 1 {
+        return Ok(vec![false; 34]);
+    }
+    let mut wait_cache: HashMap<ShantenCacheKey, bool> = HashMap::new();
+    let mut mask = vec![false; 34];
+    for tile in 0..34 {
+        if arr[tile] >= 4 {
+            continue;
+        }
+        let mut candidate = arr;
+        candidate[tile] += 1;
+        candidate[W] -= 1;
+        mask[tile] = baotou_wait_impl(&candidate, locked, &mut wait_cache)
+            .map_err(PyValueError::new_err)?;
+    }
+    Ok(mask)
+}
+
+/// Public fast equivalent of win.py::is_baotou_wait for bounded policy
+/// features.  Keeping it separate from the mask lets Python decide whether a
+/// standing hand is eligible without doing 34 nested is_win calls.
+#[pyfunction(signature = (counts, locked=0))]
+fn is_baotou_wait(counts: Vec<i32>, locked: i32) -> PyResult<bool> {
+    let arr = to_arr(counts)?;
+    let mut wait_cache: HashMap<ShantenCacheKey, bool> = HashMap::new();
+    baotou_wait_impl(&arr, locked, &mut wait_cache)
+        .map_err(PyValueError::new_err)
+}
+
 #[pymodule]
 fn mj_kernels(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(shanten, m)?)?;
     m.add_function(wrap_pyfunction!(standing_shape_quality, m)?)?;
     m.add_function(wrap_pyfunction!(ukeire, m)?)?;
     m.add_function(wrap_pyfunction!(baotou_ukeire, m)?)?;
+    m.add_function(wrap_pyfunction!(piao_draw_mask, m)?)?;
+    m.add_function(wrap_pyfunction!(is_baotou_wait, m)?)?;
     m.add_function(wrap_pyfunction!(best_future_discard, m)?)?;
     m.add_function(wrap_pyfunction!(discard_frontier, m)?)?;
     m.add_function(wrap_pyfunction!(discard_frontier_batch, m)?)?;

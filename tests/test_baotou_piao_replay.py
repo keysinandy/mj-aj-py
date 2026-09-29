@@ -57,6 +57,8 @@ def test_seq856_has_no_piao_candidate():
     assert "piao_discard" not in {
         row["type"] for row in evaluation["hu_window_candidates"]
     }
+    assert evaluation["piao_search"]["piao_search_eligible"] is True
+    assert evaluation["piao_search"]["piao_ready_now"] is False
 
 
 def test_seq880_and_followups_keep_piao_in_the_root_set():
@@ -79,6 +81,9 @@ def test_seq880_and_followups_keep_piao_in_the_root_set():
         assert action in game.legal_actions(), seq
         assert evaluation["decision_scope"] == "hu_window_arbitration", seq
         assert evaluation["piao_candidates"] == [W], seq
+        assert evaluation["piao_search"]["piao_ready_now"] is True, seq
+        assert evaluation["piao_search"]["search_skip_reason"] == \
+            "PIAO_READY", seq
         assert "piao_discard" in {
             row["type"] for row in evaluation["hu_window_candidates"]
         }, seq

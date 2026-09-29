@@ -31,7 +31,13 @@ import time
 import weakref
 
 from .tiles import W
-from .shanten import shanten, ukeire, BAOTOU_UKEIRE_RUST
+from .shanten import (
+    shanten,
+    ukeire,
+    BAOTOU_UKEIRE_RUST,
+    piao_draw_mask,
+    baotou_wait_fast,
+)
 from .legacy_eval import (
     DEFAULT_BOT_EVALUATOR,
     LEGACY_V2_BASELINE_EVALUATORS,
@@ -94,6 +100,15 @@ BAOTOU_PUSH_MAX_ROUNDS = 2   # X:网格扫描最优(local/ab_baotou_sweep.py,307
 BAOTOU_PUSH_OPP_MELDS = 2    # Y:同上;粗筛各 X 下 Y=2 一致优于 Y=99
 BAOTOU_PUSH_MIN_LIVE = 16    # Z:X=2 下不约束(与 Z=0 精跑逐位等值),保留作晚局守卫
 
+# Piao Search is deliberately configured as a cheap admission gate.  The
+# pass cap stays disabled until a match/tournament session can persist it
+# across Mirror.build_game() rebuilds; a per-Game counter would reset and
+# falsely claim to be a safety cap online.
+PIAO_SEARCH_MIN_RATIO = 0.55
+PIAO_SEARCH_MIN_SELF_DRAWS = 2
+PIAO_SEARCH_MAX_PASSES = None
+PIAO_SEARCH_NODE_BUDGET = 34
+
 _push_rounds = weakref.WeakKeyDictionary()
 
 
@@ -132,25 +147,37 @@ def _max_opp_melds(g, seat):
     return max((len(g.melds[o]) for o in range(4) if o != seat), default=0)
 
 
+def _push_abort_reasons(g, seat, include_live=True):
+    """Return all observed X/Y/Z soft-stop signals in stable order.
+
+    The old helper returned only the first reason, which made it impossible
+    for a candidate-specific HU policy to distinguish an observed risk from a
+    risk that was deliberately ignored for a guaranteed next-draw HU.
+    """
+    reasons = []
+    rounds = _push_rounds.get(g, {}).get(seat, 0)
+    if rounds >= BAOTOU_PUSH_MAX_ROUNDS:
+        reasons.append("rounds")
+    if _max_opp_melds(g, seat) >= BAOTOU_PUSH_OPP_MELDS:
+        reasons.append("opp_melds")
+    if include_live:
+        try:
+            live = g.live_wall_left()
+        except AttributeError:
+            live = 99  # 极简测试局/兼容对象无墙信息时不触发
+        if live < BAOTOU_PUSH_MIN_LIVE:
+            reasons.append("live_wall")
+    return tuple(reasons)
+
+
 def _push_abort_reason(g, seat, include_live=True):
     """收手判定:返回触发原因(None=继续推进)。
 
     ``include_live=False`` 供弃胡打白飘决策复用轮数/副露两个软收手
     (墙量已有 PIAO_WALL_GUARD 硬门,Z 不重复作用于飘)。
     """
-    rounds = _push_rounds.get(g, {}).get(seat, 0)
-    if rounds >= BAOTOU_PUSH_MAX_ROUNDS:
-        return "rounds"
-    if _max_opp_melds(g, seat) >= BAOTOU_PUSH_OPP_MELDS:
-        return "opp_melds"
-    if include_live:
-        try:
-            live = g.live_wall_left()
-        except AttributeError:
-            live = 99  # 无墙信息的极简测试局不触发
-        if live < BAOTOU_PUSH_MIN_LIVE:
-            return "live_wall"
-    return None
+    reasons = _push_abort_reasons(g, seat, include_live=include_live)
+    return reasons[0] if reasons else None
 
 
 def choose_discard(g, seat, return_info=False, profile=None):
@@ -567,6 +594,88 @@ def _public_visible_counts(g, seat):
     return visible
 
 
+def _piao_search_fast_feature(standing, locked, visible, live_wall,
+                              *, min_ratio=None, min_self_draws=None):
+    """Compute the bounded Piao Search admission feature.
+
+    This function intentionally performs no shanten/ukeire/scoring call and
+    never searches for an alternative discard.  ``piao_draw_mask`` fixes the
+    post-draw action to dropping one White; only the O(34) visibility weighting
+    happens here.  The result is deterministic and suitable for an audit
+    payload.
+    """
+    min_ratio = (PIAO_SEARCH_MIN_RATIO if min_ratio is None else
+                 float(min_ratio))
+    min_self_draws = (PIAO_SEARCH_MIN_SELF_DRAWS if min_self_draws is None
+                      else int(min_self_draws))
+    standing = tuple(int(value) for value in standing)
+    visible = tuple(int(value) for value in visible)
+    from . import shanten as _shanten_mod
+    if not _shanten_mod.PIAO_DRAW_MASK_RUST:
+        return {
+            "eligible": False,
+            "piao_search_eligible": False,
+            "piao_ready_now": False,
+            "mask": (False,) * 34,
+            "piao_draw_types": [],
+            "piao_types": 0,
+            "piao_live": 0,
+            "draw_live": 0,
+            "piao_ratio": 0.0,
+            "full_piao_search": False,
+            "self_draw_horizon": max(0, int(live_wall) // 4),
+            "min_piao_ratio": min_ratio,
+            "min_search_self_draws": min_self_draws,
+            "search_allowed": False,
+            "search_skip_reason": "KERNEL_UNAVAILABLE",
+            "nodes": 0,
+            "max_search_passes": PIAO_SEARCH_MAX_PASSES,
+            "search_passes_cap_enabled": False,
+        }
+    eligible = bool(standing[W] >= 2 and
+                    baotou_wait_fast(standing, locked))
+    mask = piao_draw_mask(standing, locked) if eligible else (False,) * 34
+    remaining = tuple(max(0, 4 - visible[tile]) for tile in range(34))
+    drawable = tuple(tile for tile in range(34)
+                     if standing[tile] < 4 and remaining[tile] > 0)
+    draw_live = sum(remaining[tile] for tile in drawable)
+    piao_tiles = tuple(tile for tile in drawable if mask[tile])
+    piao_live = sum(remaining[tile] for tile in piao_tiles)
+    ratio = (piao_live / draw_live) if draw_live else 0.0
+    horizon = max(0, int(live_wall) // 4)
+    full = bool(draw_live and piao_live == draw_live)
+    search_allowed = bool(
+        eligible and not full and ratio >= min_ratio and
+        horizon >= min_self_draws)
+    return {
+        "eligible": eligible,
+        "piao_search_eligible": eligible,
+        "piao_ready_now": False,
+        "mask": tuple(bool(value) for value in mask),
+        "piao_draw_types": list(piao_tiles),
+        "piao_types": len(piao_tiles),
+        "piao_live": int(piao_live),
+        "draw_live": int(draw_live),
+        "piao_ratio": round(float(ratio), 6),
+        "full_piao_search": full,
+        "self_draw_horizon": horizon,
+        "min_piao_ratio": min_ratio,
+        "min_search_self_draws": min_self_draws,
+        "search_allowed": search_allowed,
+        "search_skip_reason": (
+            None if search_allowed else
+            "NOT_ELIGIBLE" if not eligible else
+            "PIAO_READY" if full else
+            "HORIZON_TOO_SHORT" if horizon < min_self_draws else
+            "PIAO_RATIO_LOW"),
+        "nodes": PIAO_SEARCH_NODE_BUDGET if eligible else 0,
+        # Online sessions do not yet carry a persistent pass counter through
+        # Mirror.build_game, so a max-pass cap is explicitly disabled.
+        "max_search_passes": PIAO_SEARCH_MAX_PASSES,
+        "search_passes_cap_enabled": False,
+    }
+
+
 def _expected_next_draw_reward(g, seat, standing, locked, chain,
                                chain_piao, kong_draw, remaining=None,
                                draw_delay=1):
@@ -581,14 +690,17 @@ def _expected_next_draw_reward(g, seat, standing, locked, chain,
     live_wall = g.live_wall_left()
     if live_wall < draw_delay:
         return {"value": 0.0, "win_probability": 0.0,
-                "winning_tiles": (), "wall_left": max(0, live_wall)}
+                "winning_tiles": (), "winning_mass": 0,
+                "total_unseen": 0, "wall_left": max(0, live_wall)}
     if remaining is None:
         visible = _public_visible_counts(g, seat)
         remaining = [max(0, 4 - count) for count in visible]
     total_unseen = sum(remaining)
     if total_unseen <= 0:
         return {"value": 0.0, "win_probability": 0.0,
-                "winning_tiles": (), "wall_left": max(0, live_wall - draw_delay)}
+                "winning_tiles": (), "winning_mass": 0,
+                "total_unseen": 0,
+                "wall_left": max(0, live_wall - draw_delay)}
 
     ycbk = bool(getattr(g, "you_cai_bi_kao", False))
     total_reward = 0.0
@@ -617,6 +729,8 @@ def _expected_next_draw_reward(g, seat, standing, locked, chain,
         "value": total_reward / total_unseen,
         "win_probability": winning_mass / total_unseen,
         "winning_tiles": tuple(winning_tiles),
+        "winning_mass": int(winning_mass),
+        "total_unseen": int(total_unseen),
         "wall_left": max(0, live_wall - draw_delay),
     }
 
@@ -852,8 +966,15 @@ def _hu_window_score(g, seat, tile, *, reaction_profile, remaining,
 
 
 def _hu_window_candidate(g, seat, kind, action, *, reaction_profile,
-                         remaining, delay_factor):
-    """Build one serialisable delayed HU-window candidate."""
+                         remaining, observed_delay_reasons=()):
+    """Build one HU-window candidate with its own delay policy.
+
+    A shared ``delay_factor`` used to turn every delayed root into zero when
+    one X/Y/Z stop signal fired.  That was too conservative for a root whose
+    post-discard hand is proven to win on every public unseen next draw.  The
+    candidate now records both observed signals and the signals actually
+    applied to its value.
+    """
     standing = list(g.hands[seat])
     standing[action] -= 1
     chain, chain_piao = _post_discard_chain(g, seat, action, standing)
@@ -863,20 +984,45 @@ def _hu_window_candidate(g, seat, kind, action, *, reaction_profile,
         chain=chain, chain_piao=chain_piao,
     )
     raw_value = float(score.get("value", score.get("total_reward_ev", 0.0)))
-    value = raw_value * float(delay_factor)
+    complete = bool(score.get("complete", True))
+    fallback_reason = score.get("fallback_reason")
+    conditional_probability = float(score.get("win_probability", 0.0))
+    guaranteed = bool(
+        kind in {"piao_discard", "baotou_next_draw"} and
+        is_baotou_wait(standing, len(g.melds[seat])) and
+        complete and not fallback_reason and
+        conditional_probability >= 1.0 - 1e-9 and
+        int(score.get("total_unseen", 0) or 0) > 0 and
+        g.live_wall_left() >= PIAO_WALL_GUARD)
+    observed = tuple(str(reason) for reason in observed_delay_reasons)
+    ignored = observed if guaranteed else ()
+    applied = () if guaranteed else observed
+    delay_factor = 1.0 if not applied else 0.0
+    value = raw_value * delay_factor
     return {
         "type": kind,
         "action": action,
         "tile": action,
         "value": value,
         "raw_value": raw_value,
-        "win_probability": float(score.get("win_probability", 0.0)),
-        "complete": bool(score.get("complete", True)),
-        "fallback_reason": score.get("fallback_reason"),
+        "effective_value": value,
+        "win_probability": conditional_probability,
+        "conditional_next_draw_win_probability": conditional_probability,
+        "winning_tiles": list(score.get("winning_tiles", ())),
+        "winning_mass": int(score.get("winning_mass", 0) or 0),
+        "total_unseen": int(score.get("total_unseen", 0) or 0),
+        "guaranteed_next_draw_hu": guaranteed,
+        "complete": complete,
+        "fallback_reason": fallback_reason,
         "wall_left": score.get("wall_left", g.live_wall_left()),
         "continuation_nodes": int(score.get("continuation_nodes", 0) or 0),
         "continuation_elapsed_ms": score.get("elapsed_ms"),
         "delay_factor": float(delay_factor),
+        "delay_policy": ("guaranteed_next_draw" if guaranteed else
+                         "soft_risk_penalty" if applied else "no_delay"),
+        "observed_delay_reasons": list(observed),
+        "applied_delay_reasons": list(applied),
+        "ignored_delay_reasons": list(ignored),
         "standing": tuple(standing),
         "chain": chain,
         "chain_piao": chain_piao,
@@ -884,8 +1030,9 @@ def _hu_window_candidate(g, seat, kind, action, *, reaction_profile,
 
 
 def _hu_window_detail(profile, action, candidates, *, piao_candidates,
-                      next_draw_candidates, delay_reason, stage_b_entered,
-                      stage_b_complete, continuation_nodes):
+                      next_draw_candidates, observed_delay_reasons,
+                      stage_b_entered, stage_b_complete, continuation_nodes,
+                      piao_search=None):
     """Return the common explanation payload for HU-window arbitration."""
     selected = next((row for row in candidates
                      if row.get("action") == action), None)
@@ -914,8 +1061,21 @@ def _hu_window_detail(profile, action, candidates, *, piao_candidates,
         "continuation_nodes": int(continuation_nodes),
         "continuation_fallback": bool(
             any(row.get("fallback_reason") for row in candidates)),
-        "delay_penalty_reason": delay_reason,
+        # ``delay_penalty_reason`` now means an actually applied soft penalty.
+        # Observed-but-ignored risks are exposed separately below.
+        "delay_penalty_reason": next(
+            (reason for row in candidates
+             for reason in row.get("applied_delay_reasons", ())), None),
+        "observed_delay_reasons": list(observed_delay_reasons),
+        "ignored_delay_reasons": sorted({
+            reason for row in candidates
+            for reason in row.get("ignored_delay_reasons", ())}),
+        "applied_delay_reasons": sorted({
+            reason for row in candidates
+            for reason in row.get("applied_delay_reasons", ())}),
     }
+    if piao_search is not None:
+        detail["piao_search"] = piao_search
     if profile is not None:
         detail.update({
             "version": profile.version,
@@ -945,14 +1105,12 @@ def _hu_window_detail(profile, action, candidates, *, piao_candidates,
 
 def _choose_hu_window_action(g, seat, actions, *, discard_profile,
                              reaction_profile, piao_candidates,
-                             next_draw_candidates, kongs):
+                             next_draw_candidates, kongs,
+                             piao_search=None):
     """Compare immediate HU, piao, baotou-next-draw and self-kong roots."""
     visible = _public_visible_counts(g, seat)
     remaining = [max(0, 4 - count) for count in visible]
-    push_reason = _push_abort_reason(g, seat)
-    # X/Y/Z is a shared delay penalty.  It may reduce every delayed root to
-    # zero, but it cannot delete piao while allowing a non-W root to cover HU.
-    delay_factor = 0.0 if push_reason is not None else 1.0
+    push_reasons = _push_abort_reasons(g, seat)
     roots = [{
         "type": "immediate_hu",
         "action": HU,
@@ -965,17 +1123,24 @@ def _choose_hu_window_action(g, seat, actions, *, discard_profile,
         "wall_left": g.live_wall_left(),
         "continuation_nodes": 0,
         "delay_factor": 1.0,
+        "effective_value": _immediate_hu_reward(g, seat),
+        "guaranteed_next_draw_hu": False,
+        "conditional_next_draw_win_probability": 1.0,
+        "delay_policy": "immediate_hu",
+        "observed_delay_reasons": list(push_reasons),
+        "applied_delay_reasons": [],
+        "ignored_delay_reasons": [],
     }]
     for tile in piao_candidates:
         roots.append(_hu_window_candidate(
             g, seat, "piao_discard", tile,
             reaction_profile=reaction_profile, remaining=remaining,
-            delay_factor=delay_factor))
+            observed_delay_reasons=push_reasons))
     for tile in next_draw_candidates:
         roots.append(_hu_window_candidate(
             g, seat, "baotou_next_draw", tile,
             reaction_profile=reaction_profile, remaining=remaining,
-            delay_factor=delay_factor))
+            observed_delay_reasons=push_reasons))
 
     # Self-kong keeps the existing hard gates and score continuation.  Its
     # baseline is the best shared standing available in this window.
@@ -1001,13 +1166,26 @@ def _choose_hu_window_action(g, seat, actions, *, discard_profile,
             "type": "self_kong",
             "action": result["action"],
             "raw_value": float(result.get("value", 0.0)),
-            "value": float(result.get("value", 0.0)) * delay_factor,
+            "effective_value": float(result.get("value", 0.0)),
+            "value": float(result.get("value", 0.0)),
             "complete": bool(result.get("continuation_complete", True)),
             "fallback_reason": result.get("continuation_fallback_reason"),
             "continuation_nodes": int(result.get("continuation_nodes", 0)
                                        or 0),
-            "delay_factor": delay_factor,
+            "delay_factor": 1.0,
+            "guaranteed_next_draw_hu": False,
+            "conditional_next_draw_win_probability": float(
+                result.get("win_probability", 0.0)),
+            "delay_policy": "soft_risk_penalty" if push_reasons else
+            "no_delay",
+            "observed_delay_reasons": list(push_reasons),
+            "applied_delay_reasons": list(push_reasons),
+            "ignored_delay_reasons": [],
         })
+        if push_reasons:
+            row["value"] = 0.0
+            row["effective_value"] = 0.0
+            row["delay_factor"] = 0.0
         roots.append(row)
 
     continuation_nodes = sum(int(row.get("continuation_nodes", 0) or 0)
@@ -1031,10 +1209,11 @@ def _choose_hu_window_action(g, seat, actions, *, discard_profile,
         discard_profile, selected["action"], roots,
         piao_candidates=piao_candidates,
         next_draw_candidates=next_draw_candidates,
-        delay_reason=push_reason,
+        observed_delay_reasons=push_reasons,
         stage_b_entered=stage_b_entered,
         stage_b_complete=stage_b_complete,
         continuation_nodes=continuation_nodes,
+        piao_search=piao_search,
     )
     detail["selected_value"] = selected.get("value")
     detail["selected_raw_value"] = selected.get("raw_value")
@@ -1078,6 +1257,35 @@ def _choose_draw_action(g, seat, actions=None, discard_profile=None,
                 piao_candidates.append(W)
         next_draw_candidates = list(_next_draw_baotou_discards(
             g, seat, actions))
+        piao_search = {
+            "piao_search_eligible": False,
+            "piao_ready_now": bool(piao_candidates),
+            "search_allowed": False,
+            "search_skip_reason": "NO_BAOTOU_NEXT_DRAW",
+            "self_draw_horizon": max(0, int(wall_left) // 4),
+            "piao_live": 0,
+            "draw_live": 0,
+            "piao_types": 0,
+            "piao_ratio": 0.0,
+            "full_piao_search": False,
+            "piao_draw_types": [],
+            "nodes": 0,
+            "max_search_passes": PIAO_SEARCH_MAX_PASSES,
+            "search_passes_cap_enabled": False,
+        }
+        if piao_candidates:
+            # PIAO_READY bypasses the search shutter; the existing piao root
+            # is compared directly with immediate HU.
+            piao_search["search_skip_reason"] = "PIAO_READY"
+        elif next_draw_candidates:
+            # First release only inspects the best existing baotou-next-draw
+            # candidate.  No candidate × 34 expansion is allowed here.
+            best_next = next_draw_candidates[0]
+            standing = list(hand)
+            standing[best_next] -= 1
+            piao_search = _piao_search_fast_feature(
+                standing, locked, _public_visible_counts(g, seat), wall_left)
+            piao_search["piao_ready_now"] = False
         if piao_candidates or next_draw_candidates or kongs:
             return _choose_hu_window_action(
                 g, seat, actions,
@@ -1086,6 +1294,7 @@ def _choose_draw_action(g, seat, actions=None, discard_profile=None,
                 piao_candidates=tuple(piao_candidates),
                 next_draw_candidates=tuple(next_draw_candidates),
                 kongs=kongs,
+                piao_search=piao_search,
             )
         return HU, {
             "reason": "hu_legacy",

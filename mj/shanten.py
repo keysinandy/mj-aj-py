@@ -25,12 +25,14 @@ import os
 from .tiles import W
 
 _shanten_cache = {}
+_piao_draw_mask_cache = {}
 _CACHE_CAP = 1 << 20
 
 
 def clear_caches():
     """清空记忆化缓存(长跑进程控内存时用)。"""
     _shanten_cache.clear()
+    _piao_draw_mask_cache.clear()
     from .win import clear_cache as clear_win_cache
     clear_win_cache()
 
@@ -307,6 +309,46 @@ def baotou_ukeire_py(counts, locked=0, visible=None):
     return acc, sum(_left(t, vis) for t in acc)
 
 
+def piao_draw_mask_py(counts, locked=0):
+    """Return the structural draw mask for the fixed-discard piao search.
+
+    ``counts`` is a 13-tile standing hand.  A bit is true when drawing that
+    tile and then discarding exactly one White tile leaves an all-tile
+    ``is_baotou_wait`` hand.  The result intentionally has no ``visible``
+    argument: public visibility changes only the remaining-tile weights, not
+    this structural mask.  Returning a fixed-size tuple keeps callers from
+    accidentally turning this helper into a nested discard search.
+
+    The mask is cached by ``(hand, locked)`` and is therefore safe to reuse
+    across replay frames with different rivers or exposed melds.
+    """
+    key = (bytes(counts), int(locked))
+    hit = _piao_draw_mask_cache.get(key)
+    if hit is not None:
+        return hit
+    if counts[W] < 1:
+        mask = (False,) * 34
+    else:
+        from .win import is_baotou_wait
+
+        values = [False] * 34
+        for tile in range(34):
+            # A fourth visible copy cannot be drawn.  ``counts`` is the
+            # structural hand only; public visibility is applied by the
+            # caller when weighting this mask.
+            if counts[tile] >= 4:
+                continue
+            candidate = list(counts)
+            candidate[tile] += 1
+            candidate[W] -= 1
+            values[tile] = bool(is_baotou_wait(candidate, locked))
+        mask = tuple(values)
+    if len(_piao_draw_mask_cache) >= _CACHE_CAP:
+        _piao_draw_mask_cache.clear()
+    _piao_draw_mask_cache[key] = mask
+    return mask
+
+
 # ---------- Rust 内核调度(2026-09-11 接入默认路径) ----------
 # mj_kernels(rust/,pip install -e rust/ 构建)可导入即优先 Rust;
 # 未安装自动回退纯 Python。MJ_KERNELS=python 强制纯 Python(排障/对拍)。
@@ -315,6 +357,16 @@ try:
 except ImportError:
     _rust_shanten = None
     _rust_ukeire = None
+
+try:
+    from mj_kernels import piao_draw_mask as _rust_piao_draw_mask
+except (ImportError, AttributeError):
+    _rust_piao_draw_mask = None
+
+try:
+    from mj_kernels import is_baotou_wait as _rust_is_baotou_wait
+except (ImportError, AttributeError):
+    _rust_is_baotou_wait = None
 
 try:
     from mj_kernels import best_future_discard as _rust_best_future_discard
@@ -378,6 +430,8 @@ WEIGHTED_TWO_PLY_KERNEL_REQUIRED = "rust-weighted-two-ply-v5"
 # bot 的爆头档只在 Rust 内核可用时启用(纯 Python 枚举 90~220ms/决策,
 # 不可用);MJ_KERNELS=python 视同不可用。决策行为因此确定性可复现。
 BAOTOU_UKEIRE_RUST = _rust_baotou_ukeire is not None and not _FORCE_PY
+PIAO_DRAW_MASK_RUST = (_rust_piao_draw_mask is not None and not _FORCE_PY)
+BAOTOU_WAIT_RUST = (_rust_is_baotou_wait is not None and not _FORCE_PY)
 
 LEGACY_TWO_PLY_KERNEL_VERSION = (
     _rust_legacy_two_ply_kernel_version()
@@ -425,6 +479,10 @@ def kernel_runtime_diagnostic():
         "weighted_kernel_compatible": weighted_compatible,
         "legacy_two_ply_kernel_version": LEGACY_TWO_PLY_KERNEL_VERSION,
         "baotou_kernel": "rust" if BAOTOU_UKEIRE_RUST else "python",
+        "piao_draw_mask_kernel": (
+            "rust" if PIAO_DRAW_MASK_RUST else "python"),
+        "baotou_wait_kernel": (
+            "rust" if BAOTOU_WAIT_RUST else "python"),
         "degraded": degraded,
         "reason": reason,
         "impact": ("legacyV2 weighted 前瞻不可用,当前决策将事务性回退 v1"
@@ -469,6 +527,22 @@ def baotou_ukeire(counts, locked=0, visible=None):
         acc, u1 = _rust_baotou_ukeire(counts, locked, visible)
         return list(acc), u1
     return baotou_ukeire_py(counts, locked, visible)
+
+
+def piao_draw_mask(counts, locked=0):
+    """Structural fixed-White-discard mask (Rust when available)."""
+    if _rust_piao_draw_mask is not None and not _FORCE_PY:
+        return tuple(bool(value)
+                     for value in _rust_piao_draw_mask(counts, locked))
+    return piao_draw_mask_py(counts, locked)
+
+
+def baotou_wait_fast(counts, locked=0):
+    """Fast structural ``is_baotou_wait`` for bounded diagnostics."""
+    if _rust_is_baotou_wait is not None and not _FORCE_PY:
+        return bool(_rust_is_baotou_wait(counts, locked))
+    from .win import is_baotou_wait
+    return bool(is_baotou_wait(counts, locked))
 
 
 def best_future_discard(counts, locked=0, visible=None, include_tiles=True):

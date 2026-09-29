@@ -59,36 +59,40 @@
 - [x] 4.7 2026-09-29 round4 回放回归：seq856 断言弃白不构成财飘；seq880 断言开始生成财飘候选；
   seq904/943/967/991/1015/1039/1063 均断言财飘候选持续存在，且 14/10/6 张活墙时不再
   由 `hu_baotou_next_draw_override` 提前返回；seq1070 对手胡牌作为“延迟胡存在抢胡风险”的证据记录
-- [ ] 4.8 实现 Piao Search 资格与快特征：白板≥2且 `is_baotou_wait` 时标记 eligible；
+- [x] 4.8 实现 Piao Search 资格与快特征：白板≥2且 `is_baotou_wait` 时标记 eligible；
   新增纯结构 `piao_draw_mask`、`piao_live/piao_types/piao_ratio`，结构 mask 与 visible 权重分离并缓存
-- [ ] 4.9 接入动态 horizon：`self_draw_horizon=floor(live_wall_left/4)`；PIAO_SEARCH
+- [x] 4.9 接入动态 horizon：`self_draw_horizon=floor(live_wall_left/4)`；PIAO_SEARCH
   horizon<2 直接收手，PIAO_READY 仍走现有 HU-window 仲裁；每次自摸重新计算
-- [ ] 4.10 首版只对现有最佳 `baotou_next_draw` 站立手计算最多 34 个结构节点，快特征不得调用
+- [x] 4.10 首版只对现有最佳 `baotou_next_draw` 站立手计算最多 34 个结构节点，快特征不得调用
   shanten/ukeire/scoring 或嵌套弃牌搜索；增加独立 benchmark，验收增量 p95≤1ms、p99≤2ms
-- [ ] 4.11 若 Python 快特征不能稳定过性能门，新增 Rust 批量 `piao_draw_mask` 并做 Python/Rust
+- [x] 4.11 若 Python 快特征不能稳定过性能门，新增 Rust 批量 `piao_draw_mask` 并做 Python/Rust
   随机差分；不得以墙钟超时导致动作漂移
-- [ ] 4.12 Piao Search 参数配对扫描：
+- [x] 4.12 Piao Search 参数配对扫描：
   `min_piao_ratio={0.25,0.40,0.55,0.70,0.85}` ×
   `min_search_self_draws={2,3}` × `max_search_passes={1,2,3}`；
   记录 pass_hu/opportunity/cashout/search_lost/piao_lost/平均倍率与平均结算分
-- [ ] 4.13 回放专项：seq856 断言 eligible=true、ready=false，并验证快特征输出；
+  （本地 2 局/配置校准 artifact：`artifacts/piao_search_ab_smoke.json`；cap 未持久化，
+  仅作不晋级证据）
+- [x] 4.13 回放专项：seq856 断言 eligible=true、ready=false，并验证快特征输出；
   seq880 及 904/943/967/991/1015/1039/1063 断言 ready=true 时绕过“搜索”快门直接进入 HU-vs-PIAO 仲裁
-- [ ] 4.14 在线状态：若启用 `max_search_passes`，在 match/tournament 会话层持久化，确保
+- [x] 4.14 在线状态：若启用 `max_search_passes`，在 match/tournament 会话层持久化，确保
   `Mirror.build_game` 重建 Game 不会把计数清零；若未实现持久化则线上禁用该 cap
-- [ ] 4.15 将 HU-window shared `delay_factor` 改为 candidate-specific policy；
+- [x] 4.15 将 HU-window shared `delay_factor` 改为 candidate-specific policy；
   为 piao/baotou delayed root 计算 `guaranteed_next_draw_hu`（all public unseen mass wins）
-- [ ] 4.16 Guaranteed Next-Draw HU 忽略 X/Y/Z 软归零：`rounds`、`opp_melds`、
+- [x] 4.16 Guaranteed Next-Draw HU 忽略 X/Y/Z 软归零：`rounds`、`opp_melds`、
   `BAOTOU_PUSH_MIN_LIVE` 不改变 effective value；`PIAO_WALL_GUARD` 硬门保持
-- [ ] 4.17 seq351 回放专项：立即七对 2 番 value=20；弃 8万/6万/8筒的必爆头候选不再因
+- [x] 4.17 seq351 回放专项：立即七对 2 番 value=20；弃 8万/6万/8筒的必爆头候选不再因
   `opp_melds` 从 raw≈41.5 降为 0；验证下一摸 8筒的豪华七对子价值由
   `hand_multiplier + settle` 自然计入且无双算
-- [ ] 4.18 扩展审计字段：
+- [x] 4.18 扩展审计字段：
   `guaranteed_next_draw_hu/conditional_next_draw_win_probability/delay_policy/`
   `ignored_delay_reasons/raw_value/effective_value`；区分 observed risk 与 applied penalty
-- [ ] 4.19 Guaranteed policy 配对 A/B：统计
+- [x] 4.19 Guaranteed policy 配对 A/B：统计
   `guaranteed_baotou_pass_hu_count`、`guaranteed_baotou_cashout_count`、
   `guaranteed_baotou_lost_before_draw`、放弃的 immediate HU value、实现的爆头 value、
   豪华七对子升级次数与平均结算分差；收益门未通过不得晋级线上默认
+  （本地 counterfactual smoke artifact：`artifacts/guaranteed_baotou_ab_smoke.json`；
+  样本量不足，未晋级线上）
 
 
 ## 5. 归档

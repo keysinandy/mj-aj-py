@@ -326,17 +326,22 @@ class TestBaotouDiscardTier(unittest.TestCase):
         self.assertEqual(info.get("push_abort"), "live_wall")
 
     def test_baotou_override_ignores_opp_meld_stop_before_piao(self):
-        # 对手副露触发软收手时，财飘与非白爆头候选都保留，统一降权。
+        # 对手副露触发软收手时，必定下一摸胡的候选忽略该软风险，
+        # 但仍把 observed/applied 风险分开记录。
         g = _draw_game("123m456m789m5pwwww", W)
         g.wall = [0] * (20 + 40)
         g.melds[1] = [("pong", 0)] * 3
         action, detail = bot_mod._choose_draw_action(g, 0, g.legal_actions())
         self.assertIn(action, g.legal_actions())
         self.assertEqual(detail["decision_scope"], "hu_window_arbitration")
-        self.assertEqual(detail["delay_penalty_reason"], "opp_melds")
+        self.assertIsNone(detail["delay_penalty_reason"])
+        self.assertIn("opp_melds", detail["ignored_delay_reasons"])
         self.assertEqual(detail["piao_candidates"], [W])
         self.assertIn(13, detail["baotou_next_draw_candidates"])
-        self.assertNotEqual(detail["reason"], "hu_baotou_next_draw_override")
+        self.assertEqual(detail["selected_type"], "piao_discard")
+        self.assertTrue(next(row for row in detail["candidates"]
+                             if row["type"] == "piao_discard")
+                        ["guaranteed_next_draw_hu"])
 
     def test_no_wild_hand_unchanged(self):
         # 不持财神:排序与旧冻结基线一致(既有固定牌例回归)。
@@ -370,15 +375,17 @@ class TestBaotouPiaoWallGuard(unittest.TestCase):
 
     def test_wall_at_guard_still_piao(self):
         g = self._piao_game(6)
-        # 冻结只允许弃刚摸的白板；候选进入统一仲裁，Z 软门使立即胡胜出。
+        # 冻结只允许弃刚摸的白板；候选进入统一仲裁，硬门通过后
+        # Guaranteed Next-Draw HU 可以忽略 Z 软门。
         g.freeze = 2
         g.freezer = 2
         self.assertTrue(bot_mod._should_piao(g, 0))
         action, detail = bot_mod._choose_draw_action(g, 0, g.legal_actions())
-        self.assertEqual(action, HU)
+        self.assertEqual(action, W)
         self.assertEqual(detail["decision_scope"], "hu_window_arbitration")
         self.assertEqual(detail["piao_candidates"], [W])
-        self.assertEqual(detail["delay_penalty_reason"], "live_wall")
+        self.assertIsNone(detail["delay_penalty_reason"])
+        self.assertIn("live_wall", detail["ignored_delay_reasons"])
 
     def test_freeze_piao_requires_drawn_wild(self):
         # 冻结时引擎动作集仍约束弃牌。摸到非白的合法弃牌若能进入全牌爆头听，
@@ -448,9 +455,10 @@ class TestHuBaotouNextDrawOverride(unittest.TestCase):
         finally:
             bot_mod._push_rounds.pop(g, None)
 
-        self.assertEqual(action, HU)
+        self.assertEqual(action, 3)
         self.assertEqual(detail["decision_scope"], "hu_window_arbitration")
-        self.assertEqual(detail["delay_penalty_reason"], "rounds")
+        self.assertIsNone(detail["delay_penalty_reason"])
+        self.assertIn("rounds", detail["ignored_delay_reasons"])
         self.assertEqual(detail["baotou_next_draw_candidates"], [3])
         self.assertNotEqual(detail["reason"], "hu_baotou_next_draw_override")
 
@@ -458,9 +466,10 @@ class TestHuBaotouNextDrawOverride(unittest.TestCase):
         # Z=16 已触发，但 6 张活墙仍足以轮回到本家下一摸。
         g = self._round4_seq482_game(live=6)
         action, detail = bot_mod._choose_draw_action(g, 0, g.legal_actions())
-        self.assertEqual(action, HU)
+        self.assertEqual(action, 3)
         self.assertEqual(detail["decision_scope"], "hu_window_arbitration")
-        self.assertEqual(detail["delay_penalty_reason"], "live_wall")
+        self.assertIsNone(detail["delay_penalty_reason"])
+        self.assertIn("live_wall", detail["ignored_delay_reasons"])
         self.assertEqual(detail["baotou_next_draw_candidates"], [3])
         self.assertNotEqual(detail["reason"], "hu_baotou_next_draw_override")
 

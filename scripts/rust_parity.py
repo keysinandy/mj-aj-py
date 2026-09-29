@@ -110,6 +110,25 @@ def parity_baotou(rs, rng, n):
     return checked
 
 
+def parity_piao_mask(rs, rng, n):
+    """固定弃白 Piao Search 掩码与 Python 参考实现逐位对拍。"""
+    checked = 0
+    for locked in range(5):
+        need = 13 - 3 * locked
+        for wilds in (0, 1, 2, 3, 4):
+            wilds = min(wilds, need)
+            for _ in range(n):
+                c = hand(rng, need, wilds)
+                a = tuple(bool(value) for value in rs.piao_draw_mask(c, locked))
+                b = tuple(bool(value)
+                          for value in py_sh.piao_draw_mask_py(c, locked))
+                assert a == b, (
+                    f"piao_draw_mask 不符: {c} locked={locked}\n"
+                    f"  rust={a}\n  py={b}")
+                checked += 1
+    return checked
+
+
 def bench(rs, rng, n):
     hands = []
     for _ in range(n):
@@ -201,6 +220,8 @@ def main():
     print(f"ukeire 对拍通过: {n2} 手(含 None/随机 visible,acc 升序断言)")
     n3 = parity_baotou(rs, rng, max(60, args.n // 3))
     print(f"baotou_ukeire 对拍通过: {n3} 手(locked×财神 0..4 × None/随机 visible)")
+    n4 = parity_piao_mask(rs, rng, max(30, args.n // 5))
+    print(f"piao_draw_mask 对拍通过: {n4} 手(locked×财神 0..4)")
 
     print(f"\n基准(随机 13 张手 {args.bench} 副,Python 冷缓存):")
     bench(rs, random.Random(99), args.bench)

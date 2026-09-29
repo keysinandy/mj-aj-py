@@ -1,0 +1,41 @@
+{
+  "schema": "guaranteed-next-draw-hu-counterfactual-ab-v1",
+  "games_per_arm": 2,
+  "seed0": 940000,
+  "candidate": {
+    "games": 2,
+    "score_mean": 8.0,
+    "multiplier_mean": 3.0,
+    "metrics": {
+      "hu_windows": 5,
+      "guaranteed_candidate_count": 18,
+      "guaranteed_baotou_pass_hu_count": 3,
+      "guaranteed_baotou_cashout_count": 0,
+      "guaranteed_baotou_lost_before_draw": 3,
+      "abandoned_immediate_hu_value": 96.0,
+      "selected_guaranteed_raw_value": 192.0,
+      "realized_guaranteed_raw_value": 0.0,
+      "luxury_upgrade_count": 0
+    }
+  },
+  "shared_delay_baseline": {
+    "games": 2,
+    "score_mean": 20.0,
+    "multiplier_mean": 1.5,
+    "metrics": {
+      "hu_windows": 3,
+      "guaranteed_candidate_count": 5,
+      "guaranteed_baotou_pass_hu_count": 1,
+      "guaranteed_baotou_cashout_count": 0,
+      "guaranteed_baotou_lost_before_draw": 1,
+      "abandoned_immediate_hu_value": 24.0,
+      "selected_guaranteed_raw_value": 48.0,
+      "realized_guaranteed_raw_value": 0.0,
+      "luxury_upgrade_count": 0
+    }
+  },
+  "paired_score_delta_mean": -12.0,
+  "paired_multiplier_delta_mean": 1.5,
+  "seconds": 3.019,
+  "note": "bounded local counterfactual smoke; no online promotion"
+}
