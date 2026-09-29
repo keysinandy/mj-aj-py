@@ -60,6 +60,7 @@ export function RecordsBrowser({ onOpenLocal, onOpenOnline }: Props) {
   const [onlineNextOffset, setOnlineNextOffset] = useState(0);
   const [fromAt, setFromAt] = useState("");
   const [toAt, setToAt] = useState("");
+  const [whiteboardFilter, setWhiteboardFilter] = useState(false);
   const onlineRequest = useRef(0);
 
   useEffect(() => {
@@ -147,6 +148,7 @@ export function RecordsBrowser({ onOpenLocal, onOpenOnline }: Props) {
     return {
       ...(startTs === undefined ? {} : { startTs }),
       ...(endTs === undefined ? {} : { endTs }),
+      ...(whiteboardFilter ? { minWhiteboards: 2 } : {}),
     };
   }
 
@@ -160,6 +162,7 @@ export function RecordsBrowser({ onOpenLocal, onOpenOnline }: Props) {
   function resetOnline(): void {
     setFromAt("");
     setToAt("");
+    setWhiteboardFilter(false);
     void loadOnline(0, false);
   }
 
@@ -277,6 +280,15 @@ export function RecordsBrowser({ onOpenLocal, onOpenOnline }: Props) {
               onChange={(event) => setToAt(event.target.value)}
             />
           </label>
+          <label className="online-checkbox-filter">
+            <input
+              aria-label="我方白板至少 2 张"
+              type="checkbox"
+              checked={whiteboardFilter}
+              onChange={(event) => setWhiteboardFilter(event.target.checked)}
+            />
+            <span>我方白板 ≥ 2 张</span>
+          </label>
           <div className="filter-actions">
             <button type="submit" className="primary-button">搜索</button>
             <button type="button" className="secondary-button" onClick={resetOnline}>重置</button>
@@ -333,6 +345,12 @@ export function RecordsBrowser({ onOpenLocal, onOpenOnline }: Props) {
                             我方策略 · {strategyLabel(game.strategy, game.evaluator, game.model_name)}
                           </span>
                         )}
+                        {game.whiteboard_rounds?.length ? (
+                          <span className="record-whiteboard-match" data-testid="whiteboard-match">
+                            白板≥2：{game.whiteboard_rounds.map((round) =>
+                              `第${round.ordinal}场(${round.max_my_whiteboards}张)`).join("、")}
+                          </span>
+                        ) : null}
                       </div>
                       <button
                         type="button"

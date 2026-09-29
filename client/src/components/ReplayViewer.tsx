@@ -91,6 +91,7 @@ export function ReplayViewer() {
               {rounds.map((round) => (
                 <option key={round.roundId} value={round.roundId}>
                   第 {round.ordinal} 场 · round {round.roundNo}
+                  {round.whiteboardMatch ? ` · 白板×${round.maxMyWhiteboards}` : ""}
                 </option>
               ))}
             </select>

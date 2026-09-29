@@ -146,11 +146,19 @@ export interface OnlineGameRef {
   strategy?: string | null;
   evaluator?: string | null;
   model_name?: string | null;
+  whiteboard_rounds?: OnlineWhiteboardRound[];
+}
+
+export interface OnlineWhiteboardRound {
+  ordinal: number;
+  round_no: number;
+  max_my_whiteboards: number;
 }
 
 export interface OnlineGamesQuery {
   startTs?: number;
   endTs?: number;
+  minWhiteboards?: number;
   offset?: number;
   limit?: number;
 }
@@ -304,6 +312,9 @@ export const api = {
     const query = new URLSearchParams();
     if (params.startTs !== undefined) query.set("start_ts", String(params.startTs));
     if (params.endTs !== undefined) query.set("end_ts", String(params.endTs));
+    if (params.minWhiteboards !== undefined) {
+      query.set("min_whiteboards", String(params.minWhiteboards));
+    }
     if (params.offset !== undefined) query.set("offset", String(params.offset));
     if (params.limit !== undefined) query.set("limit", String(params.limit));
     const suffix = query.toString() ? `?${query.toString()}` : "";

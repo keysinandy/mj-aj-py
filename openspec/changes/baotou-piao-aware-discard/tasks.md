@@ -30,13 +30,13 @@
   形成全牌爆头听并提前返回；该行为已被 2026-09-29 回放证明会绕过财飘/two-ply，保留仅作历史记录
 - [x] 3.3 （旧回归，**需按 3.5 重写**）覆盖 X/Y/Z 与冻结合法性；原断言
   `hu_baotou_next_draw_override` 为最终动作的用例不再代表目标行为
-- [ ] 3.4 将 `_choose_draw_action` 改为 HU-window action-root 仲裁：硬墙门后一次性建立
+- [x] 3.4 将 `_choose_draw_action` 改为 HU-window action-root 仲裁：硬墙门后一次性建立
   immediate HU / piao_discard / baotou_next_draw / self_kong；删除“发现非白爆头即 return”语义
-- [ ] 3.5 重写旧 override 单测：保留冻结合法性与墙 <6 直接 HU，但墙 ≥6 时断言候选集完整、
+- [x] 3.5 重写旧 override 单测：保留冻结合法性与墙 <6 直接 HU，但墙 ≥6 时断言候选集完整、
   不再断言非白爆头无条件胜出；X/Y/Z 不得非对称删除财飘候选
-- [ ] 3.6 接通 action-root continuation/two-ply：legacyV2 在应进入 Stage B 时不得被爆头分支绕过，
+- [x] 3.6 接通 action-root continuation/two-ply：legacyV2 在应进入 Stage B 时不得被爆头分支绕过，
   immediate HU 作为基线，财飘/下一摸爆头/自杠按统一动作价值比较
-- [ ] 3.7 修正解释字段：`decision_scope=hu_window_arbitration`，准确记录 baotou/piao candidate scan、
+- [x] 3.7 修正解释字段：`decision_scope=hu_window_arbitration`，准确记录 baotou/piao candidate scan、
   `stage_b_entered`、candidate type/value、selected/reason
 
 ## 4. 一致性与验收
@@ -56,7 +56,7 @@
   新排序和 HU-window 统一仲裁在线上无异常（日志检查候选完整性、Stage B/continuation、reason 与弃牌合法性）
 - [x] 4.5 同步文档：PROGRESS.md bot 决策原则节（新增爆头听优先档、爆头进张、
   墙守卫常量）与必要结论（验证：PROGRESS.md diff 审阅）
-- [ ] 4.7 2026-09-29 round4 回放回归：seq856 断言弃白不构成财飘；seq880 断言开始生成财飘候选；
+- [x] 4.7 2026-09-29 round4 回放回归：seq856 断言弃白不构成财飘；seq880 断言开始生成财飘候选；
   seq904/943/967/991/1015/1039/1063 均断言财飘候选持续存在，且 14/10/6 张活墙时不再
   由 `hu_baotou_next_draw_override` 提前返回；seq1070 对手胡牌作为“延迟胡存在抢胡风险”的证据记录
 

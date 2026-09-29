@@ -20,6 +20,10 @@ immediate HU、财飘、下一摸爆头与自杠。任何非白爆头 helper 不
 - **THEN** 所有 evaluator 共享同一 action-root 候选语义；财飘、非白下一摸爆头与当前 HU
   必须先同时建立，再由对应 evaluator 的价值链选择
 
+#### Scenario: 现有 HU 与财飘回归
+- **WHEN** 任一 evaluator 进入可 HU 或财飘分支
+- **THEN** 结果与既有 HU/财飘规则一致
+
 #### Scenario: 不再无条件覆盖 HU
 - **WHEN** 存在合法非财神弃牌可形成全牌爆头听，同时弃白也可形成财飘
 - **THEN** 非财神候选 MUST NOT 以 `hu_baotou_next_draw_override` 提前返回；财飘和 HU
@@ -27,6 +31,10 @@ immediate HU、财飘、下一摸爆头与自杠。任何非白爆头 helper 不
 
 #### Scenario: 不持财神的 legacy 弃牌不漂移
 - **WHEN** 同一不含财神的状态显式选择 legacy
+- **THEN** 弃牌排序和旧冻结基线一致
+
+#### Scenario: legacy 弃牌不漂移
+- **WHEN** 同一状态显式选择 legacy
 - **THEN** 弃牌排序和旧冻结基线一致
 
 #### Scenario: 持财神的 legacy 弃牌走新排序

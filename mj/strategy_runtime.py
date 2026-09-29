@@ -18,8 +18,8 @@ SNAPSHOT_VERSION = 1
 AUDIT_VERSION = 1
 DECISION_SCOPES = {
     "baotou_scope", "weighted_two_ply", "legacy", "reaction_v2",
-    "kong_continuation", "fallback", "policy", "policy-v3", "random",
-    "unknown",
+    "hu_window_arbitration", "kong_continuation", "fallback", "policy",
+    "policy-v3", "random", "unknown",
 }
 
 
@@ -478,6 +478,7 @@ def decision_audit(evaluation, action, elapsed_ms, *, phase=None,
     if not isinstance(missing, (list, tuple)):
         missing = ()
     hu_kong_scope = "hu_kong_scope" in missing
+    hu_window_scope = scope == "hu_window_arbitration"
     search_used = data.get("search_used")
     metrics = data.get("search_metrics")
     metrics = metrics if isinstance(metrics, dict) else {}
@@ -568,6 +569,8 @@ def decision_audit(evaluation, action, elapsed_ms, *, phase=None,
         shape_guard_reason = "BAOTOU_SCOPE_EARLY_RETURN"
     elif hu_kong_scope:
         shape_guard_reason = "HU_KONG_SCOPE_EARLY_RETURN"
+    elif hu_window_scope:
+        shape_guard_reason = "HU_WINDOW_ARBITRATION"
     pre_entry_guard_skips = {
         "shape_quality_guard_disabled", "kernel_unavailable",
         "primary_not_singleton", "slack_zero",
@@ -602,6 +605,8 @@ def decision_audit(evaluation, action, elapsed_ms, *, phase=None,
         marginal_reason = "BAOTOU_SCOPE_EARLY_RETURN"
     elif hu_kong_scope:
         marginal_reason = "HU_KONG_SCOPE_EARLY_RETURN"
+    elif hu_window_scope:
+        marginal_reason = "HU_WINDOW_ARBITRATION"
     elif marginal_configured is None:
         marginal_reason = config_unknown_reason("marginal_structure_guard")
     elif marginal_reason is None and not marginal_blocked and not marginal_proven:
@@ -633,6 +638,8 @@ def decision_audit(evaluation, action, elapsed_ms, *, phase=None,
         big_hand_skip = "BAOTOU_SCOPE_EARLY_RETURN"
     elif hu_kong_scope:
         big_hand_skip = "HU_KONG_SCOPE_EARLY_RETURN"
+    elif hu_window_scope:
+        big_hand_skip = "HU_WINDOW_ARBITRATION"
     elif big_hand_configured is None:
         big_hand_skip = config_unknown_reason("big_hand_intent")
     elif big_hand_entered:
@@ -741,10 +748,27 @@ def decision_audit(evaluation, action, elapsed_ms, *, phase=None,
         },
         "baotou_scope": {
             "configured": configured_state("baotou_scope"),
-            "eligible": (True if selected_scope == "baotou_scope" else
+            "eligible": (True if selected_scope in {
+                             "baotou_scope", "hu_window_arbitration"} else
                          False if configured_state("baotou_scope") is False
                          else None),
-            "entered": selected_scope == "baotou_scope",
+            "entered": (selected_scope == "baotou_scope" or
+                        bool(data.get("baotou_scope_entered")) or
+                        bool((data.get("baotou_scope") or {}).get("entered"))),
+        },
+        "hu_window_arbitration": {
+            "configured": True,
+            "eligible": hu_window_scope,
+            "entered": hu_window_scope,
+            "candidate_types": [
+                candidate.get("type") for candidate in
+                (data.get("hu_window_candidates") or
+                 data.get("candidates") or [])
+                if isinstance(candidate, dict) and candidate.get("type")
+            ],
+            "selected_type": data.get("selected_type"),
+            "selected": data.get("selected", action),
+            "reason": data.get("reason"),
         },
         "reaction_v2": {
             "configured": reaction_configured,
@@ -787,6 +811,8 @@ def decision_audit(evaluation, action, elapsed_ms, *, phase=None,
         "decision_scope": scope,
         "phase": phase,
         "features": audit_features,
+        "decision_candidates": data.get("hu_window_candidates") or
+        data.get("candidates") or [],
         "result": {"action": action, "selected": data.get("selected", action)},
         "runtime": {
             "elapsed_ms": round(float(elapsed_ms), 3)
@@ -873,6 +899,12 @@ def format_decision_audit(audit, *, evaluation=None, verbose=False):
     stage_b = (audit.get("features") or {}).get("stage_b") or {}
     parts.append("stage_b=" + ("ENTERED" if stage_b.get("entered") else
                                f"SKIP({stage_b.get('skip_reason') or 'UNKNOWN'})"))
+    hu_window = (audit.get("features") or {}).get(
+        "hu_window_arbitration") or {}
+    if hu_window.get("entered"):
+        types = ",".join(hu_window.get("candidate_types") or []) or "none"
+        parts.append(f"hu_roots={types}")
+        parts.append(f"hu_selected={hu_window.get('selected_type') or 'unknown'}")
     intent = (audit.get("features") or {}).get("big_hand_intent") or {}
     parts.append(f"intent={intent.get('intent') or 'NONE'}")
     parts.append(f"fallback={str(bool(runtime.get('fallback'))).lower()}")

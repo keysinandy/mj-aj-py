@@ -761,16 +761,16 @@ def _evaluate_kong_next_draw(g, seat, action, remaining,
     )
 
 
-def _next_draw_baotou_discard(g, seat, actions):
-    """Return a legal non-W discard that leaves an all-tile baotou wait.
+def _next_draw_baotou_discards(g, seat, actions):
+    """Return every legal non-W discard that leaves an all-tile wait.
 
-    The HU-window override is checked only after the shared wall guard. It
-    bypasses X/Y/Z push stops, while the engine-provided action list continues
-    to enforce discard legality, including freeze restrictions.
+    This is deliberately only a candidate scanner.  The HU window must build
+    all action roots before selecting one; a scanner must never own the final
+    decision or bypass the independent piao candidate.
     """
     hand = g.hands[seat]
     if hand[W] <= 0:
-        return None
+        return ()
     locked = len(g.melds[seat])
     candidates = []
     for tile in actions:
@@ -786,7 +786,262 @@ def _next_draw_baotou_discard(g, seat, actions):
                 _feed_risk(g, seat, tile),
                 tile,
             ))
-    return min(candidates)[2] if candidates else None
+    return tuple(tile for _shape, _feed, tile in sorted(candidates))
+
+
+def _next_draw_baotou_discard(g, seat, actions):
+    """Compatibility helper returning the first scanned non-W candidate."""
+    candidates = _next_draw_baotou_discards(g, seat, actions)
+    return candidates[0] if candidates else None
+
+
+def _hu_window_score(g, seat, tile, *, reaction_profile, remaining,
+                     standing, chain, chain_piao):
+    """Score one delayed HU-window discard in the configured value units."""
+    # A baotou wait is already tenpai for the next hero draw.  Running the
+    # generic second-draw tree here only explores impossible non-winning
+    # branches and routinely spends the continuation deadline; the exact
+    # public next-draw reward is the completed Stage-B fast path for this
+    # shape.
+    if is_baotou_wait(standing, len(g.melds[seat])):
+        evaluation = _expected_next_draw_reward(
+            g, seat, standing, len(g.melds[seat]), chain, chain_piao, False,
+            remaining, draw_delay=4,
+        )
+        return {
+            **evaluation,
+            "complete": True,
+            "value": evaluation["value"],
+            "total_reward_ev": evaluation["value"],
+            "immediate_reward_ev": evaluation["value"],
+            "continuation_reward_ev": 0.0,
+            "fallback_reason": None,
+            "continuation_nodes": 0,
+            "continuation": reaction_profile is not None,
+            "continuation_mode": "baotou_fast_path",
+        }
+    if reaction_profile is not None and reaction_profile.future_enabled:
+        evaluation = _legacy_kong.public_score_continuation(
+            g, seat, standing, len(g.melds[seat]), chain, chain_piao, False,
+            remaining, first_draw_delay=4,
+            post_discard_chain=_post_discard_chain,
+            node_budget=reaction_profile.continuation_node_budget,
+            soft_budget_ms=reaction_profile.continuation_soft_budget_ms,
+            hard_budget_ms=reaction_profile.continuation_hard_budget_ms,
+        )
+        return {
+            **evaluation,
+            "value": evaluation["total_reward_ev"],
+            "continuation": True,
+        }
+    evaluation = _expected_next_draw_reward(
+        g, seat, standing, len(g.melds[seat]), chain, chain_piao, False,
+        remaining, draw_delay=4,
+    )
+    return {
+        **evaluation,
+        "complete": True,
+        "value": evaluation["value"],
+        "total_reward_ev": evaluation["value"],
+        "immediate_reward_ev": evaluation["value"],
+        "continuation_reward_ev": 0.0,
+        "fallback_reason": None,
+        "continuation_nodes": 0,
+        "continuation": False,
+    }
+
+
+def _hu_window_candidate(g, seat, kind, action, *, reaction_profile,
+                         remaining, delay_factor):
+    """Build one serialisable delayed HU-window candidate."""
+    standing = list(g.hands[seat])
+    standing[action] -= 1
+    chain, chain_piao = _post_discard_chain(g, seat, action, standing)
+    score = _hu_window_score(
+        g, seat, action, reaction_profile=reaction_profile,
+        remaining=remaining, standing=standing,
+        chain=chain, chain_piao=chain_piao,
+    )
+    raw_value = float(score.get("value", score.get("total_reward_ev", 0.0)))
+    value = raw_value * float(delay_factor)
+    return {
+        "type": kind,
+        "action": action,
+        "tile": action,
+        "value": value,
+        "raw_value": raw_value,
+        "win_probability": float(score.get("win_probability", 0.0)),
+        "complete": bool(score.get("complete", True)),
+        "fallback_reason": score.get("fallback_reason"),
+        "wall_left": score.get("wall_left", g.live_wall_left()),
+        "continuation_nodes": int(score.get("continuation_nodes", 0) or 0),
+        "continuation_elapsed_ms": score.get("elapsed_ms"),
+        "delay_factor": float(delay_factor),
+        "standing": tuple(standing),
+        "chain": chain,
+        "chain_piao": chain_piao,
+    }
+
+
+def _hu_window_detail(profile, action, candidates, *, piao_candidates,
+                      next_draw_candidates, delay_reason, stage_b_entered,
+                      stage_b_complete, continuation_nodes):
+    """Return the common explanation payload for HU-window arbitration."""
+    selected = next((row for row in candidates
+                     if row.get("action") == action), None)
+    selected_type = selected.get("type") if selected else None
+    reason = (f"hu_window_{selected_type}" if selected_type
+              else "hu_window_arbitration")
+    detail = {
+        "reason": reason,
+        "decision_scope": "hu_window_arbitration",
+        "selected": action,
+        "selected_type": selected_type,
+        "candidates": candidates,
+        "hu_window_candidates": candidates,
+        "baotou_scope_entered": True,
+        "baotou_scope": {
+            "entered": True,
+            "piao_candidates": list(piao_candidates),
+            "baotou_next_draw_candidates": list(next_draw_candidates),
+        },
+        "piao_candidates": list(piao_candidates),
+        "baotou_next_draw_candidates": list(next_draw_candidates),
+        "immediate_hu_available": True,
+        "stage_b_entered": bool(stage_b_entered),
+        "stage_b_completed": bool(stage_b_complete),
+        "weighted_two_ply_entered": bool(stage_b_entered),
+        "continuation_nodes": int(continuation_nodes),
+        "continuation_fallback": bool(
+            any(row.get("fallback_reason") for row in candidates)),
+        "delay_penalty_reason": delay_reason,
+    }
+    if profile is not None:
+        detail.update({
+            "version": profile.version,
+            "profile": profile.name,
+            "profile_fingerprint": profile.fingerprint,
+            # Keep the training-label level vocabulary stable; the new
+            # action-root path is identified by decision_scope below.
+            "level": ("weighted-two-ply-v1" if stage_b_complete else
+                       "weighted-two-ply-partial"),
+            "complete": bool(stage_b_complete),
+            "mode": profile.mode,
+            "legacy_best": action,
+            "future_model": profile.model,
+            "search_phase": "two_ply" if stage_b_entered else None,
+            "search_metrics": {
+                "root_candidates": len(candidates),
+                "draw_nodes": int(continuation_nodes),
+                "stage_b_entered": int(bool(stage_b_entered)),
+            },
+            "fallback_reason": next((row.get("fallback_reason")
+                                     for row in candidates
+                                     if row.get("fallback_reason")), None),
+            "partial_accepted": False,
+        })
+    return detail
+
+
+def _choose_hu_window_action(g, seat, actions, *, discard_profile,
+                             reaction_profile, piao_candidates,
+                             next_draw_candidates, kongs):
+    """Compare immediate HU, piao, baotou-next-draw and self-kong roots."""
+    visible = _public_visible_counts(g, seat)
+    remaining = [max(0, 4 - count) for count in visible]
+    push_reason = _push_abort_reason(g, seat)
+    # X/Y/Z is a shared delay penalty.  It may reduce every delayed root to
+    # zero, but it cannot delete piao while allowing a non-W root to cover HU.
+    delay_factor = 0.0 if push_reason is not None else 1.0
+    roots = [{
+        "type": "immediate_hu",
+        "action": HU,
+        "tile": HU,
+        "value": _immediate_hu_reward(g, seat),
+        "raw_value": _immediate_hu_reward(g, seat),
+        "win_probability": 1.0,
+        "complete": True,
+        "fallback_reason": None,
+        "wall_left": g.live_wall_left(),
+        "continuation_nodes": 0,
+        "delay_factor": 1.0,
+    }]
+    for tile in piao_candidates:
+        roots.append(_hu_window_candidate(
+            g, seat, "piao_discard", tile,
+            reaction_profile=reaction_profile, remaining=remaining,
+            delay_factor=delay_factor))
+    for tile in next_draw_candidates:
+        roots.append(_hu_window_candidate(
+            g, seat, "baotou_next_draw", tile,
+            reaction_profile=reaction_profile, remaining=remaining,
+            delay_factor=delay_factor))
+
+    # Self-kong keeps the existing hard gates and score continuation.  Its
+    # baseline is the best shared standing available in this window.
+    baseline_tile = (piao_candidates[0] if piao_candidates else
+                     choose_discard(g, seat, profile=discard_profile))
+    baseline_standing = list(g.hands[seat])
+    baseline_standing[baseline_tile] -= 1
+    baseline_progress = _legacy_shape_progress(
+        baseline_standing, len(g.melds[seat]), visible,
+        include_baotou=False, piao_allowed=_piao_context_allowed(g, seat))
+    kong_results = [
+        result for result in (
+            _evaluate_self_kong(
+                g, seat, action, baseline_progress, visible,
+                v2=reaction_profile is not None,
+                reaction_profile=reaction_profile)
+            for action in kongs)
+        if result is not None
+    ]
+    for result in kong_results:
+        row = dict(result)
+        row.update({
+            "type": "self_kong",
+            "action": result["action"],
+            "raw_value": float(result.get("value", 0.0)),
+            "value": float(result.get("value", 0.0)) * delay_factor,
+            "complete": bool(result.get("continuation_complete", True)),
+            "fallback_reason": result.get("continuation_fallback_reason"),
+            "continuation_nodes": int(result.get("continuation_nodes", 0)
+                                       or 0),
+            "delay_factor": delay_factor,
+        })
+        roots.append(row)
+
+    continuation_nodes = sum(int(row.get("continuation_nodes", 0) or 0)
+                             for row in roots)
+    delayed = [row for row in roots if row["type"] != "immediate_hu"]
+    stage_b_entered = bool(reaction_profile is not None and delayed)
+    stage_b_complete = bool(
+        not delayed or all(row.get("complete", True) for row in delayed))
+    # Stable tie-breaks are explicit: value, win probability, immediate HU,
+    # then action number.  Candidate enumeration order cannot decide ties.
+    rank = {"immediate_hu": 0, "piao_discard": 1,
+            "baotou_next_draw": 2, "self_kong": 3}
+    selected = max(
+        roots,
+        key=lambda row: (float(row.get("value", 0.0)),
+                         float(row.get("win_probability", 0.0)),
+                         -rank.get(row.get("type"), 99),
+                         -int(row.get("action", 0))),
+    )
+    detail = _hu_window_detail(
+        discard_profile, selected["action"], roots,
+        piao_candidates=piao_candidates,
+        next_draw_candidates=next_draw_candidates,
+        delay_reason=push_reason,
+        stage_b_entered=stage_b_entered,
+        stage_b_complete=stage_b_complete,
+        continuation_nodes=continuation_nodes,
+    )
+    detail["selected_value"] = selected.get("value")
+    detail["selected_raw_value"] = selected.get("raw_value")
+    detail["selected_win_probability"] = selected.get("win_probability")
+    detail["kong_candidates"] = [
+        _kong_public_result(result) for result in kong_results]
+    return selected["action"], detail
 
 
 def _choose_draw_action(g, seat, actions=None, discard_profile=None,
@@ -810,91 +1065,58 @@ def _choose_draw_action(g, seat, actions=None, discard_profile=None,
             "wall_guard": PIAO_WALL_GUARD,
         }
     if HU in actions:
-        next_baotou_discard = _next_draw_baotou_discard(
-            g, seat, actions)
-        if next_baotou_discard is not None:
-            # 这是一手已形成的听任意牌，不是普通爆头推进机会。软收手
-            # (X/Y/Z) 不得盖过“下次摸牌全牌可胡”；只要求墙能轮回到自家。
-            ignored_gates = []
-            rounds = _push_rounds.get(g, {}).get(seat, 0)
-            if rounds >= BAOTOU_PUSH_MAX_ROUNDS:
-                ignored_gates.append("rounds")
-            if _max_opp_melds(g, seat) >= BAOTOU_PUSH_OPP_MELDS:
-                ignored_gates.append("opp_melds")
-            if wall_left < BAOTOU_PUSH_MIN_LIVE:
-                ignored_gates.append("live_wall")
-            return next_baotou_discard, {
-                "reason": "hu_baotou_next_draw_override",
-                "immediate_hu_available": True,
-                "selected_discard": next_baotou_discard,
-                "baotou_wait": True,
-                "wall_left": wall_left,
-                "wall_guard": PIAO_WALL_GUARD,
-                "ignored_push_gates": ignored_gates,
-            }
+        # The hard wall guard is the only HU-window early return.  Once it
+        # passes, build every legal delayed root before selecting one.
+        kongs = _kong_actions(actions)
+        hand = g.hands[seat]
+        locked = len(g.melds[seat])
+        piao_candidates = []
+        if W in actions and hand[W] > 0:
+            standing = list(hand)
+            standing[W] -= 1
+            if is_baotou_wait(standing, locked):
+                piao_candidates.append(W)
+        next_draw_candidates = list(_next_draw_baotou_discards(
+            g, seat, actions))
+        if piao_candidates or next_draw_candidates or kongs:
+            return _choose_hu_window_action(
+                g, seat, actions,
+                discard_profile=discard_profile,
+                reaction_profile=reaction_profile,
+                piao_candidates=tuple(piao_candidates),
+                next_draw_candidates=tuple(next_draw_candidates),
+                kongs=kongs,
+            )
+        return HU, {
+            "reason": "hu_legacy",
+            "immediate_hu_available": True,
+            "selected": HU,
+        }
+
     kongs = _kong_actions(actions)
     if not kongs:
-        if HU in actions:
-            return (W if _should_piao(g, seat) else HU), {
-                "reason": "hu_or_piao_legacy",
-            }
         tile, info = choose_discard(
             g, seat, return_info=True, profile=discard_profile)
         info.setdefault("reason", "discard_legacy")
         return tile, info
 
-    if HU in actions:
-        if _should_piao(g, seat):
-            baseline = W
-            baseline_progress_tile = W
-            standing = list(g.hands[seat])
-            standing[W] -= 1
-            chain, chain_piao = _post_discard_chain(
-                g, seat, W, standing)
-            visible = _public_visible_counts(g, seat)
-            remaining = [max(0, 4 - count) for count in visible]
-            if reaction_profile is None:
-                baseline_eval = _expected_next_draw_reward(
-                    g, seat, standing, len(g.melds[seat]), chain, chain_piao,
-                    False, remaining, draw_delay=4)
-                baseline_value = baseline_eval["value"]
-            else:
-                # Defer the expensive score continuation until at least one
-                # self-KONG passes its hard gate.  A rejected KONG has no
-                # score comparison to make and must not spend/abort the
-                # continuation budget (especially in offline fail-loud mode).
-                baseline_eval = None
-                baseline_value = None
-            baseline_reason = "piao_expected_value"
-        else:
-            baseline = HU
-            baseline_progress_tile = choose_discard(
-                g, seat, profile=discard_profile)
-            baseline_value = _immediate_hu_reward(g, seat)
-            baseline_eval = {
-                "complete": True,
-                "fallback_reason": None,
-                "total_reward_ev": baseline_value,
-            }
-            baseline_reason = "hu_legacy"
+    baseline = choose_discard(g, seat, profile=discard_profile)
+    baseline_progress_tile = baseline
+    standing = list(g.hands[seat])
+    standing[baseline] -= 1
+    chain, chain_piao = _post_discard_chain(
+        g, seat, baseline, standing)
+    visible = _public_visible_counts(g, seat)
+    remaining = [max(0, 4 - count) for count in visible]
+    if reaction_profile is None:
+        baseline_eval = _expected_next_draw_reward(
+            g, seat, standing, len(g.melds[seat]), chain, chain_piao,
+            False, remaining, draw_delay=4)
+        baseline_value = baseline_eval["value"]
     else:
-        baseline = choose_discard(g, seat, profile=discard_profile)
-        baseline_progress_tile = baseline
-        standing = list(g.hands[seat])
-        standing[baseline] -= 1
-        chain, chain_piao = _post_discard_chain(
-            g, seat, baseline, standing)
-        visible = _public_visible_counts(g, seat)
-        remaining = [max(0, 4 - count) for count in visible]
-        if reaction_profile is None:
-            baseline_eval = _expected_next_draw_reward(
-                g, seat, standing, len(g.melds[seat]), chain, chain_piao,
-                False, remaining, draw_delay=4)
-            baseline_value = baseline_eval["value"]
-        else:
-            baseline_eval = None
-            baseline_value = None
-        baseline_reason = "discard_expected_value"
+        baseline_eval = None
+        baseline_value = None
+    baseline_reason = "discard_expected_value"
 
     visible = _public_visible_counts(g, seat)
     remaining = [max(0, 4 - count) for count in visible]

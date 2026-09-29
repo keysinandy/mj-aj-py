@@ -141,7 +141,13 @@ class KongGuardTests(unittest.TestCase):
 
         action, detail = bot_mod._choose_draw_action(
             game, 0, game.legal_actions())
-        self.assertEqual(action, HU)
+        # The invalid add-kong remains in the root set but the valid
+        # baotou-next-draw root now competes with immediate HU.
+        self.assertEqual(action, 9)
+        self.assertEqual(detail["decision_scope"], "hu_window_arbitration")
+        self.assertFalse(next(row for row in detail["kong_candidates"]
+                             if row["action"] == KONG_ADD_BASE - 2)
+                         ["gate_passed"])
         self.assertEqual(detail["kong_candidates"][0]["rejection_reason"],
                          "tile_used_by_sequence")
 
@@ -345,7 +351,8 @@ class KongGuardTests(unittest.TestCase):
                 game, 0, (HU, KONG_CLOSED_BASE - 9),
                 reaction_profile=profile)
         self.assertEqual(action, HU)
-        self.assertEqual(detail["reason"], "hu_legacy")
+        self.assertEqual(detail["reason"], "hu_window_immediate_hu")
+        self.assertEqual(detail["decision_scope"], "hu_window_arbitration")
 
     def test_pong_kong_same_unit_requires_strict_kong_advantage(self):
         self.assertEqual(

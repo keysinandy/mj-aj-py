@@ -69,6 +69,48 @@ def test_index_online_games_time_filter_and_page_reads_metadata_only(tmp_path):
     assert rows[0]["started_at"] == base + 600
 
 
+def test_index_online_games_filters_whiteboard_rounds_before_paging(tmp_path):
+    games = tmp_path / "games"
+    day = games / "20260919"
+    day.mkdir(parents=True)
+    common = {
+        "seat": 0,
+        "dealer": 0,
+        "phase": "draw",
+        "turn": 0,
+        "discards": [[], [], [], []],
+        "melds": [[], [], [], []],
+    }
+    matching = [
+        {"type": "meta", "gid": "white", "ts": 100},
+        {"type": "snapshot", "seq": 0, "snap": {
+            **common, "round_no": 1, "my_hand": ["白", "白"],
+        }},
+        {"type": "snapshot", "seq": 1, "snap": {
+            **common, "round_no": 2, "my_hand": ["白"],
+        }},
+    ]
+    non_matching = [
+        {"type": "meta", "gid": "plain", "ts": 200},
+        {"type": "snapshot", "seq": 0, "snap": {
+            **common, "round_no": 1, "my_hand": ["白"],
+        }},
+    ]
+    (day / "token_white.jsonl").write_text(
+        "\n".join(json.dumps(item, ensure_ascii=False) for item in matching)
+        + "\n", encoding="utf-8")
+    (day / "token_plain.jsonl").write_text(
+        "\n".join(json.dumps(item, ensure_ascii=False) for item in non_matching)
+        + "\n", encoding="utf-8")
+
+    rows = index_online_games(str(games), min_whiteboards=2,
+                              offset=0, limit=1)
+    assert [row["gid"] for row in rows] == ["white"]
+    assert rows[0]["whiteboard_rounds"] == [{
+        "ordinal": 1, "round_no": 1, "max_my_whiteboards": 2,
+    }]
+
+
 def test_index_tolerates_corrupt(tmp_path):
     gdir = os.path.join(tmp_path, "20260918")
     os.makedirs(gdir, exist_ok=True)

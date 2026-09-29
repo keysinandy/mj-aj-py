@@ -2,7 +2,7 @@
 
 挂载于服务 Router,供前端/CLI 消费:
 - GET  /api/records/local    本地批次两级浏览(batch → game)
-- GET  /api/records/online   线上日志(日期 → gid,支持时间范围分页)
+- GET  /api/records/online   线上日志(日期 → gid,支持时间范围、白板数筛选和分页)
 - POST /api/strategy/snapshot 当前策略选择的服务端配置预览
 - POST /api/records/local/frames  按 batch_id+game 取统一 ReplaySession/帧
 - GET  /api/seeds            种子库列表
@@ -219,6 +219,9 @@ def api_router(arena_root=None, games_root=None, seed_root=None,
         end_ts = _query_time(
             _query_value(query, "end_ts", "end", "to"),
             "end", end=True)
+        min_whiteboards = _query_int(
+            query, ("min_whiteboards", "whiteboards_min"), default=None,
+            minimum=1, maximum=4)
         if start_ts is not None and end_ts is not None and start_ts > end_ts:
             raise ValidationError("start must be before or equal to end")
         limit = _query_int(
@@ -232,6 +235,7 @@ def api_router(arena_root=None, games_root=None, seed_root=None,
         # 多取一条只用于判断是否还有下一页，响应本身始终受 limit 限制。
         rows = index_online_games(
             games_root, start_ts=start_ts, end_ts=end_ts,
+            min_whiteboards=min_whiteboards,
             offset=offset, limit=limit + 1)
         has_more = len(rows) > limit
         games = rows[:limit]

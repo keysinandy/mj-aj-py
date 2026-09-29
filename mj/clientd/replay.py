@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+import json
+
 from .. import logview
 from ..game import Game
 from ..platform.mirror import Mirror, MirrorInconsistent
@@ -25,11 +27,23 @@ from ..platform.proto import (
 from .wait_hints import PublicMaterialError, analyze_discard_hints
 
 __all__ = ["local_frames", "local_session", "online_frames",
-           "online_session", "DEAD_WALL_CONST"]
+           "online_session", "scan_online_whiteboard_rounds",
+           "DEAD_WALL_CONST"]
 
 # 与 game.py DEAD_WALL 一致(4家 × 13 + ... → 活墙起算);墙数口径 84 - pops
 DEAD_WALL_CONST = 14
 _WALL_TOTAL = 84
+WHITEBOARD_TILE = 33
+
+
+def _whiteboard_count(hand):
+    """Return the number of white dragons in a numeric visible hand."""
+    if not isinstance(hand, (list, tuple)):
+        return 0
+    if (len(hand) == 34 and
+            all(type(value) is int and 0 <= value <= 4 for value in hand)):
+        return int(hand[WHITEBOARD_TILE])
+    return sum(1 for tile in hand if type(tile) is int and tile == WHITEBOARD_TILE)
 
 
 def _meld_to_json(entry, from_seat=None):
@@ -660,6 +674,86 @@ def online_frames(records):
     return builder.frames, builder.verifications
 
 
+def scan_online_whiteboard_rounds(path, minimum=2):
+    """Scan an online JSONL for rounds where our hand has many whiteboards.
+
+    The index endpoint needs this information before a user opens a game.  It
+    therefore scans the lightweight snapshot and draw/discard records instead
+    of constructing the full replay session.  A full session remains the
+    authoritative source for the round metadata after the user opens a game.
+    """
+    try:
+        threshold = int(minimum)
+    except (TypeError, ValueError):
+        return []
+    if threshold < 1:
+        return []
+
+    segments = []
+    current = None
+    my_seat = None
+    whiteboards = 0
+
+    def raw_whiteboard_count(hand):
+        if not isinstance(hand, (list, tuple)):
+            return 0
+        if (len(hand) == 34 and
+                all(type(value) is int and 0 <= value <= 4
+                    for value in hand)):
+            return int(hand[WHITEBOARD_TILE])
+        return sum(1 for tile in hand if tile in ("白", "w", WHITEBOARD_TILE))
+
+    def update_segment(round_no, count):
+        nonlocal current
+        if type(round_no) is not int or round_no < 0:
+            round_no = current["round_no"] if current else 1
+        if current is None or current["round_no"] != round_no:
+            current = {
+                "ordinal": len(segments) + 1,
+                "round_no": round_no,
+                "max_my_whiteboards": 0,
+            }
+            segments.append(current)
+        current["max_my_whiteboards"] = max(
+            current["max_my_whiteboards"], count)
+
+    try:
+        stream = open(path, "r", encoding="utf-8")
+    except OSError:
+        return []
+    with stream:
+        for line in stream:
+            try:
+                record = json.loads(line)
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(record, dict):
+                continue
+            if record.get("type") == "snapshot":
+                snap = record.get("snap") or {}
+                if type(snap.get("seat")) is int:
+                    my_seat = snap.get("seat")
+                whiteboards = raw_whiteboard_count(snap.get("my_hand"))
+                update_segment(snap.get("round_no"), whiteboards)
+                continue
+            if record.get("type") != "events" or my_seat is None:
+                continue
+            for event in record.get("events") or ():
+                if not isinstance(event, dict) or event.get("seat") != my_seat:
+                    continue
+                tile = event.get("tile")
+                if event.get("type") == EV_DRAWN and tile in (
+                        "白", "w", WHITEBOARD_TILE):
+                    whiteboards += 1
+                elif event.get("type") == EV_DISCARDED and tile in (
+                        "白", "w", WHITEBOARD_TILE):
+                    whiteboards = max(0, whiteboards - 1)
+                update_segment(current["round_no"] if current else 1,
+                               whiteboards)
+    return [segment for segment in segments
+            if segment["max_my_whiteboards"] >= threshold]
+
+
 def _session_from_frames(frames, *, source, session_id=None, path=None,
                          verifications=None, strategy=None, evaluator=None,
                          model_name=None, strategy_snapshot=None,
@@ -741,6 +835,11 @@ def _rounds_from_steps(steps):
         seqs = [step.get("seq_no") for step in segment
                 if step.get("seq_no") is not None]
         final_state = segment[-1].get("state") or {}
+        max_my_whiteboards = max(
+            (_whiteboard_count((step.get("state") or {}).get("my_hand"))
+             for step in segment),
+            default=0,
+        )
         winners = final_state.get("winner_seats") or []
         winners = sorted({seat for seat in winners
                           if type(seat) is int and 0 <= seat < 4})
@@ -756,6 +855,8 @@ def _rounds_from_steps(steps):
             "end_seq_no": seqs[-1] if seqs else None,
             "winner_seats": winners,
             "ended": bool(final_state.get("round_ended", False)),
+            "max_my_whiteboards": max_my_whiteboards,
+            "whiteboard_match": max_my_whiteboards >= 2,
         })
     return rounds
 

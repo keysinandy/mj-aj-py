@@ -77,4 +77,27 @@ describe("RecordsBrowser", () => {
       expect.objectContaining({ offset: 0, limit: 20, startTs: expect.any(Number), endTs: expect.any(Number) }),
     ));
   });
+
+  it("白板筛选把命中的 round 展示在对局列表", async () => {
+    vi.mocked(api.onlineGames).mockResolvedValue({
+      games: [{
+        date: "2026-09-19", gid: "white-game", path: "x/white-game.jsonl",
+        name: "tok_white-game", whiteboard_rounds: [{
+          ordinal: 4, round_no: 4, max_my_whiteboards: 3,
+        }],
+      }],
+      has_more: false,
+    });
+    render(<RecordsBrowser onOpenLocal={vi.fn()} onOpenOnline={vi.fn()} />);
+    await screen.findByText("2026-09-19");
+    fireEvent.click(screen.getByLabelText("我方白板至少 2 张"));
+    fireEvent.click(screen.getByRole("button", { name: "搜索" }));
+    await waitFor(() => expect(api.onlineGames).toHaveBeenLastCalledWith(
+      expect.objectContaining({ offset: 0, limit: 20, minWhiteboards: 2 }),
+    ));
+    fireEvent.click(screen.getByRole("button", { name: /2026-09-19/ }));
+    expect(await screen.findByTestId("whiteboard-match")).toHaveTextContent(
+      "白板≥2：第4场(3张)",
+    );
+  });
 });

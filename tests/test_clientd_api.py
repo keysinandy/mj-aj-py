@@ -169,6 +169,36 @@ def test_online_index_query_is_time_filtered_and_paged(tmp_path):
     assert body["next_offset"] == 1
 
 
+def test_online_index_query_filters_min_whiteboards(tmp_path):
+    games = tmp_path / "games"
+    day = games / "20260919"
+    day.mkdir(parents=True)
+    base = {
+        "seat": 0,
+        "dealer": 0,
+        "phase": "draw",
+        "turn": 0,
+        "discards": [[], [], [], []],
+        "melds": [[], [], [], []],
+    }
+    records = [
+        {"type": "meta", "gid": "white", "ts": 100},
+        {"type": "snapshot", "seq": 0, "snap": {
+            **base, "round_no": 3, "my_hand": ["白", "白"],
+        }},
+    ]
+    (day / "token_white.jsonl").write_text(
+        "\n".join(json.dumps(item, ensure_ascii=False) for item in records)
+        + "\n", encoding="utf-8")
+    router = api_router(games_root=str(games), arena_root=str(tmp_path / "arena"),
+                        seed_root=str(tmp_path / "seeds"))
+    status, body = router.dispatch(Request(
+        "GET", "/api/records/online?min_whiteboards=2&limit=1"))
+    assert status == 200
+    assert [game["gid"] for game in body["games"]] == ["white"]
+    assert body["games"][0]["whiteboard_rounds"][0]["round_no"] == 3
+
+
 def test_frames_rejects_traversal_and_bad_game(tmp_path):
     svc, arena, _ = _start(tmp_path)
     batch_id, _ = _write_demo_game(str(arena))

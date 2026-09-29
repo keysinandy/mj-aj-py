@@ -32,6 +32,8 @@ export interface ReplayRound {
   endSeqNo: number | null;
   winnerSeats: number[];
   ended: boolean;
+  maxMyWhiteboards: number;
+  whiteboardMatch: boolean;
 }
 
 export interface ReplaySessionMetadata {
@@ -82,6 +84,8 @@ export interface BackendReplayRound {
   end_seq_no?: number | null;
   winner_seats?: number[];
   ended?: boolean;
+  max_my_whiteboards?: number;
+  whiteboard_match?: boolean;
 }
 
 export interface BackendSession {
@@ -133,6 +137,14 @@ function validSeatList(value: unknown): number[] {
     : [];
 }
 
+function whiteboardCount(hand: number[] | null | undefined): number {
+  if (!Array.isArray(hand)) return 0;
+  if (hand.length === 34 && hand.every((value) => Number.isInteger(value))) {
+    return Math.max(0, Number(hand[33] ?? 0));
+  }
+  return hand.filter((tile) => tile === 33).length;
+}
+
 /** Derive stable round runs for frames and older sessions without metadata. */
 export function roundsFromSteps(steps: ReplayStep[]): ReplayRound[] {
   if (steps.length === 0) return [];
@@ -160,6 +172,9 @@ export function roundsFromSteps(steps: ReplayStep[]): ReplayRound[] {
       (seq): seq is number => seq !== null && Number.isFinite(seq),
     );
     const finalFrame = segment[segment.length - 1].state;
+    const maxMyWhiteboards = segment.reduce(
+      (max, step) => Math.max(max, whiteboardCount(step.state.my_hand)), 0,
+    );
     return {
       roundId: `r${ordinal}-n${roundNo}-s${seqs[0] ?? first}`,
       ordinal,
@@ -170,6 +185,8 @@ export function roundsFromSteps(steps: ReplayStep[]): ReplayRound[] {
       endSeqNo: seqs[seqs.length - 1] ?? null,
       winnerSeats: validSeatList(finalFrame.winner_seats),
       ended: Boolean(finalFrame.round_ended),
+      maxMyWhiteboards,
+      whiteboardMatch: maxMyWhiteboards >= 2,
     };
   });
 }
@@ -192,6 +209,12 @@ function roundsFromBackend(
       || startStepIndex! < 0 || endStepIndex! < startStepIndex!) return null;
     const startSeqNo = Number.isFinite(raw.start_seq_no) ? raw.start_seq_no! : null;
     const endSeqNo = Number.isFinite(raw.end_seq_no) ? raw.end_seq_no! : null;
+    const segment = steps.slice(startStepIndex!, endStepIndex! + 1);
+    const maxMyWhiteboards = Number.isFinite(raw.max_my_whiteboards)
+      ? Math.max(0, Math.round(raw.max_my_whiteboards!))
+      : segment.reduce(
+        (max, step) => Math.max(max, whiteboardCount(step.state.my_hand)), 0,
+      );
     return {
       roundId: raw.round_id || `r${ordinal}-n${roundNo}-s${startSeqNo ?? startStepIndex}`,
       ordinal,
@@ -202,6 +225,8 @@ function roundsFromBackend(
       endSeqNo,
       winnerSeats: validSeatList(raw.winner_seats),
       ended: Boolean(raw.ended),
+      maxMyWhiteboards,
+      whiteboardMatch: raw.whiteboard_match ?? maxMyWhiteboards >= 2,
     };
   });
   const valid = rounds.every((round): round is ReplayRound => round !== null)

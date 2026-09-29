@@ -114,6 +114,35 @@ def test_nonconsecutive_duplicate_round_number_stays_separate():
     assert rounds[4]["start_step_index"] == 4
 
 
+def test_round_metadata_marks_peak_whiteboard_count():
+    records = [
+        {"type": "meta"},
+        {
+            "type": "snapshot", "seq": 10, "snap": {
+                "seat": 0, "dealer": 0, "round_no": 1,
+                "phase": "draw", "turn": 0,
+                "my_hand": ["白", "白"],
+                "discards": [[], [], [], []],
+                "melds": [[], [], [], []],
+            },
+        },
+        {
+            "type": "snapshot", "seq": 20, "snap": {
+                "seat": 0, "dealer": 0, "round_no": 2,
+                "phase": "draw", "turn": 0,
+                "my_hand": ["白"],
+                "discards": [[], [], [], []],
+                "melds": [[], [], [], []],
+            },
+        },
+    ]
+    rounds = online_session(records)["metadata"]["rounds"]
+    assert [(item["round_no"], item["max_my_whiteboards"],
+             item["whiteboard_match"]) for item in rounds] == [
+                 (1, 2, True), (2, 1, False),
+             ]
+
+
 def test_local_draw_marker_is_removed_after_discard():
     from mj.game import Game
 

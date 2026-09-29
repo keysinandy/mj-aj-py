@@ -294,6 +294,8 @@ body { margin: 0; background: var(--page-bg); color: var(--text-primary); font-f
   background: var(--surface-subtle);
 }
 .online-filters label { display: flex; min-width: 205px; flex: 1 1 205px; flex-direction: column; gap: 0.35rem; color: var(--text-secondary); font-size: 0.75rem; font-weight: 600; }
+.online-filters .online-checkbox-filter { min-width: auto; flex: 0 0 auto; flex-direction: row; align-items: center; gap: 0.45rem; padding-bottom: 0.55rem; white-space: nowrap; }
+.online-checkbox-filter input { min-height: auto; width: 1rem; height: 1rem; }
 .online-filters input {
   min-height: 2.15rem;
   border: 1px solid var(--border-soft);
@@ -336,6 +338,7 @@ body { margin: 0; background: var(--page-bg); color: var(--text-primary); font-f
 .online-log-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .online-log-main span { color: var(--text-secondary); font-family: ui-monospace, monospace; font-size: 0.73rem; }
 .record-strategy { color: var(--nav-active); font-family: inherit; font-size: 0.72rem; font-weight: 650; }
+.record-whiteboard-match { color: var(--nav-active) !important; font-family: inherit !important; font-size: 0.72rem !important; font-weight: 700; }
 .record-open-online { white-space: nowrap; }
 .load-more-button { display: block; margin: 0.9rem auto 0; border: 1px solid var(--border-soft); background: var(--surface); color: var(--nav-active); }
 button:focus-visible, input:focus-visible { outline: 2px solid var(--nav-active); outline-offset: 2px; }

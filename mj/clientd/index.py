@@ -5,7 +5,9 @@
 - 线上日志:扫描 <games_root>/<日期>/<token>_<gid>.jsonl → {date, gid, path,
   strategy, evaluator}。
 
-线上索引只读取每个 JSONL 的第一条记录作为开始时间，不读取完整日志正文。
+未启用内容筛选时，线上索引只读取每个 JSONL 的第一条记录作为开始时间；
+启用白板筛选时，索引会额外流式扫描日志中的快照和公开事件，仍不把正文
+整体加载进内存。
 调用方可传时间范围和 offset/limit，服务层据此只向客户端返回一页结果。
 
 只读消费磁盘目录,不迁移、不改名既有文件,与 Recorder/竞技场现有布局兼容;
@@ -127,13 +129,16 @@ def _day_in_range(day, start_ts, end_ts):
 
 
 def index_online_games(root=None, gid=None, *, record_id=None,
-                       start_ts=None, end_ts=None, offset=0, limit=None):
+                       start_ts=None, end_ts=None, min_whiteboards=None,
+                       offset=0, limit=None):
     """返回线上日志索引，可按 gid、record_id 或时间范围筛选分页。
 
     ``start_ts``/``end_ts`` 是 epoch 秒，时间范围为闭区间；结果先按
     ``started_at`` 倒序，再应用 ``offset``/``limit``，这样跨日期和跨文件
     分页仍然稳定。``limit`` 为 ``None`` 时返回全部匹配项。
-    索引阶段最多读取每个文件的第一条 JSON，不会把整份 JSONL 加载进内存。
+    ``min_whiteboards`` 不为空时，仅保留某个 round 内我方可见白板数达到
+    该阈值的对局，并返回命中的 round 元数据；筛选发生在排序和分页之前。
+    未启用白板筛选时，索引阶段最多读取每个文件的第一条 JSON。
     """
     root = root or DEFAULT_GAMES_ROOT
     if not os.path.isdir(root):
@@ -143,6 +148,10 @@ def index_online_games(root=None, gid=None, *, record_id=None,
         limit = max(0, int(limit))
         if limit == 0:
             return []
+    if min_whiteboards is not None:
+        min_whiteboards = int(min_whiteboards)
+        if min_whiteboards < 1 or min_whiteboards > 4:
+            raise ValueError("min_whiteboards must be between 1 and 4")
     matches = []
     for day in sorted(os.listdir(root), reverse=True):
         day_dir = os.path.join(root, day)
@@ -169,9 +178,18 @@ def index_online_games(root=None, gid=None, *, record_id=None,
             if end_ts is not None and (
                     started_at is None or started_at > end_ts):
                 continue
+            whiteboard_rounds = None
+            if min_whiteboards is not None:
+                from .replay import scan_online_whiteboard_rounds
+                whiteboard_rounds = scan_online_whiteboard_rounds(
+                    path, min_whiteboards)
+                if not whiteboard_rounds:
+                    continue
             entry = {"date": day, "gid": gid_part, "path": path,
                      "name": stem, "record_id": f"{day}~{stem}",
                      "started_at": started_at}
+            if whiteboard_rounds is not None:
+                entry["whiteboard_rounds"] = whiteboard_rounds
             if isinstance(first, dict):
                 for key in ("strategy", "evaluator", "model_name"):
                     if first.get(key) is not None:

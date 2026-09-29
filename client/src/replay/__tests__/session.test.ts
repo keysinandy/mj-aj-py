@@ -72,6 +72,9 @@ describe("ReplaySession 与 ReplayEngine", () => {
     ]);
     expect(session.metadata.rounds.map((round) => [round.startStepIndex, round.endStepIndex]))
       .toEqual([[0, 0], [1, 1], [2, 2]]);
+    expect(session.metadata.rounds.every((round) =>
+      round.maxMyWhiteboards === 0 && round.whiteboardMatch === false,
+    )).toBe(true);
   });
 
   it("读取后端 snake_case round metadata,旧 session 缺失时兼容派生", () => {
