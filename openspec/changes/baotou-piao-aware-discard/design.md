@@ -151,8 +151,9 @@ immediate HU 作为确定性基线；`piao_discard` 与 `baotou_next_draw` 进�
 `is_baotou_wait` 为真就跳过 weighted two-ply / Stage B。
 
 这里比较的是**动作价值**而不是“8 番数字天然大于 4 番所以无条件弃胡”。番型倍率必须进入
-候选价值，但延迟一轮的被抢胡风险、剩余墙量、可摸概率也必须保留。换言之，`wall >= 6`
-只开放财飘/爆头候选，不等价于选择它们。
+候选价值。普通延迟候选仍保留风险惩罚；但 D4g 定义的 Guaranteed Next-Draw HU 是窄化特例：
+其“下一次英雄摸牌条件下必胡”已经由公开未见牌质量精确证明，因此 X/Y/Z 软收手不得再把
+候选直接乘成 0。`wall >= 6` 只开放延迟候选，不等价于选择它们。
 
 ### D4c. 回放边界与审计
 
@@ -270,6 +271,67 @@ Piao Search 快特征（每决策最多 34 个结构节点）。只有在性能�
 
 
 
+### D4g. Guaranteed Next-Draw HU：下一次自摸必胡时的 candidate-specific delay policy
+
+HU-window 的 delay penalty MUST 从“全局一个 `delay_factor`”改成候选级策略。定义延迟候选
+`C` 为 **Guaranteed Next-Draw HU**，当且仅当：
+
+1. `C` 来自当前 `legal_actions()` 的合法弃牌；
+2. 弃后站立手 `standing` 满足 `is_baotou_wait(standing, locked)`；
+3. 使用与 `_expected_next_draw_reward` 相同的公开 visible/remaining 口径，
+   所有仍有质量的下一摸都可合法胡，即 `winning_mass == total_unseen`
+   （等价诊断 `win_probability == 1.0`）；
+4. 当前 HU-window 已通过 `PIAO_WALL_GUARD` 硬墙门；
+5. continuation 没有 fallback/partial contamination。
+
+对该类候选：
+
+- `rounds` MUST NOT 将其价值归零；
+- `opp_melds` MUST NOT 将其价值归零；
+- `BAOTOU_PUSH_MIN_LIVE`（Z 软门）MUST NOT 将其价值归零；
+- `delay_factor` SHALL 为 1.0，或者使用语义等价的“不应用 X/Y/Z 软惩罚”实现；
+- `live_wall_left() < PIAO_WALL_GUARD` 仍是唯一硬墙短路：此时 immediate HU 直接胜出；
+- 该候选仍必须和 immediate HU、其它延迟候选、自杠按 value 比较，不能因为
+  `guaranteed_next_draw_hu=true` 就无条件胜出。
+
+这里的“guaranteed”只表示“**如果轮到自己下一次摸牌，则所有公开未见牌质量都可胡**”，
+不是对整局一定存活到下一摸的概率声明。当前版本选择用窄化特例移除过度悲观的
+`opp_melds -> 0` 硬归零，并要求用配对 A/B 验证收益；若后续引入校准后的
+`P(survive_to_next_self_draw)`，应作为新的连续风险模型替代，而不是恢复二值归零。
+
+#### seq351 回放验收
+
+seq351 作为强制回归案例：
+
+- 当前 HU 合法，立即胡为七对 2 番，结算价值 20；
+- 无财飘候选；
+- 弃 8万 / 6万 / 8筒后可形成全牌爆头听，因此这些 `baotou_next_draw` 候选满足
+  Guaranteed Next-Draw HU 的结构条件；
+- 当前实现的 next-draw raw value 约 41.5（以真实回放/当前计分器输出为准）；
+- 即使 `_push_abort_reason == "opp_melds"`，这些候选也不得被乘为 0；
+- 最终仍按 `raw/effective value` 与 immediate HU=20 比较。
+
+该案例还必须验证高价值摸牌自然进入 raw EV：如果下一摸 8筒使该分支形成豪华七对子，
+`hand_multiplier + settle` MUST 按真实番型计入该 draw 的 reward；MUST NOT 再人为叠加
+豪华七对子 bonus。
+
+#### 审计字段
+
+Guaranteed candidate 至少记录：
+
+```
+guaranteed_next_draw_hu = true
+conditional_next_draw_win_probability = 1.0
+delay_policy = "guaranteed_next_draw"
+delay_factor = 1.0
+ignored_delay_reasons = ["opp_melds", "rounds", "live_wall_soft"]  # 仅列实际触发项
+raw_value = ...
+effective_value = ...
+```
+
+`delay_penalty_reason` 不得继续把已忽略的 `opp_melds` 记录成实际生效的归零原因；
+可以保留 `observed_delay_reasons` 与 `ignored_delay_reasons` 分开审计。
+
 ### D5. 测试与验收
 
 - 单测：新排序用例（tier0 胜出 / tier1 组合进度排序 / 不持财神回归 / 墙 5 直接胡 /
@@ -279,6 +341,8 @@ Piao Search 快特征（每决策最多 34 个结构节点）。只有在性能�
   提前返回，并检查 Stage B/continuation 与审计字段。
 - Piao Search：验证 `piao_draw_mask/piao_live/piao_ratio`、horizon=1 禁止搜索、horizon≥2 仅开放候选、
   mask 缓存不受 visible 变化污染；快特征性能单独 benchmark。
+- Guaranteed Next-Draw HU：seq351 验证 `opp_melds`/rounds/Z 软门不再把全牌爆头候选归零，
+  只保留硬墙门；验证 8筒等豪华七对子升级由真实 scoring 自然进入 raw EV。
 - 随机差分：`baotou_ukeire` 剪枝前后等值（随机手牌 × locked 档）。
 - 评估：新旧 bot `fair_match` 对弈（192 局口径）确认无胜率/均分回退；
   线上先 match_runner 冒烟（必须走 `Mirror.build_game`），再进锦标赛。

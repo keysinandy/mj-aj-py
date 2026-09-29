@@ -25,6 +25,13 @@ legacy 启发式 bot 的舍牌 tie-break 用 `ukeire` 度量进度，而 ukeire 
   爆头听”直接覆盖当前 HU。策略 MUST 先完整构造 immediate HU、弃白财飘、弃非白进入下一摸
   爆头听、自杠等合法 action-root，再用当前策略的 continuation / two-ply 价值统一比较；只有
   活墙 < 6 仍保留直接 HU 的硬短路。
+- **Guaranteed Next-Draw HU 特例**：若某个延迟候选弃后已是全牌爆头听，且按当前公开未见牌
+  质量下一次自己的摸牌 100% 可胡，则它不再受 `rounds`、`opp_melds`、
+  `BAOTOU_PUSH_MIN_LIVE` 等 X/Y/Z 软收手归零。只保留 `PIAO_WALL_GUARD` 硬墙门，随后用真实
+  next-draw raw EV 与 immediate HU 比较。该特例同样适用于满足条件的 `piao_discard`。
+- **高价值摸牌自然计分**：Guaranteed Next-Draw HU 的 raw EV 必须逐种下一摸继续调用现有
+  `hand_multiplier + settle`；例如下一摸形成豪华七对子时自然提高该摸牌分支价值，不得再叠加
+  人工 `luxury_bonus` 造成双算。
 - **财飘候选不得被非白爆头提前截断**：HU 窗口枚举弃牌时财神（白板）与非财神均从
   `legal_actions()` 出发；只要弃白后仍为全牌爆头听，白板 MUST 作为财飘候选进入同一比较，
   `_next_draw_baotou_discard()` 一类 helper 不得在候选集建立完成前提前返回。
@@ -62,7 +69,7 @@ legacy 启发式 bot 的舍牌 tie-break 用 `ukeire` 度量进度，而 ukeire 
 ## Impact
 
 - `mj/bot.py`：`choose_discard`、`_should_piao`、`choose_action` 的 HU/飘基线分支，以及
-  Piao Search 快门、horizon 与候选解释。
+  Piao Search 快门、horizon、HU-window candidate-specific delay policy 与候选解释。
 - `mj/shanten.py` / `rust/`：可新增独立 `piao_draw_mask`/批量结构算子；不得修改通用
   `ukeire` 契约。Python 实现只有在性能门通过时才可作为线上路径，否则使用 Rust 或关闭该档。
 - `mj/hand_eval.py`：仅 `budget_fallback_legacy` 回退路径经 `choose_discard` 间接继承新排序，

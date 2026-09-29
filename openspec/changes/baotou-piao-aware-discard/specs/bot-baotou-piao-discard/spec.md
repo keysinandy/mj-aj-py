@@ -258,13 +258,13 @@ MUST NOT 在候选集建立完成前提前返回。
 
 当活墙达到硬门且存在 `piao_discard` 或 `baotou_next_draw` 时，当前 evaluator 的
 continuation / two-ply 评价 MUST 真正执行，不得以“弃后已全牌爆头听”为理由跳过。
-`immediate_hu` SHALL 作为确定性基线；财飘/下一摸爆头的倍率收益、下一次轮到本家的概率、
-剩余墙量与被他家先胡的风险 SHALL 保留在延迟动作价值中。
+`immediate_hu` SHALL 作为确定性基线。普通延迟候选保留倍率收益、剩余墙量与风险惩罚；
+但后文 Guaranteed Next-Draw HU requirement 明确定义的候选 SHALL 使用 candidate-specific
+soft-delay policy，不得再被 X/Y/Z 二值归零。
 
 `wall >= PIAO_WALL_GUARD` 只表示延迟胡候选可参与比较，MUST NOT 被解释为“必须过胡”。
-X/Y/Z 自适应收手也 MUST NOT 形成非对称早退：不能删除财飘候选的同时让非白爆头候选
-忽略同一软门直接覆盖 HU。若 X/Y/Z 继续参与 HU-window，MUST 以所有延迟胡候选共享的
-评价输入/惩罚形式使用。
+X/Y/Z 自适应收手也 MUST NOT 形成非对称早退；对于普通延迟候选应一致应用，对于
+Guaranteed Next-Draw HU 则按其专用规则一致忽略软门。
 
 #### Scenario: 4 番立即胡与 8 番财飘进入同一价值层
 
@@ -278,6 +278,77 @@ X/Y/Z 自适应收手也 MUST NOT 形成非对称早退：不能删除财飘候�
 - **WHEN** legacyV2/支持 Stage B 的 evaluator 在 HU 窗口同时存在 immediate HU 与延迟胡候选
 - **THEN** 若该 profile 按正常规则应进入 Stage B/continuation，则 MUST 实际进入并记录；
   `hu_baotou_next_draw_override` MUST NOT 作为提前返回原因
+
+### Requirement: 下一次自摸必胡的爆头候选忽略 X/Y/Z 软收手归零
+
+HU-window MUST 对每个延迟候选独立决定 delay policy，不得再使用一个共享
+`delay_factor = 0 if _push_abort_reason else 1` 覆盖所有候选。
+
+一个 `piao_discard` 或 `baotou_next_draw` 候选 SHALL 标记
+`guaranteed_next_draw_hu=true`，当：
+
+- 弃牌来自当前 `legal_actions()`；
+- 弃后 `is_baotou_wait(standing, locked)` 为真；
+- 按当前公开 visible/remaining 口径，所有仍可能摸到的牌都能合法胡，即
+  `winning_mass == total_unseen` / `win_probability == 1.0`；
+- HU-window 已通过 `PIAO_WALL_GUARD`；
+- 该候选评价完整且无 fallback。
+
+对 `guaranteed_next_draw_hu=true` 的候选，推进轮数 X、对手副露 Y 和
+`BAOTOU_PUSH_MIN_LIVE` Z 均 MUST NOT 将 candidate value 归零；其有效值 SHALL 保留
+完整 next-draw raw value（等价 `delay_factor=1.0`）。唯一继续保留的活墙硬门是
+`live_wall_left() < PIAO_WALL_GUARD` 时直接选择 immediate HU。
+
+该特例不代表无条件过 HU：Guaranteed candidate 仍 MUST 与 immediate HU 和其它根候选比较，
+只有动作价值更高时才选择延迟路线。
+
+#### Scenario: seq351 对手副露不得把必爆头候选归零
+
+- **WHEN** seq351 当前 HU 合法且 immediate HU 为七对 2 番、结算价值 20，无财飘候选；
+  弃 8万 / 6万 / 8筒后均形成全牌爆头听，且 next-draw `win_probability=1.0`
+- **THEN** 即使 `_push_abort_reason` 为 `opp_melds`，上述候选 MUST 保持
+  `delay_factor=1.0`（或等价不应用软惩罚），不得从 raw value 约 41.5 变为 0；
+  最终按有效 value 与 immediate HU=20 比较
+
+#### Scenario: rounds 与 Z 软墙门同样不归零
+
+- **WHEN** Guaranteed Next-Draw HU 候选同时触发推进轮数上限或
+  `live_wall_left() < BAOTOU_PUSH_MIN_LIVE`，但仍满足
+  `live_wall_left() >= PIAO_WALL_GUARD`
+- **THEN** rounds/Z 仅作为观察诊断，不得把该候选归零
+
+#### Scenario: 硬墙门仍直接胡
+
+- **WHEN** 当前 HU 合法且 `live_wall_left() < PIAO_WALL_GUARD`
+- **THEN** immediate HU 直接胜出，不因 Guaranteed Next-Draw HU 特例继续等待
+
+### Requirement: Guaranteed Next-Draw HU 的高价值摸牌由真实计分自然进入 EV
+
+Guaranteed candidate 的 raw EV SHALL 沿用当前逐牌 next-draw 评价：对每个有剩余质量的
+下一摸构造 final hand，并调用现有 `hand_multiplier + settle`。不得为豪华七对子、
+更高爆头番型等再增加手写 bonus。
+
+#### Scenario: seq351 摸 8筒升级豪华七对子
+
+- **WHEN** seq351 某个 Guaranteed Next-Draw HU 候选的下一摸为 8筒，且最终牌型按规则构成
+  豪华七对子
+- **THEN** 该 draw 的 reward MUST 由 `hand_multiplier + settle` 返回真实更高价值，并自然
+  提高 candidate raw EV；MUST NOT 再叠加 `luxury_bonus`
+
+### Requirement: Guaranteed Next-Draw HU 审计必须区分观察到的风险与实际应用的惩罚
+
+候选解释 MUST 至少输出
+`guaranteed_next_draw_hu`、`conditional_next_draw_win_probability`、
+`delay_policy`、`delay_factor`、`raw_value`、`effective_value`。
+若 X/Y/Z 信号被 Guaranteed policy 忽略，SHALL 将其记录到
+`ignored_delay_reasons`（或等价字段），不得继续把 `delay_penalty_reason=opp_melds`
+表现成已实际将 value 乘为 0。
+
+#### Scenario: seq351 诊断可解释
+
+- **WHEN** seq351 因对手副露触发旧的 `opp_melds` 信号
+- **THEN** 诊断 SHALL 显示该信号被观察到但被 Guaranteed policy 忽略，
+  `delay_factor=1.0`，并同时展示 raw/effective value 与最终 selected_type
 
 ### Requirement: HU 窗口审计字段必须反映真实决策路径
 

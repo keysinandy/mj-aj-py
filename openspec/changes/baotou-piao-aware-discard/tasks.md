@@ -75,6 +75,21 @@
   seq880 及 904/943/967/991/1015/1039/1063 断言 ready=true 时绕过“搜索”快门直接进入 HU-vs-PIAO 仲裁
 - [ ] 4.14 在线状态：若启用 `max_search_passes`，在 match/tournament 会话层持久化，确保
   `Mirror.build_game` 重建 Game 不会把计数清零；若未实现持久化则线上禁用该 cap
+- [ ] 4.15 将 HU-window shared `delay_factor` 改为 candidate-specific policy；
+  为 piao/baotou delayed root 计算 `guaranteed_next_draw_hu`（all public unseen mass wins）
+- [ ] 4.16 Guaranteed Next-Draw HU 忽略 X/Y/Z 软归零：`rounds`、`opp_melds`、
+  `BAOTOU_PUSH_MIN_LIVE` 不改变 effective value；`PIAO_WALL_GUARD` 硬门保持
+- [ ] 4.17 seq351 回放专项：立即七对 2 番 value=20；弃 8万/6万/8筒的必爆头候选不再因
+  `opp_melds` 从 raw≈41.5 降为 0；验证下一摸 8筒的豪华七对子价值由
+  `hand_multiplier + settle` 自然计入且无双算
+- [ ] 4.18 扩展审计字段：
+  `guaranteed_next_draw_hu/conditional_next_draw_win_probability/delay_policy/`
+  `ignored_delay_reasons/raw_value/effective_value`；区分 observed risk 与 applied penalty
+- [ ] 4.19 Guaranteed policy 配对 A/B：统计
+  `guaranteed_baotou_pass_hu_count`、`guaranteed_baotou_cashout_count`、
+  `guaranteed_baotou_lost_before_draw`、放弃的 immediate HU value、实现的爆头 value、
+  豪华七对子升级次数与平均结算分差；收益门未通过不得晋级线上默认
+
 
 ## 5. 归档
 
