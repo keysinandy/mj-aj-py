@@ -25,8 +25,8 @@
 ```bash
 python3 -m mj.platform.tournament_runner \
   --config local/platform.json \
-  --strategy policy \
-  --ckpt runs/bc0/best.pt \
+  --strategy bot \
+  --bot-evaluator legacyV2 \
   --state-rate 15
 ```
 

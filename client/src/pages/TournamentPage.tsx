@@ -13,7 +13,7 @@ import { StrategySelectionPreview } from "../components/StrategySelectionPreview
 const STRATEGIES = [
   {
     value: "bot:legacyV2",
-    label: "BOT · legacyV2（首次提交 2026-09-21）",
+    label: "BOT · legacyV2（线上默认）",
     description: "当前加权两步搜索版本：对公开未知牌做前瞻并用 Rust 加速；本机加权内核不可用时可能回退到 legacy。",
   },
   {
@@ -183,7 +183,7 @@ function describeServerState(state: ServerProbeState) {
 export function TournamentPage() {
   const [settings, setSettings] = useState<PlatformSettings | null>(null);
   const [tournamentKey, setTournamentKey] = useState("");
-  const [strategy, setStrategy] = useState("");
+  const [strategy, setStrategy] = useState("bot:legacyV2");
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -485,7 +485,7 @@ export function TournamentPage() {
     try {
       if (!settings?.server) throw new Error("请先在设置页配置服务器地址");
       if (!tournamentKey.trim()) throw new Error("请填写锦标赛 Key");
-      if (!strategy) throw new Error("请显式选择锦标赛策略");
+      if (!strategy) throw new Error("请选择锦标赛策略");
       if ((strategy === "policy" || strategy === "policy-v3") && !settings.selected_model) {
         throw new Error("请先在设置页导入并选择 ONNX 模型");
       }

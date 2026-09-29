@@ -96,8 +96,8 @@ python3 -m mj.platform.runner --strategy random --games 10 --dump
 ```bash
 python3 -m mj.platform.tournament_runner \
     --config local/platform.json \
-    --strategy policy \
-    --ckpt runs/bc0/best.pt \
+    --strategy bot \
+    --bot-evaluator legacyV2 \
     --state-rate 15
 ```
 
@@ -124,7 +124,7 @@ python3 -m mj.platform.match_runner --strategy policy \
 
 | 参数 | 默认 | 说明 |
 |------|------|------|
-| `--strategy` | `policy` | 上场策略:`policy`(神经网络)/ `bot`(启发式 teacher)/ `random`(随机合法,仅规则覆盖用) |
+| `--strategy` | `bot` | 上场策略:`bot`(线上默认启发式)/ `policy`(神经网络)/ `random`(随机合法,仅规则覆盖用) |
 | `--ckpt` | `runs/ppo4/ckpt_350000.pt` | policy 策略的 checkpoint,BC(`best.pt`)与 PPO(`ckpt_*.pt`)双格式均可;备选 `runs/bc0/best.pt`、`runs/ppo4/ckpt_400000.pt` |
 | `--games` | `10` | 打满场数,**以整房为退出粒度**(不中途弃房——弃房后剩余场次会被服务端代打,污染他人对局) |
 | `--config` | `local/platform.json` | 配置文件路径 |
@@ -133,7 +133,7 @@ python3 -m mj.platform.match_runner --strategy policy \
 | `--no-notify` | 关 | 禁用 SSE，退回普通主动 `/state?seq=N` 轮询 |
 | `--dump` | 关 | 原始 /state、/action 报文 dump 到 `local/logs/`(协议排查用) |
 
-> 线上测试约定：`match_runner.py` 的代码默认策略仍是 `policy`，因此线上窗口/调度测试必须显式带 `--strategy bot`。`policy` 只用于明确的模型对照或专项实验；`random` 仅用于规则覆盖/故障排查，不作为性能基线。
+> 线上默认策略是 `bot + legacyV2`；`policy` 只用于明确的模型对照或专项实验，`random` 仅用于规则覆盖/故障排查，不作为性能基线。
 
 对局日志与测试房同构:`local/games/<日期>/<user_id>_<gid>.jsonl`,meta 行带 `mode: match` 标记;`mj.logview` / `mj.log_replay` 复盘对账命令不变。
 

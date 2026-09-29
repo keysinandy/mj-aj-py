@@ -46,7 +46,7 @@ def bot_transport_options(no_long_poll=False, no_notify=False):
 def main(argv=None):
     ap = argparse.ArgumentParser(description="自由对战(/api/match)挂机 runner")
     ap.add_argument("--config", default="local/platform.json")
-    ap.add_argument("--strategy", default="policy",
+    ap.add_argument("--strategy", default="bot",
                     choices=("policy", "bot", "random", "policy-v3"))
     ap.add_argument("--bot-evaluator", default=DEFAULT_BOT_EVALUATOR,
                     choices=("legacy", "legacy-two-ply-v1", "legacy-v1",

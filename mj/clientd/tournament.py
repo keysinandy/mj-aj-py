@@ -25,13 +25,18 @@ TOURNAMENT_POLL_INTERVAL = 1.0
 
 
 def normalize_tournament_config(config):
-    """Validate public session options; credentials remain in PlatformSettings."""
+    """Validate public session options; credentials remain in PlatformSettings.
+
+    The production tournament default is the heuristic BOT route.  Callers
+    can still opt into policy/random explicitly, while an omitted strategy
+    follows the same ``bot + legacyV2`` route as online matching.
+    """
     if not isinstance(config, dict):
         raise ValidationError("tournament config must be an object")
-    strategy = config.get("strategy")
+    strategy = config.get("strategy") or "bot"
     if not isinstance(strategy, str) or strategy not in TOURNAMENT_STRATEGIES:
         raise ValidationError(
-            "请显式选择锦标赛策略: policy / policy-v3 / bot / random")
+            "unknown tournament strategy; expected policy / policy-v3 / bot / random")
 
     evaluator = config.get("evaluator") or DEFAULT_BOT_EVALUATOR
     if not isinstance(evaluator, str) or evaluator not in TOURNAMENT_EVALUATORS:

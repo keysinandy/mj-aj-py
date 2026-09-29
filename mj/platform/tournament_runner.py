@@ -98,7 +98,7 @@ def _configured_tokens(cfg):
 class TournamentWorker:
     """Run one scoped registration token until its tournament outcome."""
 
-    def __init__(self, label, server, token, strategy="policy", ckpt=None,
+    def __init__(self, label, server, token, strategy="bot", ckpt=None,
                  evaluator=DEFAULT_BOT_EVALUATOR, state_rate=16.0, dump=False,
                  dump_dir="local/logs", recorder=True,
                  replay_trace=False, trace_root=None, stop=None,
@@ -396,7 +396,7 @@ class TournamentWorker:
             self._close_recorder()
 
 
-def run_tournament(cfg, *, strategy="policy", ckpt=None,
+def run_tournament(cfg, *, strategy="bot", ckpt=None,
                    evaluator=DEFAULT_BOT_EVALUATOR,
                    state_rate=16.0, dump=False, no_recorder=False,
                    replay_trace=False, trace_root=None,
@@ -442,7 +442,7 @@ def build_parser():
     parser = argparse.ArgumentParser(
         description="正式锦标赛 runner（由报名令牌和平台权威状态驱动）")
     parser.add_argument("--config", default="local/platform.json")
-    parser.add_argument("--strategy", default="policy",
+    parser.add_argument("--strategy", default="bot",
                     choices=("policy", "bot", "random", "policy-v3"))
     parser.add_argument("--ckpt", default="runs/bc0/best.pt",
                         help="policy 策略 checkpoint")

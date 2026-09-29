@@ -13,13 +13,13 @@ const MAIN_STRATEGIES: Array<{ key: string; label: string; config: Record<string
 
 const OPPONENT_STRATEGIES: Array<{ key: string; label: string; config: Record<string, unknown> }> = [
   { key: "random", label: "随机", config: { strategy: "random" } },
-  { key: "legacy-v2", label: "legacy-v2 启发式", config: { strategy: "bot", evaluator: "legacy-v2" } },
+  { key: "legacy-v2", label: "legacy-v2 启发式（线上默认）", config: { strategy: "bot", evaluator: "legacy-v2" } },
   { key: "legacy", label: "legacy 启发式", config: { strategy: "bot", evaluator: "legacy" } },
   { key: "shape-v2", label: "shape-v2 启发式", config: { strategy: "bot", evaluator: "shape-v2", fallback_ms: 10 } },
 ];
 
 const MATCH_STRATEGIES: Array<{ key: string; label: string; config: Record<string, unknown> }> = [
-  { key: "legacy-v2", label: "legacy-v2 启发式", config: { strategy: "bot", evaluator: "legacy-v2" } },
+  { key: "legacy-v2", label: "legacy-v2 启发式（线上默认）", config: { strategy: "bot", evaluator: "legacy-v2" } },
   { key: "legacy", label: "legacy 启发式", config: { strategy: "bot", evaluator: "legacy" } },
   { key: "shape-v2", label: "shape-v2 启发式", config: { strategy: "bot", evaluator: "shape-v2" } },
   { key: "policy", label: "policy（设置中的当前模型）", config: { strategy: "policy" } },

@@ -179,7 +179,7 @@ python3 -m mj.platform.tournament_runner --strategy bot --bot-evaluator legacy
 
 | 参数 | 默认 | 说明 |
 |------|------|------|
-| `--strategy` | policy | `bot` / `policy` / `random` / `policy-v3`;线上优先 `bot` |
+| `--strategy` | bot | `bot` / `policy` / `random` / `policy-v3`;线上默认 `bot` |
 | `--bot-evaluator` | legacyV2 | `strategy=bot` 时的评价器；`legacy` 映射到 v2，`legacy-v1` 是冻结回滚 |
 | `--ckpt` | runs/bc0/best.pt | `policy` 策略 checkpoint |
 | `--state-rate` | 16/s | 每 token `/state` 主动限速;429 抬升时回退 15 |
