@@ -1,0 +1,99 @@
+{
+  "schema": "guaranteed-next-draw-hu-paired-ab-v2",
+  "games_per_arm": 800,
+  "seed0": 940000,
+  "candidate": {
+    "games": 800,
+    "score_total": 1015.0,
+    "score_mean": 1.26875,
+    "multiplier_mean": 1.4025,
+    "metrics_total": {
+      "hu_windows": 521,
+      "guaranteed_candidate_count": 769,
+      "guaranteed_baotou_pass_hu_count": 284,
+      "guaranteed_baotou_cashout_count": 0,
+      "guaranteed_baotou_lost_before_draw": 284,
+      "abandoned_immediate_hu_value": 5982.0,
+      "selected_guaranteed_raw_value": 9300.89441467553,
+      "realized_guaranteed_raw_value": 0.0,
+      "luxury_upgrade_count": 9
+    },
+    "metrics_per_game": {
+      "hu_windows": 0.65125,
+      "guaranteed_candidate_count": 0.96125,
+      "guaranteed_baotou_pass_hu_count": 0.355,
+      "guaranteed_baotou_cashout_count": 0.0,
+      "guaranteed_baotou_lost_before_draw": 0.355,
+      "abandoned_immediate_hu_value": 7.4775,
+      "selected_guaranteed_raw_value": 11.626118018344412,
+      "realized_guaranteed_raw_value": 0.0,
+      "luxury_upgrade_count": 0.01125
+    }
+  },
+  "shared_delay_baseline": {
+    "games": 800,
+    "score_total": 707.0,
+    "score_mean": 0.88375,
+    "multiplier_mean": 1.205,
+    "metrics_total": {
+      "hu_windows": 308,
+      "guaranteed_candidate_count": 421,
+      "guaranteed_baotou_pass_hu_count": 36,
+      "guaranteed_baotou_cashout_count": 0,
+      "guaranteed_baotou_lost_before_draw": 36,
+      "abandoned_immediate_hu_value": 632.0,
+      "selected_guaranteed_raw_value": 1226.0482070216924,
+      "realized_guaranteed_raw_value": 0.0,
+      "luxury_upgrade_count": 0
+    },
+    "metrics_per_game": {
+      "hu_windows": 0.385,
+      "guaranteed_candidate_count": 0.52625,
+      "guaranteed_baotou_pass_hu_count": 0.045,
+      "guaranteed_baotou_cashout_count": 0.0,
+      "guaranteed_baotou_lost_before_draw": 0.045,
+      "abandoned_immediate_hu_value": 0.79,
+      "selected_guaranteed_raw_value": 1.5325602587771154,
+      "realized_guaranteed_raw_value": 0.0,
+      "luxury_upgrade_count": 0.0
+    }
+  },
+  "paired_score_delta": {
+    "n": 800,
+    "mean": 0.385,
+    "bootstrap_ci95": [
+      -0.09125,
+      0.91625
+    ],
+    "positive_count": 53,
+    "negative_count": 104,
+    "zero_count": 643
+  },
+  "paired_multiplier_delta": {
+    "n": 800,
+    "mean": 0.1975,
+    "bootstrap_ci95": [
+      0.15875,
+      0.24125
+    ]
+  },
+  "decision_latency_ms": {
+    "candidate": {
+      "n": 129537,
+      "p50": 0.4985489940736443,
+      "p95": 25.450831977650523,
+      "p99": 50.352047983324155,
+      "mean": 3.8413243120505864
+    },
+    "shared_delay": {
+      "n": 124894,
+      "p50": 0.49917399883270264,
+      "p95": 24.54524699714966,
+      "p99": 48.97741100285202,
+      "mean": 3.523268216976051
+    }
+  },
+  "elapsed_seconds": 1058.306,
+  "paired_games_per_second": 1.512,
+  "note": "local matched-seed validation; candidate is current guaranteed policy, baseline is counterfactual shared X/Y/Z delay; no online promotion"
+}
