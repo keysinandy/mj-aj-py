@@ -33,7 +33,9 @@ MUST 与既有 legacy 基线逐候选一致。
 `1.5 × baotou_ukeire + current_selfdraw_hu_ukeire`。两种进张 MUST 作为一个组合值比较，
 不得将爆头进张设为普通自摸胡牌进张之前的独立排序层。当前自摸胡牌进张 SHALL 按每个
 候选自己的弃后站立手和当前规则门禁计算；处于爆头听的 tier 0 候选按所有合法下一摸
-计数。现有 tier 优先级、财神保护和 X/Y/Z 自适应收手保持不变。
+计数。现有 tier 优先级与财神保护保持不变；X/Y/Z 继续服务普通爆头推进，但
+白板≥2且已经爆头的 HU-window 财飘搜寻 SHALL 按后文 Piao Search 动态规则处理，固定轮数
+不得作为该状态的主要过胡依据。
 
 **验收口径：有财必拷响关闭。有财必拷响开启的场景当前项目不考虑**——门禁下的
 收手语义（无平胡可收、推进是否回退）未定义、未验收，启用前必须重新评估。
@@ -74,6 +76,135 @@ MUST 与既有 legacy 基线逐候选一致。
 - **WHEN** HU 合法、活墙可摸张数 ≥ 6 且合法弃财神后站立手仍听任意牌
 - **THEN** 财飘 MUST 作为 HU-window action-root 候选进入统一价值比较；墙量达到门槛本身
   MUST NOT 等价为“必弃胡”，也不得被非财神爆头候选提前截断
+
+### Requirement: 白板≥2且已爆头时进入财飘搜寻资格
+
+当一个合法弃牌后的 13 张站立手 `S` 满足 `S[W] >= 2` 且
+`is_baotou_wait(S, locked)` 时，BOT SHALL 将该状态标记为 Piao Search eligible。
+该资格不等于必须过 HU，也不等于当前已经可以财飘。
+
+若当前 HU 窗口中 `W` 是合法弃牌且弃 `W` 后仍为 `is_baotou_wait`，则状态为
+`PIAO_READY`，直接进入既有 `immediate_hu vs piao_discard` action-root 仲裁；
+否则状态为 `PIAO_SEARCH`，只有通过机会密度与 horizon 快门后，才允许把“继续保白等待
+财飘”的动作送入昂贵 continuation/two-ply。
+
+#### Scenario: seq856 具备搜索资格但当前不能财飘
+
+- **WHEN** seq856 摸中前的站立手持白×3且为全牌爆头听，摸中后 HU 合法，但弃白不能保持爆头
+- **THEN** `piao_search_eligible=true`、`piao_ready_now=false`；不得因为白板≥2就直接弃白，
+  是否继续过 HU 需要计算 Piao Search 快特征
+
+#### Scenario: seq880 后当前财飘成立
+
+- **WHEN** seq880 及后续回放窗口中，弃白为合法动作且弃后仍为全牌爆头听
+- **THEN** 标记 `piao_ready_now=true`，不再走“寻找机会”快门，直接把
+  `piao_discard` 放入 HU-window action-root 比较
+
+### Requirement: 财飘机会密度使用轻量 piao_ukeire 计算
+
+对 Piao Search eligible 的 13 张站立手 `S`，系统 SHALL 计算一个独立的
+`piao_draw_mask(S, locked)`：对每种下一摸 `t`，仅判断
+`S + t - W` 是否仍为 `is_baotou_wait`。该计算 MUST 固定弃一张白，不得在每个 `t`
+下面再枚举其它弃牌。
+
+基于当前 visible 口径 SHALL 导出：
+
+- `piao_live`：mask 中仍未见的总张数；
+- `piao_types`：mask 中仍有剩余的牌种数；
+- `piao_ratio = piao_live / draw_live`；
+- `full_piao_search`：所有当前仍可能摸到的牌都在 mask 中。
+
+结构 mask MUST 与 visible 加权解耦并可按 `(hand_bytes, locked)` 缓存；visible 变化只更新
+剩余张数，不得使结构缓存失效或被错误复用为另一个手牌。
+
+#### Scenario: 固定弃白而不是搜索最佳弃牌
+
+- **WHEN** 评估下一摸 `t` 是否产生财飘机会
+- **THEN** 只检查“摸 `t` 后弃一张白是否仍爆头”，MUST NOT 为该 `t` 再枚举所有弃牌
+
+#### Scenario: visible 只改变权重
+
+- **WHEN** 同一站立手结构不变但牌河/副露使 visible 增加
+- **THEN** `piao_draw_mask` 保持相同，`piao_live/piao_ratio` 按新的剩余张数重新计算
+
+### Requirement: Piao Search 使用自摸 horizon 动态收手而非固定等待轮数
+
+系统 SHALL 使用保守的
+`self_draw_horizon = floor(live_wall_left() / 4)` 作为低成本未来自摸次数门槛。
+
+- 当前已经 `PIAO_READY` 时，财飘至少需要 1 次未来自摸兑现；最终是否弃白仍由 action-root
+  价值比较决定。
+- 当前为 `PIAO_SEARCH` 时，至少需要“下一次自摸找到财飘机会 + 再下一次自摸兑现”，因此
+  `self_draw_horizon < 2` 时 MUST 结束搜索并选择当前 HU/正常安全动作。
+- `self_draw_horizon >= 2` 只允许搜索候选参与比较，MUST NOT 强制过 HU。
+- 固定 `max_search_passes` MAY 作为 safety cap，但 MUST NOT 取代
+  `piao_ratio + horizon + action-root value` 的动态判断；每次自己的新摸牌窗口 MUST 重算。
+
+如果使用 `max_search_passes`，线上实现 MUST 能跨 `Mirror.build_game` 的 Game 重建持久化该计数；
+不能持久化时 SHALL 禁用该 cap，而不是每次重置后继续宣称已限制轮数。
+
+#### Scenario: 只剩一次未来自摸时不再寻找财飘
+
+- **WHEN** 当前 HU 合法、白板≥2、已爆头但尚未 PIAO_READY，且 `self_draw_horizon=1`
+- **THEN** 不得为了“先找财飘再兑现”继续过 HU
+
+#### Scenario: 两次以上未来自摸只开放搜索资格
+
+- **WHEN** 同样状态下 `self_draw_horizon>=2`
+- **THEN** 允许根据 `piao_ratio` 和 action-root value 评估搜索，MUST NOT 仅因 horizon 足够就过 HU
+
+#### Scenario: 固定轮数只是最后上限
+
+- **WHEN** 动态模型连续多个窗口仍判断搜索有正价值
+- **THEN** MAY 在 `max_search_passes` 达到校准上限时强制收手；未达到上限不代表必须继续搜索
+
+### Requirement: Piao Search 快特征必须有严格性能边界
+
+首版 Piao Search MUST 在完整 Stage B/continuation 之前执行低成本快门，并满足：
+
+- 对一个站立手最多检查 34 个 draw type；
+- 每个节点只允许 `is_baotou_wait` 等固定结构判断，不得调用 `shanten`、通用 `ukeire`、
+  `scoring/settle` 或嵌套最佳弃牌搜索；
+- 结构 mask 必须缓存，visible 权重为 O(34)；
+- 首版每个决策只评估现有逻辑已选出的一个最佳 `baotou_next_draw` 站立手；
+- 只有性能与收益门均通过后才 MAY 扩到 top-K，且 K MUST ≤ 3；
+- 行为预算必须按确定性节点数控制，不得用墙钟是否超时改变同一状态的动作结果。
+
+性能验收：Piao Search 快特征增量 p95 ≤ 1ms、p99 ≤ 2ms，同时 legacy 普通弃牌既有
+p95 ≤ 20ms 门不得退化。若 Python 实现无法稳定满足，MUST Rust 化或关闭 Piao Search，
+不得静默使用部分计算结果。Stage B/continuation 单独计时，不计入快特征预算。
+
+#### Scenario: 低机会状态不进入昂贵搜索
+
+- **WHEN** Piao Search 快门因 `piao_ratio` 低于当前校准阈值或 horizon 不足而失败
+- **THEN** 不运行仅为财飘搜索服务的 Stage B/continuation，直接使用当前 HU/既有安全基线
+
+#### Scenario: 快门通过才调用既有价值链
+
+- **WHEN** Piao Search 快门通过
+- **THEN** 搜索动作 MAY 进入 HU-window action-root continuation/two-ply，与 immediate HU 比较，
+  快门本身不得直接决定过胡
+
+### Requirement: Piao Search 参数必须通过配对 A/B 校准
+
+首版 SHALL 对至少以下参数网格做配对 A/B，而不是手工固定“等两轮”：
+
+- `min_piao_ratio ∈ {0.25, 0.40, 0.55, 0.70, 0.85}`；
+- `min_search_self_draws ∈ {2, 3}`；
+- `max_search_passes ∈ {1, 2, 3}`。
+
+主指标 SHALL 为平均结算分/局，并额外记录：
+`pass_hu_count`、`piao_opportunity_found`、`piao_cashout_success`、
+`search_lost_before_opportunity`、`piao_lost_before_cashout`、最终直接 HU 次数与平均倍率增益。
+参数只有在收益与性能门同时通过时才可设为线上默认。
+
+#### Scenario: 高倍率但低兑现率不能自动晋级
+
+- **WHEN** 某参数配置显著提高财飘倍率，但 `search_lost_before_opportunity` 或
+  `piao_lost_before_cashout` 同时使平均结算分下降
+- **THEN** 该配置不得因为“8 番次数更多”而晋级线上默认
+
+
 
 ### Requirement: HU 合法窗口统一仲裁立即胡、财飘、下一摸爆头与自杠
 

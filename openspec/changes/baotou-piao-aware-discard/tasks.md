@@ -59,6 +59,22 @@
 - [x] 4.7 2026-09-29 round4 回放回归：seq856 断言弃白不构成财飘；seq880 断言开始生成财飘候选；
   seq904/943/967/991/1015/1039/1063 均断言财飘候选持续存在，且 14/10/6 张活墙时不再
   由 `hu_baotou_next_draw_override` 提前返回；seq1070 对手胡牌作为“延迟胡存在抢胡风险”的证据记录
+- [ ] 4.8 实现 Piao Search 资格与快特征：白板≥2且 `is_baotou_wait` 时标记 eligible；
+  新增纯结构 `piao_draw_mask`、`piao_live/piao_types/piao_ratio`，结构 mask 与 visible 权重分离并缓存
+- [ ] 4.9 接入动态 horizon：`self_draw_horizon=floor(live_wall_left/4)`；PIAO_SEARCH
+  horizon<2 直接收手，PIAO_READY 仍走现有 HU-window 仲裁；每次自摸重新计算
+- [ ] 4.10 首版只对现有最佳 `baotou_next_draw` 站立手计算最多 34 个结构节点，快特征不得调用
+  shanten/ukeire/scoring 或嵌套弃牌搜索；增加独立 benchmark，验收增量 p95≤1ms、p99≤2ms
+- [ ] 4.11 若 Python 快特征不能稳定过性能门，新增 Rust 批量 `piao_draw_mask` 并做 Python/Rust
+  随机差分；不得以墙钟超时导致动作漂移
+- [ ] 4.12 Piao Search 参数配对扫描：
+  `min_piao_ratio={0.25,0.40,0.55,0.70,0.85}` ×
+  `min_search_self_draws={2,3}` × `max_search_passes={1,2,3}`；
+  记录 pass_hu/opportunity/cashout/search_lost/piao_lost/平均倍率与平均结算分
+- [ ] 4.13 回放专项：seq856 断言 eligible=true、ready=false，并验证快特征输出；
+  seq880 及 904/943/967/991/1015/1039/1063 断言 ready=true 时绕过“搜索”快门直接进入 HU-vs-PIAO 仲裁
+- [ ] 4.14 在线状态：若启用 `max_search_passes`，在 match/tournament 会话层持久化，确保
+  `Mirror.build_game` 重建 Game 不会把计数清零；若未实现持久化则线上禁用该 cap
 
 ## 5. 归档
 

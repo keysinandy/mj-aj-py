@@ -18,7 +18,8 @@ Mirror 提供 `live_wall_left()`（mirror.py:572，`64 − _pops` 口径）。
 - HU 合法且活墙允许延迟时，完整比较 immediate HU、弃白财飘、弃非白进入下一摸爆头听、
   自杠等 action-root；任何爆头 helper 都不得在财飘/当前 HU/two-ply 进入比较前提前返回。
 - seq856 明确保持“弃白不成立”，seq880 起明确识别“弃白可保持爆头并形成财飘”的状态迁移。
-- 新计算有界、可回退、可归因，不破坏既有延迟约束。
+- 白板≥2且已爆头时允许进入 Piao Search；用机会密度和剩余自摸 horizon 动态判断，而不是固定等 N 轮。
+- 新计算有界、可回退、可归因，不破坏既有延迟约束；Piao Search 快特征不得为了判断“要不要搜”先跑完整 two-ply。
 
 **Non-Goals:**
 - 不改 `legal_actions()` 的 HU 门禁（YCBK 语义不动）。
@@ -72,6 +73,12 @@ PIAO_WALL_GUARD 硬门）同样落袋为安。
 X/Y/Z 由 `local/ab_baotou_sweep.py` 网格扫描（粗筛 3840 局/配置 + 精跑 30720 局/
 配置，**YCBK 关口径**的配对结算分）选定，参照点含 X=0（=始终速度线）与
 X=99/Y=99/Z=0（=无条件推进）。
+
+**2026-09-29 Piao Search 修订**：上述 X/Y/Z 继续服务普通“持财听牌→推进爆头”策略；
+对于“白板≥2且已经爆头、当前 HU 合法、正在寻找财飘”的窗口，不再把固定轮数 X 当作主要
+决策依据。Piao Search 按 D4d/D4e 的 `piao_ratio + self_draw_horizon + action-root value`
+动态判断；固定 `max_search_passes` 仅作为最后一道 safety cap。若在线 Mirror 每决策重建 Game，
+任何 pass 计数必须由回合/会话层持久化，否则不得假装该 cap 在线有效。
 
 ### D3. `baotou_ukeire` 定义、剪枝、缓存与 Rust 内核
 
@@ -168,12 +175,110 @@ immediate HU 作为确定性基线；`piao_discard` 与 `baotou_next_draw` 进�
 selected/reason。不得再把真实爆头候选路径包装成 `decision_scope=legacy` 且
 `baotou_scope.entered=false`.
 
+### D4d. Piao Search：白板≥2爆头态的动态财飘搜寻
+
+Piao Search 的资格状态定义在一个合法弃牌后的 13 张站立手 `S` 上：
+
+- `S[W] >= 2`；
+- `is_baotou_wait(S, locked) == True`；
+- 当前策略窗口存在 HU，且当前尚未形成可直接提交的 `piao_discard` 时，才需要“搜索”；
+  如果当前已经能合法弃白并保持爆头，则进入既有 `HU vs PIAO` 仲裁，不再称为搜索。
+
+对白板≥2但尚未 PIAO_READY 的站立手，定义纯结构函数：
+
+```
+piao_draw_mask(S, locked)[t] = true
+iff
+    t 在结构上可摸入
+    and S + t - W 仍满足 is_baotou_wait(...)
+```
+
+该函数只回答“下一摸 t 后固定弃一张白，是否仍为全牌爆头听”，不寻找其它弃牌。
+基于当前 visible 口径计算：
+
+```
+piao_live  = Σ max(0, 4 - visible[t])  for t in piao_draw_mask
+draw_live  = Σ max(0, 4 - visible[t])  for all structurally drawable t
+piao_ratio = piao_live / draw_live     (draw_live > 0)
+piao_types = count(t in mask with remaining[t] > 0)
+```
+
+结构 mask 与 visible 权重必须分离：mask MAY 按 `(hand_bytes, locked)` 缓存，牌墙/明牌变化只
+重新做 O(34) 的剩余张数加权，不重新跑结构枚举。
+
+### D4e. 搜寻 horizon 与退出逻辑
+
+未来自摸次数采用保守近似：
+
+```
+self_draw_horizon = floor(live_wall_left / 4)
+```
+
+它不是精确概率模型，只是便宜的硬门：
+
+- **PIAO_READY**：当前已经能弃白保持爆头，至少需要 1 次未来自摸来兑现；仍由 HU-window
+  action-root value 比较决定是否飘。
+- **PIAO_SEARCH**：当前还不能飘、要先等一次自摸形成财飘机会，再等一次自摸兑现，故
+  `self_draw_horizon < 2` 时 MUST NOT 为“寻找财飘”继续过 HU。
+- `self_draw_horizon >= 2` 只表示允许搜索，MUST NOT 等价于继续过胡。
+
+搜索快门至少包含 `piao_ratio` 与 horizon；阈值不在代码里拍脑袋固定，需经配对 A/B 扫描。
+建议初始扫描：
+`min_piao_ratio ∈ {0.25,0.40,0.55,0.70,0.85}`、
+`min_search_self_draws ∈ {2,3}`、
+`max_search_passes ∈ {1,2,3}`。
+对手副露/压力第一版作为 action-root continuation 的风险输入，不另设非对称硬门；如后续
+证据表明确有必要，再单独增加校准项。
+
+搜索每次自摸 MUST 重新计算。固定 `max_search_passes` 只用于防止模型在边缘局面无限连续过胡，
+不是主要策略规则；如果该计数无法跨 Mirror 重建可靠持久化，线上 MUST 暂时禁用该 cap，
+不得每次重置后仍声称已限制搜索轮数。
+
+概念上的收益关系为：
+
+```
+EV_search ≈ survive_to_next_draw *
+            ((1-q) * V_hu_next
+             + q * max(V_hu_next, survive_after_piao * V_piao))
+```
+
+其中 `q≈piao_ratio`。该式只解释为什么“机会密度 + 两次自摸 horizon”优于固定轮数，不要求
+线上逐项精确求值；真正通过快门后的选择继续复用 D4b 的 action-root continuation/two-ply。
+
+### D4f. Piao Search 性能预算与两阶段实现
+
+Piao Search 的快特征 MUST 与完整搜索解耦：
+
+1. `piao_draw_mask` 对一个站立手最多 34 个 draw type；
+2. 每个 draw type 只做固定减一张 `W` 后的 `is_baotou_wait` 结构判断；
+3. 快特征 MUST NOT 调用 `shanten`、通用 `ukeire`、`scoring/settle` 或嵌套枚举“下一摸后的最佳弃牌”；
+4. 结构结果必须缓存；visible 加权为 O(34) 整数运算；
+5. 行为回退使用确定性节点预算，不以墙钟决定是否启用某次搜索。
+
+首版为了严格控时，MUST 只对现有逻辑已经选出的最佳 `baotou_next_draw` 站立手计算
+Piao Search 快特征（每决策最多 34 个结构节点）。只有在性能门和 A/B 都通过后，才 MAY
+扩为 top-K（K≤3）个爆头站立手做 piao-aware 重排；不得首版直接对所有弃牌做
+`候选数 × 34` 的无界扩张。
+
+验收性能门：
+
+- Piao Search 快特征增量 p95 ≤ 1ms、p99 ≤ 2ms；
+- legacy 普通弃牌既有 p95 ≤ 20ms 门不得退化；
+- 若 Python 路径无法稳定通过，则实现 Rust 批量算子或关闭 Piao Search 快档，
+  MUST NOT 以超时后混用部分结果；
+- Stage B/continuation 耗时单独统计，不计入上述“快特征”预算，因为它本来就是既有昂贵评价链。
+
+
+
 ### D5. 测试与验收
 
 - 单测：新排序用例（tier0 胜出 / tier1 组合进度排序 / 不持财神回归 / 墙 5 直接胡 /
   墙 ≥6 进入 HU-window 仲裁 / YCBK 开关不影响弃牌选择）；旧 legacy 排序断言显式限定到不持财神状态。
-- 回放回归：seq856 断言无财飘候选；seq880 与 904/943/967/991/1015/1039/1063 断言财飘候选存在、
-  不再由 `hu_baotou_next_draw_override` 提前返回，并检查 Stage B/continuation 与审计字段。
+- 回放回归：seq856 断言无当前财飘候选但可进入 Piao Search 资格评估；seq880 与
+  904/943/967/991/1015/1039/1063 断言财飘候选存在，不再由 `hu_baotou_next_draw_override`
+  提前返回，并检查 Stage B/continuation 与审计字段。
+- Piao Search：验证 `piao_draw_mask/piao_live/piao_ratio`、horizon=1 禁止搜索、horizon≥2 仅开放候选、
+  mask 缓存不受 visible 变化污染；快特征性能单独 benchmark。
 - 随机差分：`baotou_ukeire` 剪枝前后等值（随机手牌 × locked 档）。
 - 评估：新旧 bot `fair_match` 对弈（192 局口径）确认无胜率/均分回退；
   线上先 match_runner 冒烟（必须走 `Mirror.build_game`），再进锦标赛。
