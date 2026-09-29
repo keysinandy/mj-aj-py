@@ -87,6 +87,8 @@ LEGACY_V2_EXPERIMENT_EVALUATORS = (
 )
 SHAPE_QUALITY_GUARD_VERSION = "standing-shape-taatsu-gain-v1"
 MARGINAL_STRUCTURE_SLACK_BY_SHANTEN = (0, 2, 4, 6)
+SPEED_BAND_VERSION = "legacy-speed-band-v1"
+SPEED_BAND_MIN_RATIO_BY_SHANTEN = (1.0, 0.90, 0.82, 0.78)
 # Product default evaluator. ``legacy`` is kept as a compatibility alias for
 # this v2 route; callers that need the frozen rollback oracle must explicitly
 # request ``legacy-v1``.
@@ -153,6 +155,12 @@ class LegacyTwoPlyProfile:
     marginal_structure_slack_by_shanten: tuple[int, ...] = (
         *MARGINAL_STRUCTURE_SLACK_BY_SHANTEN,
     )
+    speed_band_enabled: bool = False
+    speed_band_version: str = SPEED_BAND_VERSION
+    speed_band_min_ratio_by_shanten: tuple[float, ...] = (
+        *SPEED_BAND_MIN_RATIO_BY_SHANTEN,
+    )
+    pareto_frontier_enabled: bool = False
 
     def __post_init__(self):
         if not self.name or not self.version or not self.model:
@@ -175,6 +183,10 @@ class LegacyTwoPlyProfile:
             raise ValueError("soft/hard budgets must be finite and ordered")
         if int(self.max_frontier_candidates) < 0:
             raise ValueError("max_frontier_candidates must be non-negative")
+        if ((self.speed_band_enabled or self.pareto_frontier_enabled) and
+                int(self.max_frontier_candidates) > 3):
+            raise ValueError(
+                "speed-band frontier cap must be zero or at most three")
         if int(self.workers) < 0:
             raise ValueError("workers must be non-negative")
         if int(self.shape_guard_ukeire_slack) < 0:
@@ -192,6 +204,8 @@ class LegacyTwoPlyProfile:
             raise ValueError("big_hand_version is required")
         if not self.marginal_structure_role_version:
             raise ValueError("marginal_structure_role_version is required")
+        if not self.speed_band_version:
+            raise ValueError("speed_band_version is required")
         try:
             marginal_slack = tuple(int(value)
                                    for value in self.marginal_structure_slack_by_shanten)
@@ -203,6 +217,19 @@ class LegacyTwoPlyProfile:
                 any(value < 0 for value in marginal_slack)):
             raise ValueError(
                 "marginal_structure_slack_by_shanten must contain four non-negative values"
+            )
+        try:
+            speed_ratios = tuple(float(value)
+                                 for value in self.speed_band_min_ratio_by_shanten)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "speed_band_min_ratio_by_shanten must be four numbers"
+            ) from exc
+        if (len(speed_ratios) != 4 or
+                any(not math.isfinite(value) or not 0.0 <= value <= 1.0
+                    for value in speed_ratios)):
+            raise ValueError(
+                "speed_band_min_ratio_by_shanten must contain four ratios in [0, 1]"
             )
         for name in ("big_hand_min_live", "big_hand_max_opponent_melds",
                      "big_hand_min_ukeire", "big_hand_max_ukeire_loss",
@@ -253,6 +280,12 @@ class LegacyTwoPlyProfile:
                            bool(self.marginal_structure_guard_enabled))
         object.__setattr__(self, "marginal_structure_slack_by_shanten",
                            marginal_slack)
+        object.__setattr__(self, "speed_band_enabled",
+                           bool(self.speed_band_enabled))
+        object.__setattr__(self, "speed_band_min_ratio_by_shanten",
+                           speed_ratios)
+        object.__setattr__(self, "pareto_frontier_enabled",
+                           bool(self.pareto_frontier_enabled))
 
     @classmethod
     def default(cls, **overrides):
@@ -287,6 +320,11 @@ class LegacyTwoPlyProfile:
             # User-requested online rollout.  Offline labels and comparison
             # profiles opt out explicitly.
             "marginal_structure_guard_enabled": True,
+            # The new frontier is opt-in until the paired performance and
+            # correctness gates in the change are recorded.  Callers can
+            # enable both flags together for the rollout profile.
+            "speed_band_enabled": False,
+            "pareto_frontier_enabled": False,
         }
         values.update(overrides)
         return cls(**values)
@@ -323,6 +361,8 @@ class LegacyTwoPlyProfile:
             "big_hand_plus_one_enabled": False,
             # Keep the frozen legacyV2-offline teacher unchanged.
             "marginal_structure_guard_enabled": False,
+            "speed_band_enabled": False,
+            "pareto_frontier_enabled": False,
         }
         values.update(overrides)
         return cls(**values)
@@ -394,6 +434,21 @@ class LegacyTwoPlyProfile:
                 "marginal_structure_slack_by_shanten": list(
                     self.marginal_structure_slack_by_shanten),
             })
+        speed_defaults = (
+            not self.speed_band_enabled and
+            not self.pareto_frontier_enabled and
+            self.speed_band_version == SPEED_BAND_VERSION and
+            self.speed_band_min_ratio_by_shanten ==
+            SPEED_BAND_MIN_RATIO_BY_SHANTEN
+        )
+        if not speed_defaults:
+            payload.update({
+                "speed_band_enabled": self.speed_band_enabled,
+                "speed_band_version": self.speed_band_version,
+                "speed_band_min_ratio_by_shanten": list(
+                    self.speed_band_min_ratio_by_shanten),
+                "pareto_frontier_enabled": self.pareto_frontier_enabled,
+            })
         return payload
 
     def big_hand_config(self):
@@ -437,6 +492,11 @@ class LegacyTwoPlyProfile:
                 self.marginal_structure_role_version),
             "marginal_structure_slack_by_shanten": list(
                 self.marginal_structure_slack_by_shanten),
+            "speed_band_enabled": self.speed_band_enabled,
+            "speed_band_version": self.speed_band_version,
+            "speed_band_min_ratio_by_shanten": list(
+                self.speed_band_min_ratio_by_shanten),
+            "pareto_frontier_enabled": self.pareto_frontier_enabled,
         })
         result["fingerprint"] = self.fingerprint
         return result
@@ -481,6 +541,17 @@ class LegacyRootCandidate:
     max_opponent_melds: int | None = None
     big_hand_gate_reason: str | None = None
     marginal_role: MarginalStructureRole | None = None
+    # Competitive speed-band/Pareto diagnostics.  These stay on the root so
+    # the final decision can explain both retained and rejected candidates.
+    current_speed_ratio: float | None = None
+    speed_band_threshold: float | None = None
+    in_competitive_speed_band: bool = False
+    speed_dominated: bool = False
+    speed_dominated_by: tuple[int, ...] = ()
+    pareto_dominated: bool = False
+    pareto_dominated_by: tuple[int, ...] = ()
+    pareto_vector: tuple[float, ...] = ()
+    marginal_loss_tier: str | None = None
 
     def as_json(self):
         result = {
@@ -496,6 +567,21 @@ class LegacyRootCandidate:
             "eligible": self.eligible,
             "missing": list(self.missing),
         }
+        if (self.current_speed_ratio is not None or
+                self.speed_band_threshold is not None or
+                self.in_competitive_speed_band or self.speed_dominated or
+                self.pareto_dominated or self.pareto_vector):
+            result.update({
+                "current_speed_ratio": self.current_speed_ratio,
+                "speed_band_threshold": self.speed_band_threshold,
+                "in_competitive_speed_band": self.in_competitive_speed_band,
+                "speed_dominated": self.speed_dominated,
+                "speed_dominated_by": list(self.speed_dominated_by),
+                "pareto_dominated": self.pareto_dominated,
+                "pareto_dominated_by": list(self.pareto_dominated_by),
+                "pareto_vector": list(self.pareto_vector),
+                "marginal_loss_tier": self.marginal_loss_tier,
+            })
         if self.standing_shape_quality is not None:
             result.update({
                 "standing_shape_quality": self.standing_shape_quality,
@@ -679,6 +765,10 @@ class LegacyDiscardEvaluation:
     singleton_block_reason: str | None = None
     role_guard_slack: int | None = None
     role_guard_challengers: tuple[int, ...] = ()
+    speed_band_version: str | None = None
+    speed_band_threshold: float | None = None
+    pareto_frontier_before_cap: int = 0
+    pareto_frontier_after_cap: int = 0
 
     def as_json(self):
         result = {
@@ -740,6 +830,10 @@ class LegacyDiscardEvaluation:
             "singleton_block_reason": self.singleton_block_reason,
             "role_guard_slack": self.role_guard_slack,
             "role_guard_challengers": list(self.role_guard_challengers),
+            "speed_band_version": self.speed_band_version,
+            "speed_band_threshold": self.speed_band_threshold,
+            "pareto_frontier_before_cap": self.pareto_frontier_before_cap,
+            "pareto_frontier_after_cap": self.pareto_frontier_after_cap,
         }
         return result
 
@@ -866,8 +960,34 @@ def _normalise_roots(root_candidates: Iterable[LegacyRootCandidate | Sequence],
     return tuple(roots)
 
 
-def _root_features(roots, locked, visible, *, shape_quality_enabled=False,
-                   marginal_role_enabled=False):
+def _speed_band_ratio(shanten_value, ratios):
+    index = min(max(int(shanten_value), 0), len(ratios) - 1)
+    return float(ratios[index])
+
+
+def _pareto_vector(root):
+    """Return the maximisation vector used by the bounded root frontier."""
+    return (
+        float(root.current_ukeire or 0),
+        float(len(root.current_ukeire_tiles)),
+        -float(_marginal_role_rank(root.marginal_role)),
+        float(root.standing_shape_quality or 0),
+    )
+
+
+def _pareto_dominates(left, right):
+    """Strict Pareto dominance over speed, breadth, marginal loss and shape."""
+    left_vector = _pareto_vector(left)
+    right_vector = _pareto_vector(right)
+    return (all(a >= b for a, b in zip(left_vector, right_vector)) and
+            any(a > b for a, b in zip(left_vector, right_vector)))
+
+
+def _root_features(
+        roots, locked, visible, *, shape_quality_enabled=False,
+        marginal_role_enabled=False, speed_band_enabled=False,
+        speed_band_min_ratio_by_shanten=SPEED_BAND_MIN_RATIO_BY_SHANTEN,
+        pareto_frontier_enabled=False, max_frontier_candidates=0):
     visible = _as_tuple(visible, name="visible")
     enriched = []
     for root in roots:
@@ -906,7 +1026,17 @@ def _root_features(roots, locked, visible, *, shape_quality_enabled=False,
             root, hand=hand, shanten=s,
             current_ukeire=int(state[2]),
             current_ukeire_tiles=tuple(state[1]),
-            marginal_role=role))
+            marginal_role=role,
+            current_speed_ratio=None,
+            speed_band_threshold=None,
+            in_competitive_speed_band=False,
+            speed_dominated=False,
+            speed_dominated_by=(),
+            pareto_dominated=False,
+            pareto_dominated_by=(),
+            pareto_vector=(),
+            marginal_loss_tier=(role.loss_tier if role is not None else None),
+        ))
     if not enriched:
         raise _InvalidPublicState("no_root_candidates")
     speed_pool = [root for root in enriched if root.speed_eligible]
@@ -918,19 +1048,171 @@ def _root_features(roots, locked, visible, *, shape_quality_enabled=False,
     if any(root.tile != W for root in frontier):
         frontier = [root for root in frontier if root.tile != W]
     max_u = max(int(root.current_ukeire or 0) for root in frontier)
-    frontier = [root for root in frontier if root.current_ukeire == max_u]
-    frontier_tiles = {root.tile for root in frontier}
-    diagnostics = []
+
+    # The historical path keeps the exact current-ukeire frontier.  All new
+    # fields remain empty so callers can use this function for feature-off
+    # parity and the old singleton proof stays unchanged.
+    if not speed_band_enabled and not pareto_frontier_enabled:
+        frontier = [root for root in frontier if root.current_ukeire == max_u]
+        frontier_tiles = {root.tile for root in frontier}
+        diagnostics = []
+        for root in enriched:
+            if root.shanten != min_s or not root.speed_eligible:
+                missing = ("shanten_regression",)
+                diagnostics.append((root, False, missing))
+            elif root.tile not in frontier_tiles:
+                missing = ("current_ukeire_frontier",)
+                diagnostics.append((root, False, missing))
+            else:
+                diagnostics.append((root, True, ()))
+        return tuple(enriched), tuple(frontier), tuple(diagnostics)
+
+    ratio = _speed_band_ratio(min_s, speed_band_min_ratio_by_shanten)
+    threshold = float(max_u) * ratio
+    max_tiles = tuple(sorted(
+        root.tile for root in frontier
+        if int(root.current_ukeire or 0) == max_u))
+    band = [root for root in frontier
+            if float(root.current_ukeire or 0) >= threshold]
+
+    annotated = []
     for root in enriched:
+        if root.shanten == min_s and root.speed_eligible and (
+                not any(candidate.tile != W for candidate in frontier) or
+                root.tile != W):
+            current = float(root.current_ukeire or 0)
+            root_ratio = (current / float(max_u) if max_u > 0 else 1.0)
+            in_band = root in band
+            speed_dominated = not in_band
+            root = replace(
+                root,
+                current_speed_ratio=root_ratio,
+                speed_band_threshold=threshold,
+                in_competitive_speed_band=in_band,
+                speed_dominated=speed_dominated,
+                speed_dominated_by=max_tiles if speed_dominated else (),
+                pareto_vector=_pareto_vector(root),
+            )
+        annotated.append(root)
+
+    # Pareto elimination is performed only inside the speed band.  Keep the
+    # old best-current root as an anchor even when another root dominates it;
+    # this makes the new frontier a bounded extension of the rollback choice.
+    band = [root for root in annotated if root.in_competitive_speed_band]
+    baseline = min(
+        (root for root in band if int(root.current_ukeire or 0) == max_u),
+        key=lambda root: _legacy_key(root),
+        default=(band[0] if band else None),
+    )
+    if pareto_frontier_enabled:
+        annotated_by_tile = {root.tile: root for root in annotated}
+        for root in band:
+            dominators = tuple(sorted(
+                other.tile for other in band
+                if other.tile != root.tile and _pareto_dominates(other, root)
+            ))
+            if dominators:
+                root = replace(
+                    root, pareto_dominated=True,
+                    pareto_dominated_by=dominators)
+            annotated_by_tile[root.tile] = root
+        annotated = [annotated_by_tile[root.tile] for root in annotated]
+        band = [annotated_by_tile[root.tile] for root in band]
+
+    retained = [root for root in band
+                if not pareto_frontier_enabled or
+                not root.pareto_dominated]
+    if baseline is not None and all(root.tile != baseline.tile
+                                    for root in retained):
+        retained.append(baseline)
+
+    def _retained_key(root):
+        return (
+            0 if baseline is not None and root.tile == baseline.tile else 1,
+            _marginal_role_rank(root.marginal_role),
+            -float(root.current_speed_ratio or 0.0),
+            -int(root.standing_shape_quality or 0),
+            -len(root.current_ukeire_tiles),
+            float(root.shape_loss), float(root.feed_risk), root.tile,
+        )
+
+    retained = sorted(retained, key=_retained_key)
+    cap = int(max_frontier_candidates or 0)
+    if cap > 0 and len(retained) > cap:
+        anchor = baseline if baseline is not None else retained[0]
+        others = [root for root in retained if root.tile != anchor.tile]
+        retained = [anchor, *others[:max(0, cap - 1)]]
+        retained = sorted(retained, key=_retained_key)
+    frontier_tiles = {root.tile for root in retained}
+
+    diagnostics = []
+    updated_enriched = []
+    for root in annotated:
         if root.shanten != min_s or not root.speed_eligible:
             missing = ("shanten_regression",)
-            diagnostics.append((root, False, missing))
+            eligible = False
+        elif not root.in_competitive_speed_band:
+            missing = ("speed_dominated",)
+            eligible = False
         elif root.tile not in frontier_tiles:
-            missing = ("current_ukeire_frontier",)
-            diagnostics.append((root, False, missing))
+            if root.pareto_dominated:
+                missing = ("pareto_dominated",)
+            else:
+                missing = ("frontier_cap",)
+            eligible = False
         else:
-            diagnostics.append((root, True, ()))
-    return tuple(enriched), tuple(frontier), tuple(diagnostics)
+            missing = ()
+            eligible = True
+        updated_enriched.append(root)
+        diagnostics.append((root, eligible, missing))
+    # ``annotated`` is immutable, but the caller receives the enriched roots
+    # from this same pass so candidate diagnostics and frontier rows agree.
+    return (tuple(updated_enriched),
+            tuple(root for root in retained), tuple(diagnostics))
+
+
+def _speed_frontier_summary(enriched, frontier, profile):
+    """Build bounded-frontier diagnostics for the decision explanation."""
+    if not (profile.speed_band_enabled or profile.pareto_frontier_enabled):
+        return {
+            "speed_band_version": None,
+            "speed_band_threshold": None,
+            "pareto_frontier_before_cap": 0,
+            "pareto_frontier_after_cap": 0,
+            "frontier_singleton_proven": False,
+            "singleton_block_reason": None,
+        }
+    band = [root for root in enriched if root.in_competitive_speed_band]
+    retained = [root.tile for root in frontier]
+    candidates = [root for root in band
+                  if not profile.pareto_frontier_enabled or
+                  not root.pareto_dominated]
+    if band:
+        max_u = max(int(root.current_ukeire or 0) for root in band)
+        baseline = min(
+            (root for root in band if int(root.current_ukeire or 0) == max_u),
+            key=_legacy_key,
+            default=None,
+        )
+        if baseline is not None and baseline.tile not in {
+                root.tile for root in candidates}:
+            candidates.append(baseline)
+    threshold = next((root.speed_band_threshold for root in band), None)
+    eliminated = any(root.speed_dominated or root.pareto_dominated
+                     for root in enriched)
+    singleton = len(retained) == 1 and eliminated
+    reason = None
+    if singleton:
+        reason = ("speed_band" if any(root.speed_dominated for root in enriched)
+                  else "pareto_frontier")
+    return {
+        "speed_band_version": profile.speed_band_version,
+        "speed_band_threshold": threshold,
+        "pareto_frontier_before_cap": len(candidates),
+        "pareto_frontier_after_cap": len(frontier),
+        "frontier_singleton_proven": singleton,
+        "singleton_block_reason": reason,
+    }
 
 
 def _legacy_speed_roots(roots):
@@ -1450,8 +1732,39 @@ def _apply_big_hand_guard(enriched, frontier, diagnostics, profile, locked,
 
 
 def _weighted_root_key(root, future_values, *, shape_quality_enabled=False,
-                       future_shape_enabled=False, future_priority=False):
+                       future_shape_enabled=False, future_priority=False,
+                       speed_band_enabled=False):
     future = future_values[root.tile]
+    if speed_band_enabled:
+        # Roots admitted by the speed band have already passed the safe
+        # current-speed gate.  Compare the bounded future metrics first, then
+        # marginal loss and standing shape, and only use current ukeire as a
+        # late tie-break.  This is the key distinction from the old root key.
+        # Improvement is normalized by the root's current live pool so a
+        # larger raw pool is not rewarded twice (once by admission and again
+        # by the future count).
+        current_live = max(1, int(root.current_ukeire or 0))
+        future_improve_rate = (
+            float(future.future_improve_weight or 0) / current_live)
+        key = (
+            root.tile == W,
+            -future_improve_rate,
+            -(future.future_ukeire_mean or 0.0),
+            -(future.future_ukeire_types_mean or 0.0),
+            _marginal_role_rank(root.marginal_role),
+        )
+        if future_shape_enabled:
+            if future.future_shape_quality_mean is None:
+                raise ValueError(
+                    "future shape quality is missing for a complete key")
+            key += (-future.future_shape_quality_mean,)
+        if shape_quality_enabled:
+            if root.standing_shape_quality is None:
+                raise ValueError("standing shape quality is missing for root")
+            key += (-root.standing_shape_quality,)
+        key += (-(root.current_ukeire or 0), root.shape_loss,
+                root.feed_risk, root.tile)
+        return key
     if future_priority:
         # Once marginal admission has proven that a singleton is unsafe, the
         # completed weighted result must compare the evaluated future before
@@ -1978,6 +2291,10 @@ def _weighted_native_future_for_frontier(
         profile.workers, stage_a_only=stage_a_only,
         shape_quality_enabled=(profile.shape_quality_enabled and
                                profile.shape_quality_stage == "full"),
+        stage_a_normalized=profile.speed_band_enabled,
+        root_current_ukeire=(
+            [int(root.current_ukeire or 0) for root in frontier]
+            if profile.speed_band_enabled else None),
     )
     elapsed_ms = (time.monotonic() - started) * 1000.0
     if rows is None:
@@ -2212,7 +2529,14 @@ def _weighted_evaluation(
         enriched, frontier, diagnostics = _root_features(
             roots, locked, visible,
             shape_quality_enabled=profile.shape_quality_enabled,
-            marginal_role_enabled=profile.marginal_structure_guard_enabled)
+            marginal_role_enabled=(
+                profile.marginal_structure_guard_enabled or
+                profile.speed_band_enabled or profile.pareto_frontier_enabled),
+            speed_band_enabled=profile.speed_band_enabled,
+            speed_band_min_ratio_by_shanten=(
+                profile.speed_band_min_ratio_by_shanten),
+            pareto_frontier_enabled=profile.pareto_frontier_enabled,
+            max_frontier_candidates=profile.max_frontier_candidates)
         visible_tuple = _as_tuple(visible, name="visible")
     except (TypeError, ValueError, _InvalidPublicState) as exc:
         roots = locals().get("roots", ())
@@ -2243,6 +2567,7 @@ def _weighted_evaluation(
     legacy = _legacy_speed_best(enriched)
     speed_pool = _legacy_speed_roots(enriched)
     speed_pool_tiles = tuple(root.tile for root in speed_pool)
+    frontier_summary = _speed_frontier_summary(enriched, frontier, profile)
     if not profile.enabled:
         evaluation = LegacyDiscardEvaluation(
             version=profile.version, profile=profile.name,
@@ -2261,6 +2586,15 @@ def _weighted_evaluation(
             speed_pool_tiles=speed_pool_tiles,
             speed_winner=legacy,
             big_hand_phase="disabled",
+            speed_band_version=frontier_summary["speed_band_version"],
+            speed_band_threshold=frontier_summary["speed_band_threshold"],
+            pareto_frontier_before_cap=(
+                frontier_summary["pareto_frontier_before_cap"]),
+            pareto_frontier_after_cap=(
+                frontier_summary["pareto_frontier_after_cap"]),
+            frontier_singleton_proven=(
+                frontier_summary["frontier_singleton_proven"]),
+            singleton_block_reason=frontier_summary["singleton_block_reason"],
         )
         return legacy, evaluation
 
@@ -2279,6 +2613,18 @@ def _weighted_evaluation(
      big_hand_challenger, big_hand_phase, frontier_cap_dropped,
      speed_winner_hint) = _apply_big_hand_guard(
          enriched, frontier, diagnostics, profile, int(locked), admitted_by)
+    frontier_summary = _speed_frontier_summary(enriched, frontier, profile)
+    marginal_singleton_proven = bool(
+        marginal_structure_guard.get("frontier_singleton_proven"))
+    marginal_singleton_blocked = bool(
+        marginal_structure_guard.get("frontier_singleton_blocked"))
+    frontier_singleton_proven = (
+        marginal_singleton_proven or
+        bool(frontier_summary["frontier_singleton_proven"]))
+    singleton_block_reason = (
+        "marginal_structure_guard" if marginal_singleton_blocked else
+        frontier_summary["singleton_block_reason"] or
+        marginal_structure_guard.get("skipped_reason"))
     speed_shanten = min((root.shanten for root in speed_pool), default=None)
     speed_frontier = tuple(
         root for root in frontier
@@ -2296,6 +2642,7 @@ def _weighted_evaluation(
         for root, eligible, missing in diagnostics:
             data = root.as_json()
             data["missing"] = list(missing)
+            data["eligible"] = bool(eligible)
             data["admitted_by"] = admitted_by.get(root.tile, "primary")
             if root.tile in frontier_tiles and eligible:
                 data["missing"] = ["future_not_evaluated_short_circuit"]
@@ -2349,17 +2696,18 @@ def _weighted_evaluation(
             stage_b_entered=False,
             weighted_two_ply_entered=False,
             marginal_structure_guard=marginal_structure_guard,
-            frontier_singleton_proven=bool(
-                marginal_structure_guard.get("frontier_singleton_proven")),
-            frontier_singleton_blocked=bool(
-                marginal_structure_guard.get("frontier_singleton_blocked")),
-            singleton_block_reason=(
-                marginal_structure_guard.get("skipped_reason")
-                if marginal_structure_guard.get("frontier_singleton_proven")
-                else None),
+            frontier_singleton_proven=frontier_singleton_proven,
+            frontier_singleton_blocked=marginal_singleton_blocked,
+            singleton_block_reason=singleton_block_reason,
             role_guard_slack=marginal_structure_guard.get("role_guard_slack"),
             role_guard_challengers=tuple(
                 marginal_structure_guard.get("role_guard_challengers", ())),
+            speed_band_version=frontier_summary["speed_band_version"],
+            speed_band_threshold=frontier_summary["speed_band_threshold"],
+            pareto_frontier_before_cap=(
+                frontier_summary["pareto_frontier_before_cap"]),
+            pareto_frontier_after_cap=(
+                frontier_summary["pareto_frontier_after_cap"]),
         )
         return singleton.tile, evaluation
 
@@ -2442,11 +2790,28 @@ def _weighted_evaluation(
                 )
                 for root in frontier
             }
+
+            def _stage_a_bound(root, value):
+                """Map a proof bound to the active root comparator units.
+
+                The speed-band comparator normalizes future improvement by the
+                root's current live pool.  Stage-A certificates must use the
+                same units; comparing raw improvement counts would let a
+                larger current pool win before Stage B even when normalized
+                improvement is tied.
+                """
+                if value is None:
+                    return None
+                if profile.speed_band_enabled:
+                    return float(value) / max(1, int(root.current_ukeire or 0))
+                return float(value)
+
             for root in frontier:
                 lower, _upper = bounds[root.tile]
+                lower = _stage_a_bound(root, lower)
                 if lower is None:
                     continue
-                other_uppers = [bounds[other.tile][1]
+                other_uppers = [_stage_a_bound(other, bounds[other.tile][1])
                                 for other in frontier
                                 if other.tile != root.tile]
                 if (other_uppers and all(value is not None and lower > value
@@ -2472,7 +2837,9 @@ def _weighted_evaluation(
                 key=lambda root: _weighted_root_key(
                     root, future_values,
                     shape_quality_enabled=profile.shape_quality_enabled,
-                    future_priority=profile.marginal_structure_guard_enabled,
+                    future_priority=(profile.marginal_structure_guard_enabled and
+                                     not profile.speed_band_enabled),
+                    speed_band_enabled=profile.speed_band_enabled,
                     future_shape_enabled=(
                         profile.shape_quality_enabled and
                         profile.shape_quality_stage == "full" and
@@ -2516,7 +2883,9 @@ def _weighted_evaluation(
             speed_frontier,
             key=lambda root: _weighted_root_key(
                 root, future_values, shape_quality_enabled=False,
-                future_priority=profile.marginal_structure_guard_enabled,
+                future_priority=(profile.marginal_structure_guard_enabled and
+                                 not profile.speed_band_enabled),
+                speed_band_enabled=profile.speed_band_enabled,
                 future_shape_enabled=False),
         )
         shape_baseline_selected = old_shape_winner.tile
@@ -2534,6 +2903,7 @@ def _weighted_evaluation(
     for root, eligible, missing in diagnostics:
         data = root.as_json()
         data["missing"] = list(missing)
+        data["eligible"] = bool(eligible)
         data["admitted_by"] = admitted_by.get(root.tile, "primary")
         if root.tile in frontier_tiles and accepted:
             future = future_values[root.tile]
@@ -2619,17 +2989,18 @@ def _weighted_evaluation(
         stage_b_entered=bool(search_metrics.get("stage_b_entered", 0)),
         weighted_two_ply_entered=True,
         marginal_structure_guard=marginal_structure_guard,
-        frontier_singleton_proven=bool(
-            marginal_structure_guard.get("frontier_singleton_proven")),
-        frontier_singleton_blocked=bool(
-            marginal_structure_guard.get("frontier_singleton_blocked")),
-        singleton_block_reason=(
-            "marginal_structure_guard"
-            if marginal_structure_guard.get("frontier_singleton_blocked")
-            else marginal_structure_guard.get("skipped_reason")),
+        frontier_singleton_proven=frontier_singleton_proven,
+        frontier_singleton_blocked=marginal_singleton_blocked,
+        singleton_block_reason=singleton_block_reason,
         role_guard_slack=marginal_structure_guard.get("role_guard_slack"),
         role_guard_challengers=tuple(
             marginal_structure_guard.get("role_guard_challengers", ())),
+        speed_band_version=frontier_summary["speed_band_version"],
+        speed_band_threshold=frontier_summary["speed_band_threshold"],
+        pareto_frontier_before_cap=(
+            frontier_summary["pareto_frontier_before_cap"]),
+        pareto_frontier_after_cap=(
+            frontier_summary["pareto_frontier_after_cap"]),
     )
     return selected, evaluation
 
@@ -2961,6 +3332,7 @@ __all__ = [
     "LEGACY_V2_EVALUATORS",
     "LEGACY_V2_PROFILE_VERSION", "PROFILE_VERSION", "WEIGHTED_PROFILE_VERSION",
     "MARGINAL_STRUCTURE_ROLE_VERSION", "MARGINAL_STRUCTURE_SLACK_BY_SHANTEN",
+    "SPEED_BAND_VERSION", "SPEED_BAND_MIN_RATIO_BY_SHANTEN",
     "LegacyDiscardEvaluation",
     "LegacyRootCandidate", "LegacyTwoPlyProfile", "FutureEvaluation",
     "StandingRoot", "evaluate_legacy_two_ply", "evaluate_standing_frontier",

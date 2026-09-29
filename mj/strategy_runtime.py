@@ -118,14 +118,23 @@ def _profile_from_config(strategy, evaluator, config):
 
     evaluator = canonical_evaluator(evaluator or DEFAULT_BOT_EVALUATOR)
     if evaluator in LEGACY_V2_EVALUATORS:
-        marginal_enabled = config.get(
+        def _config_bool(name, default):
+            value = config.get(name, default)
+            if isinstance(value, str):
+                return value.strip().lower() in {
+                    "1", "true", "yes", "on", "enabled",
+                }
+            return bool(value)
+
+        marginal_enabled = _config_bool(
             "marginal_structure_guard_enabled", True)
-        if isinstance(marginal_enabled, str):
-            marginal_enabled = marginal_enabled.strip().lower() in {
-                "1", "true", "yes", "on", "enabled",
-            }
+        speed_enabled = _config_bool("speed_band_enabled", False)
+        pareto_enabled = _config_bool(
+            "pareto_frontier_enabled", speed_enabled)
         profile_kwargs = {
             "marginal_structure_guard_enabled": bool(marginal_enabled),
+            "speed_band_enabled": speed_enabled,
+            "pareto_frontier_enabled": pareto_enabled,
         }
         if "marginal_structure_role_version" in config:
             profile_kwargs["marginal_structure_role_version"] = str(
@@ -133,6 +142,12 @@ def _profile_from_config(strategy, evaluator, config):
         if "marginal_structure_slack_by_shanten" in config:
             profile_kwargs["marginal_structure_slack_by_shanten"] = config[
                 "marginal_structure_slack_by_shanten"]
+        if "speed_band_version" in config:
+            profile_kwargs["speed_band_version"] = str(
+                config["speed_band_version"])
+        if "speed_band_min_ratio_by_shanten" in config:
+            profile_kwargs["speed_band_min_ratio_by_shanten"] = config[
+                "speed_band_min_ratio_by_shanten"]
         return (LegacyTwoPlyProfile.weighted_online(**profile_kwargs),
                 LegacyReactionProfile.v2_online())
     if evaluator in LEGACY_V2_BASELINE_EVALUATORS:
@@ -248,6 +263,15 @@ def strategy_snapshot(strategy, evaluator=None, *, profile=None,
                 role_version=legacy_profile.marginal_structure_role_version,
                 slack_by_shanten=list(
                     legacy_profile.marginal_structure_slack_by_shanten)),
+            "speed_band": _feature(
+                "enabled" if legacy_profile.speed_band_enabled
+                else "disabled",
+                version=legacy_profile.speed_band_version,
+                min_ratio_by_shanten=list(
+                    legacy_profile.speed_band_min_ratio_by_shanten)),
+            "pareto_frontier": _feature(
+                "enabled" if legacy_profile.pareto_frontier_enabled
+                else "disabled"),
             "shape_quality": _feature(
                 "enabled" if legacy_profile.shape_quality_enabled else "disabled",
                 stage=legacy_profile.shape_quality_stage),
@@ -271,6 +295,8 @@ def strategy_snapshot(strategy, evaluator=None, *, profile=None,
             "stage_b": _feature("not_applicable"),
             "shape_guard": _feature("not_applicable"),
             "marginal_structure_guard": _feature("not_applicable"),
+            "speed_band": _feature("not_applicable"),
+            "pareto_frontier": _feature("not_applicable"),
             "big_hand_intent": _feature("not_applicable"),
             "reaction_v2": _feature("not_applicable"),
             "kong_continuation": _feature("not_applicable"),
@@ -281,6 +307,8 @@ def strategy_snapshot(strategy, evaluator=None, *, profile=None,
             "stage_b": _feature("not_applicable"),
             "shape_guard": _feature("not_applicable"),
             "marginal_structure_guard": _feature("not_applicable"),
+            "speed_band": _feature("not_applicable"),
+            "pareto_frontier": _feature("not_applicable"),
             "big_hand_intent": _feature("not_applicable"),
             "reaction_v2": _feature("unknown"),
             "kong_continuation": _feature("unknown"),
@@ -304,6 +332,8 @@ def strategy_snapshot(strategy, evaluator=None, *, profile=None,
             "stage_b": _feature("not_applicable"),
             "shape_guard": _feature("not_applicable"),
             "marginal_structure_guard": _feature("not_applicable"),
+            "speed_band": _feature("not_applicable"),
+            "pareto_frontier": _feature("not_applicable"),
             "big_hand_intent": _feature("not_applicable"),
             "plus_one": _feature("not_applicable"),
             "baotou_scope": _feature("not_applicable"),

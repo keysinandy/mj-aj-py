@@ -1,0 +1,915 @@
+{
+  "mode": "interleaved_ordinary_discard",
+  "states_per_evaluator_per_repeat": 1000,
+  "repeats": 3,
+  "seed_start": 20260926,
+  "interleaved": true,
+  "order": "alternate by repeat plus state index parity",
+  "evaluators": {
+    "legacy-v2-baseline": {
+      "profile": {
+        "name": "legacyV2",
+        "version": "legacyV2",
+        "model": "weighted_unseen_one_draw_lazy_best_discard",
+        "rules_version": "hangzhou-platform-guide-v34",
+        "node_budget": 100000,
+        "time_budget_ms": 50.0,
+        "cache_capacity": 8192,
+        "sort_version": "weighted-frontier-v1",
+        "kernel": "auto",
+        "enabled": true,
+        "big_hand": {
+          "version": "legacy-big-hand-intent-v1",
+          "enabled": false,
+          "same_shanten_enabled": true,
+          "plus_one_enabled": false,
+          "min_live": 24,
+          "max_opponent_melds": 1,
+          "min_ukeire": 4,
+          "max_ukeire_loss": 4,
+          "min_pair_units": 4,
+          "min_luxury_upgrade_live": 1
+        },
+        "mode": "weighted",
+        "soft_budget_ms": 40.0,
+        "hard_budget_ms": 50.0,
+        "max_frontier_candidates": 3,
+        "allow_partial": true,
+        "min_partial_coverage": 0.9,
+        "lazy_child_ukeire": true,
+        "shape_guard_enabled": true,
+        "shape_guard_ukeire_slack": 1,
+        "shape_guard_shape_delta": 8,
+        "require_complete": false,
+        "shape_quality_enabled": true,
+        "shape_quality_version": "standing-shape-v1",
+        "shape_quality_stage": "full",
+        "shape_quality_guard_enabled": true,
+        "shape_quality_guard_version": "standing-shape-taatsu-gain-v1",
+        "marginal_structure_guard_enabled": true,
+        "marginal_structure_role_version": "marginal-structure-role-v1",
+        "marginal_structure_slack_by_shanten": [
+          0,
+          2,
+          4,
+          6
+        ],
+        "workers": 0,
+        "speed_band_enabled": false,
+        "speed_band_version": "legacy-speed-band-v1",
+        "speed_band_min_ratio_by_shanten": [
+          1.0,
+          0.9,
+          0.82,
+          0.78
+        ],
+        "pareto_frontier_enabled": false,
+        "fingerprint": "1215a0047e95ebe8"
+      },
+      "end_to_end": {
+        "states": 3000,
+        "complete": 2391,
+        "partial_accepted": 27,
+        "fallback": 114,
+        "search_used": 2418,
+        "search_used_rate": 0.806,
+        "search_phase_counts": {
+          "two_ply": 2504,
+          "none": 468,
+          "future_shanten": 28
+        },
+        "workers": 8,
+        "p50_ms": 35.70346700144,
+        "p90_ms": 59.46000400581397,
+        "p95_ms": 66.10359298065305,
+        "p99_ms": 80.36929802619852,
+        "max_ms": 295.8011339942459,
+        "coverage_p50": 1.0,
+        "frontier_p50": 3.0,
+        "shanten_calls_total": 47954567,
+        "ukeire_calls_total": 1562773,
+        "child_nodes_total": 2749841,
+        "shanten_cache_hit_rate": 0.13674003145518965,
+        "fallback_reasons": {
+          "partial_not_acceptable": 114
+        }
+      },
+      "raw_native": {
+        "states": 2976,
+        "p50_ms": 24.39358099945821,
+        "p95_ms": 50.42564001632854,
+        "p99_ms": 62.46851501055062,
+        "max_ms": 142.37421602592804
+      },
+      "decision_scope_counts": {
+        "weighted_two_ply": 2856,
+        "legacy": 120,
+        "baotou_scope": 24
+      },
+      "stage_b_entered": 2504,
+      "shape_changed_winner": 12,
+      "baotou": {
+        "count": 24,
+        "elapsed_ms_p50": 2.261,
+        "elapsed_ms_p95": 8.393,
+        "elapsed_ms_p99": 9.594,
+        "elapsed_ms_max": 9.594,
+        "shape_changed": 0
+      },
+      "repeats": [
+        {
+          "profile": {
+            "name": "legacyV2",
+            "version": "legacyV2",
+            "model": "weighted_unseen_one_draw_lazy_best_discard",
+            "rules_version": "hangzhou-platform-guide-v34",
+            "node_budget": 100000,
+            "time_budget_ms": 50.0,
+            "cache_capacity": 8192,
+            "sort_version": "weighted-frontier-v1",
+            "kernel": "auto",
+            "enabled": true,
+            "big_hand": {
+              "version": "legacy-big-hand-intent-v1",
+              "enabled": false,
+              "same_shanten_enabled": true,
+              "plus_one_enabled": false,
+              "min_live": 24,
+              "max_opponent_melds": 1,
+              "min_ukeire": 4,
+              "max_ukeire_loss": 4,
+              "min_pair_units": 4,
+              "min_luxury_upgrade_live": 1
+            },
+            "mode": "weighted",
+            "soft_budget_ms": 40.0,
+            "hard_budget_ms": 50.0,
+            "max_frontier_candidates": 3,
+            "allow_partial": true,
+            "min_partial_coverage": 0.9,
+            "lazy_child_ukeire": true,
+            "shape_guard_enabled": true,
+            "shape_guard_ukeire_slack": 1,
+            "shape_guard_shape_delta": 8,
+            "require_complete": false,
+            "shape_quality_enabled": true,
+            "shape_quality_version": "standing-shape-v1",
+            "shape_quality_stage": "full",
+            "shape_quality_guard_enabled": true,
+            "shape_quality_guard_version": "standing-shape-taatsu-gain-v1",
+            "marginal_structure_guard_enabled": true,
+            "marginal_structure_role_version": "marginal-structure-role-v1",
+            "marginal_structure_slack_by_shanten": [
+              0,
+              2,
+              4,
+              6
+            ],
+            "workers": 0,
+            "speed_band_enabled": false,
+            "speed_band_version": "legacy-speed-band-v1",
+            "speed_band_min_ratio_by_shanten": [
+              1.0,
+              0.9,
+              0.82,
+              0.78
+            ],
+            "pareto_frontier_enabled": false,
+            "fingerprint": "1215a0047e95ebe8"
+          },
+          "end_to_end": {
+            "states": 1000,
+            "complete": 806,
+            "partial_accepted": 9,
+            "fallback": 29,
+            "search_used": 815,
+            "search_used_rate": 0.815,
+            "search_phase_counts": {
+              "two_ply": 834,
+              "none": 156,
+              "future_shanten": 10
+            },
+            "workers": 8,
+            "p50_ms": 30.343821010319516,
+            "p90_ms": 51.26320000272244,
+            "p95_ms": 60.851007991004735,
+            "p99_ms": 79.82474501477554,
+            "max_ms": 156.53097699396312,
+            "coverage_p50": 1.0,
+            "frontier_p50": 3.0,
+            "shanten_calls_total": 15996273,
+            "ukeire_calls_total": 521183,
+            "child_nodes_total": 916387,
+            "shanten_cache_hit_rate": 0.13575993608011067,
+            "fallback_reasons": {
+              "partial_not_acceptable": 29
+            }
+          },
+          "raw_native": {
+            "states": 992,
+            "p50_ms": 19.84332501888275,
+            "p95_ms": 45.217584003694355,
+            "p99_ms": 57.38743400434032,
+            "max_ms": 142.37421602592804
+          },
+          "decision_scope_counts": {
+            "weighted_two_ply": 961,
+            "legacy": 31,
+            "baotou_scope": 8
+          },
+          "stage_b_entered": 834,
+          "shape_changed_winner": 4,
+          "baotou": {
+            "count": 8,
+            "elapsed_ms_p50": 2.4364999999999997,
+            "elapsed_ms_p95": 7.882,
+            "elapsed_ms_p99": 7.882,
+            "elapsed_ms_max": 7.882,
+            "shape_changed": 0
+          }
+        },
+        {
+          "profile": {
+            "name": "legacyV2",
+            "version": "legacyV2",
+            "model": "weighted_unseen_one_draw_lazy_best_discard",
+            "rules_version": "hangzhou-platform-guide-v34",
+            "node_budget": 100000,
+            "time_budget_ms": 50.0,
+            "cache_capacity": 8192,
+            "sort_version": "weighted-frontier-v1",
+            "kernel": "auto",
+            "enabled": true,
+            "big_hand": {
+              "version": "legacy-big-hand-intent-v1",
+              "enabled": false,
+              "same_shanten_enabled": true,
+              "plus_one_enabled": false,
+              "min_live": 24,
+              "max_opponent_melds": 1,
+              "min_ukeire": 4,
+              "max_ukeire_loss": 4,
+              "min_pair_units": 4,
+              "min_luxury_upgrade_live": 1
+            },
+            "mode": "weighted",
+            "soft_budget_ms": 40.0,
+            "hard_budget_ms": 50.0,
+            "max_frontier_candidates": 3,
+            "allow_partial": true,
+            "min_partial_coverage": 0.9,
+            "lazy_child_ukeire": true,
+            "shape_guard_enabled": true,
+            "shape_guard_ukeire_slack": 1,
+            "shape_guard_shape_delta": 8,
+            "require_complete": false,
+            "shape_quality_enabled": true,
+            "shape_quality_version": "standing-shape-v1",
+            "shape_quality_stage": "full",
+            "shape_quality_guard_enabled": true,
+            "shape_quality_guard_version": "standing-shape-taatsu-gain-v1",
+            "marginal_structure_guard_enabled": true,
+            "marginal_structure_role_version": "marginal-structure-role-v1",
+            "marginal_structure_slack_by_shanten": [
+              0,
+              2,
+              4,
+              6
+            ],
+            "workers": 0,
+            "speed_band_enabled": false,
+            "speed_band_version": "legacy-speed-band-v1",
+            "speed_band_min_ratio_by_shanten": [
+              1.0,
+              0.9,
+              0.82,
+              0.78
+            ],
+            "pareto_frontier_enabled": false,
+            "fingerprint": "1215a0047e95ebe8"
+          },
+          "end_to_end": {
+            "states": 1000,
+            "complete": 795,
+            "partial_accepted": 9,
+            "fallback": 40,
+            "search_used": 804,
+            "search_used_rate": 0.804,
+            "search_phase_counts": {
+              "two_ply": 835,
+              "none": 156,
+              "future_shanten": 9
+            },
+            "workers": 8,
+            "p50_ms": 37.512621987843886,
+            "p90_ms": 61.42284700763412,
+            "p95_ms": 67.11821700446308,
+            "p99_ms": 79.97490800335072,
+            "max_ms": 115.66960698110051,
+            "coverage_p50": 1.0,
+            "frontier_p50": 3.0,
+            "shanten_calls_total": 15970401,
+            "ukeire_calls_total": 520667,
+            "child_nodes_total": 916727,
+            "shanten_cache_hit_rate": 0.13671453835129124,
+            "fallback_reasons": {
+              "partial_not_acceptable": 40
+            }
+          },
+          "raw_native": {
+            "states": 992,
+            "p50_ms": 25.746319006429985,
+            "p95_ms": 50.94558501150459,
+            "p99_ms": 69.06522499048151,
+            "max_ms": 114.86970097757876
+          },
+          "decision_scope_counts": {
+            "weighted_two_ply": 950,
+            "legacy": 42,
+            "baotou_scope": 8
+          },
+          "stage_b_entered": 835,
+          "shape_changed_winner": 4,
+          "baotou": {
+            "count": 8,
+            "elapsed_ms_p50": 1.7235,
+            "elapsed_ms_p95": 5.638,
+            "elapsed_ms_p99": 5.638,
+            "elapsed_ms_max": 5.638,
+            "shape_changed": 0
+          }
+        },
+        {
+          "profile": {
+            "name": "legacyV2",
+            "version": "legacyV2",
+            "model": "weighted_unseen_one_draw_lazy_best_discard",
+            "rules_version": "hangzhou-platform-guide-v34",
+            "node_budget": 100000,
+            "time_budget_ms": 50.0,
+            "cache_capacity": 8192,
+            "sort_version": "weighted-frontier-v1",
+            "kernel": "auto",
+            "enabled": true,
+            "big_hand": {
+              "version": "legacy-big-hand-intent-v1",
+              "enabled": false,
+              "same_shanten_enabled": true,
+              "plus_one_enabled": false,
+              "min_live": 24,
+              "max_opponent_melds": 1,
+              "min_ukeire": 4,
+              "max_ukeire_loss": 4,
+              "min_pair_units": 4,
+              "min_luxury_upgrade_live": 1
+            },
+            "mode": "weighted",
+            "soft_budget_ms": 40.0,
+            "hard_budget_ms": 50.0,
+            "max_frontier_candidates": 3,
+            "allow_partial": true,
+            "min_partial_coverage": 0.9,
+            "lazy_child_ukeire": true,
+            "shape_guard_enabled": true,
+            "shape_guard_ukeire_slack": 1,
+            "shape_guard_shape_delta": 8,
+            "require_complete": false,
+            "shape_quality_enabled": true,
+            "shape_quality_version": "standing-shape-v1",
+            "shape_quality_stage": "full",
+            "shape_quality_guard_enabled": true,
+            "shape_quality_guard_version": "standing-shape-taatsu-gain-v1",
+            "marginal_structure_guard_enabled": true,
+            "marginal_structure_role_version": "marginal-structure-role-v1",
+            "marginal_structure_slack_by_shanten": [
+              0,
+              2,
+              4,
+              6
+            ],
+            "workers": 0,
+            "speed_band_enabled": false,
+            "speed_band_version": "legacy-speed-band-v1",
+            "speed_band_min_ratio_by_shanten": [
+              1.0,
+              0.9,
+              0.82,
+              0.78
+            ],
+            "pareto_frontier_enabled": false,
+            "fingerprint": "1215a0047e95ebe8"
+          },
+          "end_to_end": {
+            "states": 1000,
+            "complete": 790,
+            "partial_accepted": 9,
+            "fallback": 45,
+            "search_used": 799,
+            "search_used_rate": 0.799,
+            "search_phase_counts": {
+              "two_ply": 835,
+              "none": 156,
+              "future_shanten": 9
+            },
+            "workers": 8,
+            "p50_ms": 39.86976799205877,
+            "p90_ms": 61.66788301197812,
+            "p95_ms": 67.85644899355248,
+            "p99_ms": 82.75137798045762,
+            "max_ms": 295.8011339942459,
+            "coverage_p50": 1.0,
+            "frontier_p50": 3.0,
+            "shanten_calls_total": 15987893,
+            "ukeire_calls_total": 520923,
+            "child_nodes_total": 916727,
+            "shanten_cache_hit_rate": 0.13774610575639953,
+            "fallback_reasons": {
+              "partial_not_acceptable": 45
+            }
+          },
+          "raw_native": {
+            "states": 992,
+            "p50_ms": 27.755140996305272,
+            "p95_ms": 53.77723998390138,
+            "p99_ms": 64.06155598233454,
+            "max_ms": 100.26147600729018
+          },
+          "decision_scope_counts": {
+            "weighted_two_ply": 945,
+            "legacy": 47,
+            "baotou_scope": 8
+          },
+          "stage_b_entered": 835,
+          "shape_changed_winner": 4,
+          "baotou": {
+            "count": 8,
+            "elapsed_ms_p50": 4.1065,
+            "elapsed_ms_p95": 9.594,
+            "elapsed_ms_p99": 9.594,
+            "elapsed_ms_max": 9.594,
+            "shape_changed": 0
+          }
+        }
+      ],
+      "errors": []
+    },
+    "legacy-v2-speed-band": {
+      "profile": {
+        "name": "legacyV2",
+        "version": "legacyV2",
+        "model": "weighted_unseen_one_draw_lazy_best_discard",
+        "rules_version": "hangzhou-platform-guide-v34",
+        "node_budget": 100000,
+        "time_budget_ms": 50.0,
+        "cache_capacity": 8192,
+        "sort_version": "weighted-frontier-v1",
+        "kernel": "auto",
+        "enabled": true,
+        "big_hand": {
+          "version": "legacy-big-hand-intent-v1",
+          "enabled": false,
+          "same_shanten_enabled": true,
+          "plus_one_enabled": false,
+          "min_live": 24,
+          "max_opponent_melds": 1,
+          "min_ukeire": 4,
+          "max_ukeire_loss": 4,
+          "min_pair_units": 4,
+          "min_luxury_upgrade_live": 1
+        },
+        "mode": "weighted",
+        "soft_budget_ms": 40.0,
+        "hard_budget_ms": 50.0,
+        "max_frontier_candidates": 3,
+        "allow_partial": true,
+        "min_partial_coverage": 0.9,
+        "lazy_child_ukeire": true,
+        "shape_guard_enabled": true,
+        "shape_guard_ukeire_slack": 1,
+        "shape_guard_shape_delta": 8,
+        "require_complete": false,
+        "shape_quality_enabled": true,
+        "shape_quality_version": "standing-shape-v1",
+        "shape_quality_stage": "full",
+        "shape_quality_guard_enabled": true,
+        "shape_quality_guard_version": "standing-shape-taatsu-gain-v1",
+        "marginal_structure_guard_enabled": true,
+        "marginal_structure_role_version": "marginal-structure-role-v1",
+        "marginal_structure_slack_by_shanten": [
+          0,
+          2,
+          4,
+          6
+        ],
+        "speed_band_enabled": true,
+        "speed_band_version": "legacy-speed-band-v1",
+        "speed_band_min_ratio_by_shanten": [
+          1.0,
+          0.9,
+          0.82,
+          0.78
+        ],
+        "pareto_frontier_enabled": true,
+        "workers": 0,
+        "fingerprint": "b085510130a4d3f5"
+      },
+      "end_to_end": {
+        "states": 3000,
+        "complete": 1935,
+        "partial_accepted": 0,
+        "fallback": 87,
+        "search_used": 1935,
+        "search_used_rate": 0.645,
+        "search_phase_counts": {
+          "two_ply": 2019,
+          "none": 978,
+          "future_shanten": 3
+        },
+        "workers": 8,
+        "p50_ms": 30.565244000172243,
+        "p90_ms": 58.269889006624,
+        "p95_ms": 66.4191189862322,
+        "p99_ms": 79.83180900919251,
+        "max_ms": 203.9394770108629,
+        "coverage_p50": 1.0,
+        "frontier_p50": 2.0,
+        "shanten_calls_total": 36411107,
+        "ukeire_calls_total": 1168038,
+        "child_nodes_total": 2002784,
+        "shanten_cache_hit_rate": 0.12715224505533435,
+        "fallback_reasons": {
+          "partial_not_acceptable": 87
+        }
+      },
+      "raw_native": {
+        "states": 2976,
+        "p50_ms": 18.158341001253575,
+        "p95_ms": 48.35931499837898,
+        "p99_ms": 58.85602699709125,
+        "max_ms": 180.2787860215176
+      },
+      "decision_scope_counts": {
+        "weighted_two_ply": 2883,
+        "legacy": 93,
+        "baotou_scope": 24
+      },
+      "stage_b_entered": 2019,
+      "shape_changed_winner": 6,
+      "baotou": {
+        "count": 24,
+        "elapsed_ms_p50": 2.502,
+        "elapsed_ms_p95": 9.916,
+        "elapsed_ms_p99": 14.843,
+        "elapsed_ms_max": 14.843,
+        "shape_changed": 0
+      },
+      "repeats": [
+        {
+          "profile": {
+            "name": "legacyV2",
+            "version": "legacyV2",
+            "model": "weighted_unseen_one_draw_lazy_best_discard",
+            "rules_version": "hangzhou-platform-guide-v34",
+            "node_budget": 100000,
+            "time_budget_ms": 50.0,
+            "cache_capacity": 8192,
+            "sort_version": "weighted-frontier-v1",
+            "kernel": "auto",
+            "enabled": true,
+            "big_hand": {
+              "version": "legacy-big-hand-intent-v1",
+              "enabled": false,
+              "same_shanten_enabled": true,
+              "plus_one_enabled": false,
+              "min_live": 24,
+              "max_opponent_melds": 1,
+              "min_ukeire": 4,
+              "max_ukeire_loss": 4,
+              "min_pair_units": 4,
+              "min_luxury_upgrade_live": 1
+            },
+            "mode": "weighted",
+            "soft_budget_ms": 40.0,
+            "hard_budget_ms": 50.0,
+            "max_frontier_candidates": 3,
+            "allow_partial": true,
+            "min_partial_coverage": 0.9,
+            "lazy_child_ukeire": true,
+            "shape_guard_enabled": true,
+            "shape_guard_ukeire_slack": 1,
+            "shape_guard_shape_delta": 8,
+            "require_complete": false,
+            "shape_quality_enabled": true,
+            "shape_quality_version": "standing-shape-v1",
+            "shape_quality_stage": "full",
+            "shape_quality_guard_enabled": true,
+            "shape_quality_guard_version": "standing-shape-taatsu-gain-v1",
+            "marginal_structure_guard_enabled": true,
+            "marginal_structure_role_version": "marginal-structure-role-v1",
+            "marginal_structure_slack_by_shanten": [
+              0,
+              2,
+              4,
+              6
+            ],
+            "speed_band_enabled": true,
+            "speed_band_version": "legacy-speed-band-v1",
+            "speed_band_min_ratio_by_shanten": [
+              1.0,
+              0.9,
+              0.82,
+              0.78
+            ],
+            "pareto_frontier_enabled": true,
+            "workers": 0,
+            "fingerprint": "b085510130a4d3f5"
+          },
+          "end_to_end": {
+            "states": 1000,
+            "complete": 653,
+            "partial_accepted": 0,
+            "fallback": 21,
+            "search_used": 653,
+            "search_used_rate": 0.653,
+            "search_phase_counts": {
+              "two_ply": 674,
+              "none": 326
+            },
+            "workers": 8,
+            "p50_ms": 25.89356098906137,
+            "p90_ms": 50.96517101628706,
+            "p95_ms": 60.408980993088335,
+            "p99_ms": 73.82387699908577,
+            "max_ms": 145.77566398656927,
+            "coverage_p50": 1.0,
+            "frontier_p50": 2.0,
+            "shanten_calls_total": 12136252,
+            "ukeire_calls_total": 389138,
+            "child_nodes_total": 667842,
+            "shanten_cache_hit_rate": 0.12627498176537533,
+            "fallback_reasons": {
+              "partial_not_acceptable": 21
+            }
+          },
+          "raw_native": {
+            "states": 992,
+            "p50_ms": 14.755640993826091,
+            "p95_ms": 40.95960900303908,
+            "p99_ms": 55.03337297705002,
+            "max_ms": 64.58683899836615
+          },
+          "decision_scope_counts": {
+            "weighted_two_ply": 969,
+            "legacy": 23,
+            "baotou_scope": 8
+          },
+          "stage_b_entered": 674,
+          "shape_changed_winner": 2,
+          "baotou": {
+            "count": 8,
+            "elapsed_ms_p50": 2.8565,
+            "elapsed_ms_p95": 9.916,
+            "elapsed_ms_p99": 9.916,
+            "elapsed_ms_max": 9.916,
+            "shape_changed": 0
+          }
+        },
+        {
+          "profile": {
+            "name": "legacyV2",
+            "version": "legacyV2",
+            "model": "weighted_unseen_one_draw_lazy_best_discard",
+            "rules_version": "hangzhou-platform-guide-v34",
+            "node_budget": 100000,
+            "time_budget_ms": 50.0,
+            "cache_capacity": 8192,
+            "sort_version": "weighted-frontier-v1",
+            "kernel": "auto",
+            "enabled": true,
+            "big_hand": {
+              "version": "legacy-big-hand-intent-v1",
+              "enabled": false,
+              "same_shanten_enabled": true,
+              "plus_one_enabled": false,
+              "min_live": 24,
+              "max_opponent_melds": 1,
+              "min_ukeire": 4,
+              "max_ukeire_loss": 4,
+              "min_pair_units": 4,
+              "min_luxury_upgrade_live": 1
+            },
+            "mode": "weighted",
+            "soft_budget_ms": 40.0,
+            "hard_budget_ms": 50.0,
+            "max_frontier_candidates": 3,
+            "allow_partial": true,
+            "min_partial_coverage": 0.9,
+            "lazy_child_ukeire": true,
+            "shape_guard_enabled": true,
+            "shape_guard_ukeire_slack": 1,
+            "shape_guard_shape_delta": 8,
+            "require_complete": false,
+            "shape_quality_enabled": true,
+            "shape_quality_version": "standing-shape-v1",
+            "shape_quality_stage": "full",
+            "shape_quality_guard_enabled": true,
+            "shape_quality_guard_version": "standing-shape-taatsu-gain-v1",
+            "marginal_structure_guard_enabled": true,
+            "marginal_structure_role_version": "marginal-structure-role-v1",
+            "marginal_structure_slack_by_shanten": [
+              0,
+              2,
+              4,
+              6
+            ],
+            "speed_band_enabled": true,
+            "speed_band_version": "legacy-speed-band-v1",
+            "speed_band_min_ratio_by_shanten": [
+              1.0,
+              0.9,
+              0.82,
+              0.78
+            ],
+            "pareto_frontier_enabled": true,
+            "workers": 0,
+            "fingerprint": "b085510130a4d3f5"
+          },
+          "end_to_end": {
+            "states": 1000,
+            "complete": 641,
+            "partial_accepted": 0,
+            "fallback": 33,
+            "search_used": 641,
+            "search_used_rate": 0.641,
+            "search_phase_counts": {
+              "two_ply": 673,
+              "none": 326,
+              "future_shanten": 1
+            },
+            "workers": 8,
+            "p50_ms": 32.870691997231916,
+            "p90_ms": 60.46760399476625,
+            "p95_ms": 68.23573500150815,
+            "p99_ms": 84.88745297654532,
+            "max_ms": 203.9394770108629,
+            "coverage_p50": 1.0,
+            "frontier_p50": 2.0,
+            "shanten_calls_total": 12125771,
+            "ukeire_calls_total": 389175,
+            "child_nodes_total": 667355,
+            "shanten_cache_hit_rate": 0.12661083571510628,
+            "fallback_reasons": {
+              "partial_not_acceptable": 33
+            }
+          },
+          "raw_native": {
+            "states": 992,
+            "p50_ms": 19.68376198783517,
+            "p95_ms": 49.001923005562276,
+            "p99_ms": 60.80945298890583,
+            "max_ms": 92.30529502383433
+          },
+          "decision_scope_counts": {
+            "weighted_two_ply": 957,
+            "legacy": 35,
+            "baotou_scope": 8
+          },
+          "stage_b_entered": 673,
+          "shape_changed_winner": 2,
+          "baotou": {
+            "count": 8,
+            "elapsed_ms_p50": 2.3049999999999997,
+            "elapsed_ms_p95": 6.599,
+            "elapsed_ms_p99": 6.599,
+            "elapsed_ms_max": 6.599,
+            "shape_changed": 0
+          }
+        },
+        {
+          "profile": {
+            "name": "legacyV2",
+            "version": "legacyV2",
+            "model": "weighted_unseen_one_draw_lazy_best_discard",
+            "rules_version": "hangzhou-platform-guide-v34",
+            "node_budget": 100000,
+            "time_budget_ms": 50.0,
+            "cache_capacity": 8192,
+            "sort_version": "weighted-frontier-v1",
+            "kernel": "auto",
+            "enabled": true,
+            "big_hand": {
+              "version": "legacy-big-hand-intent-v1",
+              "enabled": false,
+              "same_shanten_enabled": true,
+              "plus_one_enabled": false,
+              "min_live": 24,
+              "max_opponent_melds": 1,
+              "min_ukeire": 4,
+              "max_ukeire_loss": 4,
+              "min_pair_units": 4,
+              "min_luxury_upgrade_live": 1
+            },
+            "mode": "weighted",
+            "soft_budget_ms": 40.0,
+            "hard_budget_ms": 50.0,
+            "max_frontier_candidates": 3,
+            "allow_partial": true,
+            "min_partial_coverage": 0.9,
+            "lazy_child_ukeire": true,
+            "shape_guard_enabled": true,
+            "shape_guard_ukeire_slack": 1,
+            "shape_guard_shape_delta": 8,
+            "require_complete": false,
+            "shape_quality_enabled": true,
+            "shape_quality_version": "standing-shape-v1",
+            "shape_quality_stage": "full",
+            "shape_quality_guard_enabled": true,
+            "shape_quality_guard_version": "standing-shape-taatsu-gain-v1",
+            "marginal_structure_guard_enabled": true,
+            "marginal_structure_role_version": "marginal-structure-role-v1",
+            "marginal_structure_slack_by_shanten": [
+              0,
+              2,
+              4,
+              6
+            ],
+            "speed_band_enabled": true,
+            "speed_band_version": "legacy-speed-band-v1",
+            "speed_band_min_ratio_by_shanten": [
+              1.0,
+              0.9,
+              0.82,
+              0.78
+            ],
+            "pareto_frontier_enabled": true,
+            "workers": 0,
+            "fingerprint": "b085510130a4d3f5"
+          },
+          "end_to_end": {
+            "states": 1000,
+            "complete": 641,
+            "partial_accepted": 0,
+            "fallback": 33,
+            "search_used": 641,
+            "search_used_rate": 0.641,
+            "search_phase_counts": {
+              "two_ply": 672,
+              "none": 326,
+              "future_shanten": 2
+            },
+            "workers": 8,
+            "p50_ms": 34.7417349985335,
+            "p90_ms": 61.105474014766514,
+            "p95_ms": 67.81287500052713,
+            "p99_ms": 81.1010780162178,
+            "max_ms": 119.74815500434488,
+            "coverage_p50": 1.0,
+            "frontier_p50": 2.0,
+            "shanten_calls_total": 12149084,
+            "ukeire_calls_total": 389725,
+            "child_nodes_total": 667587,
+            "shanten_cache_hit_rate": 0.12856895219425596,
+            "fallback_reasons": {
+              "partial_not_acceptable": 33
+            }
+          },
+          "raw_native": {
+            "states": 992,
+            "p50_ms": 21.545954019529745,
+            "p95_ms": 50.92100100591779,
+            "p99_ms": 61.33350500022061,
+            "max_ms": 180.2787860215176
+          },
+          "decision_scope_counts": {
+            "weighted_two_ply": 957,
+            "legacy": 35,
+            "baotou_scope": 8
+          },
+          "stage_b_entered": 672,
+          "shape_changed_winner": 2,
+          "baotou": {
+            "count": 8,
+            "elapsed_ms_p50": 2.0795,
+            "elapsed_ms_p95": 14.843,
+            "elapsed_ms_p99": 14.843,
+            "elapsed_ms_max": 14.843,
+            "shape_changed": 0
+          }
+        }
+      ],
+      "errors": []
+    }
+  },
+  "comparison": {
+    "baseline_evaluator": "legacy-v2-baseline",
+    "candidates": {
+      "legacy-v2-speed-band": {
+        "p95_regression_pct": 0.4773205076333831,
+        "p99_regression_pct": -0.6687740595056613,
+        "fallback_rate_delta_percentage_points": -0.8999999999999998,
+        "p95_gate_pass": true,
+        "p99_gate_pass": true
+      }
+    }
+  }
+}

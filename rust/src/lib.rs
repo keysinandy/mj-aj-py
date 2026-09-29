@@ -25,7 +25,7 @@ type UkeireCacheKey = ([i32; 34], [i32; 34], i32);
 type ShapeSignature = [i32; 8];
 type ShapeCache = HashMap<[i32; 34], i64>;
 const LEGACY_TWO_PLY_KERNEL_VERSION: &str = "rust-legacy-two-ply-v1";
-const WEIGHTED_TWO_PLY_KERNEL_VERSION: &str = "rust-weighted-two-ply-v4";
+const WEIGHTED_TWO_PLY_KERNEL_VERSION: &str = "rust-weighted-two-ply-v5";
 const SHAPE_QUALITY_VERSION: &str = "standing-shape-v1";
 const WORK_BUDGET_EXCEEDED: &str = "work_budget_exceeded";
 const HARD_DEADLINE_EXCEEDED: &str = "hard_deadline";
@@ -1915,7 +1915,7 @@ fn run_stage_b_units(
 /// ``(root, draw)`` units in parallel workers; the aggregation order is fixed,
 /// so the reported metrics never depend on the worker count.  Callers may
 /// request a Stage-A-only partial once every root reaches the coverage floor.
-#[pyfunction(signature = (roots, root_shantens, visible, legal_masks, locked=0, frozen=false, node_budget=100000, soft_budget_ms=40.0, hard_budget_ms=50.0, cache_capacity=8192, min_partial_coverage=0.90, include_best_discards=true, workers=0, stage_a_only=false, shape_quality_enabled=false))]
+#[pyfunction(signature = (roots, root_shantens, visible, legal_masks, locked=0, frozen=false, node_budget=100000, soft_budget_ms=40.0, hard_budget_ms=50.0, cache_capacity=8192, min_partial_coverage=0.90, include_best_discards=true, workers=0, stage_a_only=false, shape_quality_enabled=false, stage_a_normalized=false, root_current_ukeire=None))]
 fn weighted_two_ply_frontier(
     roots: Vec<Vec<i32>>,
     root_shantens: Vec<i32>,
@@ -1932,6 +1932,8 @@ fn weighted_two_ply_frontier(
     workers: i64,
     stage_a_only: bool,
     shape_quality_enabled: bool,
+    stage_a_normalized: bool,
+    root_current_ukeire: Option<Vec<i64>>,
 ) -> PyResult<Vec<WeightedRootRow>> {
     if roots.is_empty() {
         return Err(PyValueError::new_err("roots must not be empty"));
@@ -1939,6 +1941,17 @@ fn weighted_two_ply_frontier(
     if roots.len() != root_shantens.len() || roots.len() != legal_masks.len() {
         return Err(PyValueError::new_err(
             "roots, root_shantens and legal_masks must have equal length",
+        ));
+    }
+    let root_current_ukeire = root_current_ukeire.unwrap_or_default();
+    if stage_a_normalized && root_current_ukeire.len() != roots.len() {
+        return Err(PyValueError::new_err(
+            "root_current_ukeire must match roots when stage_a_normalized is enabled",
+        ));
+    }
+    if root_current_ukeire.iter().any(|&value| value < 0) {
+        return Err(PyValueError::new_err(
+            "root_current_ukeire must contain non-negative values",
         ));
     }
     if locked < 0 || locked > 4 {
@@ -2072,7 +2085,14 @@ fn weighted_two_ply_frontier(
                     || (acc.total_weight == 0 && acc.covered_weight == 0)
             });
             if Instant::now() >= started + soft_limit && all_covered {
-                if let Some(winner) = strict_improvement_winner(&accumulators) {
+                if let Some(winner) = strict_improvement_winner(
+                    &accumulators,
+                    if stage_a_normalized {
+                        Some(root_current_ukeire.as_slice())
+                    } else {
+                        None
+                    },
+                ) {
                     stage_a_winner = Some(winner);
                     break 'stage_a;
                 }
@@ -2176,7 +2196,14 @@ fn weighted_two_ply_frontier(
                 .push((draw as i32, weight, best_s, best_discards));
 
             if !stage_a_only {
-                if let Some(winner) = strict_improvement_winner(&accumulators) {
+                if let Some(winner) = strict_improvement_winner(
+                    &accumulators,
+                    if stage_a_normalized {
+                        Some(root_current_ukeire.as_slice())
+                    } else {
+                        None
+                    },
+                ) {
                     stage_a_winner = Some(winner);
                     break 'stage_a;
                 }
@@ -2190,7 +2217,12 @@ fn weighted_two_ply_frontier(
         && accumulators
             .iter()
             .all(|acc| acc.covered_weight >= acc.total_weight);
-    if !stage_a_only && stage_a_winner.is_none() && stage_a_complete && total_weight > 0 {
+    if !stage_a_normalized
+        && !stage_a_only
+        && stage_a_winner.is_none()
+        && stage_a_complete
+        && total_weight > 0
+    {
         let max_improve = accumulators
             .iter()
             .map(|acc| acc.improve_weight)
@@ -2498,12 +2530,25 @@ impl WeightedRootAccumulator {
     }
 }
 
-fn strict_improvement_winner(accumulators: &[WeightedRootAccumulator]) -> Option<usize> {
+fn strict_improvement_winner(
+    accumulators: &[WeightedRootAccumulator],
+    root_current_ukeire: Option<&[i64]>,
+) -> Option<usize> {
     for (index, candidate) in accumulators.iter().enumerate() {
-        let lower = candidate.improve_weight;
+        let denominator = root_current_ukeire
+            .and_then(|values| values.get(index).copied())
+            .unwrap_or(1)
+            .max(1) as f64;
+        let lower = candidate.improve_weight as f64 / denominator;
         let winner = accumulators.iter().enumerate().all(|(other, value)| {
             other == index
-                || lower > value.improve_weight + (value.total_weight - value.covered_weight).max(0)
+                || lower
+                    > (value.improve_weight
+                        + (value.total_weight - value.covered_weight).max(0)) as f64
+                        / root_current_ukeire
+                            .and_then(|values| values.get(other).copied())
+                            .unwrap_or(1)
+                            .max(1) as f64
         });
         if winner {
             return Some(index);

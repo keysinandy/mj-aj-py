@@ -41,7 +41,9 @@ Root ordering SHALL be:
 
 ### Requirement: Stage A shortcut SHALL respect speed-band ordering
 
-Within a competitive band, Stage A MAY accept a partial winner only when future-improvement bounds strictly prove it.
+Within a competitive band, Stage A SHALL accept a partial winner only when
+future-improvement bounds strictly prove it; otherwise it MUST continue Stage B
+or fall back transactionally.
 
 #### Scenario: 57 current ukeire does not skip Stage B
 
@@ -53,3 +55,10 @@ Within a competitive band, Stage A MAY accept a partial winner only when future-
 ### Requirement: Transactional fallback remains unchanged
 
 Unsafe/incomplete weighted search SHALL fall back transactionally and MUST NOT synthesize future metrics.
+
+#### Scenario: Critical root is incomplete
+
+- **WHEN** the critical retained root is incomplete before a safe certificate
+  is available
+- **THEN** the evaluator SHALL return the complete legacy ordering and leave
+  missing future metrics null or absent

@@ -90,7 +90,9 @@ def test_shape_profile_is_versioned_and_disabled_profile_keeps_baseline_key():
         shape_quality_stage="root",
         shape_quality_guard_enabled=True,
     )
-    assert baseline.fingerprint == "9fd50acbeb1fb6ed"
+    # The baseline profile includes the enabled marginal structure guard;
+    # keep this assertion pinned to the current profile contract.
+    assert baseline.fingerprint == "c4d5e2700095fb6f"
     assert baseline.fingerprint != phase_a.fingerprint
     assert phase_a.as_json()["shape_quality_version"] == SHAPE_QUALITY_VERSION
     assert phase_a.as_json()["shape_quality_enabled"] is True

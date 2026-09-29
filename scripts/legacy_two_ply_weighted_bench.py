@@ -18,6 +18,7 @@ import time
 from mj.bot import _discard_shape_cost, _feed_risk, choose_action
 from mj.game import Game
 from mj.legacy_eval import (
+    DEFAULT_BOT_EVALUATOR,
     LegacyRootCandidate,
     LegacyTwoPlyProfile,
     _limit_weighted_frontier,
@@ -28,6 +29,7 @@ from mj.shanten import shanten, weighted_two_ply_frontier
 
 
 BASELINE_EVALUATOR = "legacy-v2-baseline"
+SPEED_BAND_EVALUATOR = "legacy-v2-speed-band"
 SHAPE_EVALUATORS = {
     "legacy-v2-shape-phase-a": "root",
     "legacy-v2-shape-phase-b": "full",
@@ -65,7 +67,15 @@ def _roots(game, seat, profile):
                 feed_risk=_feed_risk(game, seat, tile)))
     enriched, frontier, diagnostics = _root_features(
         candidates, locked, visible,
-        shape_quality_enabled=profile.shape_quality_enabled)
+        shape_quality_enabled=profile.shape_quality_enabled,
+        marginal_role_enabled=(
+            profile.marginal_structure_guard_enabled or
+            profile.speed_band_enabled or profile.pareto_frontier_enabled),
+        speed_band_enabled=profile.speed_band_enabled,
+        speed_band_min_ratio_by_shanten=(
+            profile.speed_band_min_ratio_by_shanten),
+        pareto_frontier_enabled=profile.pareto_frontier_enabled,
+        max_frontier_candidates=profile.max_frontier_candidates)
     frontier, diagnostics = _limit_weighted_frontier(
         frontier, diagnostics, profile.max_frontier_candidates,
         shape_quality_enabled=profile.shape_quality_enabled)
@@ -104,8 +114,16 @@ def _measure_one(seed, evaluator, profile):
     game = Game(seed=seed)
     seat = game.current_seat()
     started = time.perf_counter()
+    requested_evaluator = (
+        DEFAULT_BOT_EVALUATOR
+        if evaluator in (BASELINE_EVALUATOR, SPEED_BAND_EVALUATOR)
+        else evaluator)
     action, info = choose_action(
-        game, seat, evaluator=evaluator, return_evaluation=True)
+        game, seat, evaluator=requested_evaluator, return_evaluation=True,
+        speed_band_enabled=profile.speed_band_enabled,
+        pareto_frontier_enabled=profile.pareto_frontier_enabled,
+        speed_band_min_ratio_by_shanten=(
+            profile.speed_band_min_ratio_by_shanten))
     end_ms = (time.perf_counter() - started) * 1000.0
     if action not in tuple(game.legal_actions()):
         raise RuntimeError(f"{evaluator} produced illegal action {action}")
@@ -230,14 +248,27 @@ def run_interleaved(states=1000, repeats=3, seed0=20260926,
     profiles = {}
     for evaluator in evaluators:
         shape_stage = SHAPE_EVALUATORS.get(evaluator)
-        profiles[evaluator] = LegacyTwoPlyProfile.weighted_online(
-            kernel="auto", big_hand_enabled=False,
-            big_hand_same_shanten_enabled=False,
-            big_hand_plus_one_enabled=False,
-            shape_quality_enabled=shape_stage is not None,
-            shape_quality_stage=shape_stage or "diagnostic",
-            shape_quality_guard_enabled=shape_stage is not None,
-        )
+        if evaluator in (BASELINE_EVALUATOR, SPEED_BAND_EVALUATOR):
+            # Both labels run the current canonical legacyV2 route. The
+            # candidate changes only speed-band/Pareto flags; shape, marginal,
+            # and other current defaults remain identical to production.
+            profiles[evaluator] = LegacyTwoPlyProfile.weighted_online(
+                kernel="auto",
+                speed_band_enabled=(evaluator == SPEED_BAND_EVALUATOR),
+                pareto_frontier_enabled=(evaluator == SPEED_BAND_EVALUATOR),
+            )
+        else:
+            profiles[evaluator] = LegacyTwoPlyProfile.weighted_online(
+                kernel="auto", big_hand_enabled=False,
+                big_hand_same_shanten_enabled=False,
+                big_hand_plus_one_enabled=False,
+                shape_quality_enabled=shape_stage is not None,
+                shape_quality_stage=shape_stage or "diagnostic",
+                shape_quality_guard_enabled=shape_stage is not None,
+                marginal_structure_guard_enabled=False,
+                speed_band_enabled=False,
+                pareto_frontier_enabled=False,
+            )
     samples = {name: [] for name in evaluators}
     errors = {name: [] for name in evaluators}
     per_repeat = {name: [] for name in evaluators}
@@ -319,12 +350,13 @@ def main():
     parser.add_argument("--states", type=int, default=100)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--evaluator", choices=(
-        BASELINE_EVALUATOR, *SHAPE_EVALUATORS), default=BASELINE_EVALUATOR)
+        BASELINE_EVALUATOR, SPEED_BAND_EVALUATOR, *SHAPE_EVALUATORS),
+        default=BASELINE_EVALUATOR)
     parser.add_argument("--interleaved", action="store_true")
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--evaluators", nargs="+", choices=(
-        BASELINE_EVALUATOR, *SHAPE_EVALUATORS),
-        default=(BASELINE_EVALUATOR, "legacy-v2-shape-phase-a"))
+        BASELINE_EVALUATOR, SPEED_BAND_EVALUATOR, *SHAPE_EVALUATORS),
+        default=(BASELINE_EVALUATOR, SPEED_BAND_EVALUATOR))
     parser.add_argument("--output")
     parser.add_argument("--workers", type=int, default=0,
                         help=("Stage B worker count (0 = kernel default). "
@@ -340,13 +372,24 @@ def main():
             evaluators=tuple(args.evaluators))
     else:
         shape_stage = SHAPE_EVALUATORS.get(args.evaluator)
-        profile = LegacyTwoPlyProfile.weighted_online(
-            kernel="rust", workers=args.workers,
-            big_hand_enabled=False, big_hand_same_shanten_enabled=False,
-            big_hand_plus_one_enabled=False,
-            shape_quality_enabled=shape_stage is not None,
-            shape_quality_stage=shape_stage or "diagnostic",
-            shape_quality_guard_enabled=shape_stage is not None)
+        if args.evaluator in (BASELINE_EVALUATOR, SPEED_BAND_EVALUATOR):
+            profile = LegacyTwoPlyProfile.weighted_online(
+                kernel="rust", workers=args.workers,
+                speed_band_enabled=(args.evaluator == SPEED_BAND_EVALUATOR),
+                pareto_frontier_enabled=(
+                    args.evaluator == SPEED_BAND_EVALUATOR))
+        else:
+            profile = LegacyTwoPlyProfile.weighted_online(
+                kernel="rust", workers=args.workers,
+                big_hand_enabled=False,
+                big_hand_same_shanten_enabled=False,
+                big_hand_plus_one_enabled=False,
+                shape_quality_enabled=shape_stage is not None,
+                shape_quality_stage=shape_stage or "diagnostic",
+                shape_quality_guard_enabled=shape_stage is not None,
+                marginal_structure_guard_enabled=False,
+                speed_band_enabled=False,
+                pareto_frontier_enabled=False)
         result = run(args.states, args.seed, profile, args.evaluator)
     encoded = json.dumps(result, ensure_ascii=False, indent=2)
     print(encoded)

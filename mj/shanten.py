@@ -373,7 +373,7 @@ DISCARD_FRONTIER_BATCH_KERNEL_VERSION = (
     else None)
 
 _FORCE_PY = os.environ.get("MJ_KERNELS", "").lower() == "python"
-WEIGHTED_TWO_PLY_KERNEL_REQUIRED = "rust-weighted-two-ply-v4"
+WEIGHTED_TWO_PLY_KERNEL_REQUIRED = "rust-weighted-two-ply-v5"
 
 # bot 的爆头档只在 Rust 内核可用时启用(纯 Python 枚举 90~220ms/决策,
 # 不可用);MJ_KERNELS=python 视同不可用。决策行为因此确定性可复现。
@@ -549,7 +549,8 @@ def weighted_two_ply_frontier(
         node_budget=100000, soft_budget_ms=40.0, hard_budget_ms=50.0,
         cache_capacity=8192, min_partial_coverage=0.90,
         include_best_discards=True, workers=0, stage_a_only=False,
-        shape_quality_enabled=False):
+        shape_quality_enabled=False, stage_a_normalized=False,
+        root_current_ukeire=None):
     """Optional weighted/partial native two-ply frontier."""
     if _rust_weighted_two_ply_frontier is None or _FORCE_PY:
         return None
@@ -564,6 +565,9 @@ def weighted_two_ply_frontier(
         optional["stage_a_only"] = True
     if shape_quality_enabled:
         optional["shape_quality_enabled"] = True
+    if stage_a_normalized:
+        optional["stage_a_normalized"] = True
+        optional["root_current_ukeire"] = list(root_current_ukeire or ())
     return _rust_weighted_two_ply_frontier(*args, **optional)
 
 

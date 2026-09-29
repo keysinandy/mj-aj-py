@@ -1,0 +1,375 @@
+{
+  "schema": "legacy-v2-marginal-structure-guard/local-validation-v3",
+  "generated_at": "2026-09-29T03:18:15.218101+00:00",
+  "baseline_commit": "6c8c012ce7933d76313cea19c096d9dac699be0a",
+  "kernel": {
+    "shanten_kernel": "rust",
+    "weighted_kernel": "rust",
+    "weighted_kernel_version": "rust-weighted-two-ply-v5",
+    "weighted_kernel_required": "rust-weighted-two-ply-v5",
+    "weighted_kernel_compatible": true,
+    "legacy_two_ply_kernel_version": "rust-legacy-two-ply-v1",
+    "baotou_kernel": "rust",
+    "degraded": false,
+    "reason": null,
+    "impact": null
+  },
+  "rust_build": {
+    "command": "maturin develop --release --manifest-path rust/Cargo.toml --pip-path .venv/bin/pip",
+    "python": ".venv/bin/python (CPython 3.11)",
+    "result": "passed"
+  },
+  "profiles": {
+    "canonical_baseline": {
+      "name": "legacyV2",
+      "version": "legacyV2",
+      "model": "weighted_unseen_one_draw_lazy_best_discard",
+      "rules_version": "hangzhou-platform-guide-v34",
+      "node_budget": 100000,
+      "time_budget_ms": 50.0,
+      "cache_capacity": 8192,
+      "sort_version": "weighted-frontier-v1",
+      "kernel": "auto",
+      "enabled": true,
+      "big_hand": {
+        "version": "legacy-big-hand-intent-v1",
+        "enabled": false,
+        "same_shanten_enabled": true,
+        "plus_one_enabled": false,
+        "min_live": 24,
+        "max_opponent_melds": 1,
+        "min_ukeire": 4,
+        "max_ukeire_loss": 4,
+        "min_pair_units": 4,
+        "min_luxury_upgrade_live": 1
+      },
+      "mode": "weighted",
+      "soft_budget_ms": 40.0,
+      "hard_budget_ms": 50.0,
+      "max_frontier_candidates": 3,
+      "allow_partial": true,
+      "min_partial_coverage": 0.9,
+      "lazy_child_ukeire": true,
+      "shape_guard_enabled": true,
+      "shape_guard_ukeire_slack": 1,
+      "shape_guard_shape_delta": 8,
+      "require_complete": false,
+      "shape_quality_enabled": true,
+      "shape_quality_version": "standing-shape-v1",
+      "shape_quality_stage": "full",
+      "shape_quality_guard_enabled": true,
+      "shape_quality_guard_version": "standing-shape-taatsu-gain-v1",
+      "marginal_structure_guard_enabled": true,
+      "marginal_structure_role_version": "marginal-structure-role-v1",
+      "marginal_structure_slack_by_shanten": [
+        0,
+        2,
+        4,
+        6
+      ],
+      "workers": 0,
+      "speed_band_enabled": false,
+      "speed_band_version": "legacy-speed-band-v1",
+      "speed_band_min_ratio_by_shanten": [
+        1.0,
+        0.9,
+        0.82,
+        0.78
+      ],
+      "pareto_frontier_enabled": false,
+      "fingerprint": "1215a0047e95ebe8"
+    },
+    "speed_band_candidate": {
+      "name": "legacyV2",
+      "version": "legacyV2",
+      "model": "weighted_unseen_one_draw_lazy_best_discard",
+      "rules_version": "hangzhou-platform-guide-v34",
+      "node_budget": 100000,
+      "time_budget_ms": 50.0,
+      "cache_capacity": 8192,
+      "sort_version": "weighted-frontier-v1",
+      "kernel": "auto",
+      "enabled": true,
+      "big_hand": {
+        "version": "legacy-big-hand-intent-v1",
+        "enabled": false,
+        "same_shanten_enabled": true,
+        "plus_one_enabled": false,
+        "min_live": 24,
+        "max_opponent_melds": 1,
+        "min_ukeire": 4,
+        "max_ukeire_loss": 4,
+        "min_pair_units": 4,
+        "min_luxury_upgrade_live": 1
+      },
+      "mode": "weighted",
+      "soft_budget_ms": 40.0,
+      "hard_budget_ms": 50.0,
+      "max_frontier_candidates": 3,
+      "allow_partial": true,
+      "min_partial_coverage": 0.9,
+      "lazy_child_ukeire": true,
+      "shape_guard_enabled": true,
+      "shape_guard_ukeire_slack": 1,
+      "shape_guard_shape_delta": 8,
+      "require_complete": false,
+      "shape_quality_enabled": true,
+      "shape_quality_version": "standing-shape-v1",
+      "shape_quality_stage": "full",
+      "shape_quality_guard_enabled": true,
+      "shape_quality_guard_version": "standing-shape-taatsu-gain-v1",
+      "marginal_structure_guard_enabled": true,
+      "marginal_structure_role_version": "marginal-structure-role-v1",
+      "marginal_structure_slack_by_shanten": [
+        0,
+        2,
+        4,
+        6
+      ],
+      "speed_band_enabled": true,
+      "speed_band_version": "legacy-speed-band-v1",
+      "speed_band_min_ratio_by_shanten": [
+        1.0,
+        0.9,
+        0.82,
+        0.78
+      ],
+      "pareto_frontier_enabled": true,
+      "workers": 0,
+      "fingerprint": "b085510130a4d3f5"
+    }
+  },
+  "targeted_tests": [
+    {
+      "command": "PYTHONPATH=. .venv/bin/python -m pytest tests/test_legacy_speed_band.py tests/test_legacy_eval.py tests/test_legacy_weighted_frontier.py tests/test_legacy_marginal_structure.py tests/test_legacy_shape_quality.py tests/test_legacy_rust_kernel.py tests/test_legacy_standing_frontier.py tests/test_clientd_strategy.py tests/test_legacy_reaction_audit.py -q",
+      "result": "102 passed"
+    },
+    {
+      "command": "cargo check --manifest-path rust/Cargo.toml",
+      "result": "passed"
+    },
+    {
+      "command": "python3 -m py_compile mj/legacy_eval.py mj/shanten.py scripts/legacy_two_ply_weighted_bench.py scripts/legacy_v2_speed_band_score_bench.py tests/test_legacy_speed_band.py tests/test_legacy_shape_quality.py",
+      "result": "passed"
+    }
+  ],
+  "openspec_validation": {
+    "command": "OPENSPEC_TELEMETRY=0 openspec validate legacy-v2-marginal-structure-guard --type change --strict",
+    "result": "valid"
+  },
+  "performance": {
+    "artifact": "local_perf_3x1000.json",
+    "states_per_evaluator_per_repeat": 1000,
+    "repeats": 3,
+    "baseline": {
+      "states": 3000,
+      "complete": 2391,
+      "partial_accepted": 27,
+      "fallback": 114,
+      "search_used": 2418,
+      "search_used_rate": 0.806,
+      "search_phase_counts": {
+        "two_ply": 2504,
+        "none": 468,
+        "future_shanten": 28
+      },
+      "workers": 8,
+      "p50_ms": 35.70346700144,
+      "p90_ms": 59.46000400581397,
+      "p95_ms": 66.10359298065305,
+      "p99_ms": 80.36929802619852,
+      "max_ms": 295.8011339942459,
+      "coverage_p50": 1.0,
+      "frontier_p50": 3.0,
+      "shanten_calls_total": 47954567,
+      "ukeire_calls_total": 1562773,
+      "child_nodes_total": 2749841,
+      "shanten_cache_hit_rate": 0.13674003145518965,
+      "fallback_reasons": {
+        "partial_not_acceptable": 114
+      }
+    },
+    "candidate": {
+      "states": 3000,
+      "complete": 1935,
+      "partial_accepted": 0,
+      "fallback": 87,
+      "search_used": 1935,
+      "search_used_rate": 0.645,
+      "search_phase_counts": {
+        "two_ply": 2019,
+        "none": 978,
+        "future_shanten": 3
+      },
+      "workers": 8,
+      "p50_ms": 30.565244000172243,
+      "p90_ms": 58.269889006624,
+      "p95_ms": 66.4191189862322,
+      "p99_ms": 79.83180900919251,
+      "max_ms": 203.9394770108629,
+      "coverage_p50": 1.0,
+      "frontier_p50": 2.0,
+      "shanten_calls_total": 36411107,
+      "ukeire_calls_total": 1168038,
+      "child_nodes_total": 2002784,
+      "shanten_cache_hit_rate": 0.12715224505533435,
+      "fallback_reasons": {
+        "partial_not_acceptable": 87
+      }
+    },
+    "comparison": {
+      "p95_regression_pct": 0.4773205076333831,
+      "p99_regression_pct": -0.6687740595056613,
+      "fallback_rate_delta_percentage_points": -0.8999999999999998,
+      "p95_gate_pass": true,
+      "p99_gate_pass": true
+    }
+  },
+  "score": {
+    "artifact": "local_score_3x200.json",
+    "games_per_evaluator": 600,
+    "paired_hero_score_delta": {
+      "n": 600,
+      "mean": 1.3866666666666667,
+      "low": -0.08,
+      "high": 2.8666666666666667,
+      "method": "source-game-bootstrap"
+    },
+    "candidate_minus_baseline_win_rate": 0.03833333333333333,
+    "baseline": {
+      "games": 600,
+      "wins_as_balanced_hero": 162,
+      "win_rate_as_balanced_hero": 0.27,
+      "draws": 0,
+      "draw_rate": 0.0,
+      "score_totals_by_seat": [
+        462,
+        34,
+        -166,
+        -330
+      ],
+      "score_mean_all_seats": 0.0,
+      "decisions_per_game_mean": 188.295,
+      "elapsed_ms_per_game": {
+        "mean": 624.482972054005,
+        "p50": 596.1363789974712,
+        "p95": 986.7625089827925,
+        "p99": 1181.1802439915482,
+        "max": 1618.2951069786213
+      }
+    },
+    "candidate": {
+      "games": 600,
+      "wins_as_balanced_hero": 185,
+      "win_rate_as_balanced_hero": 0.30833333333333335,
+      "draws": 1,
+      "draw_rate": 0.0016666666666666668,
+      "score_totals_by_seat": [
+        754,
+        -668,
+        -59,
+        -27
+      ],
+      "score_mean_all_seats": 0.0,
+      "decisions_per_game_mean": 187.47,
+      "elapsed_ms_per_game": {
+        "mean": 568.4810202432951,
+        "p50": 546.7704460024834,
+        "p95": 926.5383769816253,
+        "p99": 1242.000750004081,
+        "max": 1679.83204202028
+      }
+    },
+    "interpretation": "positive point estimate but bootstrap interval crosses zero; not conclusive release evidence"
+  },
+  "fixtures": {
+    "two_w_vs_four_t": {
+      "roots": {
+        "1": {
+          "shanten": 2,
+          "current_ukeire": 57,
+          "current_ukeire_types": 17,
+          "current_speed_ratio": 1.0,
+          "shape_loss": 5.0,
+          "feed_risk": 0.0,
+          "speed_dominated": false,
+          "pareto_dominated": false,
+          "marginal_loss_tier": "taatsu"
+        },
+        "21": {
+          "shanten": 2,
+          "current_ukeire": 48,
+          "current_ukeire_types": 15,
+          "current_speed_ratio": 0.8421052631578947,
+          "shape_loss": 2.0,
+          "feed_risk": 0.0,
+          "speed_dominated": false,
+          "pareto_dominated": false,
+          "marginal_loss_tier": "connected_singleton"
+        },
+        "2": {
+          "shanten": 2,
+          "current_ukeire": 22,
+          "current_ukeire_types": 7,
+          "current_speed_ratio": 0.38596491228070173,
+          "shape_loss": 0.0,
+          "feed_risk": 0.0,
+          "speed_dominated": true,
+          "pareto_dominated": false,
+          "marginal_loss_tier": "critical_compound"
+        },
+        "7": {
+          "shanten": 2,
+          "current_ukeire": 55,
+          "current_ukeire_types": 16,
+          "current_speed_ratio": 0.9649122807017544,
+          "shape_loss": 0.0,
+          "feed_risk": 0.0,
+          "speed_dominated": false,
+          "pareto_dominated": false,
+          "marginal_loss_tier": "redundant_completed_meld"
+        },
+        "13": {
+          "shanten": 2,
+          "current_ukeire": 51,
+          "current_ukeire_types": 15,
+          "current_speed_ratio": 0.8947368421052632,
+          "shape_loss": 0.0,
+          "feed_risk": 0.0,
+          "speed_dominated": false,
+          "pareto_dominated": true,
+          "marginal_loss_tier": "redundant_completed_meld"
+        }
+      },
+      "frontier": [
+        1,
+        21,
+        7
+      ],
+      "diagnostics": {
+        "1": [],
+        "21": [],
+        "2": [
+          "speed_dominated"
+        ],
+        "7": [],
+        "13": [
+          "pareto_dominated"
+        ]
+      }
+    },
+    "golden_899s_python": {
+      "selected_tile": 12,
+      "weighted_two_ply_entered": true,
+      "future_nodes": 902,
+      "complete": true,
+      "frontier_singleton_proven": false,
+      "singleton_block_reason": "primary_not_singleton"
+    }
+  },
+  "rollout": {
+    "speed_band_enabled_by_default": false,
+    "pareto_frontier_enabled_by_default": false,
+    "reason": "OpenSpec 10.9 requires paired-score evidence before default enablement; current 600-pair CI crosses zero."
+  }
+}

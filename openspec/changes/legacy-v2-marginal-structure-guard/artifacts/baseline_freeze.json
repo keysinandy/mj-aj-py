@@ -1,13 +1,72 @@
 {
   "change": "legacy-v2-marginal-structure-guard",
   "baseline": {
-    "main_commit": "a98f0cc212ae3972636dc299ca4a5bf137bd785f",
+    "main_commit": "6c8c012ce7933d76313cea19c096d9dac699be0a",
     "profile": "legacyV2",
-    "profile_fingerprint": "01b48c7ab369456c",
+    "profile_fingerprint": "1215a0047e95ebe8",
+    "profile_payload": {
+      "name": "legacyV2",
+      "version": "legacyV2",
+      "model": "weighted_unseen_one_draw_lazy_best_discard",
+      "rules_version": "hangzhou-platform-guide-v34",
+      "node_budget": 100000,
+      "time_budget_ms": 50.0,
+      "cache_capacity": 8192,
+      "sort_version": "weighted-frontier-v1",
+      "kernel": "auto",
+      "enabled": true,
+      "big_hand": {
+        "version": "legacy-big-hand-intent-v1",
+        "enabled": false,
+        "same_shanten_enabled": true,
+        "plus_one_enabled": false,
+        "min_live": 24,
+        "max_opponent_melds": 1,
+        "min_ukeire": 4,
+        "max_ukeire_loss": 4,
+        "min_pair_units": 4,
+        "min_luxury_upgrade_live": 1
+      },
+      "mode": "weighted",
+      "soft_budget_ms": 40.0,
+      "hard_budget_ms": 50.0,
+      "max_frontier_candidates": 3,
+      "allow_partial": true,
+      "min_partial_coverage": 0.9,
+      "lazy_child_ukeire": true,
+      "shape_guard_enabled": true,
+      "shape_guard_ukeire_slack": 1,
+      "shape_guard_shape_delta": 8,
+      "require_complete": false,
+      "shape_quality_enabled": true,
+      "shape_quality_version": "standing-shape-v1",
+      "shape_quality_stage": "full",
+      "shape_quality_guard_enabled": true,
+      "shape_quality_guard_version": "standing-shape-taatsu-gain-v1",
+      "marginal_structure_guard_enabled": true,
+      "marginal_structure_role_version": "marginal-structure-role-v1",
+      "marginal_structure_slack_by_shanten": [
+        0,
+        2,
+        4,
+        6
+      ],
+      "workers": 0,
+      "speed_band_enabled": false,
+      "speed_band_version": "legacy-speed-band-v1",
+      "speed_band_min_ratio_by_shanten": [
+        1.0,
+        0.9,
+        0.82,
+        0.78
+      ],
+      "pareto_frontier_enabled": false,
+      "fingerprint": "1215a0047e95ebe8"
+    },
     "kernel": {
       "weighted": "rust",
-      "version": "rust-weighted-two-ply-v4",
-      "required_version": "rust-weighted-two-ply-v4",
+      "version": "rust-weighted-two-ply-v5",
+      "required_version": "rust-weighted-two-ply-v5",
       "compatible": true
     },
     "budget_ms": {
@@ -22,13 +81,41 @@
       "concealed_after_draw": "3m 7m 2p 3p 4p 4p 7p 4s 8s 9s 9s"
     },
     "candidates": {
-      "9s": {"shanten": 3, "current_ukeire": 82, "shape_loss": 9},
-      "8s": {"shanten": 3, "current_ukeire": 80, "shape_loss": 5},
-      "4p": {"shanten": 3, "current_ukeire": 78, "shape_loss": 10},
-      "3m": {"shanten": 3, "current_ukeire": 77, "shape_loss": 2},
-      "7p": {"shanten": 3, "current_ukeire": 77, "shape_loss": 2},
-      "7m": {"shanten": 3, "current_ukeire": 73, "shape_loss": 2},
-      "4s": {"shanten": 3, "current_ukeire": 72, "shape_loss": 2}
+      "9s": {
+        "shanten": 3,
+        "current_ukeire": 82,
+        "shape_loss": 9
+      },
+      "8s": {
+        "shanten": 3,
+        "current_ukeire": 80,
+        "shape_loss": 5
+      },
+      "4p": {
+        "shanten": 3,
+        "current_ukeire": 78,
+        "shape_loss": 10
+      },
+      "3m": {
+        "shanten": 3,
+        "current_ukeire": 77,
+        "shape_loss": 2
+      },
+      "7p": {
+        "shanten": 3,
+        "current_ukeire": 77,
+        "shape_loss": 2
+      },
+      "7m": {
+        "shanten": 3,
+        "current_ukeire": 73,
+        "shape_loss": 2
+      },
+      "4s": {
+        "shanten": 3,
+        "current_ukeire": 72,
+        "shape_loss": 2
+      }
     },
     "historical_path": {
       "level": "legacy-one-ply",
@@ -40,10 +127,15 @@
     }
   },
   "anti_overfit": {
-    "fragments": ["7899s", "5w", "1w", "9w"],
+    "fragments": [
+      "7899s",
+      "5w",
+      "1w",
+      "9w"
+    ],
     "requirements": [
       "7899s discard 9s exposes completed_meld_redundancy=true",
-      "lost_pair_option alone does not imply critical_compound_break",
+      "lost pair option alone does not imply critical_compound_break",
       "live central connectivity reflects public neighbor availability"
     ]
   },

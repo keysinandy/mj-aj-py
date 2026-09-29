@@ -1160,7 +1160,10 @@ def choose_shape_v2_action(g, seat, profile=None):
 
 def choose_action(g, seat, evaluator=DEFAULT_BOT_EVALUATOR,
                   return_evaluation=False,
-                  marginal_structure_guard_enabled=None):
+                  marginal_structure_guard_enabled=None,
+                  speed_band_enabled=None,
+                  pareto_frontier_enabled=None,
+                  speed_band_min_ratio_by_shanten=None):
     """统一入口:返回该 seat 的动作。
 
     The two-argument production path uses the weighted two-ply frontier.
@@ -1170,6 +1173,9 @@ def choose_action(g, seat, evaluator=DEFAULT_BOT_EVALUATOR,
     shape evaluator.
     Callers that need an explanation can additionally request
     ``return_evaluation``.
+    Speed-band/Pareto rollout flags are explicit optional overrides; leaving
+    them ``None`` preserves the profile defaults and therefore the rollback
+    ordering until the paired rollout gates pass.
     """
     if evaluator is None or evaluator == "legacy":
         evaluator = DEFAULT_BOT_EVALUATOR
@@ -1248,10 +1254,22 @@ def choose_action(g, seat, evaluator=DEFAULT_BOT_EVALUATOR,
                 )
                 reaction_profile = LegacyReactionProfile.v2_online()
             elif evaluator in LEGACY_V2_EVALUATORS:
-                profile = LegacyTwoPlyProfile.weighted_online(
-                    marginal_structure_guard_enabled=(
+                profile_kwargs = {
+                    "marginal_structure_guard_enabled": (
                         True if marginal_structure_guard_enabled is None else
-                        bool(marginal_structure_guard_enabled)))
+                        bool(marginal_structure_guard_enabled)),
+                }
+                if speed_band_enabled is not None:
+                    profile_kwargs["speed_band_enabled"] = bool(
+                        speed_band_enabled)
+                if pareto_frontier_enabled is not None:
+                    profile_kwargs["pareto_frontier_enabled"] = bool(
+                        pareto_frontier_enabled)
+                if speed_band_min_ratio_by_shanten is not None:
+                    profile_kwargs["speed_band_min_ratio_by_shanten"] = (
+                        speed_band_min_ratio_by_shanten)
+                profile = LegacyTwoPlyProfile.weighted_online(
+                    **profile_kwargs)
                 reaction_profile = LegacyReactionProfile.v2_online()
             else:
                 profile = LegacyTwoPlyProfile.default()

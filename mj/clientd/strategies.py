@@ -88,6 +88,15 @@ def _marginal_guard_enabled(config):
     return bool(value)
 
 
+def _feature_bool(config, name, default=False):
+    value = config.get(name, default)
+    if isinstance(value, str):
+        return value.strip().lower() in {
+            "1", "true", "yes", "on", "enabled",
+        }
+    return bool(value)
+
+
 class Player:
     """统一玩家封装;__call__ 返回动作 int,元组结果自动解包。"""
 
@@ -134,10 +143,19 @@ def make_bot_player(config):
     else:
         _ev = evaluator
         marginal_enabled = _marginal_guard_enabled(config)
+        speed_enabled = _feature_bool(config, "speed_band_enabled", False)
+        pareto_enabled = _feature_bool(
+            config, "pareto_frontier_enabled", speed_enabled)
         if _ev in (("legacy-two-ply-v1", "legacy_v1", "legacy-v1")
                    + LEGACY_V2_EVALUATORS):
             profile = (LegacyTwoPlyProfile.weighted_online(
-                           marginal_structure_guard_enabled=marginal_enabled)
+                           marginal_structure_guard_enabled=marginal_enabled,
+                           speed_band_enabled=speed_enabled,
+                           pareto_frontier_enabled=pareto_enabled,
+                           **({"speed_band_min_ratio_by_shanten": config[
+                               "speed_band_min_ratio_by_shanten"]}
+                              if "speed_band_min_ratio_by_shanten" in config
+                              else {}))
                        if _ev in LEGACY_V2_EVALUATORS else
                        LegacyTwoPlyProfile.default())
 
@@ -145,6 +163,8 @@ def make_bot_player(config):
             return choose_action(game, seat, evaluator=_e,
                                  marginal_structure_guard_enabled=(
                                      marginal_enabled),
+                                 speed_band_enabled=speed_enabled,
+                                 pareto_frontier_enabled=pareto_enabled,
                                  return_evaluation=True)
     return Player(_play, strategy="bot", evaluator=evaluator,
                   profile=profile)

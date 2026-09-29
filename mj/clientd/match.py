@@ -29,6 +29,8 @@ DEFAULT_MATCH_CONFIG = {
     "record": True,
     "replay_trace": False,
     "marginal_structure_guard_enabled": True,
+    "speed_band_enabled": False,
+    "pareto_frontier_enabled": False,
 }
 MATCH_STRATEGIES = {"policy", "policy-v3", "bot", "random"}
 MATCH_EVALUATORS = {
@@ -125,6 +127,15 @@ def normalize_match_config(config):
         raise ValidationError(
             "marginal_structure_guard_enabled must be a boolean")
     result["marginal_structure_guard_enabled"] = marginal
+    for key in ("speed_band_enabled", "pareto_frontier_enabled"):
+        value = result.get(key, False)
+        if isinstance(value, str):
+            value = value.strip().lower() in {
+                "1", "true", "yes", "on", "enabled",
+            }
+        elif not isinstance(value, bool):
+            raise ValidationError(f"{key} must be a boolean")
+        result[key] = value
     return result
 
 
@@ -164,6 +175,11 @@ def _build_decide(config):
                 policy_profile=config.get("policy_profile"),
                 marginal_structure_guard_enabled=config.get(
                     "marginal_structure_guard_enabled", True),
+                speed_band_enabled=config.get("speed_band_enabled", False),
+                pareto_frontier_enabled=config.get(
+                    "pareto_frontier_enabled", False),
+                speed_band_min_ratio_by_shanten=config.get(
+                    "speed_band_min_ratio_by_shanten"),
             )
         # Recorder/BotClient 会把这两个稳定标记写进每场 meta，回放页可
         # 在不暴露令牌的前提下说明本场究竟使用 bot 还是 policy。

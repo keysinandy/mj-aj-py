@@ -29,7 +29,9 @@ from ..legacy_eval import (
 
 
 def make_decide(strategy, ckpt=None, evaluator=DEFAULT_BOT_EVALUATOR, model=None,
-                policy_profile=None, marginal_structure_guard_enabled=None):
+                policy_profile=None, marginal_structure_guard_enabled=None,
+                speed_band_enabled=None, pareto_frontier_enabled=None,
+                speed_band_min_ratio_by_shanten=None):
     from ..strategy_runtime import snapshot_for_config
 
     if strategy == "policy-v3" or (
@@ -94,6 +96,11 @@ def make_decide(strategy, ckpt=None, evaluator=DEFAULT_BOT_EVALUATOR, model=None
                 return choose_action(g, seat, evaluator=requested,
                                      marginal_structure_guard_enabled=(
                                          marginal_structure_guard_enabled),
+                                     speed_band_enabled=speed_band_enabled,
+                                     pareto_frontier_enabled=(
+                                         pareto_frontier_enabled),
+                                     speed_band_min_ratio_by_shanten=(
+                                         speed_band_min_ratio_by_shanten),
                                      return_evaluation=True)
             action = choose_action(g, seat)
             return action, {"version": "legacy", "profile": "legacy",
@@ -107,6 +114,15 @@ def make_decide(strategy, ckpt=None, evaluator=DEFAULT_BOT_EVALUATOR, model=None
             snapshot_config["marginal_structure_guard_enabled"] = (
                 True if marginal_structure_guard_enabled is None else
                 bool(marginal_structure_guard_enabled))
+            if speed_band_enabled is not None:
+                snapshot_config["speed_band_enabled"] = bool(
+                    speed_band_enabled)
+            if pareto_frontier_enabled is not None:
+                snapshot_config["pareto_frontier_enabled"] = bool(
+                    pareto_frontier_enabled)
+            if speed_band_min_ratio_by_shanten is not None:
+                snapshot_config["speed_band_min_ratio_by_shanten"] = (
+                    speed_band_min_ratio_by_shanten)
         play.strategy_snapshot = snapshot_for_config(snapshot_config)
         return play
     if strategy == "random":

@@ -15,6 +15,20 @@ If native code performs root winner certification or safe-partial bounds, it MUS
 
 They SHALL agree on retained roots, future metrics, marginal loss tier used by comparator, and final selected root.
 
+#### Scenario: Native and Python reference agree
+
+- **WHEN** the same retained roots, visible counts, legal sets, profile, and
+  node budget are evaluated by Python and Rust
+- **THEN** completion state, future improvement, future ukeire, child discard
+  mass, and final selected root SHALL agree
+
 ### Requirement: Existing budget/fallback contract SHALL remain unchanged
 
 Search horizon, frontier cap, and hard deadline MUST NOT increase. Incompatible version/comparator semantics SHALL trigger transactional fallback.
+
+#### Scenario: Partial native frontier falls back
+
+- **WHEN** one eligible root completes natively but another exceeds the node
+  budget
+- **THEN** no partial native metric SHALL affect ordering, the complete legacy
+  action SHALL be returned, and the explanation SHALL record the fallback
