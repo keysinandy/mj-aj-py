@@ -2,75 +2,29 @@
 
 ### Requirement: 形状护栏前沿准入
 
-shape-aware + marginal-role profile 下，unique maximum-current-ukeire root MAY short-circuit only when no meaningful role-preserving challenger exists inside the configured shanten-aware ukeire slack.
+Under shape-aware + marginal-role + speed-band profile, a unique maximum-current-ukeire root MAY short-circuit only after other roots are safely eliminated by legality, speed dominance, Pareto dominance, or deterministic cap.
 
-Initial slack:
+A challenger inside the competitive speed band MUST NOT be removed solely by an absolute current-ukeire gap.
 
-- shanten 0: 0
-- shanten 1: 2
-- shanten 2: 4
-- shanten >=3: 6
+#### Scenario: 899s does not raw-speed singleton
 
-The frontier MUST remain bounded by max_frontier_candidates <= 3.
+- **GIVEN** 9s has 82 at shanten 3
+- **AND** a challenger has 77
+- **THEN** 77/82 SHALL be above the shanten-3 threshold
+- **AND** raw-speed frontier_singleton MUST NOT fire
 
-#### Scenario: 899s winner cannot singleton-short-circuit
+#### Scenario: 57 versus 48 ignores old absolute shape slack
 
-- **GIVEN** the user 899s golden
-- **AND** discard 9s has current ukeire 82
-- **AND** a non-critical challenger has current ukeire at least 76
-- **WHEN** the marginal-role guard runs at shanten 3
-- **THEN** discard 9s SHALL NOT return through frontier_singleton
-- **AND** at least one role-preserving challenger SHALL enter the weighted frontier
+- **GIVEN** shanten=2, best=57, challenger=48
+- **THEN** 48/57 SHALL qualify the challenger
+- **AND** an old one-tile/small fixed slack MUST NOT reject it
 
-#### Scenario: Gap exceeds role slack
+#### Scenario: Clearly slower challenger may be pruned
 
-- **WHEN** every role-preserving challenger is worse than the speed winner by more than configured slack
-- **THEN** the unique speed winner MAY retain one-ply singleton short-circuit
-
-#### Scenario: 7899 pair is not hard-protected
-
-- **GIVEN** a candidate discards one 9 from 7899s
-- **AND** remaining 789s is complete
-- **THEN** lost 99 alone SHALL NOT force preservation of 9s
-
-#### Scenario: Guard truncation is deterministic
-
-- **WHEN** more eligible challengers exist than free frontier slots
-- **THEN** stable ordering SHALL be used
-- **AND** input iteration order SHALL NOT change retained roots
-
-#### Scenario: 拆面子候选进入比较
-
-- **WHEN** the unique maximum-current-ukeire candidate breaks a completed
-  meld and another candidate is one tile worse with materially lower
-  structural loss
-- **THEN** both candidates SHALL enter the same weighted comparison and the
-  decision SHALL retain admission diagnostics
-
-#### Scenario: 进张差距超出护栏
-
-- **WHEN** a challenger exceeds the configured role-aware slack
-- **THEN** it SHALL remain outside the marginal frontier and the action SHALL
-  match the guard-disabled singleton result
-
-#### Scenario: 护栏截断可复现
-
-- **WHEN** more role-preserving challengers qualify than the frontier has free
-  slots
-- **THEN** stable ordering SHALL retain the same roots regardless of input
-  iteration order
+- **WHEN** speed ratio is below threshold
+- **THEN** speed dominance MAY prune it
+- **AND** diagnostics SHALL name the threshold and dominating root
 
 ### Requirement: 护栏审计字段
 
-Diagnostics SHALL distinguish singleton proven safe from singleton blocked by marginal structure.
-
-#### Scenario: Singleton is blocked
-
-- **THEN** diagnostics SHALL include slack, ukeire gap, marginal loss tier, challenger list, and admitted_by=marginal_structure_guard
-
-#### Scenario: 决策可离线复核
-
-- **WHEN** a decision changes its comparison set because of the marginal
-  guard
-- **THEN** the explanation SHALL include admission/truncation details and the
-  completed weighted metrics needed to reproduce the selection
+Diagnostics SHALL expose speed ratio, band threshold, marginal loss, Pareto status, retained challengers, and singleton reason.
