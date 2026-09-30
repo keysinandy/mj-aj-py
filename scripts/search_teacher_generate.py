@@ -28,6 +28,8 @@ from mj.training.teacher_generate import (
     GenerationConfig,
     generate_dataset,
     generation_manifest,
+    generation_runtime_fingerprint,
+    require_compatible_kernel,
     resume_dataset,
     scheduled_specs,
     write_reference_contexts,
@@ -171,6 +173,7 @@ def _label_pool(args, config):
         "labeled": len(samples),
         "total": len(merged.samples),
         "generation": int(args.generation),
+        **generation_runtime_fingerprint(),
         "budget_profile": config.budget_profile.as_json(),
         "search_profile": config.search_profile.as_json(),
         "dataset_fingerprint": merged.fingerprint,
@@ -232,9 +235,14 @@ def main(argv=None):
     parser.add_argument("--search-version", default="search-v1")
     parser.add_argument("--search-wall-clock-ms", type=float, default=None)
     parser.add_argument("--forced-sanity-ratio", type=float, default=0.03)
+    parser.add_argument("--allow-degraded-kernel", action="store_true",
+                        help="explicit opt-out of the kernel-compatibility "
+                             "gate (parity/smoke only, never production data)")
     args = parser.parse_args(argv)
     if args.out is None and args.reference_out is None and args.pool_in is None:
         parser.error("either --out, --reference-out or --pool-in is required")
+
+    require_compatible_kernel(allow_degraded=args.allow_degraded_kernel)
 
     population, budget, search, belief, distillation = _profiles(args)
     seed_start, games = _seed_range(args)

@@ -269,7 +269,13 @@ shape_guard 的 shape delta 也必须迁移到 standing shape 语义。为避免
 - 新增与新 signature 对应的 gate；
 - 禁止直接复用旧 shape_guard_shape_delta=8 当作新单位。
 
-建议先以离散 admission rule 实现，例如“候选至少提升一个 taatsu class 且 current ukeire 差距在 slack 内”，再做参数扫描。
+建议先以离散 admission rule 实现，再做参数扫描。**口径修正（2026-09-30）：已实现并冻结的 admission 不是“至少提升一个 taatsu class”，而是 taatsu-class 向量严格字典序改善**（`mj/legacy_eval._taatsu_class_improved`，比较 `standing_shape_signature[2:6]` 的 `left > right`，要求首个差异类别必须严格更优）。这两者不同义：严格字典序会拒绝“后位类别改善但前位类别相平/劣化”的候选，比任何单类改善都更窄。
+
+实测：真实开局 seed 0–2599 中，该护栏只准入 1 次（seed 1787，primary [18] → admitted [6]；seed 290 为准入负例，`no_candidate_admitted`）。因此：
+
+- 不得把 shape-aware 整体实验收益归功于护栏扩围（护栏基本不触发）；
+- 若产品意图是保护“局部拆牌损失大、但弃后 signature 相等或轻微劣化”的局面，那是**策略行为变更**，需另做配对积分与性能验证后再单独上线，不能借修测试直接放宽准入；
+- 任何放宽都须带版本化 gate 且不与旧 shape_guard_shape_delta 单位混用。
 
 ### D7 Stage B child comparator 增加 child shape
 

@@ -23,7 +23,7 @@ from ..decision.context import PublicDecisionContext
 from ..game import Game
 from ..models.opponent_policy import HeuristicLikelihoodPolicy
 from ..search import InformationSetSearch, SearchError, SearchProfile
-from ..shanten import shanten
+from ..shanten import kernel_runtime_diagnostic, shanten
 from .distillation_profile import (
     FROZEN_SPLITS,
     OpponentPopulationProfile,
@@ -31,6 +31,7 @@ from .distillation_profile import (
     feature_contract_fingerprint,
     special_state_tags,
 )
+from .minisuphx_manifest import git_head
 from .search_data import (
     SearchDataset,
     SearchSample,
@@ -52,6 +53,66 @@ from .teacher_budget import (
 REFERENCE_SCHEMA = "search-reference-context-v1"
 GENERATION_SCHEMA = "search-teacher-generation-v1"
 HEURISTIC_EVALUATORS = ("legacy", "shape-v1", "shape-v2")
+
+
+def teacher_kernel_status():
+    """Diagnostic for the native kernel the offline teacher labels through.
+
+    Trajectory policies (legacy / shape-v1 / shape-v2) run the weighted
+    two-ply kernel; a stale or missing wheel silently degrades LegacyV2 to v1
+    and would relable the dataset through the wrong teacher.  Generation must
+    therefore record the actually-loaded kernel and fail loudly before
+    producing any shard when it is not compatible.
+    """
+    return kernel_runtime_diagnostic()
+
+
+def require_compatible_kernel(status=None, *, allow_degraded=False):
+    """Fail loudly unless the native weighted kernel is compatible.
+
+    Returns the diagnostic dict.  ``allow_degraded=True`` is an explicit
+    opt-out (parity/smoke only) and must never be the default for production
+    label generation.
+    """
+    status = status if status is not None else teacher_kernel_status()
+    if not bool(status.get("degraded")):
+        return status
+    if allow_degraded:
+        return status
+    raise RuntimeError(
+        "search-teacher generation requires a compatible native weighted "
+        "kernel; found degraded runtime: "
+        f"{status.get('reason')} weighted="
+        f"{status.get('weighted_kernel')}"
+        f"({status.get('weighted_kernel_version') or 'n/a'}) required="
+        f"{status.get('weighted_kernel_required')} shanten="
+        f"{status.get('shanten_kernel')}")
+
+
+def generation_runtime_fingerprint(status=None):
+    """Reproducibility provenance: git commit + actually-loaded kernel.
+
+    ``teacher_config_hash`` (the search profile fingerprint) alone is not
+    enough: it does not capture the code revision nor which native kernel was
+    physically loaded during generation, either of which can change the labels
+    without changing the config hash.
+    """
+    status = status if status is not None else teacher_kernel_status()
+    return {
+        "git_commit": git_head(),
+        "kernel": {
+            "shanten_kernel": status.get("shanten_kernel"),
+            "weighted_kernel": status.get("weighted_kernel"),
+            "weighted_kernel_version": status.get("weighted_kernel_version"),
+            "weighted_kernel_required": status.get("weighted_kernel_required"),
+            "weighted_kernel_compatible": status.get(
+                "weighted_kernel_compatible"),
+            "baotou_kernel": status.get("baotou_kernel"),
+            "piao_draw_mask_kernel": status.get("piao_draw_mask_kernel"),
+            "baotou_wait_kernel": status.get("baotou_wait_kernel"),
+            "degraded": status.get("degraded"),
+        },
+    }
 
 
 def _flat_action(action):
@@ -750,6 +811,7 @@ def generation_manifest(result: GenerationResult, config: GenerationConfig, *,
         "generation": int(config.generation),
         "policy_source": str(config.policy_source),
         "feature_contract_fingerprint": feature_contract_fingerprint(),
+        **generation_runtime_fingerprint(),
         "population": config.population.as_json(),
         "teacher_budget": config.budget_profile.as_json(),
         "search_profile": config.search_profile.as_json(),

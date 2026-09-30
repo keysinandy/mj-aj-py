@@ -1,8 +1,16 @@
 # Mini-Suphx 训练计划 v2
 
-> 状态：2026-09-24 当前执行版  
-> 适用基线：main@32e3c4b2 及后续兼容提交  
+> 状态：2026-09-24 当前执行版（2026-09-30 内核恢复后修订）
+> 适用基线：main@32e3c4b2 及后续兼容提交
 > 原则：单机是完整训练系统，双机只是横向扩容；BigHandIntent 只做 shadow/hard-state，不作为默认在线策略。
+
+> 内核契约（2026-09-30）：训练机 Rust 内核必须为源码要求的
+> `rust-weighted-two-ply-v5`（`mj/shanten.py` 的
+> `WEIGHTED_TWO_PLY_KERNEL_REQUIRED`）。生成前未达到兼容即 fail-loud
+> （`scripts/search_teacher_generate.py` 的 `require_compatible_kernel`
+> 门禁，`--allow-degraded-kernel` 仅作 smoke/parity 显式逃逸）。每次生成
+> 的 manifest 记录 `git_commit` 与**实际加载内核**（版本/兼容性/degraded/
+> 爆头飘牌算子）。对外 v1 fallback 只是旧轮子的误加载现象，不是合法 teacher 行为。
 
 ## 1. 当前结论
 
@@ -34,6 +42,24 @@ Champion-v1
   + reaction capability ladder
   = Champion-v2
 ```
+
+### 1.1 评估基线与内核 v5 对账（2026-09-30）
+
+先前多数 paired/分数结论是在 **Rust v3 轮子误加载（LegacyV2 事务性回退 v1）** 下跑出的，
+并不代表 v5 完整 weighted 行为。内核恢复 v3→v5 后，**旧评估基线不再可信**，进入训练前必须：
+
+```text
+1. 恢复 .venv 内核为 v5（pip/maturin 重建 mj_kernels），kernel_runtime_diagnostic()
+   确认 weighted_kernel_compatible=True、degraded=False、爆头飘牌算子=rust。
+2. 用 v5 重跑评估，重建基线（BC 胜率/均分、legacy 对照、GUARD 样例准入等）。
+3. 校验 tests：test_shanten 的 required 断言与 v5 对齐；test_shape_guard 默认在线
+   weighted profile 的 GUARD_SEED 准入语义须裁定后再冻结基线。
+4. 小批量（少量 games/引用集）验收合法动作、搜索回退、manifest 指纹与吞吐，通过后
+   再重新生成正式数据、重跑配对评估，最后进入 BC/后续训练。
+```
+
+评估口径：96 局噪声约 ±4%，关键结论以 192 局 `fair_match(n=192)` 为准；BC 基线
+（旧 v3 降级期）为胜率 21.9%/均分 -0.98，**v5 须重新测定，禁用旧数字对齐新训练**。
 
 ## 2. 训练契约先收口
 
@@ -73,17 +99,30 @@ reward         = normalized terminal hero round score
 
 ## 3. Teacher 分层
 
-### T0：Legacy teacher
+### T0：Legacy teacher（唯一）
 
 ```text
 legacyV2-offline
 BigHandIntent disabled
 required search complete / fail-loud
+required weighted kernel = rust-weighted-two-ply-v5（兼容，degraded=False）
 ```
 
-用途：大规模 BC 与 DAgger label。
+用途：大规模 BC 与 DAgger **唯一** label 来源。
 
 任何 offline weighted label 无法完成时丢弃/报错，不允许偷偷 fallback 成低质量 label。
+
+teacher 口径收口（2026-09-30）：
+
+- **不新建**与线上 shape-aware 配置对应的独立 offline teacher 名。`legacyV2-offline`
+  是唯一 T0；线上 shape-aware legacyV2（提交 2968b49 起为默认推理口径）是**推理配置**，
+  不与训练 label 口径混称。在线配置只作推理兼容，不作训练标签或发布证据。
+- 训练用 policy-source 仍取 `heuristic:shape-v2` 等冻结启发式轨迹源，但标签口径统一
+  归到 `legacyV2-offline`，预算与标签口径不含混。
+- **新旧 shard 不混用**：并入同一 dataset 的所有 shard 必须来自同一生成 manifest
+  （`git_commit`、实际内核版本、teacher_budget/search/belief/population 指纹一致）。
+  生成门禁默认拒绝 degraded 内核，故 v5 恢复后生成的 shard 不得与 v3 降级期产物混放；
+  `search_dataset_merge` 拒绝 fingerprint 冲突。
 
 ### T1：Shadow teacher metadata
 
@@ -517,9 +556,11 @@ P11 Reaction RL
 下一步按下面顺序，不跳阶段：
 
 ```text
+0. 恢复训练机内核为 v5，确认 weighted compatible、degraded=False（生成门禁已内置，
+   旧 v3 shard 一律作废）
 1. 修 public75 / oracle91 feature contract
 2. 完成 streaming BC
-3. 冻结 legacyV2-offline teacher fingerprint
+3. 冻结 legacyV2-offline teacher fingerprint（v5 口径）
 4. BigHand shadow metadata 接入 shard
 5. 单机跑通 BC/DAgger/PPO/paired/resume 全闭环
 6. 30k BC

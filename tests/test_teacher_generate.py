@@ -112,6 +112,54 @@ class TestGeneration(unittest.TestCase):
         self.assertIn("teacher_budget", manifest)
         self.assertIn("coverage", manifest)
         self.assertFalse(manifest["oracle"])
+        # generation provenance: git commit + actually-loaded kernel, not just
+        # the teacher config hash.
+        self.assertTrue(manifest["git_commit"])
+        self.assertTrue(manifest["kernel"]["weighted_kernel_version"])
+        self.assertIn("weighted_kernel_compatible", manifest["kernel"])
+        self.assertIn("degraded", manifest["kernel"])
+        self.assertIn("baotou_kernel", manifest["kernel"])
+        self.assertIn("piao_draw_mask_kernel", manifest["kernel"])
+
+    def test_kernel_gate_fails_loud_on_degraded_runtime(self):
+        from mj.training.teacher_generate import require_compatible_kernel
+        degraded = {
+            "shanten_kernel": "rust",
+            "weighted_kernel": "rust",
+            "weighted_kernel_version": "rust-weighted-two-ply-v3",
+            "weighted_kernel_required": "rust-weighted-two-ply-v5",
+            "weighted_kernel_compatible": False,
+            "baotou_kernel": "rust",
+            "piao_draw_mask_kernel": "python",
+            "baotou_wait_kernel": "python",
+            "degraded": True,
+            "reason": "weighted_kernel_version_mismatch",
+        }
+        with self.assertRaises(RuntimeError) as ctx:
+            require_compatible_kernel(degraded)
+        self.assertIn("degraded", str(ctx.exception))
+        self.assertIn("rust-weighted-two-ply-v3", str(ctx.exception))
+        # explicit smoke/parity opt-out bypasses the gate but still returns the
+        # diagnostic.
+        self.assertIs(
+            require_compatible_kernel(degraded, allow_degraded=True),
+            degraded)
+
+    def test_kernel_gate_accepts_compatible_runtime(self):
+        from mj.training.teacher_generate import require_compatible_kernel
+        health = {
+            "shanten_kernel": "rust",
+            "weighted_kernel": "rust",
+            "weighted_kernel_version": "rust-weighted-two-ply-v5",
+            "weighted_kernel_required": "rust-weighted-two-ply-v5",
+            "weighted_kernel_compatible": True,
+            "baotou_kernel": "rust",
+            "piao_draw_mask_kernel": "rust",
+            "baotou_wait_kernel": "rust",
+            "degraded": False,
+            "reason": None,
+        }
+        require_compatible_kernel(health)
 
     def test_worker_count_and_spec_order_do_not_change_rows(self):
         specs = [SourceGameSpec(seed=1234, hero_seat=0, dealer=0),

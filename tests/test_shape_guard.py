@@ -61,7 +61,10 @@ class TestShapeGuard(unittest.TestCase):
         self.assertFalse(exact.shape_guard_enabled)
         self.assertNotIn("shape_guard_enabled", exact._payload())
 
-    def test_default_profile_guards_the_singleton_state(self):
+    def test_default_profile_keeps_290_as_shape_aware_negative(self):
+        # 行为口径已切换为 standing-shape:真实开局 seed 0–2599 中该护栏只准入 1 次。
+        # seed 290 弃后 standing signature 不再“更优”,保持 singleton 短路,是准入负例。
+        # （注意:legacy discard-cost 路径同局面会准入 tiles 27/32 —— 这正是两种口径的分歧点。）
         game = Game(seed=GUARD_SEED)
         seat = game.current_seat()
         action, info = choose_discard(
@@ -69,7 +72,23 @@ class TestShapeGuard(unittest.TestCase):
             profile=LegacyTwoPlyProfile.weighted_online(kernel="rust"))
         guard = info["frontier_guard"]
         self.assertTrue(guard["enabled"])
-        self.assertTrue(guard["admitted_tiles"])
+        self.assertEqual(guard["admitted_tiles"], [])
+        self.assertEqual(guard["skipped_reason"], "no_candidate_admitted")
+        self.assertEqual(guard["primary_tiles"], [PRIMARY_TILE])
+        self.assertEqual(info["level"], "legacy-one-ply")
+        self.assertEqual(action, PRIMARY_TILE)
+
+    def test_seed_1787_is_shape_aware_admission_positive(self):
+        # 唯一真实准入正例:primary [18] → 准入 [6],进入加权前瞻比较。
+        game = Game(seed=1787)
+        seat = game.current_seat()
+        action, info = choose_discard(
+            game, seat, return_info=True,
+            profile=LegacyTwoPlyProfile.weighted_online(kernel="rust"))
+        guard = info["frontier_guard"]
+        self.assertTrue(guard["enabled"])
+        self.assertEqual(guard["primary_tiles"], [18])
+        self.assertIn(6, guard["admitted_tiles"])
         self.assertIn(action, guard["primary_tiles"] + guard["admitted_tiles"])
         self.assertNotEqual(info["level"], "legacy-one-ply")
 

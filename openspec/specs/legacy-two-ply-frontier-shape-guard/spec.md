@@ -4,15 +4,31 @@
 
 约束在线 weighted 弃牌评价的候选比较集：在"唯一最大直接进张"时也要让结构明显更优的近似候选进入同一次前瞻比较，并让护栏、短路与内核降级状态可审计、可回滚。
 
+本规格同时覆盖两种 profile 语义：legacy discard-cost 与 standing-shape（shape-aware）。其中 standing-shape 为当前默认/线上口径（`weighted_online()` / `weighted_offline()` 开启；精确/legacy V1 档案关闭）。
+
 ## Requirements
 
 ### Requirement: 形状护栏前沿准入
 
-评价器 SHALL 先按最小向听与财神门禁形成候选集，取当前直接进张最大者为 primary frontier。当 primary frontier 只有一个候选时，SHALL 额外纳入同时满足「直接进张差距 ≤ `shape_guard_ukeire_slack`」与「结构损失比 primary 最优至少小 `shape_guard_shape_delta`」的候选；护栏候选与 primary 候选合并后 MUST 仍受 `max_frontier_candidates` 截断，截断排序 MUST 稳定声明（直接进张降序、结构损失升序、喂牌风险升序、牌编号）。护栏关闭（开关关闭或 slack 为 0）时，比较集与现有实现完全一致。
+评价器 SHALL 先按最小向听与财神门禁形成候选集，取当前直接进张最大者为 primary frontier。当 primary frontier 只有一个候选时，SHALL 额外纳入同时满足「直接进张差距 ≤ `shape_guard_ukeire_slack`」与「结构明显更优」的候选；护栏候选与 primary 候选合并后 MUST 仍受 `max_frontier_candidates` 截断，截断排序 MUST 稳定声明（直接进张降序、standing shape 质量降序、弃牌结构损失升序、喂牌风险升序、牌编号）。护栏关闭（开关关闭或 slack 为 0）时，比较集与现有实现完全一致。
+
+“结构明显更优”的判定按 profile 语义二选一：
+
+- **standing-shape（shape-aware，默认）**：SHALL 使用带版本的 standing-shape 判定，即弃牌后 standing hand quality 的 taatsu-class 向量严格字典序改善（`standing_shape_signature[2:6]`，首个差异类别必须严格更优才准入）；旧 `shape_guard_shape_delta` 的数值单位 MUST NOT 直接复用为 standing-shape encoded unit；同一 signature、或仅后位类别改善而前位类别劣化/相平的候选 MUST NOT 准入。护栏开关只生效于相同最小 shanten 且 current ukeire 差距处于 slack 的次优候选。
+- **legacy（非 shape-aware）**：沿用「结构损失比 primary 最优至少小 `shape_guard_shape_delta`」。
 
 #### Scenario: 拆面子候选进入比较
-- **WHEN** 唯一最大直接进张候选需要拆掉一副已完成面子，而另一候选少 1 张直接进张但结构损失明显更小
+- **WHEN** 唯一最大直接进张候选需要拆掉一副已完成面子，而另一候选少 1 张直接进张但结构明显更优
 - **THEN** 两个候选进入同一次加权前瞻比较，最终选择由比较结果给出，并记录护栏准入明细
+
+#### Scenario: 24s 候选不因旧弃牌损失被错误挡掉
+- **GIVEN** 两个 root shanten/current ukeire 处于护栏可比较范围
+- **AND** root A 留 24s
+- **AND** root B 留 12s
+- **AND** 旧 discard-local cost 对 A 不利
+- **WHEN** shape-aware guard 运行
+- **THEN** admission SHALL 使用 standing shape 判断
+- **AND** MUST NOT 仅因旧 discard-local cost 拒绝 A
 
 #### Scenario: 进张差距超出护栏
 - **WHEN** 次优候选的直接进张差距大于配置 slack
@@ -21,6 +37,10 @@
 #### Scenario: 护栏截断可复现
 - **WHEN** 满足护栏条件的候选多于 `max_frontier_candidates`
 - **THEN** 按声明的稳定排序截断，候选输入顺序变化不改变选择
+
+#### Scenario: 弃后 signatuure 相等不允许护栏准入
+- **WHEN** 次优候选弃牌后 standing shape signature 与 primary 相等（或仅后位类别变化但首差异类别未严格更优）
+- **THEN** 该候选 MUST NOT 被护栏准入；选择与护栏关闭时一致，并记录未准入原因
 
 ### Requirement: 短路只在护栏后唯一时生效
 
@@ -36,11 +56,24 @@
 
 ### Requirement: 护栏审计字段
 
-评价 JSON SHALL 记录护栏策略与实际生效情况（开关、slack、delta、准入牌、被截断牌、跳过原因），并在候选级标注 `admitted_by`（`primary` 或 `shape_guard`）。护栏未启用时 MUST NOT 改变既有字段的语义与取值。
+评价 JSON SHALL 记录护栏策略与实际生效情况（开关、slack、delta/taatsu-class 语义、准入牌、被截断牌、跳过原因），并在候选级标注 `admitted_by`（`primary` 或 `shape_guard`）。
+
+shape-aware profile SHALL 额外记录：
+
+- standing shape signature / quality；
+- shape quality version；
+- guard 使用的是 legacy discard-cost 语义还是 standing-shape 语义（`taatsu_class_gain` 只作护栏意图声明，不作为准入谓词的实现凭据）；
+- 因 standing-shape 被准入/淘汰的原因。
+
+护栏未启用时 MUST NOT 改变既有字段的语义与取值。
 
 #### Scenario: 决策可离线复核
 - **WHEN** 一次决策因护栏改变了比较集
 - **THEN** 日志给出准入/截断明细与最终选择的加权指标，可离线复算
+
+#### Scenario: 离线复核 shape guard
+- **WHEN** shape-aware guard 改变了 frontier
+- **THEN** evaluation SHALL 提供足以复算 admission 的 standing shape 字段
 
 ### Requirement: 护栏在内核降级时不改变结果
 

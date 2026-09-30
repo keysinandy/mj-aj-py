@@ -24,8 +24,8 @@ class TestShanten(unittest.TestCase):
                          "weighted_kernel_version_mismatch")
         self.assertFalse(diagnostic["weighted_kernel_compatible"])
         self.assertEqual(diagnostic["weighted_kernel_required"],
-                         "rust-weighted-two-ply-v4")
-        self.assertIn("required=rust-weighted-two-ply-v4", message)
+                         "rust-weighted-two-ply-v5")
+        self.assertIn("required=rust-weighted-two-ply-v5", message)
 
     def test_tenpai(self):
         self.assertEqual(shanten(counts("123m456m789m123p5p")), 0)
