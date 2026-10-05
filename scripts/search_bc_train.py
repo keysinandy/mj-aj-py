@@ -153,7 +153,7 @@ def main(argv=None):
         max_generation = max((sample.generation
                               for sample in train_dataset.samples), default=0)
         buffer.add_generation(train_dataset, generation=max_generation)
-        selected = buffer.sample_batch(size=args.replay_size, seed=train.seed)
+        selected = buffer.sample_batch(size=args.replay_size, seed=args.seed)
         train_dataset = SearchDataset(sample for _, sample in selected)
         replay_manifest = _manifest(buffer, selected)
 

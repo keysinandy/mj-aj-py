@@ -117,10 +117,14 @@ teacher 口径收口（2026-09-30）：
 - **不新建**与线上 shape-aware 配置对应的独立 offline teacher 名。`legacyV2-offline`
   是唯一 T0；线上 shape-aware legacyV2（提交 2968b49 起为默认推理口径）是**推理配置**，
   不与训练 label 口径混称。在线配置只作推理兼容，不作训练标签或发布证据。
-- 训练用 policy-source 仍取 `heuristic:shape-v2` 等冻结启发式轨迹源，但标签口径统一
-  归到 `legacyV2-offline`，预算与标签口径不含混。
+- **轨迹/标签策略源 = 当前后台已配置的 legacyV2**：训练用 `--policy-source heuristic:legacy`
+  （`choose_action(evaluator="legacy")` → `DEFAULT_BOT_EVALUATOR='legacyV2'` →
+  `LegacyTwoPlyProfile.weighted_online(默认)`，即线上默认口径）。**不用 `heuristic:shape-v2`**
+  （那是另一条 `choose_shape_v2_action` 策略），以免模仿错 teacher。配对评估基线同样取
+  `heuristic:legacy`（legacyV2），目标是超过当前线上策略。
 - **新旧 shard 不混用**：并入同一 dataset 的所有 shard 必须来自同一生成 manifest
   （`git_commit`、实际内核版本、teacher_budget/search/belief/population 指纹一致）。
+  `policy-source` 不同（shape-v2 vs legacy）即属不同 teacher 口径，**禁止混放/互相 warm-start**；
   生成门禁默认拒绝 degraded 内核，故 v5 恢复后生成的 shard 不得与 v3 降级期产物混放；
   `search_dataset_merge` 拒绝 fingerprint 冲突。
 

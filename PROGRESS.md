@@ -2,7 +2,10 @@
 
 > 目标:基于 Suphx 范式(SL 预训练 + 自博弈强化学习)训练杭州麻将 AI,
 > 接入内部对战平台(`https://10.240.169.190:18080/portal/`)参加锦标赛。
-> 当前阶段:P2 贯通(BC 冷启动 93% top-1,**最优模型 runs/bc0/best.pt**);
+> 当前阶段:P2 贯通(BC 冷启动 93% top-1,最优 BC 基线现为
+> **runs/bc0_legacy60k/best.pt**,6x128/60k legacyV2 自弈,
+> fair_match(192,legacyV2)=胜率 25.5%/均分 −0.16,与 teacher 打平,见
+> 2026-10-05 节;旧 runs/bc0 seed 保持兼容);
 > P3 四轮 PPO 跑批均未显著超越 BC 基线——BC 先验正则(ppo4)已消除
 > 训练崩塌但增益仍在评估噪声内,瓶颈为固定启发式 bot 对手的上限
 > (详见 P3 节),下一步靠自博弈对手池或平台真实牌谱;吞吐已修
@@ -14,6 +17,48 @@
 > BC 模型测试房 10 场实弹全胜率正常、引擎-平台 1125 动作对账 0 非法
 > (P1.5 收口);下一步攒平台真实牌谱 + 正式锦标赛实测。
 > **有财必拷响**(YouCaiBiKao)引擎开关已实现。
+
+## 2026-10-05 内核 v5 / teacher 口径 / BC0_legacy60k 基线
+
+**内核契约（生成门禁已内置）**
+- Rust 内核必须为源码要求 `rust-weighted-two-ply-v5`（`mj/shanten.py`
+  `WEIGHTED_TWO_PLY_KERNEL_REQUIRED`）。旧 v3 轮子误加载时 LegacyV2 事务性回退 v1，
+  `weighted_kernel_compatible=False`、`degraded=True`，**生成标签即在测回退后策略**。
+- `mj/training/teacher_generate.py` 新增 `require_compatible_kernel()` 生成前 fail-loud
+  （`scripts/search_teacher_generate.py` 入口强制，`--allow-degraded-kernel` 仅 smoke 逃逸）；
+  `generation_runtime_fingerprint()` 在 manifest 记录 `git_commit` + 实际加载内核（版本/
+  兼容/degraded/爆头飘牌算子）+ teacher 配置，不再只靠 `teacher_config_hash`。
+
+**Teacher 口径修正（重要）**
+- 训练轨迹/标签策略源 = **当前后台已配置的 legacyV2**：`--policy-source heuristic:legacy`
+  （→ `choose_action("legacy")` → `DEFAULT_BOT_EVALUATOR='legacyV2'` →
+  `LegacyTwoPlyProfile.weighted_online(默认)`）。**不用 `heuristic:shape-v2`**
+  （`choose_shape_v2_action`，另一条策略），否则模仿错 teacher。
+- 由此：search-teacher 蒸馏线 gen0_v5/gen1_v5（shape-v2 teacher）与 gen0_legacy 均作废；
+  纯 BC 蒸馏启发式 teacher 打不过 teacher（reference-regret 改善≠全局强度，paired 全 regression）。
+- `docs/minisuphx-training-plan-v2.md` §3 已同步：policy-source=heuristic:legacy，配对基线=heuristic:legacy，
+  新旧 shard 不混用。
+
+**Shape Guard 口径裁定（同步至 openspec/specs 主规格）**
+- 准入谓词 `_taatsu_class_improved`（`mj/legacy_eval.py:1491`）为 taatsu-class 向量
+  **严格字典序**（`standing_shape_signature[2:6]` 的 `left > right`，要求首差异类别严格更优），
+  **不等于** design 曾写的"至少改善一个搭子类别"。真实开局 seed 0–2599 仅准入 1 次（seed 1787，
+  primary[18]→admitted[6]）；seed 290 为准入负例。legacy discard-cost 路径对 290 准入门，standing-shape 不准入——
+  行为口径已切换，交付契约已同步收口。放宽护栏（含保护"弃后签名相等"）属独立产品决策，须另做配对+性能验证。
+
+**Bug 修复：scripts/search_bc_train.py**
+- replay 分支引用 `train.seed` 但 `train` 在其后才构造 → `--replay-size>0` 必崩
+  （`UnboundLocalError`）。改为 `seed=args.seed`（等价）。
+
+**BC0_legacy60k 基线（新 BC anchor）**
+- 数据：`data/bc_legacy60k/`（60k 局 legacyV2 自弈，2400 shard / 79.3M 样本，单 campaign manifest）。
+- 训练：`streaming_bc` 6x128 public-v1，CPU 4 epoch（总 ~44h），val_top1 0.9872 / val_discard_top1 0.9417 /
+  train_loss 0.042。产物 `runs/bc0_legacy60k/best.pt`。
+- 评估：`fair_match(n=192, evaluator=legacyV2)`（1 座模型 vs 3 座 legacyV2 启发式）
+  → **胜率 25.5%，均分 −0.16 vs opp +0.05**，基本与 legacyV2 teacher 打平（±4% 噪声内≈0）。
+- 对比：v3-era BC 基线 21.9%/−0.98；旧 2x64 search-teacher gen0_legacy 被启发式碾压（−10 分）。
+  6x128+60k+正确 teacher 已把模型从被击败拉平到 teacher 水平（BC prior 的上限=teacher）。
+- 下一步：以 best.pt 为 BC prior 做 DAgger 分布修复 → 终端分 RL（PPO）以真正**超过** legacyV2。
 
 ## 2026-09-28 legacyV2 marginal structure guard
 
