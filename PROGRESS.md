@@ -60,6 +60,18 @@
   6x128+60k+正确 teacher 已把模型从被击败拉平到 teacher 水平（BC prior 的上限=teacher）。
 - 下一步：以 best.pt 为 BC prior 做 DAgger 分布修复 → 终端分 RL（PPO）以真正**超过** legacyV2。
 
+**P6 终端分 PPO 首次超过 legacyV2（同一日）**
+- 环境：`.venv` 补装 `stable-baselines3==2.9.0` + `sb3-contrib==2.9.0`；Windows 不支持
+  `--subproc`（SubprocVecEnv 默认 fork 不可用），用 DummyVecEnv（吞吐 ~58fps）。
+- run：`train_ppo --steps 50000 --blocks 6 --width 128 --init runs/bc0_legacy60k/best.pt
+  --bc-reg 0.5 --shape-k 0 --oracle-anneal 0.5 --ent-coef 0.001 --lr 3e-5 --target-kl 0.03`
+  （纯终端分 reward，BC prior KL 锚定）。产物 `runs/ppo_legacy60k/final.pt`。
+- 评估 `fair_match(n=384, evaluator=legacyV2)`（1 座模型 vs 3 座 legacyV2）：
+  - BC0_legacy60k：胜率 25.26%，均分 −0.078（≈ 与 teacher 打平）
+  - **PPO_legacy60k：胜率 26.04%，均分 +0.677 vs opp −0.226（约 +0.90/局正边际）**
+- 结论：**终端分 PPO（50k smoke）首次使模型显著高于 legacyV2 teacher**；BC prior 恰为打平基线，
+  复现"SL prior → terminal-score RL 超越"的关键路径。下一步按计划 P7 league（更多步 + 对手池）继续提。
+
 ## 2026-09-28 legacyV2 marginal structure guard
 
 - 已实现 versioned `MarginalStructureRole`、公开可见 live connectivity、
