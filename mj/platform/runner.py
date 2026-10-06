@@ -27,6 +27,9 @@ from ..legacy_eval import (
     canonical_evaluator,
 )
 
+#: ppo-league 策略的默认 checkpoint(全网最 强,league 自博弈训练)。
+PPO_LEAGUE_CKPT = "runs/ppo_league/final.pt"
+
 
 def make_decide(strategy, ckpt=None, evaluator=DEFAULT_BOT_EVALUATOR, model=None,
                 policy_profile=None, marginal_structure_guard_enabled=None,
@@ -72,6 +75,22 @@ def make_decide(strategy, ckpt=None, evaluator=DEFAULT_BOT_EVALUATOR, model=None
         play.strategy_snapshot = snapshot_for_config({
             "strategy": "policy", "evaluator": "policy",
             "model_name": os.path.basename(ckpt),
+        })
+        return play
+    if strategy == "ppo-league":
+        from mj.evaluate import policy_player
+        # 各 CLI 的通用 --ckpt 默认值不是 ppo-league 的模型,视为未设置,
+        # 一律回落到 PPO_LEAGUE_CKPT(用户显式传其它 ckpt 时除外)。
+        _sentinel = (None, "", "runs/bc0/best.pt", "runs/ppo4/ckpt_350000.pt")
+        path = ckpt if ckpt not in _sentinel else PPO_LEAGUE_CKPT
+        if not os.path.exists(path):
+            raise SystemExit(f"PPO-league checkpoint 不存在: {path}")
+        play = policy_player(path)
+        play.bot_strategy = "ppo-league"
+        play.bot_evaluator = "ppo-league"
+        play.strategy_snapshot = snapshot_for_config({
+            "strategy": "ppo-league", "evaluator": "ppo-league",
+            "model_name": os.path.basename(path),
         })
         return play
     if strategy == "bot":
@@ -263,7 +282,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="测试房 4 令牌 runner")
     ap.add_argument("--config", default="local/platform.json")
     ap.add_argument("--strategy", default="policy",
-                    choices=("policy", "bot", "random", "policy-v3"))
+                    choices=("policy", "ppo-league", "bot", "random",
+                             "policy-v3"))
     ap.add_argument("--bot-evaluator", default=DEFAULT_BOT_EVALUATOR,
                     choices=("legacy", "legacy-two-ply-v1", "legacy-v1",
                              "legacyV2", "legacy-v2",

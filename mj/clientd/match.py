@@ -32,7 +32,7 @@ DEFAULT_MATCH_CONFIG = {
     "speed_band_enabled": False,
     "pareto_frontier_enabled": False,
 }
-MATCH_STRATEGIES = {"policy", "policy-v3", "bot", "random"}
+MATCH_STRATEGIES = {"policy", "ppo-league", "policy-v3", "bot", "random"}
 MATCH_EVALUATORS = {
     "legacy", "legacy-two-ply-v1", "legacy_v1", "legacy-v1",
     *LEGACY_V2_EVALUATORS,
@@ -161,7 +161,7 @@ def _build_decide(config):
         # ONNX，而平台 CLI 的 legacy make_decide(policy) 只接收 torch
         # checkpoint。线上 policy 两种格式都支持，避免把已选模型误当
         # 成 PyTorch 文件。
-        if strategy in ("policy", "policy-v3") \
+        if strategy in ("policy", "ppo-league", "policy-v3") \
                 and isinstance(model_path, str) \
                 and model_path.lower().endswith(".onnx"):
             from .strategies import make_player
@@ -198,7 +198,8 @@ def _build_decide(config):
         if snapshot is None:
             snapshot = snapshot_for_config(config)
         model_name = config.get("model_name")
-        if model_name is None and strategy in ("policy", "policy-v3"):
+        if model_name is None and strategy in ("policy", "ppo-league",
+                                               "policy-v3"):
             model_name = os.path.basename(model_path) if model_path else None
         snapshot = snapshot_with_model_name(snapshot, model_name)
         setattr(decide, "strategy_snapshot", snapshot)

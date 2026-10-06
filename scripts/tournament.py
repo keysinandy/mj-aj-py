@@ -44,11 +44,19 @@ from mj.platform.config import (  # noqa: E402
 from mj.platform.tournament import TERMINAL_STATES  # noqa: E402
 from mj.legacy_eval import DEFAULT_BOT_EVALUATOR  # noqa: E402
 
-STRATEGIES = ("policy", "bot", "random", "policy-v3")
+STRATEGIES = ("policy", "ppo-league", "bot", "random", "policy-v3")
 EVALUATORS = ("legacy", "legacy-v1", "legacy-two-ply-v1",
               "legacyV2", "legacy-v2",
               "weighted-two-ply-frontier-v1", "shape-v1", "shape-v2",
               "policy-v3")
+PPO_LEAGUE_CKPT = "runs/ppo_league/final.pt"
+
+
+def _ckpt_for(strategy, ckpt):
+    """Strategy-appropriate checkpoint: --ckpt 未提供时按策略取默认。"""
+    if ckpt:
+        return ckpt
+    return PPO_LEAGUE_CKPT if strategy == "ppo-league" else "runs/bc0/best.pt"
 
 # strategy=bot 时 shape-v2 需显式解锁:线上镜像材料守恒门禁未过
 # (2026-09-17 实跑 ~60% 受控回退,未崩溃但混合决策,PROGRESS.md 有结论)。
@@ -234,8 +242,8 @@ def build_runner_command(args):
            "--strategy", args.strategy,
            "--bot-evaluator", args.bot_evaluator,
            "--state-rate", str(args.state_rate)]
-    if args.strategy in ("policy", "policy-v3"):
-        cmd += ["--ckpt", args.ckpt]
+    if args.strategy in ("policy", "ppo-league", "policy-v3"):
+        cmd += ["--ckpt", _ckpt_for(args.strategy, args.ckpt)]
     if args.dump:
         cmd.append("--dump")
     if args.no_recorder:
@@ -260,7 +268,9 @@ def build_parser():
     ap.add_argument("--bot-evaluator", default=DEFAULT_BOT_EVALUATOR,
                     choices=EVALUATORS,
                     help="默认 legacyV2;可显式回退 legacy-v1")
-    ap.add_argument("--ckpt", default="runs/bc0/best.pt")
+    ap.add_argument("--ckpt", default="",
+                    help="policy/ppo-league 的 checkpoint;留空按策略取默认 "
+                         "(ppo-league→runs/ppo_league/final.pt)")
     ap.add_argument("--state-rate", type=float, default=16.0)
     ap.add_argument("--dump", action="store_true")
     ap.add_argument("--no-recorder", action="store_true",
@@ -300,9 +310,10 @@ def main(argv=None):
         for err in errors:
             print(f"护栏拒绝:{err}", file=sys.stderr)
         return 2
-    if args.strategy in ("policy", "policy-v3") \
-            and not os.path.isfile(args.ckpt):
-        print(f"护栏拒绝:checkpoint 不存在:{args.ckpt}", file=sys.stderr)
+    if args.strategy in ("policy", "ppo-league", "policy-v3") \
+            and not os.path.isfile(_ckpt_for(args.strategy, args.ckpt)):
+        print(f"护栏拒绝:checkpoint 不存在:"
+              f"{_ckpt_for(args.strategy, args.ckpt)}", file=sys.stderr)
         return 2
 
     token = next(iter(cfg["tokens"].values()))

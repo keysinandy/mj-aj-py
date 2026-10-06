@@ -40,7 +40,10 @@ VALID_EVALUATORS = ("legacy", "legacy-two-ply-v1", "legacy_v1", "legacy-v1",
                     *LEGACY_V2_EVALUATORS,
                     "shape-v1", "shape_v1", "shape",
                     "shape-v2", "shape_v2", "ev2", "policy-v3", "policy_v3")
-_SUPPORTED_STRATEGIES = ("policy", "bot", "policy-v3")
+_SUPPORTED_STRATEGIES = ("policy", "ppo-league", "bot", "policy-v3")
+
+#: ppo-league 策略的默认 checkpoint(league 自博弈训练的最强模型)。
+PPO_LEAGUE_CKPT = "runs/ppo_league/final.pt"
 
 
 def resolve_budget(window):
@@ -187,6 +190,23 @@ def make_policy_player(config):
     return Player(_play, strategy="policy", evaluator="policy")
 
 
+def make_ppo_league_player(config):
+    ckpt = config.get("ckpt") or PPO_LEAGUE_CKPT
+    if not ckpt or not os.path.exists(str(ckpt)):
+        raise ValidationError(
+            f"ppo-league strategy requires an existing checkpoint, got {ckpt!r}")
+    if str(ckpt).endswith(".onnx"):
+        from .onnx_player import OnnxPolicyPlayer
+        player = OnnxPolicyPlayer(ckpt)
+    else:
+        from ..evaluate import policy_player  # lazy: imports torch
+        player = policy_player(ckpt)
+
+    def _play(game, seat, _p=player):
+        return _p(game, seat)
+    return Player(_play, strategy="ppo-league", evaluator="ppo-league")
+
+
 def make_policy_v3_player(config):
     threshold = _validate_confidence(config.get("confidence_threshold"))
     from ..decision.policy_v3 import PolicyV3Runtime, PolicyV3Profile
@@ -214,4 +234,6 @@ def make_player(config):
         return make_bot_player(config)
     if strategy == "policy":
         return make_policy_player(config)
+    if strategy == "ppo-league":
+        return make_ppo_league_player(config)
     return make_policy_v3_player(config)

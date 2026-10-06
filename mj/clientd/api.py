@@ -129,9 +129,9 @@ def api_router(arena_root=None, games_root=None, seed_root=None,
         if not isinstance(config, dict):
             raise ValidationError("strategy config must be an object")
         strategy = config.get("strategy")
-        if strategy not in ("bot", "policy", "policy-v3", "random"):
+        if strategy not in ("bot", "policy", "ppo-league", "policy-v3", "random"):
             raise ValidationError(f"unknown strategy {strategy!r}")
-        model_required = strategy in ("policy", "policy-v3")
+        model_required = strategy in ("policy", "ppo-league", "policy-v3")
         selected_model = None
         if model_required and not (config.get("ckpt") or config.get("model")):
             try:
@@ -347,7 +347,7 @@ def _inject_selected_model(config, model):
             return role
         item = dict(role)
         strategy = item.get("strategy")
-        if strategy == "policy" and not item.get("ckpt"):
+        if strategy in ("policy", "ppo-league") and not item.get("ckpt"):
             item["ckpt"] = selected_path
             injected = True
         elif strategy == "policy-v3" and not item.get("model"):

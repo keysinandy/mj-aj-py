@@ -15,7 +15,7 @@ from ..legacy_eval import (
 )
 
 
-TOURNAMENT_STRATEGIES = {"policy", "policy-v3", "bot", "random"}
+TOURNAMENT_STRATEGIES = {"policy", "ppo-league", "policy-v3", "bot", "random"}
 TOURNAMENT_EVALUATORS = {
     "legacy", "legacy-two-ply-v1", "legacy_v1", "legacy-v1",
     *LEGACY_V2_EVALUATORS,

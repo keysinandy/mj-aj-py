@@ -47,7 +47,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="自由对战(/api/match)挂机 runner")
     ap.add_argument("--config", default="local/platform.json")
     ap.add_argument("--strategy", default="bot",
-                    choices=("policy", "bot", "random", "policy-v3"))
+                  choices=("policy", "ppo-league", "bot", "random",
+                           "policy-v3"))
     ap.add_argument("--bot-evaluator", default=DEFAULT_BOT_EVALUATOR,
                     choices=("legacy", "legacy-two-ply-v1", "legacy-v1",
                              "legacyV2", "legacy-v2",
