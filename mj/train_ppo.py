@@ -313,6 +313,19 @@ class SaveNetCallback(BaseCallback):
         self._save(os.path.join(self.out, "final.pt"))
 
 
+def load_ppo_init(model, path):
+    """PPO 检查点续训:直接载入主干 + 策略头。
+
+    PPO 的 ``net`` 已是 91 平面(99 通道)全量主干,``action_net`` 已是完整
+    策略头——与 BC 移植(需 [75:91) 补零、policy 列搬运)不同,直接精确加载。
+    用于从已训练的 PPO(final/ckpt_*.pt) warm-start 续跑。
+    """
+    ck = torch.load(path, map_location="cpu", weights_only=True)
+    model.policy.features_extractor.net.load_state_dict(ck["net"], strict=True)
+    model.policy.action_net.load_state_dict(ck["action_net"], strict=True)
+    print(f"已从 {path} 加载 PPO 主干+策略头续训")
+
+
 def load_bc_init(model, path):
     """BC 检查点移植:主干 + policy 头精确迁移,value 头随机。
 
@@ -339,6 +352,48 @@ def load_bc_init(model, path):
     print(f"已从 {path} 移植 BC 主干+policy 头(oracle 零填充,value 头随机)")
 
 
+def build_opponent_pool(spec, ckpts):
+    """Parses a league spec 'name=weight,name=weight' into pool assets.
+
+    ``legacy``/``shape-v2`` are built-in heuristic evaluators; every other
+    name must be supplied via ``ckpts[name]=checkpoint_path`` (loaded once as a
+    frozen policy via :func:`mj.evaluate.policy_player`).  Historical RL / BC
+    checkpoints are the agent's own prior selves => self-play opponent pool.
+    Returns ``(names, weights, pool)`` in spya presentation order.
+    """
+    names, weights, pool = [], [], {}
+    for item in (chunk.strip() for chunk in spec.split(",") if chunk.strip()):
+        name, _, weight = item.partition("=")
+        weights.append(float(weight) if weight else 1.0)
+        names.append(name)
+        if name in ("legacy", "shape-v2"):
+            from .bot import choose_action
+            pool[name] = choose_action
+        elif name in ckpts:
+            from .evaluate import policy_player
+            pool[name] = policy_player(ckpts[name])
+        else:
+            raise ValueError(
+                f"unknown opponent {name!r}; pass --opponent-ckpt {name}=<path>")
+    return names, weights, pool
+
+
+def league_lineup(names, weights, rng):
+    """Deterministically draw a 3-opponent lineup from the weighted pool."""
+    total = sum(weights)
+    lineup = []
+    for _ in range(3):
+        x = rng.random() * total
+        for name, weight in zip(names, weights):
+            x -= weight
+            if x < 0:
+                lineup.append(name)
+                break
+        else:
+            lineup.append(names[-1])
+    return lineup
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--steps", type=int, default=200_000)
@@ -359,8 +414,14 @@ def main():
     ap.add_argument("--bc-reg", type=float, default=0.0,
                     help="BC 先验 KL 正则系数 λ(0=关);>0 时需 --init")
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--init", default=None, help="BC checkpoint 初始化")
+    ap.add_argument("--init", default=None, help="BC/PPO checkpoint 初始化")
     ap.add_argument("--out", default="runs/ppo0")
+    ap.add_argument("--opponents", default=None,
+                    help="league 对手池 spec 'name=weight,...' "
+                         "(legacy/shape-v2 内置,其余配 --opponent-ckpt)")
+    ap.add_argument("--opponent-ckpt", action="append", default=None,
+                    help="name=path 冻结对手 checkpoint(this self 的历史,自博弈)")
+    ap.add_argument("--league-seed", type=int, default=0)
     ap.add_argument("--threads", type=int, default=0,
                     help="torch 线程数;8 物理核机器建议 8(16 会 oversubscribe)")
     ap.add_argument("--subproc", action="store_true",
@@ -374,8 +435,24 @@ def main():
     from stable_baselines3.common.monitor import Monitor
     from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 
+    pool = None
+    lineup_rng = None
+    if args.opponents:
+        ckpts = {}
+        for item in (args.opponent_ckpt or []):
+            name, _, path = item.partition("=")
+            if name and path:
+                ckpts[name] = path
+        names, weights, pool = build_opponent_pool(args.opponents, ckpts)
+        lineup_rng = np.random.default_rng(args.league_seed)
+
     def make_env(i):
-        return MahjongEnv(seed=args.seed * 1000 + i, shape_k=args.shape_k,
+        opponents = None
+        if pool is not None:
+            lineup = league_lineup(names, weights, lineup_rng)
+            opponents = [pool[name] for name in lineup]
+        return MahjongEnv(seed=args.seed * 1000 + i, opponents=opponents,
+                          shape_k=args.shape_k,
                           you_cai_bi_kao=args.you_cai_bi_kao)
 
     # 子进程 venv:环境步进(含 bot 决策的 shanten dfs)并行化,
@@ -419,8 +496,11 @@ def main():
     if args.init:
         ck = torch.load(args.init, map_location="cpu", weights_only=True)
         assert (ck["blocks"], ck["width"]) == (args.blocks, args.width), \
-            f"BC 检查点 blocks/width {ck['blocks']}/{ck['width']} 与训练参数不符"
-        load_bc_init(model, args.init)
+            f"init blocks/width {ck['blocks']}/{ck['width']} 与训练参数不符"
+        if "net" in ck and "action_net" in ck:
+            load_ppo_init(model, args.init)
+        else:
+            load_bc_init(model, args.init)
         if args.bc_reg > 0:
             model.set_bc_reference()
             print(f"BC 先验正则开启:λ={args.bc_reg}")

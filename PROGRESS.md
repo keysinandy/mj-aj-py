@@ -4,8 +4,9 @@
 > 接入内部对战平台(`https://10.240.169.190:18080/portal/`)参加锦标赛。
 > 当前阶段:P2 贯通(BC 冷启动 93% top-1,最优 BC 基线现为
 > **runs/bc0_legacy60k/best.pt**,6x128/60k legacyV2 自弈,
-> fair_match(192,legacyV2)=胜率 25.5%/均分 −0.16,与 teacher 打平,见
-> 2026-10-05 节;旧 runs/bc0 seed 保持兼容);
+> fair_match(192,legacyV2)=胜率 25.5%/均分 −0.16,与 teacher 打平;
+> **当前最强模型 runs/ppo_league/final.pt**(league 自博弈,vs legacyV2
+> +1.00/局),见 2026-10-05 节;旧 runs/bc0 seed 保持兼容);
 > P3 四轮 PPO 跑批均未显著超越 BC 基线——BC 先验正则(ppo4)已消除
 > 训练崩塌但增益仍在评估噪声内,瓶颈为固定启发式 bot 对手的上限
 > (详见 P3 节),下一步靠自博弈对手池或平台真实牌谱;吞吐已修
@@ -71,6 +72,18 @@
   - **PPO_legacy60k：胜率 26.04%，均分 +0.677 vs opp −0.226（约 +0.90/局正边际）**
 - 结论：**终端分 PPO（50k smoke）首次使模型显著高于 legacyV2 teacher**；BC prior 恰为打平基线，
   复现"SL prior → terminal-score RL 超越"的关键路径。下一步按计划 P7 league（更多步 + 对手池）继续提。
+
+**P8 League 自博弈对手池（同一日，当前最强）**
+- `train_ppo` 新增 league 对手池：`--opponents "legacy=0.6,bc0=0.2,ppo6=0.1,ppo7=0.1"`
+  + `--opponent-ckpt name=path`（历史 PPO/BC checkpoint 即本 agent 旧版本=自博弈），
+  `--league-seed` 确定性阵容；另加 `load_ppo_init` 支持从 PPO checkpoint（net+action_net）
+  warm-start 续训（此前 `--init` 只认 BC `{state_dict}`）。
+- run：`train_ppo --steps 300000 --init runs/ppo_legacy60k/final.pt --opponents ...`，产物
+  `runs/ppo_league/final.pt`；explained_variance 0.557、bc_kl 0.003 稳定。
+- 评估 `fair_match(n=384, legacyV2)`：
+  - PPO6_50k margin +0.903；PPO7_200k（固定对手纯加步）+0.639（未提升）；**PPO8_league +1.000**（当前最优）。
+- 结论：league（面向 harder 池）训练出最强模型（vs legacyV2 +1.00/局），相比 P6 仅小幅提高（+0.10，噪声内）
+  但无 P7 纯加步的回落，收敛更稳。相对固定 legacyV2 对手的 RL 在 ~50k 已近收益上限，league 是继续提升的正确结构。
 
 ## 2026-09-28 legacyV2 marginal structure guard
 
