@@ -99,6 +99,12 @@
 - 修正后基准确认：BC0(6x128/60k) 与 PPO/league 都只是贴着 legacyV2；要真正越过 teacher，
   需继续强化自博弈(P9 进行中)或引入更强训练信号，评估一律以平衡 2v2/1v3 诚实记分。
 
+**锦标赛锁定 legacyV2（2026-10-05 决策）**
+- 因平衡 2v2 显示 PPO/league 与 legacyV2 仅打平、未实质超过，正式**锦标赛参赛策略锁定为
+  heuristic bot（默认 legacyV2）**，web 侧 `clientd/tournament.normalize_tournament_config`
+  拒绝 policy/ppo-league/policy-v3/random（`locked=True` 供 UI 置灰）；保留 bot 家族的
+  legacy-v1 冷冻回退安全网。测试房/自由对战仍可选模型策略（dev 灵活）。
+
 ## 2026-09-28 legacyV2 marginal structure guard
 
 - 已实现 versioned `MarginalStructureRole`、公开可见 live connectivity、

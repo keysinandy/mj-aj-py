@@ -27,16 +27,22 @@ TOURNAMENT_POLL_INTERVAL = 1.0
 def normalize_tournament_config(config):
     """Validate public session options; credentials remain in PlatformSettings.
 
-    The production tournament default is the heuristic BOT route.  Callers
-    can still opt into policy/random explicitly, while an omitted strategy
-    follows the same ``bot + legacyV2`` route as online matching.
+    NOTE (2026-10-05): 锦标赛参赛策略已**锁定为 heuristic bot(默认 legacyV2)**
+    并**禁止切换为模型/随机策略** —— 平衡 2v2 实测表明 PPO/league 与 legacyV2
+    仅打平、未实质超过,故正式锦标赛固定用成熟 heuristic。任何显式请求
+    policy / ppo-league / policy-v3 / random 都会被拒绝(fail-loud);
+    evaluator 停 bot 家族(默认 legacyV2,保留 legacy-v1 冷冻回退安全网)。
+    结果携带 ``locked=True`` 供 UI 置灰。
     """
     if not isinstance(config, dict):
         raise ValidationError("tournament config must be an object")
+
     strategy = config.get("strategy") or "bot"
-    if not isinstance(strategy, str) or strategy not in TOURNAMENT_STRATEGIES:
+    if strategy != "bot":
         raise ValidationError(
-            "unknown tournament strategy; expected policy / policy-v3 / bot / random")
+            "tournament strategy is LOCKED to the heuristic bot route; "
+            f"cannot select {strategy!r} (models policy/ppo-league/policy-v3/"
+            "random are disabled in tournaments)")
 
     evaluator = config.get("evaluator") or DEFAULT_BOT_EVALUATOR
     if not isinstance(evaluator, str) or evaluator not in TOURNAMENT_EVALUATORS:
@@ -53,11 +59,12 @@ def normalize_tournament_config(config):
         raise ValidationError("state_rate must be a positive number")
 
     result = {
-        "strategy": strategy,
+        "strategy": "bot",
         "evaluator": evaluator,
         "state_rate": state_rate,
         "record": config.get("record", True),
         "replay_trace": config.get("replay_trace", False),
+        "locked": True,
         "marginal_structure_guard_enabled": config.get(
             "marginal_structure_guard_enabled", True),
         "speed_band_enabled": config.get("speed_band_enabled", False),
