@@ -5,8 +5,10 @@
 > 当前阶段:P2 贯通(BC 冷启动 93% top-1,最优 BC 基线现为
 > **runs/bc0_legacy60k/best.pt**,6x128/60k legacyV2 自弈,
 > fair_match(192,legacyV2)=胜率 25.5%/均分 −0.16,与 teacher 打平;
-> **当前最强模型 runs/ppo_league/final.pt**(league 自博弈,vs legacyV2
-> +1.00/局),见 2026-10-05 节;旧 runs/bc0 seed 保持兼容);
+> PPO/league 模型 **runs/ppo_league/final.pt 在严格均衡 2v2 下与 legacyV2
+> 打平(均分 −0.06 于 legacy +0.06,噪声内)**,早前 fair_match 的
+> "+0.90/+1.00 超额"为 1 模型 vs 3 同款 bot 非对称测量的少数派渔利伪像,
+> 已被推翻(见 2026-10-05 校正节);旧 runs/bc0 seed 保持兼容);
 > P3 四轮 PPO 跑批均未显著超越 BC 基线——BC 先验正则(ppo4)已消除
 > 训练崩塌但增益仍在评估噪声内,瓶颈为固定启发式 bot 对手的上限
 > (详见 P3 节),下一步靠自博弈对手池或平台真实牌谱;吞吐已修
@@ -84,6 +86,18 @@
   - PPO6_50k margin +0.903；PPO7_200k（固定对手纯加步）+0.639（未提升）；**PPO8_league +1.000**（当前最优）。
 - 结论：league（面向 harder 池）训练出最强模型（vs legacyV2 +1.00/局），相比 P6 仅小幅提高（+0.10，噪声内）
   但无 P7 纯加步的回落，收敛更稳。相对固定 legacyV2 对手的 RL 在 ~50k 已近收益上限，league 是继续提升的正确结构。
+
+**平衡 2v2 校正（2026-10-05 续）——推翻了 "+超额 legacyV2"**
+- 用严格均衡的对局报告（`scripts/local_match_report.py`：座位×庄家轮转）重测，
+  A=1ppo+3legacy、B=1legacy+3ppo、C=2v2 各 30k 局：
+  - A：ppo 均分 −0.031（vs legacy 场均 +0.010）≈ 打平
+  - B：legacy 单席 +0.156
+  - C（平衡 2v2，最干净）：ppo 胜率 49.7% / 均分 **−0.062** vs legacy **+0.062**（差 −0.12，噪声内）
+- 结论：**早前 fair_match 的 P6/P7/P8“+0.90/+1.00 超过 legacyV2”是伪像**——那是
+  “1 模型 vs 3 个同款启发式 bot”的非对称测量 + n=192/384 小样本，少数派渔利虚高模型分。
+  严格均衡 2v2 显示 **ppo-league 与 legacyV2 打平（略微偏负，无显著胜负）**，未实质超过 teacher。
+- 修正后基准确认：BC0(6x128/60k) 与 PPO/league 都只是贴着 legacyV2；要真正越过 teacher，
+  需继续强化自博弈(P9 进行中)或引入更强训练信号，评估一律以平衡 2v2/1v3 诚实记分。
 
 ## 2026-09-28 legacyV2 marginal structure guard
 
