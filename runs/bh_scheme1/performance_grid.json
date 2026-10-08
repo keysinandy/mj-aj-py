@@ -1,0 +1,17 @@
+[
+  {
+    "big_hand_enabled": true,
+    "big_hand_same_shanten_enabled": true,
+    "big_hand_plus_one_enabled": true,
+    "big_hand_min_live": 24,
+    "big_hand_max_opponent_melds": 1,
+    "big_hand_min_ukeire": 4,
+    "big_hand_max_ukeire_loss": 4,
+    "big_hand_min_pair_units": 4,
+    "big_hand_min_luxury_upgrade_live": 1,
+    "big_hand_plus_one_luxury_noninferior": true,
+    "big_hand_plus_one_parallel": true,
+    "big_hand_plus_one_min_strength": "MEDIUM",
+    "label": "conservative"
+  }
+]

@@ -37,6 +37,12 @@
 
 ## What Changes
 
+2026-10-08 用户追加批准方案 1：在显式 parallel 实验 profile 下，仅对唯一
+`best_s+1` challenger 复用现有 Python full future；Rust 速度 frontier 保持
+同向听比较，补跑服从原剩余 hard budget。该授权覆盖下文原版“不新增 Python
+future search”的限制，不改变默认配置。先做积分与性能评估，只有确认正收益而
+性能不达标才转入 Rust 跨向听 complete future 改造；详见 design 中的方案 1。
+
 - 新增 `mj/big_hand_intent.py`（或等价小模块），只使用本家手牌、公开 visible、locked、live wall、公开副露等信息生成廉价 `BigHandIntent`。
 - 第一版意图只覆盖：
   - `CHIITOI`：七对构型；

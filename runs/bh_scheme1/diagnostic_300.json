@@ -1,0 +1,1599 @@
+{
+  "schema": "legacy-v2-big-hand-grid-scan-v1",
+  "games_per_point": 300,
+  "seed_start": 700000,
+  "grid_size": 1,
+  "results": [
+    {
+      "grid_point": {
+        "big_hand_enabled": true,
+        "big_hand_same_shanten_enabled": true,
+        "big_hand_plus_one_enabled": true,
+        "big_hand_min_live": 0,
+        "big_hand_max_opponent_melds": 3,
+        "big_hand_min_ukeire": 0,
+        "big_hand_max_ukeire_loss": 50,
+        "big_hand_min_pair_units": 2,
+        "big_hand_min_luxury_upgrade_live": 0,
+        "big_hand_plus_one_luxury_noninferior": true,
+        "big_hand_plus_one_parallel": true,
+        "big_hand_plus_one_min_strength": "MEDIUM"
+      },
+      "profile_fingerprint": "ffae1e3cd3ba6449",
+      "baseline_fingerprint": "9a2d4dba9c305668",
+      "games": 300,
+      "valid_pairs": 150,
+      "score_ci": {
+        "n": 150,
+        "sum": 0.0,
+        "mean": 0.0,
+        "ci_low": 0.0,
+        "ci_high": 0.0,
+        "alpha": 0.05,
+        "method": "paired source-seed percentile bootstrap",
+        "rounds": 5000,
+        "seed": 20261008
+      },
+      "trigger": {
+        "admission_events": 20,
+        "challenger_events": 10,
+        "override_events": 0,
+        "discard_decisions": 2645,
+        "override_rate_per_discard": 0.0,
+        "phases": {
+          "plus-one": 2141,
+          "disabled": 504
+        },
+        "skipped_reasons": {
+          "no_candidate_admitted": 2121
+        },
+        "gate_reasons": {
+          "intent_not_strong": 1119,
+          "eligible_same_shanten": 55,
+          "no_same_shanten_strong_route": 127,
+          "chiitoi_distance": 97,
+          "eligible_plus_one": 31
+        },
+        "override_reasons": {
+          "big_hand_challenger_incomplete": 10
+        }
+      },
+      "by_hero_wild_count": {
+        "0": {
+          "discard_decisions": 1648,
+          "override_events": 0,
+          "challenger_events": 0,
+          "admission_events": 4,
+          "override_rate_per_discard": 0.0,
+          "action_divergence_from_baseline": 0,
+          "divergence_rate_per_discard": 0.0,
+          "divergence_discard_latency_ms": {
+            "p50": null,
+            "p95": null
+          },
+          "discard_latency_ms": {
+            "p50": 2.596899983473122,
+            "p95": 18.648969952482716,
+            "max": 46.508700121194124
+          },
+          "gate_reasons": {
+            "intent_not_strong": 660,
+            "no_same_shanten_strong_route": 35,
+            "eligible_same_shanten": 10
+          }
+        },
+        "1": {
+          "discard_decisions": 873,
+          "override_events": 0,
+          "challenger_events": 0,
+          "admission_events": 6,
+          "override_rate_per_discard": 0.0,
+          "action_divergence_from_baseline": 4,
+          "divergence_rate_per_discard": 0.004581901489117984,
+          "divergence_discard_latency_ms": {
+            "p50": 0.7996500935405493,
+            "p95": 0.8248450118117034
+          },
+          "discard_latency_ms": {
+            "p50": 1.4879999216645956,
+            "p95": 14.156419970095154,
+            "max": 57.21980007365346
+          },
+          "gate_reasons": {
+            "intent_not_strong": 452,
+            "eligible_same_shanten": 17,
+            "no_same_shanten_strong_route": 92
+          }
+        },
+        "2": {
+          "discard_decisions": 113,
+          "override_events": 0,
+          "challenger_events": 10,
+          "admission_events": 10,
+          "override_rate_per_discard": 0.0,
+          "action_divergence_from_baseline": 3,
+          "divergence_rate_per_discard": 0.02654867256637168,
+          "divergence_discard_latency_ms": {
+            "p50": 0.7394000422209501,
+            "p95": 34.79009000584483
+          },
+          "discard_latency_ms": {
+            "p50": 1.520700054243207,
+            "p95": 20.743940118700248,
+            "max": 46.481800032779574
+          },
+          "gate_reasons": {
+            "chiitoi_distance": 97,
+            "eligible_plus_one": 31,
+            "eligible_same_shanten": 28,
+            "intent_not_strong": 7
+          }
+        },
+        "3": {
+          "discard_decisions": 11,
+          "override_events": 0,
+          "challenger_events": 0,
+          "admission_events": 0,
+          "override_rate_per_discard": 0.0,
+          "action_divergence_from_baseline": 0,
+          "divergence_rate_per_discard": 0.0,
+          "divergence_discard_latency_ms": {
+            "p50": null,
+            "p95": null
+          },
+          "discard_latency_ms": {
+            "p50": 0.8394999895244837,
+            "p95": 2.2451499244198203,
+            "max": 2.520299982279539
+          },
+          "gate_reasons": {}
+        }
+      },
+      "by_match_max_wild": {
+        "0": {
+          "n": 42,
+          "sum": 0.0,
+          "mean": 0.0,
+          "ci_low": 0.0,
+          "ci_high": 0.0,
+          "alpha": 0.05,
+          "method": "paired source-seed percentile bootstrap",
+          "rounds": 5000,
+          "seed": 20261008
+        },
+        "1": {
+          "n": 83,
+          "sum": 0.0,
+          "mean": 0.0,
+          "ci_low": 0.0,
+          "ci_high": 0.0,
+          "alpha": 0.05,
+          "method": "paired source-seed percentile bootstrap",
+          "rounds": 5000,
+          "seed": 20261009
+        },
+        "2": {
+          "n": 23,
+          "sum": 0.0,
+          "mean": 0.0,
+          "ci_low": 0.0,
+          "ci_high": 0.0,
+          "alpha": 0.05,
+          "method": "paired source-seed percentile bootstrap",
+          "rounds": 5000,
+          "seed": 20261010
+        },
+        "3": {
+          "n": 2,
+          "sum": 0.0,
+          "mean": 0.0,
+          "ci_low": 0.0,
+          "ci_high": 0.0,
+          "alpha": 0.05,
+          "method": "paired source-seed percentile bootstrap",
+          "rounds": 5000,
+          "seed": 20261011
+        }
+      },
+      "bucket_score_note": "Match max wild is observed in the candidate arm; descriptive, not a causal white-count effect.",
+      "python_challenger_topup": {
+        "attempts": 10,
+        "complete": 10,
+        "reasons": {},
+        "latency_ms": {
+          "n": 10,
+          "p50": 16.00000006146729,
+          "p95": 46.55000005150214,
+          "p99": 46.910000026691705,
+          "max": 47.0000000204891,
+          "mean": 23.300000000745058
+        }
+      },
+      "candidate_discard_latency_ms": {
+        "n": 2645,
+        "p50": 2.2094000596553087,
+        "p95": 17.57501992397001,
+        "p99": 33.06370802223678,
+        "max": 57.21980007365346,
+        "mean": 4.517141170007492
+      },
+      "counterfactual_baseline_discard_latency_ms": {
+        "n": 2645,
+        "p50": 1.097500091418624,
+        "p95": 16.78497996181239,
+        "p99": 30.12332802638408,
+        "max": 47.63930011540651,
+        "mean": 3.5964867283215143
+      },
+      "challenger_increment_latency_ms": {
+        "n": 10,
+        "p50": 14.454300049692392,
+        "p95": 35.41425991570574,
+        "p99": 43.569411903154105,
+        "max": 45.60819990001619,
+        "mean": 18.75130997505039
+      },
+      "latency_note": "Multiprocess exploratory timing; baseline follows candidate on the same state and has warm caches. Use interleaved single-process 4-bot benchmark for acceptance.",
+      "paired_scores": [
+        {
+          "seed": 700000,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700001,
+          "pair_score": 0.0,
+          "candidate_arm_score": 8.0,
+          "baseline_arm_score": 8.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700002,
+          "pair_score": 0.0,
+          "candidate_arm_score": 32.0,
+          "baseline_arm_score": 32.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700003,
+          "pair_score": 0.0,
+          "candidate_arm_score": 1.0,
+          "baseline_arm_score": 1.0,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700004,
+          "pair_score": 0.0,
+          "candidate_arm_score": 8.0,
+          "baseline_arm_score": 8.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700005,
+          "pair_score": 0.0,
+          "candidate_arm_score": 1.0,
+          "baseline_arm_score": 1.0,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700006,
+          "pair_score": 0.0,
+          "candidate_arm_score": 8.0,
+          "baseline_arm_score": 8.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700007,
+          "pair_score": 0.0,
+          "candidate_arm_score": -9.0,
+          "baseline_arm_score": -9.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700008,
+          "pair_score": 0.0,
+          "candidate_arm_score": 8.0,
+          "baseline_arm_score": 8.0,
+          "cand_max_wild": 2,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700009,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700010,
+          "pair_score": 0.0,
+          "candidate_arm_score": 1.0,
+          "baseline_arm_score": 1.0,
+          "cand_max_wild": 2,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700011,
+          "pair_score": 0.0,
+          "candidate_arm_score": 8.0,
+          "baseline_arm_score": 8.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700012,
+          "pair_score": 0.0,
+          "candidate_arm_score": 1.0,
+          "baseline_arm_score": 1.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700013,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700014,
+          "pair_score": 0.0,
+          "candidate_arm_score": 1.0,
+          "baseline_arm_score": 1.0,
+          "cand_max_wild": 2,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700015,
+          "pair_score": 0.0,
+          "candidate_arm_score": 8.0,
+          "baseline_arm_score": 8.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700016,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700017,
+          "pair_score": 0.0,
+          "candidate_arm_score": 8.0,
+          "baseline_arm_score": 8.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700018,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 2,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700019,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700020,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700021,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700022,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700023,
+          "pair_score": 0.0,
+          "candidate_arm_score": 8.0,
+          "baseline_arm_score": 8.0,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700024,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700025,
+          "pair_score": 0.0,
+          "candidate_arm_score": 2.0,
+          "baseline_arm_score": 2.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700026,
+          "pair_score": 0.0,
+          "candidate_arm_score": 8.0,
+          "baseline_arm_score": 8.0,
+          "cand_max_wild": 2,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700027,
+          "pair_score": 0.0,
+          "candidate_arm_score": 1.0,
+          "baseline_arm_score": 1.0,
+          "cand_max_wild": 2,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700028,
+          "pair_score": 0.0,
+          "candidate_arm_score": 16.0,
+          "baseline_arm_score": 16.0,
+          "cand_max_wild": 2,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700029,
+          "pair_score": 0.0,
+          "candidate_arm_score": 8.0,
+          "baseline_arm_score": 8.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700030,
+          "pair_score": 0.0,
+          "candidate_arm_score": 32.0,
+          "baseline_arm_score": 32.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700031,
+          "pair_score": 0.0,
+          "candidate_arm_score": 1.0,
+          "baseline_arm_score": 1.0,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700032,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 2,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700033,
+          "pair_score": 0.0,
+          "candidate_arm_score": 16.0,
+          "baseline_arm_score": 16.0,
+          "cand_max_wild": 2,
+          "override_events": 0,
+          "challenger_events": 1
+        },
+        {
+          "seed": 700034,
+          "pair_score": 0.0,
+          "candidate_arm_score": 16.0,
+          "baseline_arm_score": 16.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700035,
+          "pair_score": 0.0,
+          "candidate_arm_score": -9.0,
+          "baseline_arm_score": -9.0,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700036,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700037,
+          "pair_score": 0.0,
+          "candidate_arm_score": -9.0,
+          "baseline_arm_score": -9.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700038,
+          "pair_score": 0.0,
+          "candidate_arm_score": -9.0,
+          "baseline_arm_score": -9.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700039,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700040,
+          "pair_score": 0.0,
+          "candidate_arm_score": 1.0,
+          "baseline_arm_score": 1.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700041,
+          "pair_score": 0.0,
+          "candidate_arm_score": -9.0,
+          "baseline_arm_score": -9.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700042,
+          "pair_score": 0.0,
+          "candidate_arm_score": 1.0,
+          "baseline_arm_score": 1.0,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700043,
+          "pair_score": 0.0,
+          "candidate_arm_score": 8.0,
+          "baseline_arm_score": 8.0,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700044,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700045,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700046,
+          "pair_score": 0.0,
+          "candidate_arm_score": -9.0,
+          "baseline_arm_score": -9.0,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700047,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700048,
+          "pair_score": 0.0,
+          "candidate_arm_score": 8.0,
+          "baseline_arm_score": 8.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700049,
+          "pair_score": 0.0,
+          "candidate_arm_score": 8.0,
+          "baseline_arm_score": 8.0,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700050,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700051,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700052,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700053,
+          "pair_score": 0.0,
+          "candidate_arm_score": 1.0,
+          "baseline_arm_score": 1.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700054,
+          "pair_score": 0.0,
+          "candidate_arm_score": 2.0,
+          "baseline_arm_score": 2.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700055,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 3,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700056,
+          "pair_score": 0.0,
+          "candidate_arm_score": 8.0,
+          "baseline_arm_score": 8.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700057,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700058,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700059,
+          "pair_score": 0.0,
+          "candidate_arm_score": 1.0,
+          "baseline_arm_score": 1.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700060,
+          "pair_score": 0.0,
+          "candidate_arm_score": -18.0,
+          "baseline_arm_score": -18.0,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700061,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700062,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700063,
+          "pair_score": 0.0,
+          "candidate_arm_score": 2.0,
+          "baseline_arm_score": 2.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700064,
+          "pair_score": 0.0,
+          "candidate_arm_score": 8.0,
+          "baseline_arm_score": 8.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700065,
+          "pair_score": 0.0,
+          "candidate_arm_score": 8.0,
+          "baseline_arm_score": 8.0,
+          "cand_max_wild": 3,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700066,
+          "pair_score": 0.0,
+          "candidate_arm_score": 1.0,
+          "baseline_arm_score": 1.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700067,
+          "pair_score": 0.0,
+          "candidate_arm_score": 1.0,
+          "baseline_arm_score": 1.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700068,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700069,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700070,
+          "pair_score": 0.0,
+          "candidate_arm_score": 8.0,
+          "baseline_arm_score": 8.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700071,
+          "pair_score": 0.0,
+          "candidate_arm_score": 1.0,
+          "baseline_arm_score": 1.0,
+          "cand_max_wild": 2,
+          "override_events": 0,
+          "challenger_events": 3
+        },
+        {
+          "seed": 700072,
+          "pair_score": 0.0,
+          "candidate_arm_score": 1.0,
+          "baseline_arm_score": 1.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700073,
+          "pair_score": 0.0,
+          "candidate_arm_score": 1.0,
+          "baseline_arm_score": 1.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700074,
+          "pair_score": 0.0,
+          "candidate_arm_score": 16.0,
+          "baseline_arm_score": 16.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700075,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700076,
+          "pair_score": 0.0,
+          "candidate_arm_score": 1.0,
+          "baseline_arm_score": 1.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700077,
+          "pair_score": 0.0,
+          "candidate_arm_score": 1.0,
+          "baseline_arm_score": 1.0,
+          "cand_max_wild": 2,
+          "override_events": 0,
+          "challenger_events": 3
+        },
+        {
+          "seed": 700078,
+          "pair_score": 0.0,
+          "candidate_arm_score": -9.0,
+          "baseline_arm_score": -9.0,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700079,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700080,
+          "pair_score": 0.0,
+          "candidate_arm_score": 8.0,
+          "baseline_arm_score": 8.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700081,
+          "pair_score": 0.0,
+          "candidate_arm_score": -9.0,
+          "baseline_arm_score": -9.0,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700082,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700083,
+          "pair_score": 0.0,
+          "candidate_arm_score": 8.0,
+          "baseline_arm_score": 8.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700084,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700085,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700086,
+          "pair_score": 0.0,
+          "candidate_arm_score": 1.0,
+          "baseline_arm_score": 1.0,
+          "cand_max_wild": 2,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700087,
+          "pair_score": 0.0,
+          "candidate_arm_score": -9.0,
+          "baseline_arm_score": -9.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700088,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700089,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700090,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700091,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700092,
+          "pair_score": 0.0,
+          "candidate_arm_score": 16.0,
+          "baseline_arm_score": 16.0,
+          "cand_max_wild": 2,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700093,
+          "pair_score": 0.0,
+          "candidate_arm_score": 16.0,
+          "baseline_arm_score": 16.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700094,
+          "pair_score": 0.0,
+          "candidate_arm_score": 16.0,
+          "baseline_arm_score": 16.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700095,
+          "pair_score": 0.0,
+          "candidate_arm_score": -9.0,
+          "baseline_arm_score": -9.0,
+          "cand_max_wild": 2,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700096,
+          "pair_score": 0.0,
+          "candidate_arm_score": 8.0,
+          "baseline_arm_score": 8.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700097,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700098,
+          "pair_score": 0.0,
+          "candidate_arm_score": 1.0,
+          "baseline_arm_score": 1.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700099,
+          "pair_score": 0.0,
+          "candidate_arm_score": 1.0,
+          "baseline_arm_score": 1.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700100,
+          "pair_score": 0.0,
+          "candidate_arm_score": 8.0,
+          "baseline_arm_score": 8.0,
+          "cand_max_wild": 2,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700101,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700102,
+          "pair_score": 0.0,
+          "candidate_arm_score": 16.0,
+          "baseline_arm_score": 16.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700103,
+          "pair_score": 0.0,
+          "candidate_arm_score": 1.0,
+          "baseline_arm_score": 1.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700104,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700105,
+          "pair_score": 0.0,
+          "candidate_arm_score": 1.0,
+          "baseline_arm_score": 1.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700106,
+          "pair_score": 0.0,
+          "candidate_arm_score": 16.0,
+          "baseline_arm_score": 16.0,
+          "cand_max_wild": 2,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700107,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700108,
+          "pair_score": 0.0,
+          "candidate_arm_score": 1.0,
+          "baseline_arm_score": 1.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700109,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700110,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700111,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700112,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700113,
+          "pair_score": 0.0,
+          "candidate_arm_score": 1.0,
+          "baseline_arm_score": 1.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700114,
+          "pair_score": 0.0,
+          "candidate_arm_score": -9.0,
+          "baseline_arm_score": -9.0,
+          "cand_max_wild": 2,
+          "override_events": 0,
+          "challenger_events": 2
+        },
+        {
+          "seed": 700115,
+          "pair_score": 0.0,
+          "candidate_arm_score": -9.0,
+          "baseline_arm_score": -9.0,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700116,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700117,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700118,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700119,
+          "pair_score": 0.0,
+          "candidate_arm_score": 16.0,
+          "baseline_arm_score": 16.0,
+          "cand_max_wild": 2,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700120,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700121,
+          "pair_score": 0.0,
+          "candidate_arm_score": 1.0,
+          "baseline_arm_score": 1.0,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700122,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700123,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700124,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700125,
+          "pair_score": 0.0,
+          "candidate_arm_score": -9.0,
+          "baseline_arm_score": -9.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700126,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700127,
+          "pair_score": 0.0,
+          "candidate_arm_score": 8.0,
+          "baseline_arm_score": 8.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700128,
+          "pair_score": 0.0,
+          "candidate_arm_score": 1.0,
+          "baseline_arm_score": 1.0,
+          "cand_max_wild": 2,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700129,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700130,
+          "pair_score": 0.0,
+          "candidate_arm_score": 16.0,
+          "baseline_arm_score": 16.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700131,
+          "pair_score": 0.0,
+          "candidate_arm_score": 1.0,
+          "baseline_arm_score": 1.0,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700132,
+          "pair_score": 0.0,
+          "candidate_arm_score": 8.0,
+          "baseline_arm_score": 8.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700133,
+          "pair_score": 0.0,
+          "candidate_arm_score": 16.0,
+          "baseline_arm_score": 16.0,
+          "cand_max_wild": 2,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700134,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700135,
+          "pair_score": 0.0,
+          "candidate_arm_score": 1.0,
+          "baseline_arm_score": 1.0,
+          "cand_max_wild": 2,
+          "override_events": 0,
+          "challenger_events": 1
+        },
+        {
+          "seed": 700136,
+          "pair_score": 0.0,
+          "candidate_arm_score": -9.0,
+          "baseline_arm_score": -9.0,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700137,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700138,
+          "pair_score": 0.0,
+          "candidate_arm_score": 1.0,
+          "baseline_arm_score": 1.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700139,
+          "pair_score": 0.0,
+          "candidate_arm_score": 2.0,
+          "baseline_arm_score": 2.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700140,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 0,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700141,
+          "pair_score": 0.0,
+          "candidate_arm_score": 1.0,
+          "baseline_arm_score": 1.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700142,
+          "pair_score": 0.0,
+          "candidate_arm_score": 16.0,
+          "baseline_arm_score": 16.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700143,
+          "pair_score": 0.0,
+          "candidate_arm_score": 16.0,
+          "baseline_arm_score": 16.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700144,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700145,
+          "pair_score": 0.0,
+          "candidate_arm_score": 1.0,
+          "baseline_arm_score": 1.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700146,
+          "pair_score": 0.0,
+          "candidate_arm_score": 1.0,
+          "baseline_arm_score": 1.0,
+          "cand_max_wild": 2,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700147,
+          "pair_score": 0.0,
+          "candidate_arm_score": -9.0,
+          "baseline_arm_score": -9.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700148,
+          "pair_score": 0.0,
+          "candidate_arm_score": 16.0,
+          "baseline_arm_score": 16.0,
+          "cand_max_wild": 1,
+          "override_events": 0,
+          "challenger_events": 0
+        },
+        {
+          "seed": 700149,
+          "pair_score": 0.0,
+          "candidate_arm_score": -4.5,
+          "baseline_arm_score": -4.5,
+          "cand_max_wild": 2,
+          "override_events": 0,
+          "challenger_events": 0
+        }
+      ]
+    }
+  ],
+  "runtime_s": 14.98,
+  "platform": "Windows-10-10.0.22621-SP0",
+  "python": "3.10.6",
+  "source_sha256": {
+    "mj/legacy_eval.py": "f7d019ea6c22474e7b7d56f26611b1c089f963be2e1e24ced12dffd08b854905",
+    "mj/big_hand_intent.py": "fa3cef90004e156a4f318e77eb31c6477a9130937eae00aca5a72ea05da983e6",
+    "scripts/legacy_v2_big_hand_grid_scan.py": "f81f9b337a3c38d37fcc93ed172238556f67831a2dc86c538737cd153c7279a2"
+  }
+}

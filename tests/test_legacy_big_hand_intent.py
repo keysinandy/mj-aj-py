@@ -3,6 +3,7 @@
 import json
 import os
 import unittest
+from dataclasses import replace
 from unittest.mock import patch
 
 from mj.bot import choose_action, choose_discard
@@ -14,6 +15,7 @@ from mj.legacy_eval import (
     FutureEvaluation,
     LegacyRootCandidate,
     LegacyTwoPlyProfile,
+    _BudgetExceeded,
     _NativeKernelUnavailable,
     _apply_shape_guard,
     _apply_big_hand_guard,
@@ -25,6 +27,7 @@ from mj.legacy_eval import (
 from mj.shanten import shanten, ukeire
 from mj.shape_quality import standing_shape_quality
 from mj.tiles import W, counts
+from scripts.legacy_v2_big_hand_grid_scan import pair_assignment
 
 try:
     from tests.test_legacy_eval import _seq100_game
@@ -37,6 +40,13 @@ FIXTURE = os.path.join(os.path.dirname(__file__), "fixtures",
 
 
 class TestLegacyV2BigHandBaseline(unittest.TestCase):
+    def test_score_pair_assignment_balances_dealer_independently_of_hero_seats(self):
+        assignments = [pair_assignment(index) for index in range(8)]
+        self.assertEqual(sum(dealer in seats for dealer, seats in assignments), 4)
+        for dealer in range(4):
+            seats = [tuple(sorted(heroes)) for d, heroes in assignments if d == dealer]
+            self.assertEqual(set(seats), {(0, 2), (1, 3)})
+
     def test_seeded_discard_outputs_match_frozen_legacy_v2(self):
         with open(FIXTURE, encoding="utf-8") as handle:
             baseline = json.load(handle)["baseline"]
@@ -84,6 +94,46 @@ class TestLegacyV2BigHandBaseline(unittest.TestCase):
         self.assertNotEqual(default.fingerprint, phase_a.fingerprint)
         self.assertNotEqual(phase_a.fingerprint, phase_b.fingerprint)
         self.assertEqual(default.as_json()["big_hand"]["min_live"], 24)
+        for field, value in (
+                ("big_hand_plus_one_parallel", True),
+                ("big_hand_plus_one_luxury_noninferior", True),
+                ("big_hand_plus_one_min_strength", "MEDIUM")):
+            with self.subTest(field=field):
+                changed = replace(default, **{field: value})
+                self.assertNotEqual(default.fingerprint, changed.fingerprint)
+
+    def test_parallel_same_and_plus_one_respect_cap_and_preserve_speed_slots(self):
+        primary = LegacyRootCandidate(
+            tile=3, hand=(0,) * 34, shanten=1, current_ukeire=12,
+            shanten_verified=True, speed_eligible=True)
+        other = replace(primary, tile=6, current_ukeire=11)
+        same = replace(primary, tile=4, current_ukeire=8,
+                       intent_kinds=(CHIITOI, LUXURY_CHIITOI),
+                       intent_strength="STRONG", chiitoi_shanten=1,
+                       luxury_upgrade_live=1)
+        plus = replace(same, tile=5, shanten=2, speed_eligible=False,
+                       live_wall=40, max_opponent_melds=0)
+        profile = LegacyTwoPlyProfile.weighted_online(
+            big_hand_enabled=True, big_hand_plus_one_enabled=True,
+            big_hand_plus_one_parallel=True)
+        for speed_roots in ((primary,), (primary, other)):
+            with self.subTest(speed_slots=len(speed_roots)), \
+                    patch("mj.legacy_eval._weighted_native_ready", return_value=True):
+                enriched = (*speed_roots, same, plus)
+                diagnostics = tuple((root, root in speed_roots, ()) for root in enriched)
+                result = _apply_big_hand_guard(
+                    enriched, speed_roots, diagnostics, profile, 0)
+                frontier, _diag, _admitted, guard, challenger = result[:5]
+                self.assertEqual(len(frontier), 3)
+                self.assertTrue(set(root.tile for root in speed_roots).issubset(
+                    root.tile for root in frontier))
+                if len(speed_roots) == 1:
+                    self.assertEqual(challenger, plus.tile)
+                    self.assertIn(plus.tile, guard["admitted_tiles"])
+                else:
+                    self.assertIsNone(challenger)
+                    self.assertEqual(guard["candidate_gate_reasons"][str(plus.tile)],
+                                     "frontier_cap_no_challenger_slot")
 
     def test_same_shanten_guard_admits_one_route_and_ignores_dead_luxury(self):
         primary = LegacyRootCandidate(
@@ -452,6 +502,60 @@ class TestLegacyV2BigHandBaseline(unittest.TestCase):
         self.assertEqual(info["speed_winner"], info["legacy_best"])
         self.assertEqual(selected, challenger_tile)
         self.assertLessEqual(info["search_metrics"]["root_candidates"], 3)
+
+        # Native cross-shanten rows need the opt-in Python completion path.
+        # A failed or disabled completion must keep the frozen speed fallback.
+        scenarios = (
+            ("disabled", False, "incomplete", None, False),
+            ("complete", True, "incomplete", None, True),
+            ("speed_partial", True, "partial_speed", None, True),
+            ("uncommitted_speed", True, "uncommitted_speed", None, False),
+            ("budget", True, "incomplete", _BudgetExceeded("hard_deadline"), False),
+            ("native_failure", True, "failure", None, False),
+            ("already_complete", True, "complete", None, True),
+        )
+        for name, parallel, native_state, topup_error, expected_override in scenarios:
+            with self.subTest(topup=name):
+                def native_frontier(*args, **kwargs):
+                    if native_state == "failure":
+                        raise _NativeKernelUnavailable("test_kernel_failure")
+                    values, metrics, elapsed = complete_frontier(*args, **kwargs)
+                    if native_state == "incomplete" and challenger_tile in values:
+                        values[challenger_tile] = replace(
+                            values[challenger_tile], complete=False)
+                    if native_state == "uncommitted_speed":
+                        values.pop(next(iter(values)))
+                    if native_state == "partial_speed":
+                        for index, tile in enumerate(values):
+                            values[tile] = replace(values[tile], complete=False,
+                                future_improve_lower=2 if index == 0 else 0,
+                                future_improve_upper=2 if index == 0 else 1)
+                    return values, metrics, elapsed
+
+                full_future = complete_frontier(None, None, roots)[0][challenger_tile]
+                with patch("mj.legacy_eval._weighted_native_ready", return_value=True), \
+                        patch("mj.legacy_eval._weighted_native_future_for_frontier",
+                              side_effect=native_frontier), \
+                        patch("mj.legacy_eval._weighted_future_for_root",
+                              return_value=full_future,
+                              side_effect=topup_error) as topup:
+                    chosen, result = evaluate_legacy_two_ply(
+                        game, seat, roots, locked, visible,
+                        replace(profile, big_hand_plus_one_parallel=parallel))
+                info = result.as_json()
+                expected_call = parallel and native_state != "failure"
+                self.assertEqual(topup.call_count, int(expected_call))
+                self.assertEqual(info["big_hand_override"], expected_override)
+                self.assertEqual(chosen, challenger_tile if expected_override
+                                 else info["legacy_best"])
+                if expected_call:
+                    self.assertEqual(topup.call_args.args[2].tile, challenger_tile)
+                    self.assertLess(topup.call_args.args[5].hard_budget_ms,
+                                    profile.hard_budget_ms)
+                    metrics = info["search_metrics"]["big_hand_challenger_topup"]
+                    self.assertEqual(metrics["complete"], topup_error is None)
+                    self.assertGreaterEqual(info["search_metrics"]["elapsed_ms"],
+                                            metrics["elapsed_ms"])
 
     def test_freeze_and_singleton_frontier_baseline(self):
         game = _seq100_game()

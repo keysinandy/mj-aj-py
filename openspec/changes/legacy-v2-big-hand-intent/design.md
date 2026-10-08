@@ -66,6 +66,46 @@ stable tile
 
 ## Decisions
 
+### 用户批准的方案 1（2026-10-08）
+
+原版禁止新增 Python future search；用户明确批准在 opt-in 的
+`big_hand_plus_one_parallel=true` 下复用 `_weighted_future_for_root()`，
+只对唯一 `best_s+1` challenger 补完整 future，先验证积分收益与性能。
+BigHandIntent 的 cheap public-only 画像本身仍不执行搜索。
+
+Rust 内核保持 v5，同向听 speed frontier 独立执行原 weighted 比较。
+速度候选可以是全量 complete，也可以是原 Stage-A bounds 已证明唯一胜者的
+safe partial；只有 challenger 自己为 complete/coverage=1 时才允许独立 override。
+不在不同向听之间比较 improvement bounds。只有一个 speed root 时，它是原
+singleton 速度胜者。kernel 失败、速度胜者无法证明或 challenger 超时均回到
+冻结的 legacy speed fallback，Python 补跑扣除 native 已耗时并服从共享截止时间。
+
+同时命中同向听保护与 parallel +1 时，不为 +1 淘汰已经保留的 speed root。
+没有空槽就记录 `frontier_cap_no_challenger_slot`，总 frontier 仍不超过 3。
+新增 noninferior、parallel、min_strength 三个字段均进入 fingerprint；
+MEDIUM opt-in 允许七对距离 <=2，默认 STRONG 的旧条件保持。
+
+试验预先冻结：四个点每点 512 局粗扫，按配对积分均值取有 override 的前两点，
+用独立种子每点 2048 局精扫。积分以 source seed 的 paired observation bootstrap；
+512 局是 256 对，2048 局是 1024 对。配对臂为两个交替座位使用 candidate 对
+全 baseline 的相同 seed/dealer 对局，报告每个 hero 平均结算差。粗扫是选择数据，
+精扫用于收益判断，不合并选择数据制造显著性。白板发生率按决策前持有数分桶；
+candidate 全局最大白板数的积分桶仅作描述，不能解释为单次 override 的因果收益。
+
+评估工具复核补充：原版 `dealer=index%4` 与 hero 的 `index%2` 绑定，使庄家
+始终位于 candidate 组；原粗扫/精扫因此只保留为探索记录。最终独立确认固定
+保守配置、新种子 1900000 起 2048 局，以 `dealer=(index//2)%4` 的八案例周期
+独立均衡庄家与 hero 座位，交替两臂执行。另以新种子 2000000 起 1024 局对照
+关闭 +1 的相同 profile，生产对手保持不变，隔离 +1 与同向听保护的效果。
+初始 hero 最大白板数另做 pre-policy 积分分桶。Windows 的 monotonic 分辨率
+实测 15.625ms，补跑与 native 耗时改用 perf_counter；最终确认、消融、性能
+记录相同的 evaluator 源文件 SHA-256。所有协议保存在 `runs/bh_scheme1/plan.json`。
+
+性能另跑单进程交错四机器人 baseline/candidate 各 3×200 局，普通弃牌 p95 和
+每批 elapsed/game 的中位数退化都必须 <=10%。只有独立收益区间下界 >0 且
+性能不通过时才进入 Rust 跨向听 complete future 改造。2048 局精扫不替代原
+4096 局发布门禁；不能证明盈利则固化结果并保持默认关闭。
+
 ### D1 BigHandIntent 是纯特征，不是第二个搜索器
 
 新增概念结构：

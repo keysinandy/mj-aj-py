@@ -1,0 +1,136 @@
+{
+  "schema": "legacy-v2-big-hand-grid-scan-v2",
+  "pairing": "Same seed/dealer; two hero seats; dealer independent of hero parity in an eight-case cycle; arm order alternates; opponents frozen production.",
+  "baseline_overrides": {},
+  "mode": "performance",
+  "kernel": {
+    "shanten_kernel": "rust",
+    "weighted_kernel": "rust",
+    "weighted_kernel_version": "rust-weighted-two-ply-v5",
+    "weighted_kernel_required": "rust-weighted-two-ply-v5",
+    "weighted_kernel_compatible": true,
+    "legacy_two_ply_kernel_version": "rust-legacy-two-ply-v1",
+    "baotou_kernel": "rust",
+    "piao_draw_mask_kernel": "rust",
+    "baotou_wait_kernel": "rust",
+    "degraded": false,
+    "reason": null,
+    "impact": null
+  },
+  "games_per_point": 200,
+  "seed_start": 1800000,
+  "grid_size": 1,
+  "results": [
+    {
+      "grid_point": {
+        "big_hand_enabled": true,
+        "big_hand_same_shanten_enabled": true,
+        "big_hand_plus_one_enabled": true,
+        "big_hand_min_live": 24,
+        "big_hand_max_opponent_melds": 1,
+        "big_hand_min_ukeire": 4,
+        "big_hand_max_ukeire_loss": 4,
+        "big_hand_min_pair_units": 4,
+        "big_hand_min_luxury_upgrade_live": 1,
+        "big_hand_plus_one_luxury_noninferior": true,
+        "big_hand_plus_one_parallel": true,
+        "big_hand_plus_one_min_strength": "MEDIUM",
+        "label": "conservative"
+      },
+      "matches_per_profile": 600,
+      "profiles": {
+        "baseline": {
+          "profile_fingerprint": "9a2d4dba9c305668",
+          "discard_latency_ms": {
+            "n": 20300,
+            "p50": 1.4066500589251518,
+            "p95": 12.506600003689524,
+            "p99": 18.245805816259217,
+            "mean": 3.3901153303100156,
+            "max": 99.21390004456043
+          },
+          "game_elapsed_ms": {
+            "n": 600,
+            "p50": 133.23044998105615,
+            "p95": 237.5102200661785,
+            "p99": 283.2698220107703,
+            "mean": 139.067452334178,
+            "max": 442.50080012716353
+          },
+          "python_topup_latency_ms": {
+            "n": 0,
+            "p50": null,
+            "p95": null,
+            "p99": null,
+            "mean": null,
+            "max": null
+          },
+          "fallback_rate": 0.0,
+          "challengers": 0,
+          "overrides": 0,
+          "max_frontier_roots": 3
+        },
+        "candidate": {
+          "profile_fingerprint": "2ce9fa0e5717d68c",
+          "discard_latency_ms": {
+            "n": 20498,
+            "p50": 2.390949986875057,
+            "p95": 13.926615007221693,
+            "p99": 21.185262079816304,
+            "mean": 4.318116670210434,
+            "max": 96.79480013437569
+          },
+          "game_elapsed_ms": {
+            "n": 600,
+            "p50": 166.05075006373227,
+            "p95": 288.8797650579363,
+            "p99": 380.5998681439087,
+            "mean": 172.16611283094002,
+            "max": 576.3470998499542
+          },
+          "python_topup_latency_ms": {
+            "n": 127,
+            "p50": 21.57479990273714,
+            "p95": 39.88804002292453,
+            "p99": 48.52272005751729,
+            "mean": 22.708204721547958,
+            "max": 48.87120006605983
+          },
+          "fallback_rate": 0.0002927114840472241,
+          "challengers": 127,
+          "overrides": 83,
+          "max_frontier_roots": 3
+        }
+      },
+      "batch_elapsed_ms_per_game": [
+        {
+          "baseline": 124.62901749764569,
+          "candidate": 157.29786550044082
+        },
+        {
+          "baseline": 149.90057500079274,
+          "candidate": 183.52493300219066
+        },
+        {
+          "baseline": 142.67276450409554,
+          "candidate": 175.67553999018855
+        }
+      ],
+      "discard_p95_regression_pct": 11.354125046881292,
+      "batch_elapsed_per_game_regression_pct": 23.13179785981201,
+      "gates": {
+        "discard_p95": false,
+        "elapsed_per_game": false,
+        "sample_size": true
+      }
+    }
+  ],
+  "runtime_s": 187.08,
+  "platform": "Windows-10-10.0.22621-SP0",
+  "python": "3.10.6",
+  "source_sha256": {
+    "mj/legacy_eval.py": "28cd920958ce389259b614636c01e21bfb31c210398354fe51481e016025603b",
+    "mj/big_hand_intent.py": "fa3cef90004e156a4f318e77eb31c6477a9130937eae00aca5a72ea05da983e6",
+    "scripts/legacy_v2_big_hand_grid_scan.py": "a5d756228488e346fd42b6487bb948325482d6ba698f4b55b82155914710cdb8"
+  }
+}

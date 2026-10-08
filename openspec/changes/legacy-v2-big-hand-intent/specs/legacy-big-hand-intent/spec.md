@@ -115,7 +115,7 @@ challenger MUST：
 
 - `shanten == best_s + 1`；
 - `locked == 0`；
-- `intent_strength == STRONG`；
+- 默认 `intent_strength == STRONG`；显式实验 profile 可将 `big_hand_plus_one_min_strength` 设为 MEDIUM，并要求七对距离 <=2 且具备 luxury/white-rich 路线；
 - 满足版本化的大牌强路线条件；
 - 满足 live-wall / opponent-meld 收手条件；
 - 不导致 online frontier 总数超过 3。
@@ -186,7 +186,7 @@ legacyV2 MUST 先在 speed roots 中产生 `speed_winner`。
 - BigHandGuard 最多占用一个 frontier slot；
 - 不增加 weighted search horizon；
 - 不增加 online hard budget；
-- 不新增 Python future search。
+- 默认不新增 Python future search；用户批准的实验 parallel profile 可只对一个 `best_s+1` challenger 调用现有 Python full future，服从剩余 hard budget 与共享截止时间。
 
 #### Scenario: shape guard 与 big-hand guard 同时扩围
 
@@ -212,6 +212,24 @@ legacyV2 MUST 先在 speed roots 中产生 `speed_winner`。
 - `big_hand_challenger`
 - `big_hand_override`
 - `big_hand_override_reason`
+
+parallel challenger 补跑 SHALL 在 `search_metrics.big_hand_challenger_topup` 中
+记录 kernel、tile、complete、elapsed_ms、reason 和 nodes；总 elapsed_ms SHALL 包含补跑。
+
+#### Scenario: 速度胜者已有证明但跨向听 challenger 缺少完整 future
+
+- **GIVEN** 显式开启 parallel profile 且存在 `best_s+1` challenger
+- **AND** 同向听 Rust speed frontier 的胜者已由 complete 或安全 bounds 确定
+- **WHEN** challenger 的独立 Python full future 在剩余预算内 complete
+- **THEN** MAY 进入独立 override gate
+- **AND** MUST NOT 将 challenger bounds 与不同向听的 speed bounds 比较
+
+#### Scenario: 并行 challenger 补跑超时
+
+- **GIVEN** speed frontier 与 challenger 均已提名
+- **WHEN** challenger Python 补跑超过剩余预算或 shared deadline
+- **THEN** MUST 不提交补跑结果，返回冻结 speed fallback
+- **AND** diagnostics SHALL 记录补跑失败原因和实际耗时
 
 #### Scenario: replay 能解释为什么没有做豪华七对
 

@@ -21,6 +21,39 @@
 > (P1.5 收口);下一步攒平台真实牌谱 + 正式锦标赛实测。
 > **有财必拷响**(YouCaiBiKao)引擎开关已实现。
 
+## 2026-10-08 legacyV2 BigHandIntent +1 challenger（方案 1）
+
+用户批准的方案 1 已实现并评估：同向听 speed frontier 继续走 Rust v5，
+显式 parallel profile 的唯一 +1 challenger 单独跑 Python full future。
+速度胜者可由 complete 或原安全 bounds 确定；challenger 必须 complete。
+补跑扣除 native 已耗时，服从共享剩余预算；超时保留冻结 speed fallback。
+parallel 与同向听保护同时命中时不为 +1 淘汰 speed root，frontier 始终 <=3。
+
+- 定向 300 局已触发 2 次 override。粗扫 4 点各 512 局、前两点精扫各 2048
+  局均没有确认盈利。复核发现旧扫描庄家总在 candidate 组、Windows monotonic
+  分辨率 15.625ms；已修正庄家/座位独立均衡、两臂交替顺序与 perf_counter 计时，
+  旧扫描保留为探索数据。
+- 新种子公平确认 **2048 局 / 1024 独立对**：69 次 override，全在白板 >=2
+  （两白 66、三白 3）；平均每 hero 积分差 **−0.109863**，95% CI
+  **[−0.267090,+0.033691]**。Python 113/121 次补跑完整，8 次 hard deadline
+  均回退；补跑 p50/p95 为 23.792/39.006ms。
+- 独立 **1024 局 / 512 对**对照仅关闭 +1 的同向听 profile：+1 路径均分差
+  **−0.197266**，95% CI **[−0.434570,−0.005859]**；该批样本显示负收益。
+- 单进程同机交错四机器人 baseline/candidate 各 **3×200 局**：弃牌 p95
+  12.5066→13.9266ms（**+11.35%**），每批 elapsed/game 中位数 **+23.13%**，
+  两项均超过 10% 门槛。HU 窗口的动作数与弃牌 frontier 分开检查，实际 frontier
+  最大为 3，未发现 fallback 时 override 或非法动作。
+- 验收结论：路径已打通，积分与性能未通过；**BigHand 默认仍关闭，不触发 Rust
+  改造**（用户条件是先确认积分盈利且性能失败）。继续加同类局数不能代替收益
+  规则优化。生产字段扩展后的 baseline fingerprint `9a2d4dba9c305668`，实验
+  conservative profile `2ce9fa0e5717d68c`；历史 F1 指纹保留在旧记录。
+
+模块回归 **94 passed / 16 subtests**；严格 OpenSpec 与 scoped diff check 通过。
+完整协议、积分/白板桶/性能/源文件 SHA-256：
+`runs/bh_scheme1/summary.md`、`summary.json`、`plan.json`。
+方案 1 的实现与评估任务已完成；原 change 的 Phase A 发布性能任务 11.3 仍未通过，
+不因本次实验标记为完成。
+
 ## 2026-10-05 内核 v5 / teacher 口径 / BC0_legacy60k 基线
 
 **内核契约（生成门禁已内置）**

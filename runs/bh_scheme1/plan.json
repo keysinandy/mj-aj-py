@@ -1,0 +1,39 @@
+{
+  "scheme": 1,
+  "baseline": "production legacyV2 weighted_online, big_hand off",
+  "coarse": {
+    "games_per_point": 512,
+    "seed_start": 1600000,
+    "points": 4
+  },
+  "fine": {
+    "games_per_point": 2048,
+    "seed_start": 1700000,
+    "selection": "Top two coarse points by paired mean among nonzero-override policies. Always finish the declared sample; no stop on passing CI."
+  },
+  "performance": {
+    "games_per_profile_per_repeat": 200,
+    "repeats": 3,
+    "seed_start": 1800000,
+    "jobs": 1,
+    "p95_limit_ratio": 1.1,
+    "elapsed_per_game_limit_ratio": 1.1
+  },
+  "score_gate": "Heldout 95% CI lower bound > 0 and observed overrides; 2048 games is exploratory and does not replace the existing 4096-game rollout gate.",
+  "rust_decision": "Only if heldout benefit is established and performance gates fail.",
+  "default": "big_hand disabled",
+  "confirmation": {
+    "reason": "Correct prior dealer allocation asymmetry and 15.625ms monotonic timing resolution; original coarse/fine are exploratory only.",
+    "candidate": "Coarse prechosen conservative point; no profile change",
+    "games": 2048,
+    "seed_start": 1900000,
+    "dealer": "(index // 2) % 4 independent of candidate seats",
+    "clock": "perf_counter",
+    "score_gate": "95% CI lower >0; observed overrides required"
+  },
+  "ablation": {
+    "games": 1024,
+    "seed_start": 2000000,
+    "baseline": "Same profile with plus_one disabled; opponents remain production"
+  }
+}

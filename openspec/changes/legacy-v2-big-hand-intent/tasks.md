@@ -99,3 +99,12 @@
 - [x] 11.7 若 Phase B 95% CI 下界 <0 或存在明显晚局负桶，保持 `plus_one_enabled=false`
 - [x] 11.8 报告 kernel fallback/budget fallback 时 `challenger_selected=0`，证明事务 fallback 没有被破坏
 - [x] 11.9 `git diff --check` 干净，更新 PROGRESS.md 与 evaluator/profile fingerprint 说明；本 change 不混入 BC/RL 训练产物
+
+## 12. 用户批准的方案 1：并行 +1 challenger 的 Python complete future
+
+- [x] 12.1 将 Rust 速度 frontier 与 +1 challenger 分开，只有显式 parallel profile 才对 challenger 单独计算 Python full future；默认仍关闭
+- [x] 12.2 只有 complete challenger + 已完成/可证明胜者的 speed frontier 才允许 override；超时、不完整与 native failure 保留 speed fallback，frontier 仍 <=3
+- [x] 12.3 模块回归与 300 局定向验证：最终模块 94 passed、16 subtests；300 局 6 challengers / 2 overrides / 1 hard deadline fallback，拒绝原因不再恒为 incomplete
+- [x] 12.4 预先固定粗扫 512 局/点与独立精扫 2048 局/点；补正庄家分配后另做 2048 局公平确认（69 overrides、−0.109863、CI [−0.267090,+0.033691]）及 1024 局 +1 对同向听消融（−0.197266、CI [−0.434570,−0.005859]）；报告白板桶与补跑耗时
+- [x] 12.5 同机单进程交错 baseline/candidate 各 3×200 局；弃牌 p95 +11.35%、elapsed/game +23.13% 均失败；未确认正收益，不满足用户指定的 Rust 改造条件
+- [x] 12.6 结论与 profile/source fingerprints 固化于 runs/bh_scheme1/summary.md、summary.json、plan.json；已更新 PROGRESS.md 与决策质量文档，默认仍关闭
