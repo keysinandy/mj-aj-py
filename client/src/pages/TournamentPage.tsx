@@ -548,6 +548,7 @@ export function TournamentPage() {
             参赛策略
             <select
               aria-label="锦标赛策略"
+              disabled
               value={strategy}
               onChange={(event) => setStrategy(event.target.value)}
             >
