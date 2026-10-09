@@ -100,6 +100,24 @@ def _feature_bool(config, name, default=False):
     return bool(value)
 
 
+def resolve_hu_delay_override(config, *, strategy=None, evaluator=None):
+    """Validate an optional online-v2 HU margin before creating a player."""
+    value = config.get("hu_discard_delay_min_gain_ratio")
+    if value is None:
+        return None
+    strategy = strategy or config.get("strategy")
+    evaluator = canonical_evaluator(
+        evaluator or config.get("evaluator") or DEFAULT_BOT_EVALUATOR)
+    if strategy != "bot" or evaluator not in LEGACY_V2_EVALUATORS:
+        raise ValidationError("HU discard-delay overrides require online legacyV2 bot strategy")
+    from ..legacy_react import LegacyReactionProfile
+    try:
+        return LegacyReactionProfile.v2_online(
+            hu_discard_delay_min_gain_ratio=value).hu_discard_delay_min_gain_ratio
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValidationError(str(exc)) from exc
+
+
 class Player:
     """统一玩家封装;__call__ 返回动作 int,元组结果自动解包。"""
 
@@ -132,6 +150,8 @@ def make_bot_player(config):
         config.get("evaluator") or DEFAULT_BOT_EVALUATOR)
     if evaluator not in VALID_EVALUATORS:
         raise ValidationError(f"unknown bot evaluator {evaluator!r}")
+    hu_delay_ratio = resolve_hu_delay_override(
+        config, strategy="bot", evaluator=evaluator)
     profile = None
     if evaluator in ("shape-v2", "shape_v2", "ev2"):
         time_ms, node_budget = resolve_budget(config.get("fallback_ms"))
@@ -168,6 +188,7 @@ def make_bot_player(config):
                                      marginal_enabled),
                                  speed_band_enabled=speed_enabled,
                                  pareto_frontier_enabled=pareto_enabled,
+                                 hu_discard_delay_min_gain_ratio=hu_delay_ratio,
                                  return_evaluation=True)
     return Player(_play, strategy="bot", evaluator=evaluator,
                   profile=profile)
@@ -230,6 +251,7 @@ def make_player(config):
     if strategy not in _SUPPORTED_STRATEGIES:
         raise ValidationError(
             f"unknown strategy {strategy!r}; expected {list(_SUPPORTED_STRATEGIES)}")
+    resolve_hu_delay_override(config)
     if strategy == "bot":
         return make_bot_player(config)
     if strategy == "policy":

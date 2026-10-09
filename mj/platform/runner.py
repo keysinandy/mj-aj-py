@@ -34,8 +34,13 @@ PPO_LEAGUE_CKPT = "runs/ppo_league/final.pt"
 def make_decide(strategy, ckpt=None, evaluator=DEFAULT_BOT_EVALUATOR, model=None,
                 policy_profile=None, marginal_structure_guard_enabled=None,
                 speed_band_enabled=None, pareto_frontier_enabled=None,
-                speed_band_min_ratio_by_shanten=None):
+                speed_band_min_ratio_by_shanten=None,
+                hu_discard_delay_min_gain_ratio=None):
     from ..strategy_runtime import snapshot_for_config
+    if (hu_discard_delay_min_gain_ratio is not None
+            and (strategy != "bot" or canonical_evaluator(
+                evaluator or DEFAULT_BOT_EVALUATOR) not in LEGACY_V2_EVALUATORS)):
+        raise ValueError("HU discard-delay overrides require online legacyV2 bot strategy")
 
     if strategy == "policy-v3" or (
             strategy == "bot" and evaluator in ("policy-v3", "policy_v3")):
@@ -96,6 +101,9 @@ def make_decide(strategy, ckpt=None, evaluator=DEFAULT_BOT_EVALUATOR, model=None
     if strategy == "bot":
         from mj.bot import choose_action
         profile = canonical_evaluator(evaluator or DEFAULT_BOT_EVALUATOR)
+        if (hu_discard_delay_min_gain_ratio is not None
+                and profile not in LEGACY_V2_EVALUATORS):
+            raise ValueError("HU discard-delay overrides require online legacyV2")
         if profile in ("shape-v1", "shape_v1", "shape"):
             from mj.hand_eval import warmup
             warmup("shape-v1")
@@ -120,6 +128,8 @@ def make_decide(strategy, ckpt=None, evaluator=DEFAULT_BOT_EVALUATOR, model=None
                                          pareto_frontier_enabled),
                                      speed_band_min_ratio_by_shanten=(
                                          speed_band_min_ratio_by_shanten),
+                                     hu_discard_delay_min_gain_ratio=(
+                                         hu_discard_delay_min_gain_ratio),
                                      return_evaluation=True)
             action = choose_action(g, seat)
             return action, {"version": "legacy", "profile": "legacy",
@@ -142,6 +152,9 @@ def make_decide(strategy, ckpt=None, evaluator=DEFAULT_BOT_EVALUATOR, model=None
             if speed_band_min_ratio_by_shanten is not None:
                 snapshot_config["speed_band_min_ratio_by_shanten"] = (
                     speed_band_min_ratio_by_shanten)
+            if hu_discard_delay_min_gain_ratio is not None:
+                snapshot_config["hu_discard_delay_min_gain_ratio"] = float(
+                    hu_discard_delay_min_gain_ratio)
         play.strategy_snapshot = snapshot_for_config(snapshot_config)
         return play
     if strategy == "random":

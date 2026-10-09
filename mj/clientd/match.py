@@ -98,6 +98,10 @@ def normalize_match_config(config):
             f"unknown match evaluator {evaluator!r}; expected "
             f"{sorted(MATCH_EVALUATORS)}")
     result["evaluator"] = canonical_evaluator(evaluator)
+    from .strategies import resolve_hu_delay_override
+    hu_delay_ratio = resolve_hu_delay_override(result)
+    if hu_delay_ratio is not None:
+        result["hu_discard_delay_min_gain_ratio"] = hu_delay_ratio
 
     try:
         state_rate = float(result.get("state_rate", 16.0))
@@ -180,6 +184,8 @@ def _build_decide(config):
                     "pareto_frontier_enabled", False),
                 speed_band_min_ratio_by_shanten=config.get(
                     "speed_band_min_ratio_by_shanten"),
+                hu_discard_delay_min_gain_ratio=config.get(
+                    "hu_discard_delay_min_gain_ratio"),
             )
         # Recorder/BotClient 会把这两个稳定标记写进每场 meta，回放页可
         # 在不暴露令牌的前提下说明本场究竟使用 bot 还是 policy。

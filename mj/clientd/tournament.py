@@ -50,6 +50,9 @@ def normalize_tournament_config(config):
             f"unknown tournament evaluator {evaluator!r}; expected "
             f"{sorted(TOURNAMENT_EVALUATORS)}")
     evaluator = canonical_evaluator(evaluator)
+    from .strategies import resolve_hu_delay_override
+    hu_delay_ratio = resolve_hu_delay_override(
+        config, strategy="bot", evaluator=evaluator)
 
     try:
         state_rate = float(config.get("state_rate", 16.0))
@@ -71,6 +74,8 @@ def normalize_tournament_config(config):
         "pareto_frontier_enabled": config.get(
             "pareto_frontier_enabled", False),
     }
+    if hu_delay_ratio is not None:
+        result["hu_discard_delay_min_gain_ratio"] = hu_delay_ratio
     for key in ("record", "replay_trace"):
         if not isinstance(result[key], bool):
             raise ValidationError(f"{key} must be a boolean")

@@ -114,9 +114,15 @@ def _profile_from_config(strategy, evaluator, config):
         LegacyTwoPlyProfile,
         canonical_evaluator,
     )
-    from .legacy_react import LegacyReactionProfile
+    from .legacy_react import (
+        DEFAULT_HU_DISCARD_DELAY_MIN_GAIN_RATIO,
+        LegacyReactionProfile,
+    )
 
     evaluator = canonical_evaluator(evaluator or DEFAULT_BOT_EVALUATOR)
+    if (config.get("hu_discard_delay_min_gain_ratio") is not None
+            and evaluator not in LEGACY_V2_EVALUATORS):
+        raise ValueError("HU discard-delay overrides require online legacyV2")
     if evaluator in LEGACY_V2_EVALUATORS:
         def _config_bool(name, default):
             value = config.get(name, default)
@@ -149,7 +155,11 @@ def _profile_from_config(strategy, evaluator, config):
             profile_kwargs["speed_band_min_ratio_by_shanten"] = config[
                 "speed_band_min_ratio_by_shanten"]
         return (LegacyTwoPlyProfile.weighted_online(**profile_kwargs),
-                LegacyReactionProfile.v2_online())
+                LegacyReactionProfile.v2_online(
+                    hu_discard_delay_min_gain_ratio=(
+                        config.get("hu_discard_delay_min_gain_ratio")
+                        if config.get("hu_discard_delay_min_gain_ratio") is not None
+                        else DEFAULT_HU_DISCARD_DELAY_MIN_GAIN_RATIO)))
     if evaluator in LEGACY_V2_BASELINE_EVALUATORS:
         return (LegacyTwoPlyProfile.weighted_online(
             big_hand_enabled=False, big_hand_same_shanten_enabled=False,
@@ -219,6 +229,9 @@ def strategy_snapshot(strategy, evaluator=None, *, profile=None,
 
     config = config if isinstance(config, Mapping) else {}
     strategy = str(strategy or "unknown")
+    if (config.get("hu_discard_delay_min_gain_ratio") is not None
+            and strategy != "bot"):
+        raise ValueError("HU discard-delay overrides require online legacyV2 bot strategy")
     evaluator = (canonical_evaluator(evaluator)
                  if strategy == "bot" else
                  str(evaluator or strategy) if evaluator or strategy else None)
@@ -341,6 +354,11 @@ def strategy_snapshot(strategy, evaluator=None, *, profile=None,
                 "enabled" if reaction_data.get("continuation_node_budget", 0)
                 else "disabled")
             profile_data["reaction"] = reaction_data
+            if reaction_data.get("hu_discard_delay_min_gain_ratio", 1.0) > 1.0:
+                features["hu_discard_delay_guard"] = _feature(
+                    "enabled",
+                    min_gain_ratio=reaction_data["hu_discard_delay_min_gain_ratio"],
+                    version=reaction_data["hu_discard_delay_version"])
 
     if strategy != "bot":
         features.update({
@@ -899,6 +917,12 @@ def decision_audit(evaluation, action, elapsed_ms, *, phase=None,
             "budget": budget_summary,
         },
     }
+    if isinstance(data.get("hu_discard_delay_guard"), dict):
+        result["features"]["hu_discard_delay_guard"] = {
+            "configured": configured_state("hu_discard_delay_guard"),
+            "entered": True,
+            **data["hu_discard_delay_guard"],
+        }
     return _json_value(result)
 
 

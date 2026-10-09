@@ -34,6 +34,7 @@ from .win import is_baotou, is_baotou_wait, is_win
 LEGACY_REACTION_V1 = "legacy-shape-progress-v1"
 LEGACY_REACTION_V2 = "legacy-react-v2"
 LEGACY_REACTION_V2_OFFLINE = "legacy-react-v2-offline"
+DEFAULT_HU_DISCARD_DELAY_MIN_GAIN_RATIO = 1.10
 PONG_MIN_ABS_GAIN = 4
 CHOW_MIN_ABS_GAIN = 6
 LEGACY_MIN_GAIN_RATIO = 1.50
@@ -76,8 +77,13 @@ class LegacyReactionProfile:
     continuation_soft_budget_ms: float = 0.0
     continuation_hard_budget_ms: float = 0.0
     enabled: bool = True
+    hu_discard_delay_min_gain_ratio: float = 1.0
 
     def __post_init__(self):
+        hu_ratio = float(self.hu_discard_delay_min_gain_ratio)
+        if not math.isfinite(hu_ratio) or hu_ratio < 1:
+            raise ValueError("hu_discard_delay_min_gain_ratio must be finite and >= 1")
+        object.__setattr__(self, "hu_discard_delay_min_gain_ratio", hu_ratio)
         if not self.name or not self.version:
             raise ValueError("legacy reaction profile identifiers are required")
         if self.future_mode not in {"disabled", "weighted"}:
@@ -198,7 +204,7 @@ class LegacyReactionProfile:
         return cls(**values)
 
     def _payload(self):
-        return {
+        payload = {
             "name": self.name,
             "version": self.version,
             "future_enabled": self.future_enabled,
@@ -215,6 +221,10 @@ class LegacyReactionProfile:
             "continuation_hard_budget_ms": self.continuation_hard_budget_ms,
             "enabled": self.enabled,
         }
+        if self.hu_discard_delay_min_gain_ratio != 1.0:
+            payload.update(hu_discard_delay_min_gain_ratio=self.hu_discard_delay_min_gain_ratio,
+                           hu_discard_delay_version="minimum-public-reward-margin-v1")
+        return payload
 
     def as_json(self):
         payload = self._payload()

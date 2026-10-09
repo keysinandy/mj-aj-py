@@ -55,6 +55,7 @@ from .legacy_eval import (
 )
 from .legacy_react import (
     CHOW_MIN_ABS_GAIN,
+    DEFAULT_HU_DISCARD_DELAY_MIN_GAIN_RATIO,
     LEGACY_MIN_GAIN_RATIO,
     LEGACY_REACTION_V1 as LEGACY_SHAPE_PROGRESS_VERSION,
     PONG_MIN_ABS_GAIN,
@@ -1205,6 +1206,22 @@ def _choose_hu_window_action(g, seat, actions, *, discard_profile,
                          -rank.get(row.get("type"), 99),
                          -int(row.get("action", 0))),
     )
+    hu_delay_guard = None
+    if (reaction_profile is not None and reaction_profile.enabled
+            and reaction_profile.hu_discard_delay_min_gain_ratio > 1.0
+            and stage_b_complete):
+        ratio = reaction_profile.hu_discard_delay_min_gain_ratio
+        immediate = roots[0]
+        eligible = [row for row in roots if row["type"] not in {"piao_discard", "baotou_next_draw"}
+                    or float(row["value"])+1e-9 >= float(immediate["value"])*ratio]
+        frozen_selected = selected["action"]
+        selected = max(eligible, key=lambda row: (float(row.get("value", 0.0)),
+            float(row.get("win_probability", 0.0)), -rank.get(row.get("type"), 99),
+            -int(row.get("action", 0))))
+        hu_delay_guard = {"min_gain_ratio": ratio, "frozen_selected": frozen_selected,
+                          "selected": selected["action"],
+                          "override": selected["action"] != frozen_selected,
+                          "rejected_actions": [row["action"] for row in roots if row not in eligible]}
     detail = _hu_window_detail(
         discard_profile, selected["action"], roots,
         piao_candidates=piao_candidates,
@@ -1215,6 +1232,8 @@ def _choose_hu_window_action(g, seat, actions, *, discard_profile,
         continuation_nodes=continuation_nodes,
         piao_search=piao_search,
     )
+    if hu_delay_guard is not None:
+        detail["hu_discard_delay_guard"] = hu_delay_guard
     detail["selected_value"] = selected.get("value")
     detail["selected_raw_value"] = selected.get("raw_value")
     detail["selected_win_probability"] = selected.get("win_probability")
@@ -1594,7 +1613,8 @@ def choose_action(g, seat, evaluator=DEFAULT_BOT_EVALUATOR,
                   marginal_structure_guard_enabled=None,
                   speed_band_enabled=None,
                   pareto_frontier_enabled=None,
-                  speed_band_min_ratio_by_shanten=None):
+                  speed_band_min_ratio_by_shanten=None,
+                  hu_discard_delay_min_gain_ratio=None):
     """统一入口:返回该 seat 的动作。
 
     The two-argument production path uses the weighted two-ply frontier.
@@ -1607,9 +1627,17 @@ def choose_action(g, seat, evaluator=DEFAULT_BOT_EVALUATOR,
     Speed-band/Pareto rollout flags are explicit optional overrides; leaving
     them ``None`` preserves the profile defaults and therefore the rollback
     ordering until the paired rollout gates pass.
+    Online legacyV2 uses a 1.10 HU-delay reward multiple by default. Pass
+    hu_discard_delay_min_gain_ratio=1.0 to restore the frozen behavior.
     """
     if evaluator is None or evaluator == "legacy":
         evaluator = DEFAULT_BOT_EVALUATOR
+    if (hu_discard_delay_min_gain_ratio is None
+            and evaluator in LEGACY_V2_EVALUATORS):
+        hu_discard_delay_min_gain_ratio = DEFAULT_HU_DISCARD_DELAY_MIN_GAIN_RATIO
+    if (hu_discard_delay_min_gain_ratio is not None
+            and evaluator not in LEGACY_V2_EVALUATORS):
+        raise ValueError("HU discard-delay overrides require online legacyV2")
     if evaluator not in (None, "legacy", "shape-v1", "shape_v1", "shape",
                          "shape-v2", "shape_v2", "ev2", "policy-v3",
                          "policy_v3", "legacy-two-ply-v1", "legacy_v1",
@@ -1705,6 +1733,9 @@ def choose_action(g, seat, evaluator=DEFAULT_BOT_EVALUATOR,
             else:
                 profile = LegacyTwoPlyProfile.default()
                 reaction_profile = LegacyReactionProfile.v1()
+            if hu_discard_delay_min_gain_ratio is not None:
+                reaction_profile = LegacyReactionProfile.v2_online(
+                    hu_discard_delay_min_gain_ratio=hu_discard_delay_min_gain_ratio)
             acts = g.legal_actions()
             if len(acts) == 1:
                 evaluation = {
@@ -1722,6 +1753,8 @@ def choose_action(g, seat, evaluator=DEFAULT_BOT_EVALUATOR,
                     "fallback_reason": "only_legal_action",
                     "partial_accepted": False,
                 }
+                if hu_discard_delay_min_gain_ratio is not None:
+                    evaluation["reaction_profile"] = reaction_profile.as_json()
                 return ((acts[0], evaluation) if return_evaluation else acts[0])
             if g.phase == "discard":
                 action, evaluation = _choose_draw_action(
@@ -1735,6 +1768,8 @@ def choose_action(g, seat, evaluator=DEFAULT_BOT_EVALUATOR,
                         profile, action, "hu_kong_scope")
                     scoped["legacy_detail"] = evaluation
                     evaluation = scoped
+                if hu_discard_delay_min_gain_ratio is not None:
+                    evaluation["reaction_profile"] = reaction_profile.as_json()
                 return ((action, evaluation)
                         if return_evaluation else action)
             action, evaluation = _choose_react_evaluated(
