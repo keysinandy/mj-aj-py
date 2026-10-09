@@ -354,11 +354,12 @@ def strategy_snapshot(strategy, evaluator=None, *, profile=None,
                 "enabled" if reaction_data.get("continuation_node_budget", 0)
                 else "disabled")
             profile_data["reaction"] = reaction_data
-            if reaction_data.get("hu_discard_delay_min_gain_ratio", 1.0) > 1.0:
-                features["hu_discard_delay_guard"] = _feature(
-                    "enabled",
-                    min_gain_ratio=reaction_data["hu_discard_delay_min_gain_ratio"],
-                    version=reaction_data["hu_discard_delay_version"])
+            hu_delay_ratio = reaction_data.get(
+                "hu_discard_delay_min_gain_ratio", 1.0)
+            features["hu_discard_delay_guard"] = _feature(
+                "enabled" if hu_delay_ratio > 1.0 else "disabled",
+                min_gain_ratio=hu_delay_ratio,
+                version=reaction_data.get("hu_discard_delay_version"))
 
     if strategy != "bot":
         features.update({

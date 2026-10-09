@@ -24,6 +24,7 @@ const FEATURE_LABELS: Record<string, string> = {
   piao_wall_guard: "Piao Wall Guard",
   reaction_v2: "Reaction V2",
   kong_continuation: "KONG Continuation",
+  hu_discard_delay_guard: "HU Delay",
 };
 
 const FEATURE_STATE: Record<string, string> = {
@@ -69,6 +70,9 @@ function oneSnapshot(snapshot: StrategySnapshot, heading?: string) {
             </strong>
             {typeof feature.min_live === "number" && (
               <small>≥{feature.min_live}</small>
+            )}
+            {typeof feature.min_gain_ratio === "number" && (
+              <small>×{feature.min_gain_ratio}</small>
             )}
           </span>
         ))}
