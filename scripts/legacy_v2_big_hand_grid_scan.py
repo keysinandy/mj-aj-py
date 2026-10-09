@@ -42,6 +42,8 @@ sys.path.insert(0, str(ROOT))
 
 from mj.bot import _choose_draw_action, _choose_react_evaluated
 from mj.game import Game
+from mj.game import HU
+from mj.legacy_kong import kong_actions
 from mj.legacy_eval import LegacyTwoPlyProfile
 from mj.legacy_react import LegacyReactionProfile
 from mj.shanten import kernel_runtime_diagnostic
@@ -123,17 +125,18 @@ def production_profile(**big_hand_overrides):
     )
 
 
-def _decide(game, seat, discard_profile):
+def _decide(game, seat, discard_profile, reaction_profile=None, *, reaction_diagnostics=False):
     acts = tuple(game.legal_actions())
     if len(acts) == 1:
         return acts[0], None
+    reaction_profile = reaction_profile or LegacyReactionProfile.v2_online()
     if game.phase == "discard":
         return _choose_draw_action(
             game, seat, acts, discard_profile=discard_profile,
-            reaction_profile=LegacyReactionProfile.v2_online())
+            reaction_profile=reaction_profile)
     return _choose_react_evaluated(
-        game, seat, acts, return_evaluation=False,
-        reaction_profile=LegacyReactionProfile.v2_online())
+        game, seat, acts, return_evaluation=reaction_diagnostics,
+        reaction_profile=reaction_profile)
 
 
 def _big_hand_scope_stats(evaluation):
@@ -490,13 +493,22 @@ def build_default_grid():
     return grid
 
 
-def run_profile_performance(point, *, games=200, repeats=3, seed_start=1500000):
+def run_profile_performance(point, *, games=200, repeats=3, seed_start=1500000,
+                            profile_factory=production_profile,
+                            reaction_profile_factory=None):
     """Interleaved, single-process four-bot benchmark with no audit calls."""
-    profiles = {"baseline": production_profile(),
-                "candidate": production_profile(**point)}
+    profiles = {"baseline": profile_factory(),
+                "candidate": profile_factory(**point)}
+    reactions = ({"baseline": reaction_profile_factory(),
+                  "candidate": reaction_profile_factory(**point)}
+                 if reaction_profile_factory else {key: None for key in profiles})
     timing = {key: {"discard_ms": [], "game_ms": [], "fallbacks": 0,
+                    "reaction_ms": [], "reaction_fallbacks": 0,
                     "challengers": 0, "overrides": 0, "max_roots": 0,
-                    "topup_ms": []} for key in profiles}
+                    "topup_ms": [], "self_kong_ms": [],
+                    "self_kong_progress_overrides": 0,
+                    "self_kong_fallbacks": 0, "hu_ms": [],
+                    "hu_fallbacks": 0, "hu_delay_guard_overrides": 0} for key in profiles}
     batches = []
     for repeat in range(repeats):
         batch = {key: [] for key in profiles}
@@ -509,9 +521,28 @@ def run_profile_performance(point, *, games=200, repeats=3, seed_start=1500000):
                 started = time.perf_counter()
                 while not game.done:
                     phase = game.phase
+                    reaction_window = phase != "discard" and len(game.legal_actions()) > 1
+                    legal = tuple(game.legal_actions())
+                    self_kong_window = phase == "discard" and HU not in legal and bool(kong_actions(legal))
                     tick = time.perf_counter()
-                    action, info = _decide(game, game.current_seat(), profiles[key])
+                    action, info = _decide(game, game.current_seat(), profiles[key], reactions[key],
+                                           reaction_diagnostics=reaction_profile_factory is not None)
                     elapsed_ms = (time.perf_counter() - tick) * 1000
+                    if phase == "discard" and HU in legal:
+                        timing[key]["hu_ms"].append(elapsed_ms)
+                        if isinstance(info, dict):
+                            timing[key]["hu_fallbacks"] += int(bool(info.get("fallback_reason")))
+                            timing[key]["hu_delay_guard_overrides"] += int(bool(
+                                (info.get("hu_discard_delay_guard") or {}).get("override")))
+                    if self_kong_window:
+                        timing[key]["self_kong_ms"].append(elapsed_ms)
+                        if isinstance(info, dict):
+                            timing[key]["self_kong_progress_overrides"] += int(bool(info.get("kong_progress_override")))
+                            timing[key]["self_kong_fallbacks"] += int(bool(info.get("continuation_fallback_reason")))
+                    if reaction_window:
+                        timing[key]["reaction_ms"].append(elapsed_ms)
+                        if isinstance(info, dict):
+                            timing[key]["reaction_fallbacks"] += int(bool(info.get("u2_fallback_reason")))
                     if phase == "discard" and action >= 0:
                         timing[key]["discard_ms"].append(elapsed_ms)
                         if isinstance(info, dict):
@@ -551,8 +582,20 @@ def run_profile_performance(point, *, games=200, repeats=3, seed_start=1500000):
     report = {key: {
         "profile_fingerprint": profiles[key].fingerprint,
         "discard_latency_ms": distribution(values["discard_ms"]),
+        "reaction_latency_ms": distribution(values["reaction_ms"]),
+        "reaction_fallback_rate": (values["reaction_fallbacks"] / len(values["reaction_ms"])
+                                   if values["reaction_ms"] else None),
+        "reaction_fingerprint": (reactions[key] or LegacyReactionProfile.v2_online()).fingerprint,
         "game_elapsed_ms": distribution(values["game_ms"]),
         "python_topup_latency_ms": distribution(values["topup_ms"]),
+        "self_kong_latency_ms": distribution(values["self_kong_ms"]),
+        "self_kong_progress_overrides": values["self_kong_progress_overrides"],
+        "hu_latency_ms": distribution(values["hu_ms"]),
+        "hu_delay_guard_overrides": values["hu_delay_guard_overrides"],
+        "hu_fallback_rate": (values["hu_fallbacks"] / len(values["hu_ms"])
+                             if values["hu_ms"] else None),
+        "self_kong_fallback_rate": (values["self_kong_fallbacks"] / len(values["self_kong_ms"])
+                                    if values["self_kong_ms"] else None),
         "fallback_rate": values["fallbacks"] / len(values["discard_ms"]),
         "challengers": values["challengers"], "overrides": values["overrides"],
         "max_frontier_roots": values["max_roots"],

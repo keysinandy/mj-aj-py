@@ -26,7 +26,7 @@ from .game import (
     PASS, PONG, CHOW_LOW, CHOW_MID, CHOW_HIGH, KONG_OPEN,
 )
 from .shanten import (
-    shanten, ukeire,
+    shanten, ukeire, chiitoi_shanten,
     best_future_discard as _best_future_discard_kernel,
     FUTURE_DISCARD_KERNEL_VERSION,
 )
@@ -799,7 +799,7 @@ def _chiitoi_descriptor(counts, locked):
     pair_wild += (rest // 2) * 2
     pairs_after = pairs + min(singles, wild) + (rest // 2)
     wild_left = rest % 2
-    s = 7 - pairs_after - (1 if singles + wild_left else 0)
+    s = chiitoi_shanten(counts, locked)
     if sum(counts) == 13:
         s = max(0, s)
     return Decomposition(kind="chiitoi", score=s, pair_count=pairs_after,

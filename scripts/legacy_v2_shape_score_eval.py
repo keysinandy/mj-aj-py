@@ -99,12 +99,14 @@ def _profiles(stage):
     baseline = LegacyTwoPlyProfile.weighted_online(
         big_hand_enabled=False, big_hand_same_shanten_enabled=False,
         big_hand_plus_one_enabled=False, shape_quality_enabled=False,
-        shape_quality_guard_enabled=False)
+        shape_quality_guard_enabled=False,
+        marginal_structure_guard_enabled=False)
     candidate = LegacyTwoPlyProfile.weighted_online(
         big_hand_enabled=False, big_hand_same_shanten_enabled=False,
         big_hand_plus_one_enabled=False, shape_quality_enabled=True,
         shape_quality_stage="root" if int(stage) == 1 else "full",
-        shape_quality_guard_enabled=True)
+        shape_quality_guard_enabled=True,
+        marginal_structure_guard_enabled=False)
     return baseline, candidate
 
 

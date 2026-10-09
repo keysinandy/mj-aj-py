@@ -250,6 +250,8 @@ def public_score_continuation(
         node_budget=2048, soft_budget_ms=0.0, hard_budget_ms=15.0):
     """Evaluate two hero draw opportunities from public unseen mass only."""
     started = time.monotonic()
+    from .legacy_budget import cap_ms
+    hard_budget_ms = cap_ms(hard_budget_ms)
     soft_budget_ms = max(0.0, float(soft_budget_ms))
     hard_budget_ms = max(0.0, float(hard_budget_ms))
     deadline_reserve_ms = min(
@@ -278,6 +280,9 @@ def public_score_continuation(
         return (time.monotonic() - started) * 1000.0
 
     def budget_reason():
+        from .legacy_budget import expired
+        if expired():
+            return "continuation_hard_deadline"
         elapsed = elapsed_ms()
         if soft_budget_ms > 0 and elapsed >= soft_budget_ms:
             diagnostics["soft_budget_hit"] = True
@@ -486,6 +491,37 @@ def kong_kai_gate(game, seat, standing, locked, post, remaining):
     if mass <= 0:
         return False, tiles, 0, "no_live_winning_mass"
     return True, tiles, mass, None
+
+
+def redundant_self_kong_candidate(results, baseline_tile, *, live_wall, hand):
+    """Experimental early replacement for a tile the baseline would discard.
+
+    This is a progress hypothesis, not a complete score EV. The caller must
+    explicitly enable it. Existing structural and v2 progress checks stay in
+    force; tenpai/HU choices continue through the original score comparison.
+    """
+    if live_wall < 16 or baseline_tile == W:
+        return None
+    for result in results:
+        if (result["kind"] not in {"closed", "add"}
+                or result["tile"] != baseline_tile
+                or not result["structure_safe"]
+                or not result["shape_preserved"]
+                or result["rejection_reason"] != "post_kong_not_tenpai"):
+            continue
+        baseline, post = result["baseline_progress"], result["post_kong_progress"]
+        if baseline["shanten"] not in (1, 2) or post["shanten"] != baseline["shanten"]:
+            continue
+        if (post["ukeire_live"] < baseline["ukeire_live"]
+                or post["ukeire_types"] < baseline["ukeire_types"]):
+            continue
+        # Closed KONG moves a full natural triplet plus the discarded fourth;
+        # added KONG moves just that redundant tile into an existing triplet.
+        required = 4 if result["kind"] == "closed" else 1
+        if hand[baseline_tile] != required:
+            continue
+        return result
+    return None
 
 
 def post_kong_state(game, seat, kind, tile, visible, *, shape_progress,

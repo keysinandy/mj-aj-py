@@ -9,7 +9,7 @@ guard.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import lru_cache
+from functools import cached_property, lru_cache
 import hashlib
 import json
 import math
@@ -35,6 +35,13 @@ LEGACY_REACTION_V1 = "legacy-shape-progress-v1"
 LEGACY_REACTION_V2 = "legacy-react-v2"
 LEGACY_REACTION_V2_OFFLINE = "legacy-react-v2-offline"
 DEFAULT_HU_DISCARD_DELAY_MIN_GAIN_RATIO = 1.10
+
+
+@lru_cache(maxsize=128)
+def _cached_online_profile(profile_type, values):
+    return profile_type(**dict(values))
+
+
 PONG_MIN_ABS_GAIN = 4
 CHOW_MIN_ABS_GAIN = 6
 LEGACY_MIN_GAIN_RATIO = 1.50
@@ -77,9 +84,22 @@ class LegacyReactionProfile:
     continuation_soft_budget_ms: float = 0.0
     continuation_hard_budget_ms: float = 0.0
     enabled: bool = True
+    claim_min_gain_ratio: float = LEGACY_MIN_GAIN_RATIO
+    pong_min_abs_gain: int = PONG_MIN_ABS_GAIN
+    chow_min_abs_gain: int = CHOW_MIN_ABS_GAIN
+    self_kong_progress_enabled: bool = False
     hu_discard_delay_min_gain_ratio: float = 1.0
 
     def __post_init__(self):
+        ratio = float(self.claim_min_gain_ratio)
+        if not math.isfinite(ratio) or ratio < 1.0:
+            raise ValueError("claim_min_gain_ratio must be finite and >= 1")
+        for field in ("pong_min_abs_gain", "chow_min_abs_gain"):
+            value = getattr(self, field)
+            if isinstance(value, bool) or int(value) != value or int(value) < 1:
+                raise ValueError(f"{field} must be a positive integer")
+            object.__setattr__(self, field, int(value))
+        object.__setattr__(self, "claim_min_gain_ratio", ratio)
         hu_ratio = float(self.hu_discard_delay_min_gain_ratio)
         if not math.isfinite(hu_ratio) or hu_ratio < 1:
             raise ValueError("hu_discard_delay_min_gain_ratio must be finite and >= 1")
@@ -131,6 +151,7 @@ class LegacyReactionProfile:
         object.__setattr__(self, "continuation_hard_budget_ms",
                            continuation_hard)
         object.__setattr__(self, "enabled", bool(self.enabled))
+        object.__setattr__(self, "self_kong_progress_enabled", bool(self.self_kong_progress_enabled))
 
     @classmethod
     def v1(cls, **overrides):
@@ -179,7 +200,12 @@ class LegacyReactionProfile:
             "enabled": True,
         }
         values.update(overrides)
-        return cls(**values)
+        key = tuple(sorted(values.items()))
+        try:
+            hash(key)
+        except TypeError:
+            return cls(**values)
+        return _cached_online_profile(cls, key)
 
     @classmethod
     def v2_offline(cls, **overrides):
@@ -221,6 +247,17 @@ class LegacyReactionProfile:
             "continuation_hard_budget_ms": self.continuation_hard_budget_ms,
             "enabled": self.enabled,
         }
+        # Keep the frozen default profile fingerprint stable. Experimental
+        # admission thresholds are identified whenever they change behaviour.
+        if (self.claim_min_gain_ratio != LEGACY_MIN_GAIN_RATIO or
+                self.pong_min_abs_gain != PONG_MIN_ABS_GAIN or
+                self.chow_min_abs_gain != CHOW_MIN_ABS_GAIN):
+            payload.update(claim_min_gain_ratio=self.claim_min_gain_ratio,
+                           pong_min_abs_gain=self.pong_min_abs_gain,
+                           chow_min_abs_gain=self.chow_min_abs_gain)
+        if self.self_kong_progress_enabled:
+            payload.update(self_kong_progress_enabled=True,
+                           self_kong_progress_version="redundant-self-kong-v1")
         if self.hu_discard_delay_min_gain_ratio != 1.0:
             payload.update(hu_discard_delay_min_gain_ratio=self.hu_discard_delay_min_gain_ratio,
                            hu_discard_delay_version="minimum-public-reward-margin-v1")
@@ -231,7 +268,7 @@ class LegacyReactionProfile:
         payload["fingerprint"] = self.fingerprint
         return payload
 
-    @property
+    @cached_property
     def fingerprint(self) -> str:
         return hashlib.sha256(
             _canonical_json(self._payload()).encode("utf-8")
@@ -293,9 +330,9 @@ def reaction_tempo(hero_seat, pending_owner):
     )
 
 
-def significant_progress_detail(before, after, action):
+def significant_progress_detail(before, after, action, *, profile=None):
     """Return the v2 reason taxonomy without changing frozen v1 reasons."""
-    base = significant_progress(before, after, action)
+    base = significant_progress(before, after, action, profile=profile)
     if base == "baotou_progress":
         if not before.baotou_ready and after.baotou_ready:
             return "baotou_ready_upgrade"
@@ -462,43 +499,46 @@ def legacy_shape_progress(standing, locked, visible, *,
     return result
 
 
-def significant_live_gain(before, after, minimum):
+def significant_live_gain(before, after, minimum, ratio=LEGACY_MIN_GAIN_RATIO):
     delta = after - before
     if delta < minimum:
         return False
-    return before == 0 or after * 2 >= before * 3
+    return before == 0 or after >= before * ratio
 
 
 def claim_gain_threshold(action):
     return PONG_MIN_ABS_GAIN if action == PONG else CHOW_MIN_ABS_GAIN
 
 
-def significant_progress(before, after, action):
-    minimum = claim_gain_threshold(action)
+def significant_progress(before, after, action, *, profile=None):
+    special_minimum = claim_gain_threshold(action)
+    minimum = (claim_gain_threshold(action) if profile is None else
+               profile.pong_min_abs_gain if action == PONG else profile.chow_min_abs_gain)
+    ratio = LEGACY_MIN_GAIN_RATIO if profile is None else profile.claim_min_gain_ratio
     if not before.baotou_ready and after.baotou_ready:
         return "baotou_progress"
     if (before.baotou_ukeire_live is not None
             and after.baotou_ukeire_live is not None
             and significant_live_gain(
                 before.baotou_ukeire_live,
-                after.baotou_ukeire_live, minimum)):
+                after.baotou_ukeire_live, special_minimum)):
         return "baotou_progress"
     if before.piao_draw_live == 0 and after.piao_draw_live >= 2:
         return "piao_progress"
     if (before.piao_draw_live > 0
             and significant_live_gain(
-                before.piao_draw_live, after.piao_draw_live, minimum)):
+                before.piao_draw_live, after.piao_draw_live, special_minimum)):
         return "piao_progress"
     if before.shanten == 0 and after.shanten == 0:
         if (after.ukeire_types - before.ukeire_types >= 2
                 and after.ukeire_live >= before.ukeire_live):
             return "wait_expansion"
         if significant_live_gain(
-                before.ukeire_live, after.ukeire_live, minimum):
+                before.ukeire_live, after.ukeire_live, minimum, ratio):
             return "wait_expansion"
     if (before.shanten > 0 and after.shanten > 0
             and significant_live_gain(
-                before.ukeire_live, after.ukeire_live, minimum)):
+                before.ukeire_live, after.ukeire_live, minimum, ratio)):
         return "ukeire_expansion"
     return None
 
@@ -593,8 +633,9 @@ def best_post_claim_state(hand, locked, visible, *, include_baotou,
 def choose_reaction_v1(
         game, seat, acts, *, piao_allowed, shape_progress,
         post_claim_min_shanten, best_post_claim_state, evaluate_kong_open,
-        kong_public_result, baotou_kernel_available, return_evaluation=True):
-    """Evaluate a frozen v1 reaction window without importing ``mj.bot``."""
+        kong_public_result, baotou_kernel_available, return_evaluation=True,
+        progress_profile=None):
+    """Evaluate the original reaction gate; v2 may supply opt-in thresholds."""
     _owner, tile = game.pending
     hand = game.hands[seat]
     locked = len(game.melds[seat])
@@ -626,7 +667,8 @@ def choose_reaction_v1(
                 post_hand, locked + 1, visible,
                 include_baotou=multiple_discards,
                 piao_allowed=piao_allowed)
-            reason = significant_progress(pass_progress, progress, action)
+            reason = significant_progress(pass_progress, progress, action,
+                                          profile=progress_profile)
             if (reason is None and baotou_kernel_available
                     and pass_progress.baotou_ukeire_live is None):
                 pass_progress = shape_progress(
@@ -637,7 +679,8 @@ def choose_reaction_v1(
                         best_post_claim_state(
                             post_hand, locked + 1, visible,
                             include_baotou=True, piao_allowed=piao_allowed)
-                reason = significant_progress(pass_progress, progress, action)
+                reason = significant_progress(pass_progress, progress, action,
+                                              profile=progress_profile)
         candidates.append({
             "action": action,
             "accepted": reason is not None,
@@ -741,9 +784,12 @@ def choose_reaction_v1(
         "reason": reason,
         "before_progress": pass_progress.as_json(),
         "thresholds": {
-            "pong_absolute": PONG_MIN_ABS_GAIN,
-            "chow_absolute": CHOW_MIN_ABS_GAIN,
-            "ratio": LEGACY_MIN_GAIN_RATIO,
+            "pong_absolute": (progress_profile.pong_min_abs_gain
+                              if progress_profile else PONG_MIN_ABS_GAIN),
+            "chow_absolute": (progress_profile.chow_min_abs_gain
+                              if progress_profile else CHOW_MIN_ABS_GAIN),
+            "ratio": (progress_profile.claim_min_gain_ratio
+                      if progress_profile else LEGACY_MIN_GAIN_RATIO),
         },
         "candidates": [{
             "action": candidate["action"],
@@ -838,12 +884,27 @@ def choose_reaction_v2(
         kong_public_result=kong_public_result,
         baotou_kernel_available=baotou_kernel_available,
         return_evaluation=True,
+        progress_profile=profile if profile.enabled else None,
     )
+    frozen_action = v1_action
+    thresholds_changed = (profile.claim_min_gain_ratio != LEGACY_MIN_GAIN_RATIO or
+                          profile.pong_min_abs_gain != PONG_MIN_ABS_GAIN or
+                          profile.chow_min_abs_gain != CHOW_MIN_ABS_GAIN)
+    if thresholds_changed:
+        # A newly admitted claim needs its U2 proof. Missing future data must
+        # return the original admission policy, rather than the relaxed gate.
+        frozen_action, _ = choose_reaction_v1(
+            game, seat, acts, piao_allowed=piao_allowed,
+            shape_progress=shape_progress, post_claim_min_shanten=post_claim_min_shanten,
+            best_post_claim_state=best_post_claim_state, evaluate_kong_open=evaluate_kong_open,
+            kong_public_result=kong_public_result,
+            baotou_kernel_available=baotou_kernel_available, return_evaluation=False)
+        evaluation["admission_action"] = v1_action
     evaluation["reaction_profile"] = profile.as_json()
-    evaluation["v1_action"] = v1_action
+    evaluation["v1_action"] = frozen_action
     if not profile.enabled or not profile.future_enabled:
         evaluation["u2_fallback_reason"] = "profile_disabled"
-        return (v1_action, evaluation) if return_evaluation else (v1_action, None)
+        return (frozen_action, evaluation) if return_evaluation else (frozen_action, None)
 
     owner, tile = game.pending
     tempo = reaction_tempo(seat, owner)
@@ -872,7 +933,7 @@ def choose_reaction_v2(
                 include_baotou=(best_shanten == before.shanten),
                 piao_allowed=piao_allowed)
         detail = ("shanten_drop" if best_shanten < before.shanten else
-                  significant_progress_detail(before, progress, action))
+                  significant_progress_detail(before, progress, action, profile=profile))
         record = {
             "action": action,
             "row": row,
@@ -940,8 +1001,8 @@ def choose_reaction_v2(
                     "reaction U2 candidates do not share one complete stage")
             evaluation["u2_fallback_reason"] = (
                 "u2_incomplete" if unusable else "u2_stage_mismatch")
-            return ((v1_action, evaluation) if return_evaluation
-                    else (v1_action, None))
+            return ((frozen_action, evaluation) if return_evaluation
+                    else (frozen_action, None))
 
         evaluation["u2_complete_or_safe_partial"] = True
         evaluation["pass_future"] = _future_json(pass_future)

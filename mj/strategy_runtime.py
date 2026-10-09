@@ -223,7 +223,7 @@ def _profile_from_config(strategy, evaluator, config):
 
 def strategy_snapshot(strategy, evaluator=None, *, profile=None,
                       reaction_profile=None, model_name=None,
-                      config=None) -> StrategySnapshot:
+                      config=None, quality_profile=None) -> StrategySnapshot:
     """Build a deterministic snapshot from a resolved strategy config."""
     from .legacy_eval import canonical_evaluator
 
@@ -377,6 +377,15 @@ def strategy_snapshot(strategy, evaluator=None, *, profile=None,
         })
 
     public_model_name = _public_model_name(model_name)
+    if quality_profile is not None:
+        from .legacy_quality_profile import FLAGS
+        quality_data = quality_profile.as_json()
+        profile_data["decision_quality"] = quality_data
+        profile_fingerprint = hashlib.sha256(
+            _canonical(profile_data).encode("utf-8")).hexdigest()[:16]
+        for flag in FLAGS:
+            features[flag] = _feature("enabled" if quality_data[flag] else "disabled",
+                                      version=quality_profile.version)
     public_config = {
         "strategy": strategy,
         "evaluator": evaluator,
@@ -923,6 +932,8 @@ def decision_audit(evaluation, action, elapsed_ms, *, phase=None,
             "entered": True,
             **data["hu_discard_delay_guard"],
         }
+    if isinstance(data.get("quality"), dict):
+        result["decision_quality"] = data["quality"]
     return _json_value(result)
 
 

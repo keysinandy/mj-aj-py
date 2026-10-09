@@ -1,0 +1,2673 @@
+{
+  "schema": "legacy-quality-public-golden-v1",
+  "states": [
+    {
+      "seed": 11,
+      "context": {
+        "schema": "public-decision-context-v1",
+        "hero_seat": 0,
+        "dealer": 0,
+        "base": 1,
+        "you_cai_bi_kao": false,
+        "hand": [
+          2,
+          1,
+          1,
+          0,
+          0,
+          0,
+          1,
+          1,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          1,
+          1,
+          0,
+          0,
+          0,
+          0
+        ],
+        "drawn": 27,
+        "kong_draw": false,
+        "locked": 0,
+        "melds": [
+          [],
+          [],
+          [],
+          []
+        ],
+        "chows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "discards": [
+          [],
+          [],
+          [],
+          []
+        ],
+        "visible": [
+          2,
+          1,
+          1,
+          0,
+          0,
+          0,
+          1,
+          1,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          1,
+          1,
+          0,
+          0,
+          0,
+          0
+        ],
+        "concealed_counts": [
+          14,
+          13,
+          13,
+          13
+        ],
+        "turn": 0,
+        "phase": "discard",
+        "pending_owner": null,
+        "pending_tile": null,
+        "freeze": 0,
+        "freezer": null,
+        "chain_counts": [
+          0,
+          null,
+          null,
+          null
+        ],
+        "chain_piao_counts": [
+          0,
+          null,
+          null,
+          null
+        ],
+        "chain_count": 0,
+        "chain_piao": 0,
+        "live_wall": 63,
+        "dead_wall": 20,
+        "react_seq": [],
+        "react_index": null,
+        "react_claim_count": null,
+        "legal_actions": [
+          0,
+          1,
+          2,
+          6,
+          7,
+          12,
+          14,
+          19,
+          22,
+          27,
+          28,
+          29
+        ],
+        "gid": null,
+        "round_no": null,
+        "seq": null,
+        "decision_id": null,
+        "fast_valid": true,
+        "rollout_valid": false,
+        "missing_fields": [
+          "opponent_chain",
+          "opponent_chain_piao"
+        ],
+        "unsupported": [],
+        "provenance": [
+          [
+            "chain_count",
+            "hero_game_state"
+          ],
+          [
+            "concealed_counts",
+            "public_phase_and_meld_count_derivation"
+          ],
+          [
+            "hand",
+            "hero_private_game_state"
+          ],
+          [
+            "live_wall",
+            "public_wall_length"
+          ],
+          [
+            "opponent_chain",
+            "unknown_not_read_from_game"
+          ],
+          [
+            "visible",
+            "derived_from_hero_hand_public_rivers_melds"
+          ]
+        ]
+      },
+      "cache_key": "7716131bb4a2497a",
+      "baseline_selected": 27,
+      "danger": {
+        "0": {
+          "tile": 0,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "1": {
+          "tile": 1,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "2": {
+          "tile": 2,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "6": {
+          "tile": 6,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "7": {
+          "tile": 7,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "12": {
+          "tile": 12,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "14": {
+          "tile": 14,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "19": {
+          "tile": 19,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "22": {
+          "tile": 22,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "27": {
+          "tile": 27,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "28": {
+          "tile": 28,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "29": {
+          "tile": 29,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        }
+      }
+    },
+    {
+      "seed": 20,
+      "context": {
+        "schema": "public-decision-context-v1",
+        "hero_seat": 0,
+        "dealer": 0,
+        "base": 1,
+        "you_cai_bi_kao": false,
+        "hand": [
+          0,
+          0,
+          0,
+          1,
+          1,
+          0,
+          0,
+          1,
+          1,
+          1,
+          1,
+          0,
+          0,
+          2,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          1,
+          0,
+          1,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0
+        ],
+        "drawn": 7,
+        "kong_draw": false,
+        "locked": 0,
+        "melds": [
+          [],
+          [],
+          [],
+          []
+        ],
+        "chows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "discards": [
+          [],
+          [],
+          [],
+          []
+        ],
+        "visible": [
+          0,
+          0,
+          0,
+          1,
+          1,
+          0,
+          0,
+          1,
+          1,
+          1,
+          1,
+          0,
+          0,
+          2,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          1,
+          0,
+          1,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0
+        ],
+        "concealed_counts": [
+          14,
+          13,
+          13,
+          13
+        ],
+        "turn": 0,
+        "phase": "discard",
+        "pending_owner": null,
+        "pending_tile": null,
+        "freeze": 0,
+        "freezer": null,
+        "chain_counts": [
+          0,
+          null,
+          null,
+          null
+        ],
+        "chain_piao_counts": [
+          0,
+          null,
+          null,
+          null
+        ],
+        "chain_count": 0,
+        "chain_piao": 0,
+        "live_wall": 63,
+        "dead_wall": 20,
+        "react_seq": [],
+        "react_index": null,
+        "react_claim_count": null,
+        "legal_actions": [
+          3,
+          4,
+          7,
+          8,
+          9,
+          10,
+          13,
+          15,
+          20,
+          23,
+          25,
+          29
+        ],
+        "gid": null,
+        "round_no": null,
+        "seq": null,
+        "decision_id": null,
+        "fast_valid": true,
+        "rollout_valid": false,
+        "missing_fields": [
+          "opponent_chain",
+          "opponent_chain_piao"
+        ],
+        "unsupported": [],
+        "provenance": [
+          [
+            "chain_count",
+            "hero_game_state"
+          ],
+          [
+            "concealed_counts",
+            "public_phase_and_meld_count_derivation"
+          ],
+          [
+            "hand",
+            "hero_private_game_state"
+          ],
+          [
+            "live_wall",
+            "public_wall_length"
+          ],
+          [
+            "opponent_chain",
+            "unknown_not_read_from_game"
+          ],
+          [
+            "visible",
+            "derived_from_hero_hand_public_rivers_melds"
+          ]
+        ]
+      },
+      "cache_key": "d78c71508504b599",
+      "baseline_selected": 20,
+      "danger": {
+        "3": {
+          "tile": 3,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "4": {
+          "tile": 4,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "7": {
+          "tile": 7,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "8": {
+          "tile": 8,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "9": {
+          "tile": 9,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "10": {
+          "tile": 10,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "13": {
+          "tile": 13,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "15": {
+          "tile": 15,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "20": {
+          "tile": 20,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "23": {
+          "tile": 23,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "25": {
+          "tile": 25,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "29": {
+          "tile": 29,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        }
+      }
+    },
+    {
+      "seed": 44,
+      "context": {
+        "schema": "public-decision-context-v1",
+        "hero_seat": 0,
+        "dealer": 0,
+        "base": 1,
+        "you_cai_bi_kao": false,
+        "hand": [
+          0,
+          0,
+          1,
+          2,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          1,
+          0,
+          1,
+          0,
+          1,
+          1,
+          1,
+          0,
+          1,
+          0
+        ],
+        "drawn": 8,
+        "kong_draw": false,
+        "locked": 0,
+        "melds": [
+          [],
+          [],
+          [],
+          []
+        ],
+        "chows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "discards": [
+          [],
+          [],
+          [],
+          []
+        ],
+        "visible": [
+          0,
+          0,
+          1,
+          2,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          1,
+          0,
+          1,
+          0,
+          1,
+          1,
+          1,
+          0,
+          1,
+          0
+        ],
+        "concealed_counts": [
+          14,
+          13,
+          13,
+          13
+        ],
+        "turn": 0,
+        "phase": "discard",
+        "pending_owner": null,
+        "pending_tile": null,
+        "freeze": 0,
+        "freezer": null,
+        "chain_counts": [
+          0,
+          null,
+          null,
+          null
+        ],
+        "chain_piao_counts": [
+          0,
+          null,
+          null,
+          null
+        ],
+        "chain_count": 0,
+        "chain_piao": 0,
+        "live_wall": 63,
+        "dead_wall": 20,
+        "react_seq": [],
+        "react_index": null,
+        "react_claim_count": null,
+        "legal_actions": [
+          2,
+          3,
+          8,
+          11,
+          12,
+          15,
+          22,
+          24,
+          26,
+          28,
+          29,
+          30,
+          32
+        ],
+        "gid": null,
+        "round_no": null,
+        "seq": null,
+        "decision_id": null,
+        "fast_valid": true,
+        "rollout_valid": false,
+        "missing_fields": [
+          "opponent_chain",
+          "opponent_chain_piao"
+        ],
+        "unsupported": [],
+        "provenance": [
+          [
+            "chain_count",
+            "hero_game_state"
+          ],
+          [
+            "concealed_counts",
+            "public_phase_and_meld_count_derivation"
+          ],
+          [
+            "hand",
+            "hero_private_game_state"
+          ],
+          [
+            "live_wall",
+            "public_wall_length"
+          ],
+          [
+            "opponent_chain",
+            "unknown_not_read_from_game"
+          ],
+          [
+            "visible",
+            "derived_from_hero_hand_public_rivers_melds"
+          ]
+        ]
+      },
+      "cache_key": "9c2ee379cdf6388e",
+      "baseline_selected": 28,
+      "danger": {
+        "2": {
+          "tile": 2,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "3": {
+          "tile": 3,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "8": {
+          "tile": 8,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "11": {
+          "tile": 11,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "12": {
+          "tile": 12,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "15": {
+          "tile": 15,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "22": {
+          "tile": 22,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "24": {
+          "tile": 24,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "26": {
+          "tile": 26,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "28": {
+          "tile": 28,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "29": {
+          "tile": 29,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "30": {
+          "tile": 30,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "32": {
+          "tile": 32,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        }
+      }
+    },
+    {
+      "seed": 51,
+      "context": {
+        "schema": "public-decision-context-v1",
+        "hero_seat": 0,
+        "dealer": 0,
+        "base": 1,
+        "you_cai_bi_kao": false,
+        "hand": [
+          1,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          1,
+          2,
+          1,
+          0,
+          1,
+          0,
+          1,
+          0,
+          2,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "drawn": 13,
+        "kong_draw": false,
+        "locked": 0,
+        "melds": [
+          [],
+          [],
+          [],
+          []
+        ],
+        "chows": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "discards": [
+          [],
+          [],
+          [],
+          []
+        ],
+        "visible": [
+          1,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          1,
+          2,
+          1,
+          0,
+          1,
+          0,
+          1,
+          0,
+          2,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "concealed_counts": [
+          14,
+          13,
+          13,
+          13
+        ],
+        "turn": 0,
+        "phase": "discard",
+        "pending_owner": null,
+        "pending_tile": null,
+        "freeze": 0,
+        "freezer": null,
+        "chain_counts": [
+          0,
+          null,
+          null,
+          null
+        ],
+        "chain_piao_counts": [
+          0,
+          null,
+          null,
+          null
+        ],
+        "chain_count": 0,
+        "chain_piao": 0,
+        "live_wall": 63,
+        "dead_wall": 20,
+        "react_seq": [],
+        "react_index": null,
+        "react_claim_count": null,
+        "legal_actions": [
+          0,
+          1,
+          6,
+          12,
+          13,
+          14,
+          15,
+          17,
+          19,
+          21,
+          25,
+          33
+        ],
+        "gid": null,
+        "round_no": null,
+        "seq": null,
+        "decision_id": null,
+        "fast_valid": true,
+        "rollout_valid": false,
+        "missing_fields": [
+          "opponent_chain",
+          "opponent_chain_piao"
+        ],
+        "unsupported": [],
+        "provenance": [
+          [
+            "chain_count",
+            "hero_game_state"
+          ],
+          [
+            "concealed_counts",
+            "public_phase_and_meld_count_derivation"
+          ],
+          [
+            "hand",
+            "hero_private_game_state"
+          ],
+          [
+            "live_wall",
+            "public_wall_length"
+          ],
+          [
+            "opponent_chain",
+            "unknown_not_read_from_game"
+          ],
+          [
+            "visible",
+            "derived_from_hero_hand_public_rivers_melds"
+          ]
+        ]
+      },
+      "cache_key": "cb1075742e6f1249",
+      "baseline_selected": 19,
+      "danger": {
+        "0": {
+          "tile": 0,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "1": {
+          "tile": 1,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "6": {
+          "tile": 6,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "12": {
+          "tile": 12,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "13": {
+          "tile": 13,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "14": {
+          "tile": 14,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "15": {
+          "tile": 15,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "17": {
+          "tile": 17,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "19": {
+          "tile": 19,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "21": {
+          "tile": 21,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "25": {
+          "tile": 25,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0021967968660271814,
+          "uncertainty": 22.38888822465651,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0.06557377049180328,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.02459016393442623,
+              "chi": 0,
+              "kong": 0.00819672131147541,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        },
+        "33": {
+          "tile": 33,
+          "loss_ev": -0.029471931020658117,
+          "tempo_ev": 0.0,
+          "uncertainty": 23.97052806897934,
+          "coverage": 0.0,
+          "calibrated": false,
+          "opponents": [
+            {
+              "seat": 1,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.0,
+              "chi": 0.0,
+              "kong": 0.0,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 2,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.0,
+              "chi": 0,
+              "kong": 0.0,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            },
+            {
+              "seat": 3,
+              "next_self_draw_win": 0.0012295081967213114,
+              "pong": 0.0,
+              "chi": 0,
+              "kong": 0.0,
+              "conditional_loss": 8.0,
+              "calibrated": false
+            }
+          ],
+          "immediate_ron_probability": 0.0,
+          "rules": "self_draw_only_single_winner"
+        }
+      }
+    }
+  ]
+}

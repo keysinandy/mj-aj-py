@@ -604,6 +604,11 @@ fn chiitoi(counts: &[i32; 34], locked: i32) -> i32 {
     pairs += paired;
     let rest = wilds - paired;
     pairs += rest / 2;
+    // Seven completed pairs are terminal even without a singleton or an
+    // odd wildcard. In particular, all-natural chiitoi must be shanten -1.
+    if pairs >= 7 {
+        return -1;
+    }
     let odd = rest % 2;
     // 任意单张或奇数财神都意味着"摸进一张即可再成一对"
     7 - pairs - i32::from(singles + odd > 0)
@@ -682,6 +687,9 @@ fn ukeire_impl(
         if s == 0 {
             let mut acc = Vec::new();
             for t in 0..34 {
+                if counts[t] >= 4 {
+                    continue;
+                }
                 let mut c2 = *counts;
                 c2[t] += 1;
                 if shanten_impl(&c2, locked, memo)? == -1 {
@@ -726,6 +734,9 @@ fn ukeire_total_impl(
         if s == 0 {
             let mut total = 0i64;
             for t in 0..34 {
+                if counts[t] >= 4 {
+                    continue;
+                }
                 let mut c2 = *counts;
                 c2[t] += 1;
                 if wildcard_shanten(&c2, locked, shanten_cache)? == -1 {
@@ -2700,6 +2711,7 @@ fn mj_kernels(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(weighted_two_ply_frontier, m)?)?;
     m.add_function(wrap_pyfunction!(legacy_two_ply_kernel_version, m)?)?;
     m.add_function(wrap_pyfunction!(weighted_two_ply_kernel_version, m)?)?;
+    m.add_function(wrap_pyfunction!(shanten_semantics_version, m)?)?;
     Ok(())
 }
 
@@ -2711,4 +2723,9 @@ fn legacy_two_ply_kernel_version() -> &'static str {
 #[pyfunction]
 fn weighted_two_ply_kernel_version() -> &'static str {
     WEIGHTED_TWO_PLY_KERNEL_VERSION
+}
+
+#[pyfunction]
+fn shanten_semantics_version() -> &'static str {
+    "hangzhou-chiitoi-terminal-v2"
 }

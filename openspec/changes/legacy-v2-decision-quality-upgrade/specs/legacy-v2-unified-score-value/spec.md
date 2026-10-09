@@ -7,6 +7,14 @@ All score-based candidate comparisons SHALL use hero net settlement points, with
 - **WHEN** a candidate reaches a terminal settle event
 - **THEN** predicted settled points SHALL agree with the existing scoring/settle rules for that event
 
+#### Scenario: Surviving nonwinning next-draw tail
+- **WHEN** the optional calibrated continuation model is enabled
+- **THEN** tail labels SHALL condition on reaching the next hero draw without legal HU, SHALL exclude earlier terminal events, and SHALL use hero net settlement points with independent-seed training and held-out uncertainty
+
+#### Scenario: Nonterminal continuation coverage unavailable
+- **WHEN** an enabled nonterminal value comparison needs a missing or undercovered continuation cell
+- **THEN** the comparison SHALL abstain to baseline rather than score unobserved offensive continuation as zero
+
 ### Requirement: Bounded value override
 The system SHALL evaluate at most the admitted bounded candidate frontier, preserve legacyV2's original winner on uncertainty and only override when a declared confidence and net-value margin is met.
 

@@ -39,3 +39,32 @@ Baseline frozen from main before implementation. Phase A: log-loss/Brier + relia
 ## Files and tests
 
 Suggested isolated modules `mj/legacy_belief.py`, `mj/legacy_danger.py`, `mj/legacy_completion.py`, `mj/legacy_value.py`, `mj/legacy_joint_reaction.py`, `mj/legacy_budget.py`, `mj/legacy_hand_plan.py`. Tests: public info invariance, deterministic fixed seeds, no hidden-state access, legality/freeze, terminal score parity, multi-winner danger aggregation, next-draw survival consistency, rescue from v1 reject, global timeout, confidence-margin ties, rollout shadow no behavior drift, complete-vs-partial parity, configuration fingerprint.
+
+## Bounded continuation refinement
+
+The v2 experiment values surviving nonterminal states with an independently
+calibrated public bucket table (`legacy_tail.py`). Training labels condition on
+reaching a next hero draw without legal HU under the frozen baseline policy;
+terminal win/loss branches before that draw are excluded. Only supported
+training/validation cells can authorize an override, and their uncertainty
+includes independent-seed standard error and held-out bias. This changes the
+declared value horizon and model version for every candidate, including an
+immediate HU when compared with delayed actions. The new continuation flag
+defaults off. Unsupported or legacy calibration artifacts abstain.
+
+Joint CHI/PONG evaluation prescreens minimum-shanten legal child discards. A
+selected overriding root persists the evaluated child as a public plan, armed
+only after the decision succeeds. Its next use requires matching public
+context, round, profile and legal action and consumes it once. This also
+applies to counterfactual score evidence. A caller-owned `QualityDecisionState`
+supports rebuilt projections without retaining hidden simulation state.
+
+Inference is skipped in forced and irrelevant windows. Decision-local belief
+and survival caches reuse calculations across candidates; value inference
+expands only its stated next-draw boundary. Baseline search/fallback behavior
+and the native root/time caps remain the frozen comparator.
+
+The online profile factories also share bounded immutable configuration
+instances and cache fingerprints. Audit payloads are still copies and search
+results remain call-local. This configuration-only optimization applies to
+the default policy without changing its actions, parameters or fingerprints.

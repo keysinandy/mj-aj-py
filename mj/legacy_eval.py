@@ -173,8 +173,15 @@ class LegacyTwoPlyProfile:
         *SPEED_BAND_MIN_RATIO_BY_SHANTEN,
     )
     pareto_frontier_enabled: bool = False
+    baotou_progress_weight: float = 1.5
+    baotou_score_tiebreak_enabled: bool = False
 
     def __post_init__(self):
+        baotou_weight = float(self.baotou_progress_weight)
+        if not math.isfinite(baotou_weight) or baotou_weight < 0:
+            raise ValueError("baotou_progress_weight must be finite and non-negative")
+        object.__setattr__(self, "baotou_progress_weight", baotou_weight)
+        object.__setattr__(self, "baotou_score_tiebreak_enabled", bool(self.baotou_score_tiebreak_enabled))
         if not self.name or not self.version or not self.model:
             raise ValueError("legacy-two-ply profile identifiers are required")
         if self.kernel not in {"auto", "python", "rust"}:
@@ -477,6 +484,10 @@ class LegacyTwoPlyProfile:
                     self.speed_band_min_ratio_by_shanten),
                 "pareto_frontier_enabled": self.pareto_frontier_enabled,
             })
+        if self.baotou_progress_weight != 1.5 or self.baotou_score_tiebreak_enabled:
+            payload.update(baotou_progress_weight=self.baotou_progress_weight,
+                           baotou_score_tiebreak_enabled=self.baotou_score_tiebreak_enabled,
+                           baotou_score_version="exact-selfdraw-tie-v1")
         return payload
 
     def big_hand_config(self):

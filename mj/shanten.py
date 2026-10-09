@@ -170,6 +170,11 @@ def chiitoi_shanten_components(natural_pairs, natural_singles, wilds,
     pairs += min(natural_singles, wilds)
     rest = wilds - min(natural_singles, wilds)
     pairs += rest // 2
+    # A complete seven-pairs hand need not retain a singleton/odd wildcard.
+    # The old distance returned 0 for seven natural pairs and omitted their
+    # natural winning draws from the native ukeire/future calculation.
+    if pairs >= 7:
+        return -1
     odd = rest % 2
     return 7 - pairs - (1 if natural_singles + odd > 0 else 0)
 
@@ -251,7 +256,7 @@ def ukeire_py(counts, locked=0, visible=None):
     vis = counts if visible is None else visible
     if s <= 0:
         if s == 0:
-            acc = [t for t in range(34) if is_win(_add(counts, t), locked)]
+            acc = [t for t in range(34) if counts[t] < 4 and is_win(_add(counts, t), locked)]
             return s, acc, sum(_left(t, vis) for t in acc)
         return s, [], 0
     candidates = range(34) if counts[W] else _ukeire_candidates(counts)
@@ -409,6 +414,11 @@ except (ImportError, AttributeError):
     _rust_standing_shape_quality = None
 
 try:
+    from mj_kernels import shanten_semantics_version as _rust_shanten_semantics_version
+except (ImportError, AttributeError):
+    _rust_shanten_semantics_version = None
+
+try:
     from mj_kernels import baotou_ukeire as _rust_baotou_ukeire
 except (ImportError, AttributeError):
     _rust_baotou_ukeire = None
@@ -478,6 +488,11 @@ def kernel_runtime_diagnostic():
         "weighted_kernel_required": WEIGHTED_TWO_PLY_KERNEL_REQUIRED,
         "weighted_kernel_compatible": weighted_compatible,
         "legacy_two_ply_kernel_version": LEGACY_TWO_PLY_KERNEL_VERSION,
+        "shanten_semantics_version": (
+            _rust_shanten_semantics_version() if shanten_rust
+            and _rust_shanten_semantics_version is not None else
+            "hangzhou-chiitoi-terminal-v1" if shanten_rust else
+            "hangzhou-chiitoi-terminal-v2"),
         "baotou_kernel": "rust" if BAOTOU_UKEIRE_RUST else "python",
         "piao_draw_mask_kernel": (
             "rust" if PIAO_DRAW_MASK_RUST else "python"),

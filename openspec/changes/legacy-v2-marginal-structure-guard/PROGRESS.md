@@ -41,6 +41,16 @@ Full JSON evidence is in `artifacts/local_perf_3x1000.json`,
 
 ## Rollout state
 
+2026-10-08 correction: the historical four-bot benchmark changed all four
+policies and scheduled both hero and dealer as index % 4. Its reported hero
+was always dealer; the +1.387 score is not profit evidence against production
+opponents. A corrected one-hero/three-production-opponent experiment balances
+hero/dealer independently. After coarse selection, independent 1024-pair
+confirmation gave standard speed-band mean -0.013672, 97.5% interval
+[-0.542969,+0.520508]; wider band -0.109375, [-0.652344,+0.421875].
+Both remain inconclusive. See runs/discard_profile_20261008/summary.md.
+Release sample gates below remain open.
+
 `speed_band_enabled` and `pareto_frontier_enabled` remain explicit opt-in
 flags. The default is unchanged because the required 4096-pair and independent
 30720-pair score gates have not been run, and the completed 600-pair interval

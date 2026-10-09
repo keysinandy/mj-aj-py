@@ -248,11 +248,25 @@ def choose_discard(g, seat, return_info=False, profile=None):
             info["push_rounds"] = rounds
             # 落到下方 legacy 键(速度线)
         else:
+            baotou_weight = profile.baotou_progress_weight if profile is not None else 1.5
+            score_tiebreak = None
+            if profile is not None and profile.enabled and profile.baotou_score_tiebreak_enabled:
+                from .legacy_ready_score import next_draw_score
+                remaining = tuple(max(0, 4-value) for value in vis)
+
+                def score_tiebreak(tile, standing, waits, deadline):
+                    chain, piao = _post_discard_chain(g, seat, tile, standing, locked)
+                    return next_draw_score(standing, locked, waits, remaining,
+                        seat=seat, dealer=g.dealer, base=g.base, chain=chain,
+                        chain_piao=piao, deadline=deadline)
+
             best = _choose_discard_baotou(
                 speed_cands, locked, vis, info,
                 shape_aware=bool(profile and profile.shape_quality_enabled),
                 diagnostics_enabled=profile is not None,
                 you_cai_bi_kao=bool(getattr(g, "you_cai_bi_kao", False)),
+                progress_weight=baotou_weight, score_tiebreak=score_tiebreak,
+                score_budget_ms=min(5.0, profile.hard_budget_ms) if profile is not None else 5.0,
             )
             if best is not None:
                 info["push_rounds"] = rounds
@@ -421,7 +435,8 @@ BAOTOU_UKE_BUDGET_NODES = 64
 
 def _choose_discard_baotou(cands, locked, vis, info, *,
                            shape_aware=False, diagnostics_enabled=False,
-                           you_cai_bi_kao=False):
+                           you_cai_bi_kao=False, progress_weight=1.5,
+                           score_tiebreak=None, score_budget_ms=5.0):
     """持财神听牌态的爆头档排序;预算超限返回 None(整局回退 legacy 键)。
 
     tier 0:弃后站立手为爆头听(听任意牌)——整体优先,档内沿用财神
@@ -469,6 +484,8 @@ def _choose_discard_baotou(cands, locked, vis, info, *,
         measured = [(*item, None) for item in ranked]
     best, best_key, best_tier = None, None, None
     legacy_best, legacy_key = None, None
+    frozen_best, frozen_key = None, None
+    score_candidates = []
     candidate_rows = []
     for tier, t, u1, shape, feed, _hand, standing in measured:
         state = ukeire(_hand, locked, vis)
@@ -494,11 +511,20 @@ def _choose_discard_baotou(cands, locked, vis, info, *,
             max(0, 4 - int(visible[tile])) for tile in structural_waits)
         current_selfdraw_hu_ukeire = sum(
             max(0, 4 - int(visible[tile])) for tile in legal_waits)
-        progress_score_x2 = 3 * u1 + 2 * current_selfdraw_hu_ukeire
+        progress_score_x2 = (3 * u1 + 2 * current_selfdraw_hu_ukeire
+                             if progress_weight == 1.5 else
+                             2 * progress_weight * u1 + 2 * current_selfdraw_hu_ukeire)
         key = (tier, t == W, -progress_score_x2,
                -(standing.encoded if shape_aware and standing else 0),
                shape, feed, t)
         old_key = (tier, t == W, -progress_score_x2, shape, feed, t)
+        if progress_weight != 1.5:
+            fixed_key = (tier, t == W, -(3*u1 + 2*current_selfdraw_hu_ukeire),
+                         -(standing.encoded if shape_aware and standing else 0), shape, feed, t)
+            if frozen_key is None or fixed_key < frozen_key:
+                frozen_best, frozen_key = t, fixed_key
+        if score_tiebreak is not None:
+            score_candidates.append((key, t, _hand, legal_waits, u1, current_selfdraw_hu_ukeire))
         if best_key is None or key < best_key:
             best, best_key, best_tier = t, key, tier
         if legacy_key is None or old_key < legacy_key:
@@ -532,13 +558,44 @@ def _choose_discard_baotou(cands, locked, vis, info, *,
                 })
             candidate_rows.append(row)
     info["reason"] = "discard_baotou"
+    shape_selected = best
+    if progress_weight == 1.5:
+        frozen_best = best
+    info["baotou_progress_weight"] = progress_weight
+    info["baotou_weight_changed_winner"] = best != frozen_best
+    info["baotou_frozen_selected"] = frozen_best
+    if score_tiebreak is not None:
+        before = best
+        tick = time.perf_counter()
+        anchor = next(row for row in score_candidates if row[1] == best)
+        # Compare at most three roots tied on the existing combined progress
+        # score. Retain the winner; immediate HU mass may not decrease.
+        ties = [row for row in sorted(score_candidates) if row[0][:3] == best_key[:3]
+                and row[5] >= anchor[5]][:3]
+        detail = {"baseline": before, "attempted": len(ties) > 1,
+                  "complete": False, "override": False, "roots": len(ties), "values": {}}
+        if len(ties) > 1:
+            try:
+                from .legacy_budget import cap_ms
+                deadline = tick + cap_ms(score_budget_ms)/1000.0
+                values = {row[1]: score_tiebreak(row[1], row[2], row[3], deadline) for row in ties}
+                if time.perf_counter() >= deadline:
+                    raise TimeoutError("ready score deadline")
+                candidate = max(ties, key=lambda row: (values[row[1]]["value"], row[1] == before))
+                if values[candidate[1]]["value"] > values[before]["value"] + 1e-9:
+                    best = candidate[1]
+                detail.update(complete=True, values=values, override=best != before)
+            except (TimeoutError, AttributeError, TypeError, ValueError) as error:
+                detail["fallback_reason"] = type(error).__name__
+        detail["elapsed_ms"] = (time.perf_counter()-tick)*1000.0
+        info["baotou_score_tiebreak"] = detail
     info["baotou_tier"] = best_tier
     info["baotou_nodes"] = nodes
     info["baotou_elapsed_ms"] = round((time.monotonic() - started) * 1000.0, 3)
     info["decision_scope"] = "baotou_scope"
     info["baotou_progress_formula_version"] = "baotou-weighted-ukeire-v1"
     info["baotou_progress_formula"] = (
-        "1.5*baotou_ukeire+current_selfdraw_hu_ukeire")
+        f"{progress_weight:g}*baotou_ukeire+current_selfdraw_hu_ukeire")
     info["stage_b_entered"] = False
     info["future_shape_quality_sum"] = None
     info["future_shape_quality_mean"] = None
@@ -548,7 +605,7 @@ def _choose_discard_baotou(cands, locked, vis, info, *,
     info["shape_quality_stage"] = "baotou" if shape_aware else None
     info["shape_quality_version"] = (
         "standing-shape-v1" if shape_aware else None)
-    info["shape_changed_winner"] = bool(shape_aware and best != legacy_best)
+    info["shape_changed_winner"] = bool(shape_aware and shape_selected != legacy_best)
     info["legacy_selected"] = legacy_best
     if diagnostics_enabled:
         info["candidates"] = candidate_rows
@@ -1232,9 +1289,9 @@ def _choose_hu_window_action(g, seat, actions, *, discard_profile,
         continuation_nodes=continuation_nodes,
         piao_search=piao_search,
     )
+    detail["selected_value"] = selected.get("value")
     if hu_delay_guard is not None:
         detail["hu_discard_delay_guard"] = hu_delay_guard
-    detail["selected_value"] = selected.get("value")
     detail["selected_raw_value"] = selected.get("raw_value")
     detail["selected_win_probability"] = selected.get("win_probability")
     detail["kong_candidates"] = [
@@ -1250,6 +1307,8 @@ def _choose_draw_action(g, seat, actions=None, discard_profile=None,
     strictly exceeds the current baseline: an immediate HU, or the best
     legacy discard's next-draw expectation. This keeps the v33 action
     window useful without reducing the policy to ``if kong: return kong``.
+    An explicit experimental reaction profile can additionally try an early
+    replacement for the redundant tile selected by the original discard.
     """
     actions = tuple(g.legal_actions() if actions is None else actions)
     wall_left = g.live_wall_left() if HU in actions else None
@@ -1412,6 +1471,22 @@ def _choose_draw_action(g, seat, actions=None, discard_profile=None,
             "kong_candidates": [
                 _kong_public_result(result) for result in evaluations],
         }
+    if (reaction_profile is not None and reaction_profile.enabled
+            and reaction_profile.self_kong_progress_enabled and best is None
+            and not g.in_freeze(seat)):
+        progress_kong = _legacy_kong.redundant_self_kong_candidate(
+            evaluations, baseline, live_wall=g.live_wall_left(), hand=g.hands[seat])
+        if progress_kong is not None:
+            return progress_kong["action"], {
+                "reason": "kong_redundant_progress_experiment",
+                "baseline": baseline,
+                "selected_kind": progress_kong["kind"],
+                "selected_tile": progress_kong["tile"],
+                "wall_left": g.live_wall_left(),
+                "kong_progress_override": True,
+                "kong_evaluation": _kong_public_result(progress_kong),
+                "kong_candidates": [_kong_public_result(row) for row in evaluations],
+            }
     return baseline, {"reason": baseline_reason,
                       "baseline_value": baseline_value,
                       "kong_candidates": [
@@ -1614,7 +1689,9 @@ def choose_action(g, seat, evaluator=DEFAULT_BOT_EVALUATOR,
                   speed_band_enabled=None,
                   pareto_frontier_enabled=None,
                   speed_band_min_ratio_by_shanten=None,
-                  hu_discard_delay_min_gain_ratio=None):
+                  hu_discard_delay_min_gain_ratio=None,
+                  quality_profile=None, quality_calibration=None,
+                  quality_hand_plan=None, quality_state=None):
     """统一入口:返回该 seat 的动作。
 
     The two-argument production path uses the weighted two-ply frontier.
@@ -1630,6 +1707,19 @@ def choose_action(g, seat, evaluator=DEFAULT_BOT_EVALUATOR,
     Online legacyV2 uses a 1.10 HU-delay reward multiple by default. Pass
     hu_discard_delay_min_gain_ratio=1.0 to restore the frozen behavior.
     """
+    if quality_profile is not None:
+        from .legacy_quality import choose_quality
+        action, evaluation = choose_quality(
+            g, seat, lambda: choose_action(
+                g, seat, evaluator=evaluator, return_evaluation=True,
+                marginal_structure_guard_enabled=marginal_structure_guard_enabled,
+                speed_band_enabled=speed_band_enabled,
+                pareto_frontier_enabled=pareto_frontier_enabled,
+                speed_band_min_ratio_by_shanten=speed_band_min_ratio_by_shanten,
+                hu_discard_delay_min_gain_ratio=hu_discard_delay_min_gain_ratio),
+            profile=quality_profile, calibration=quality_calibration,
+            hand_plan=quality_hand_plan, state=quality_state)
+        return (action, evaluation) if return_evaluation else action
     if evaluator is None or evaluator == "legacy":
         evaluator = DEFAULT_BOT_EVALUATOR
     if (hu_discard_delay_min_gain_ratio is None
